@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="fm-version" content="F2">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>FM Field — بلاغاتي</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f1f5f9;--card:#fff;--ink:#0f172a;--mut:#64748b;--line:#e2e8f0;--pri:#2563eb;--ok:#067a06;--warn:#b45309;--bad:#b42323}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Cairo,Tahoma,sans-serif;font-size:15px}
+button,input,select,textarea{font-family:inherit;font-size:15px}
+.top{position:sticky;top:0;z-index:20;background:#0f172a;color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;display:flex;align-items:center;gap:10px}
+.top h1{margin:0;font-size:17px;font-weight:900;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top small{display:block;font-size:11.5px;color:#94a3b8;font-weight:700}
+.top button{background:rgba(255,255,255,.12);border:0;color:#fff;border-radius:10px;padding:8px 10px;font-weight:800}
+.wrap{padding:12px 12px 90px;max-width:760px;margin:0 auto}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}
+.tabs button{flex:none;border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 14px;font-weight:800;color:#334155}
+.tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.tabs b{display:inline-block;min-width:20px;margin-inline-start:4px;border-radius:999px;background:rgba(100,116,139,.15);padding:0 6px;font-size:12px}
+.tabs button.on b{background:rgba(255,255,255,.2)}
+.search{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.tk{display:block;width:100%;text-align:start;cursor:pointer}
+.tk .r1{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.tk .id{font:900 13px monospace;color:var(--pri)}
+.tk .sch{font-weight:900;font-size:15.5px;margin:3px 0 1px}
+.tk .cat{color:var(--mut);font-size:13px;font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:800;border:1px solid var(--line);background:#f8fafc;color:#334155}
+.c-bad{color:var(--bad);background:#fef2f2;border-color:#fecaca}.c-warn{color:var(--warn);background:#fffbeb;border-color:#fde68a}.c-ok{color:var(--ok);background:#f0fdf4;border-color:#bbf7d0}.c-pri{color:#3730a3;background:#eef2ff;border-color:#c7d2fe}
+.empty{text-align:center;color:var(--mut);padding:40px 10px;font-weight:700}
+.sheet{position:fixed;inset:0;z-index:40;background:var(--bg);overflow:auto;display:none}
+.sheet.open{display:block}
+h3{margin:0 0 8px;font-size:15px;font-weight:900}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px}.kv span{color:var(--mut);font-weight:700}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.big{border:0;border-radius:12px;padding:13px 10px;font-weight:900;background:#e2e8f0;color:var(--ink);text-decoration:none;text-align:center;display:block}
+.big.p{background:var(--pri);color:#fff}.big.g{background:var(--ok);color:#fff}.big.d{background:#0f172a;color:#fff}
+.big:disabled{opacity:.45}
+.stages{display:flex;flex-wrap:wrap;gap:6px}
+.stages button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 12px;font-weight:800;color:#334155}
+.stages button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.stages button:disabled{opacity:.4}
+label.l{display:block;font-weight:800;font-size:13px;color:#475569;margin:10px 0 4px}
+.in{width:100%;border:1px solid #cbd5e1;border-radius:11px;padding:10px 12px;background:#fff}
+textarea.in{min-height:90px;line-height:1.8}
+.ph{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.ph figure{margin:0;position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#e2e8f0}
+.ph img{width:100%;height:100%;object-fit:cover}
+.ph figcaption{position:absolute;inset:auto 0 0 0;background:rgba(15,23,42,.6);color:#fff;font-size:11px;padding:1px 6px}
+.cam{display:flex;gap:8px}.cam label{flex:1;border:1.5px dashed #94a3b8;border-radius:12px;padding:12px 8px;text-align:center;font-weight:800;background:#f8fafc}
+.cam input{display:none}
+.note{border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:13.5px}.note small{display:block;color:#92400e;font-weight:800}
+.tl{list-style:none;margin:0;padding:0}.tl li{border-right:2px solid var(--line);padding:0 12px 10px 0;margin-right:5px;position:relative;font-size:13.5px}
+.tl li:before{content:'';position:absolute;right:-6px;top:6px;width:10px;height:10px;border-radius:50%;background:#94a3b8}
+.tl small{color:var(--mut);font-weight:800;display:block}
+.bar{position:fixed;inset:auto 0 0 0;z-index:30;background:#fff;border-top:1px solid var(--line);padding:10px 12px calc(env(safe-area-inset-bottom) + 10px);display:flex;gap:8px}
+.bar .big{flex:1}
+.toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);z-index:99;background:#0f172a;color:#fff;border-radius:12px;padding:10px 16px;font-weight:800;max-width:92vw;box-shadow:0 8px 24px rgba(0,0,0,.25);display:none;text-align:center}
+.toast.e{background:#b42323}.toast.w{background:#b45309}
+.q{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:12px;padding:8px 12px;margin-bottom:10px;font-weight:800;font-size:13px;display:none}
+.login{max-width:420px;margin:8vh auto;padding:0 16px}
+.login .card{padding:22px 18px}
+.login h2{text-align:center;margin:4px 0 4px;font-weight:900}
+.login p{text-align:center;color:var(--mut);margin:0 0 10px;font-size:13.5px}
+.link{color:var(--pri);font-weight:800;text-decoration:none}
+.muted{color:var(--mut);font-size:12.5px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+<script>
+/* FM Cloud core — thin wrapper over supabase-js used by the desktop platform and the field app.
+   Every network call goes through FMCloud.api so it can be replaced in tests. */
+(function(){
+'use strict';
+if(window.FMCloud&&window.FMCloud.__core)return;
+const CKEY='fm_cloud_v136';
+const LIB='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
+const S=v=>String(v??'').trim();
+function cfg(){try{const o=JSON.parse(localStorage.getItem(CKEY)||'{}')||{};return {url:S(o.url).replace(/\/+$/,''),key:S(o.key)}}catch(e){return {url:'',key:''}}}
+function setCfg(o){try{if(!o)localStorage.removeItem(CKEY);else localStorage.setItem(CKEY,JSON.stringify({url:S(o.url).replace(/\/+$/,''),key:S(o.key)}))}catch(e){}client=null}
+let libP=null,client=null;
+function ensureLib(){if(window.supabase&&window.supabase.createClient)return Promise.resolve(true);if(libP)return libP;
+ libP=new Promise((res,rej)=>{const s=document.createElement('script');s.src=LIB;s.onload=()=>window.supabase?.createClient?res(true):rej(new Error('تعذر تحميل مكتبة Supabase'));s.onerror=()=>{libP=null;rej(new Error('تعذر تحميل مكتبة Supabase — تحقق من الاتصال بالإنترنت'))};document.head.appendChild(s)});return libP}
+async function sb(){const c=cfg();if(!c.url||!c.key)throw new Error('لم يتم إعداد الاتصال بالسحابة');if(client)return client;await ensureLib();
+ client=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'fm-cloud-auth'}});return client}
+const chk=({data,error})=>{if(error)throw new Error(error.message||String(error));return data};
+const ARmsg=m=>{m=String(m||'');if(/Invalid login/i.test(m))return 'البريد أو كلمة المرور غير صحيحة';if(/Email not confirmed/i.test(m))return 'لم يتم تأكيد البريد بعد — افتح رسالة التأكيد في بريدك';if(/already registered/i.test(m))return 'هذا البريد مسجل مسبقاً';if(/row-level security/i.test(m))return 'ليست لديك صلاحية لهذا الإجراء';if(/Failed to fetch|NetworkError|network/i.test(m))return 'تعذر الاتصال بالخادم — تحقق من الإنترنت';if(/Password should/i.test(m))return 'كلمة المرور قصيرة — 6 أحرف على الأقل';return m};
+function b64ToBlob(d){const [h,b]=d.split(',');const mime=(h.match(/data:([^;]+)/)||[])[1]||'image/jpeg';const bin=atob(b);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:mime})}
+const uuid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16)});
+
+const real={
+ async signIn(email,pw){const c=await sb();return chk(await c.auth.signInWithPassword({email:S(email),password:pw}))},
+ async signUp(email,pw,name){const c=await sb();return chk(await c.auth.signUp({email:S(email),password:pw,options:{data:{full_name:S(name)}}}))},
+ async signOut(){const c=await sb();await c.auth.signOut()},
+ async session(){const c=await sb();const {data}=await c.auth.getSession();return data?.session||null},
+ async me(){const c=await sb();const {data:{user}}=await c.auth.getUser();if(!user)return null;const p=chk(await c.from('profiles').select('*').eq('id',user.id).maybeSingle());return p?Object.assign({},p,{email:p.email||user.email}):{id:user.id,email:user.email,role:'pending',person_names:[],regions:[]}},
+ async listProfiles(){const c=await sb();return chk(await c.from('profiles').select('*').order('created_at'))},
+ async saveProfile(id,patch){const c=await sb();return chk(await c.from('profiles').update(Object.assign({},patch,{updated_at:new Date().toISOString()})).eq('id',id).select())},
+ async pushTickets(rows,onProgress){const c=await sb();for(let i=0;i<rows.length;i+=400){chk(await c.from('tickets').upsert(rows.slice(i,i+400),{onConflict:'region,ticket_id'}));onProgress?.(Math.min(rows.length,i+400),rows.length)}return rows.length},
+ async deleteTicketsNotIn(region,ids){const c=await sb();const have=[];for(let f=0;;f+=1000){const d=chk(await c.from('tickets').select('ticket_id').eq('region',region).range(f,f+999));have.push(...d.map(x=>x.ticket_id));if(d.length<1000)break}
+  const keep=new Set(ids),gone=have.filter(t=>!keep.has(t));for(let i=0;i<gone.length;i+=200)chk(await c.from('tickets').delete().eq('region',region).in('ticket_id',gone.slice(i,i+200)));return gone.length},
+ async pullTickets(region){const c=await sb();const out=[];for(let f=0;;f+=1000){let q=c.from('tickets').select('*').range(f,f+999);if(region)q=q.eq('region',region);const d=chk(await q);out.push(...d);if(d.length<1000)break}return out},
+ async getKV(keys){const c=await sb();return chk(await c.from('app_kv').select('*').in('key',keys))},
+ async setKV(key,value){const c=await sb();return chk(await c.from('app_kv').upsert({key,value,updated_at:new Date().toISOString()},{onConflict:'key'}))},
+ async pullWork(region){const c=await sb();const work=[],events=[];
+  for(let f=0;;f+=1000){let q=c.from('ticket_work').select('*').range(f,f+999);if(region)q=q.eq('region',region);const d=chk(await q);work.push(...d);if(d.length<1000)break}
+  for(let f=0;;f+=1000){let q=c.from('ticket_events').select('*').order('at').range(f,f+999);if(region)q=q.eq('region',region);const d=chk(await q);events.push(...d);if(d.length<1000)break}
+  return {work,events}},
+ async pushWork(row){const c=await sb();return chk(await c.from('ticket_work').upsert(row,{onConflict:'region,ticket_id'}))},
+ async addEvents(rows){if(!rows.length)return [];const c=await sb();return chk(await c.from('ticket_events').insert(rows))},
+ async uploadPhoto(region,tid,kind,dataUrl,byName,geo){const c=await sb();const id=uuid();const path=`${region}/${tid}/${id}.jpg`;
+  chk(await c.storage.from('ticket-photos').upload(path,b64ToBlob(dataUrl),{contentType:'image/jpeg',upsert:false}));
+  chk(await c.from('ticket_photos').insert({id,region,ticket_id:tid,kind,path,by_name:byName,geo:geo||null}));return {id,path}},
+ async listPhotos(region,tid){const c=await sb();const rows=chk(await c.from('ticket_photos').select('*').eq('region',region).eq('ticket_id',tid).order('at'));if(!rows.length)return [];
+  const signed=chk(await c.storage.from('ticket-photos').createSignedUrls(rows.map(r=>r.path),3600));const m=new Map(signed.map(s=>[s.path,s.signedUrl]));
+  return rows.map(r=>({id:r.id,kind:r.kind,d:m.get(r.path)||'',by:r.by_name,at:new Date(r.at).getTime(),path:r.path,geo:r.geo}))},
+ async deletePhoto(id,path){const c=await sb();if(path)await c.storage.from('ticket-photos').remove([path]);return chk(await c.from('ticket_photos').delete().eq('id',id))},
+ async photoCounts(region){const c=await sb();const out={};for(let f=0;;f+=1000){let q=c.from('ticket_photos').select('ticket_id').range(f,f+999);if(region)q=q.eq('region',region);const d=chk(await q);d.forEach(x=>out[x.ticket_id]=(out[x.ticket_id]||0)+1);if(d.length<1000)break}return out},
+ async subscribe(cb){const c=await sb();const ch=c.channel('fm-work').on('postgres_changes',{event:'*',schema:'public',table:'ticket_work'},p=>cb('work',p)).on('postgres_changes',{event:'INSERT',schema:'public',table:'ticket_events'},p=>cb('event',p)).subscribe();return ()=>{try{c.removeChannel(ch)}catch(e){}}}
+};
+window.FMCloud={__core:true,cfg,setCfg,api:real,msg:ARmsg,uuid,
+ configured:()=>{const c=cfg();return !!(c.url&&c.key)},
+ /* in-app state */
+ state:{on:false,profile:null},
+ ROLE:{admin:'مدير النظام',engineer:'مهندس',supervisor:'مشرف',contractor:'مقاول',viewer:'مشاهد (إدارة)',pending:'بانتظار التفعيل'}};
+})();
+
+</script>
+<script>
+(function(){
+'use strict';
+const C=window.FMCloud;const $=s=>document.querySelector(s);
+const S=v=>String(v??'').trim();
+const esc=s=>S(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=(n,d=0)=>Number(n||0).toLocaleString('ar-EG',{maximumFractionDigits:d,minimumFractionDigits:d});
+const GREG='ar-SA-u-ca-gregory';const dts=d=>d?new Date(d).toLocaleString(GREG,{day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+const pad=n=>String(n).padStart(2,'0');const toLocalInput=d=>{d=new Date(d);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes())};
+const RN={riyadh:'الرياض',qassim:'القصيم'};
+let tT=null;function toast(m,k){const t=$('#toast');t.textContent=m;t.className='toast'+(k==='e'?' e':k==='w'?' w':'');t.style.display='block';clearTimeout(tT);tT=setTimeout(()=>t.style.display='none',3200)}
+/* config from the link: …#cfg=base64 */
+try{const m=location.hash.match(/cfg=([^&]+)/);if(m){const o=JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1])))));if(o.url&&o.key){C.setCfg(o);history.replaceState(null,'',location.pathname+location.search)}}}catch(e){}
+
+const STAGES=[{k:'received',t:'مستلم',ic:'📥'},{k:'assigned',t:'مُسند',ic:'👷'},{k:'inspected',t:'تمت المعاينة',ic:'🔍'},{k:'progress',t:'قيد التنفيذ',ic:'🛠️'},{k:'parts',t:'بانتظار قطع غيار',ic:'📦'},{k:'resolved',t:'تم الحل',ic:'✅'},{k:'closed',t:'تم التحقق والإغلاق',ic:'🔒'}];
+const XST={reopened:{k:'reopened',t:'أُعيد فتحه',ic:'↩️'},cancelled:{k:'cancelled',t:'ملغى',ic:'⛔'}};
+const stageOf=k=>STAGES.find(s=>s.k===k)||XST[k]||STAGES[0];
+const done=k=>k==='resolved'||k==='closed'||k==='cancelled';
+const CAUSES=['تلف / عطل فني','انتهاء العمر الافتراضي','سوء استخدام','تخريب','نقص صيانة وقائية','عوامل جوية','خطأ تركيب سابق','أخرى'];
+const D={me:null,tickets:[],work:new Map(),events:new Map(),hours:{'طارئ':24,'عالي':48,'متوسط':72},rules:{desc:true,photo:false,cause:false},db:[],tab:'open',q:'',cur:null};
+const key=t=>t.region+':'+t.ticket_id;
+const canClose=()=>['admin','engineer'].includes(D.me?.role);
+const canEdit=()=>['admin','engineer','supervisor','contractor'].includes(D.me?.role);
+const myName=()=>S(D.me?.full_name)||S(D.me?.email);
+function fileStage(t){const s=S(t.status);return /ملغ/.test(s)?'cancelled':/مغلق/.test(s)?'closed':/تم.*حل/.test(s)?'resolved':/قيد/.test(s)?'progress':/تعيين/.test(s)?'assigned':'received'}
+function stageT(t){const w=D.work.get(key(t));return w?w.stage:fileStage(t)}
+function sla(t){const lim=D.hours[S(t.priority)]||72;const c=t.created_at?new Date(t.created_at).getTime():null;if(!c)return {lim,txt:'—',cls:''};
+ const w=D.work.get(key(t));const st=stageT(t);const end=done(st)?(w&&w.resolved_at?new Date(w.resolved_at).getTime():Date.now()):Date.now();const el=(end-c)/36e5,rem=lim-el;
+ const h=x=>Math.abs(x)<48?fmt(Math.abs(x),0)+' س':fmt(Math.abs(x)/24,1)+' يوم';
+ if(done(st))return {lim,rem,txt:el>lim?'أُغلق متأخراً':'أُغلق ضمن المهلة',cls:el>lim?'c-warn':'c-ok'};
+ return rem<0?{lim,rem,txt:'متأخر '+h(rem),cls:'c-bad',late:true}:{lim,rem,txt:'متبقي '+h(rem),cls:rem<=Math.min(12,lim*.2)?'c-warn':'c-ok'}}
+function school(t){const b=S(t.building_id).toUpperCase().replace(/[^\dA-Z]/g,''),n=S(t.school);return D.db.find(x=>b&&S(x.buildingId).toUpperCase().replace(/[^\dA-Z]/g,'')===b)||D.db.find(x=>S(x.school)===n)||null}
+const hasXY=x=>x&&x.lat!==''&&x.lng!==''&&x.lat!=null&&isFinite(+x.lat)&&isFinite(+x.lng)&&+x.lat!==0;
+function dist(a,b){const R=6371e3,r=x=>x*Math.PI/180;const dl=r(b.lat-a.lat),dg=r(b.lng-a.lng);const h=Math.sin(dl/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dg/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+
+/* ---------- offline queue ---------- */
+const QK='fmf_queue_v1';
+const qLoad=()=>{try{return JSON.parse(localStorage.getItem(QK)||'[]')}catch(e){return []}};
+const qSave=a=>{try{localStorage.setItem(QK,JSON.stringify(a))}catch(e){toast('مساحة الجهاز لا تكفي لحفظ التحديث بدون اتصال','e')}qBanner()};
+function qBanner(){const n=qLoad().length,b=$('#qb');if(b){b.style.display=n?'block':'none';b.textContent='⏳ '+fmt(n)+' تحديث محفوظ على الجهاز بانتظار الاتصال — يُرسل تلقائياً'}}
+const netErr=e=>/fetch|network|Failed|اتصال|timeout/i.test(String(e&&e.message||e));
+async function run(op){if(op.k==='work')return C.api.pushWork(op.row);if(op.k==='events')return C.api.addEvents(op.rows);if(op.k==='photo')return C.api.uploadPhoto(op.region,op.tid,op.kind,op.d,op.by,op.geo)}
+async function send(op){try{await run(op);return true}catch(e){if(netErr(e)||!navigator.onLine){const q=qLoad();q.push(op);qSave(q);return 'queued'}throw e}}
+let flushing=false;async function flush(){if(flushing||!navigator.onLine)return;const q=qLoad();if(!q.length)return;flushing=true;const rest=[];
+ for(const op of q){try{await run(op)}catch(e){if(netErr(e)){rest.push(op)}else console.warn('dropped',e)}}qSave(rest);flushing=false;if(q.length!==rest.length){toast('تم إرسال '+fmt(q.length-rest.length)+' تحديث محفوظ');await pull(true)}}
+window.addEventListener('online',flush);setInterval(flush,30000);
+
+/* ---------- screens ---------- */
+function loginView(info){
+ if(!C.configured()){$('#app').innerHTML=`<div class="login"><div class="card"><div style="font-size:38px;text-align:center">⚙️</div><h2>إعداد التطبيق</h2><p>افتح التطبيق من الرابط الذي أرسله مدير النظام (يحتوي كود الربط)، أو أدخل البيانات يدوياً:</p>
+  <label class="l">رابط المشروع</label><input class="in" id="c-u" dir="ltr" placeholder="https://xxxx.supabase.co"><label class="l">المفتاح العام (anon)</label><input class="in" id="c-k" dir="ltr">
+  <button class="big p" style="width:100%;margin-top:14px" id="c-go">حفظ</button></div></div>`;
+  $('#c-go').onclick=()=>{const u=S($('#c-u').value),k=S($('#c-k').value);if(!/^https:\/\//.test(u)||k.length<30){toast('تحقق من البيانات','w');return}C.setCfg({url:u,key:k});loginView()};return}
+ let mode='in';const draw=(m)=>{mode=m;$('#app').innerHTML=`<div class="login"><div class="card"><div style="font-size:40px;text-align:center">🛠️</div><h2>${m==='up'?'حساب جديد':'تسجيل الدخول'}</h2><p>متابعة بلاغات الصيانة في الميدان</p>
+  ${info?`<div class="note" style="border-color:#bfdbfe;background:#eff6ff">${info}</div>`:''}
+  ${m==='up'?'<label class="l">الاسم</label><input class="in" id="l-n" autocomplete="name">':''}
+  <label class="l">البريد الإلكتروني</label><input class="in" id="l-e" type="email" dir="ltr" autocomplete="username"><label class="l">كلمة المرور</label><input class="in" id="l-p" type="password" dir="ltr" autocomplete="${m==='up'?'new-password':'current-password'}">
+  <button class="big p" style="width:100%;margin-top:16px" id="l-go">${m==='up'?'إنشاء الحساب':'دخول'}</button>
+  <p style="margin-top:14px"><a href="#" class="link" id="l-sw">${m==='up'?'لدي حساب':'مستخدم جديد؟ إنشاء حساب'}</a></p></div></div>`;
+  $('#l-sw').onclick=e=>{e.preventDefault();draw(mode==='up'?'in':'up')};
+  $('#l-go').onclick=async()=>{const em=S($('#l-e').value),pw=$('#l-p').value;if(!em||!pw){toast('اكتب البريد وكلمة المرور','w');return}const b=$('#l-go');b.disabled=true;
+   try{if(mode==='up'){const n=S($('#l-n').value);if(!n){toast('اكتب اسمك','w');b.disabled=false;return}const r=await C.api.signUp(em,pw,n);if(!r?.session){info='تم إنشاء الحساب. افتح رسالة التأكيد في بريدك إن وصلت، ثم سجّل الدخول.';draw('in');return}}else await C.api.signIn(em,pw);boot()}
+   catch(e){toast(C.msg(e.message),'e');b.disabled=false}}};
+ draw('in');
+}
+function pendingView(){$('#app').innerHTML=`<div class="login"><div class="card"><div style="font-size:40px;text-align:center">⏳</div><h2>بانتظار التفعيل</h2><p>${esc(D.me?.email||'')}</p><div class="note">أبلغ مدير النظام ليحدد دورك واسمك في البلاغات، ثم اضغط «تحقق».</div><button class="big p" style="width:100%" id="re">تحقق</button><p><a href="#" class="link" id="out">تسجيل الخروج</a></p></div></div>`;
+ $('#re').onclick=boot;$('#out').onclick=async e=>{e.preventDefault();await C.api.signOut().catch(()=>{});loginView()}}
+
+async function pull(silent){
+ const [T,W,KV]=await Promise.all([C.api.pullTickets(null),C.api.pullWork(null),C.api.getKV(['fm_settings_v122','fm_work_rules_v135','fm_school_master_db_v1']).catch(()=>[])]);
+ D.tickets=T;D.work=new Map(W.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();W.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});
+ KV.forEach(x=>{let v=x.value;if(typeof v==='string')try{v=JSON.parse(v)}catch(e){}
+  if(x.key==='fm_settings_v122'&&v&&v.hours)Object.keys(D.hours).forEach(h=>{if(+v.hours[h]>0)D.hours[h]=+v.hours[h]});
+  if(x.key==='fm_work_rules_v135'&&v)D.rules={desc:v.desc!==false,photo:!!v.photo,cause:!!v.cause};
+  if(x.key==='fm_school_master_db_v1'&&Array.isArray(v))D.db=v});
+ try{localStorage.setItem('fmf_cache_v1',JSON.stringify({at:Date.now(),me:D.me,tickets:T,work:W.work,events:W.events,hours:D.hours,rules:D.rules,db:D.db}))}catch(e){}
+ if(!silent)listView();else if(D.cur)ticketView(D.cur,true);else listView();
+}
+function fromCache(){try{const o=JSON.parse(localStorage.getItem('fmf_cache_v1')||'null');if(!o)return false;D.me=D.me||o.me;D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
+
+function shell(inner,title,sub,back){return `<div class="top">${back?'<button id="bk">→</button>':''}<h1>${title}<small>${sub||''}</small></h1>${back?'':'<button id="rf" title="تحديث">🔄</button><button id="lo" title="خروج">خروج</button>'}</div><div class="wrap"><div class="q" id="qb"></div>${inner}</div>`}
+function listView(){
+ D.cur=null;const today=new Date();today.setHours(0,0,0,0);
+ const all=D.tickets.map(t=>({t,st:stageT(t),s:sla(t)}));
+ const isOpen=x=>!done(x.st);
+ const evToday=k=>(D.events.get(k)||[]).some(e=>(e.type==='close'||e.stage==='resolved'||e.stage==='closed')&&new Date(e.at)>=today);
+ const T={open:all.filter(isOpen),late:all.filter(x=>isOpen(x)&&x.s.late),today:all.filter(x=>evToday(key(x.t))),all};
+ const q=S(D.q).toLowerCase();let L=T[D.tab]||T.open;if(q)L=L.filter(x=>(x.t.ticket_id+' '+x.t.school+' '+x.t.sub_category).toLowerCase().includes(q));
+ L=L.slice().sort((a,b)=>(isOpen(a)?0:1)-(isOpen(b)?0:1)||(a.s.rem??1e9)-(b.s.rem??1e9));
+ const arrived=k=>(D.events.get(k)||[]).some(e=>e.type==='arrive'&&new Date(e.at)>=today);
+ $('#app').innerHTML=shell(`<div class="tabs">${[['open','المفتوحة'],['late','المتأخرة'],['today','أُنجز اليوم'],['all','الكل']].map(([k,t])=>`<button data-t="${k}" class="${D.tab===k?'on':''}">${t}<b>${fmt(T[k].length)}</b></button>`).join('')}</div>
+  <input class="search" id="q" placeholder="🔎 رقم البلاغ أو المدرسة أو العطل" value="${esc(D.q)}">
+  ${L.length?L.slice(0,300).map(x=>{const t=x.t,s=stageOf(x.st);return `<button class="card tk" data-k="${esc(key(t))}"><div class="r1"><span class="id">${esc(t.ticket_id)}</span><span class="chip ${x.s.cls}">${x.s.txt}</span></div><div class="sch">${esc(t.school||'—')}</div><div class="cat">${esc(t.sub_category||'')}</div>
+   <div class="chips"><span class="chip">${s.ic} ${s.t}</span><span class="chip ${t.priority==='طارئ'?'c-bad':t.priority==='عالي'?'c-warn':''}">${esc(t.priority||'متوسط')}</span>${arrived(key(t))?'<span class="chip c-pri">📍 تمت الزيارة اليوم</span>':''}${(D.events.get(key(t))||[]).some(e=>e.type==='note')?'<span class="chip">💬</span>':''}</div></button>`}).join(''):`<div class="empty">${D.tickets.length?'لا توجد بلاغات هنا ✓':'لا توجد بلاغات مرتبطة بحسابك — تأكد مع مدير النظام من اسمك في البلاغات'}</div>`}`,
+  '🛠️ بلاغاتي',`${esc(myName())} • ${esc(C.ROLE[D.me.role]||'')}`);
+ qBanner();
+ document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{D.tab=b.dataset.t;listView()});
+ let qt=null;$('#q').oninput=e=>{D.q=e.target.value;clearTimeout(qt);qt=setTimeout(()=>{listView();const i=$('#q');i.focus();i.setSelectionRange(i.value.length,i.value.length)},300)};
+ document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>ticketView(b.dataset.k));
+ $('#rf').onclick=async()=>{toast('جارٍ التحديث…');try{await flush();await pull()}catch(e){toast(C.msg(e.message),'e')}};
+ $('#lo').onclick=async()=>{if(!confirm('تسجيل الخروج؟'))return;await C.api.signOut().catch(()=>{});localStorage.removeItem('fmf_cache_v1');loginView()};
+}
+let photos=[],newPh=[];
+async function ticketView(k,keep){
+ const t=D.tickets.find(x=>key(x)===k);if(!t){listView();return}
+ if(!keep||D.cur!==k){photos=[];newPh=[];try{photos=await C.api.listPhotos(t.region,t.ticket_id)}catch(e){}}
+ D.cur=k;const w=D.work.get(k);const rec=w?w.rec||{}:{};const st=stageT(t),s=sla(t),E=D.events.get(k)||[],sc=school(t),ro=!canEdit()||(st==='closed'&&!canClose())||(st==='cancelled'&&!canClose());
+ const draft=keep?readForm():null;
+ const raw=t.raw||{};const desc=S(Object.entries(raw).find(([kk])=>/وصف|description/i.test(kk)&&!/حل/.test(kk))?.[1]).replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,' ');
+ const phones=sc?[[sc.supervisor,sc.supervisorPhone,'المشرف'],[sc.engineer,sc.engineerPhone,'المهندس'],[sc.contractor,sc.contractorPhone,'المقاول']].filter(x=>S(x[1])):[];
+ const nav=sc&&hasXY(sc)?`https://www.google.com/maps/dir/?api=1&destination=${+sc.lat},${+sc.lng}`:`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((t.school||'')+' '+(RN[t.region]||''))}`;
+ $('#app').innerHTML=shell(`
+  <div class="card"><div class="r1" style="display:flex;justify-content:space-between;gap:8px"><b style="font:900 14px monospace;color:var(--pri)">${esc(t.ticket_id)}</b><span class="chip ${s.cls}">${s.txt}</span></div>
+   <div style="font-weight:900;font-size:17px;margin:4px 0">${esc(t.school||'')}</div>
+   <div class="kv"><span>العطل</span><b>${esc(t.sub_category||'—')}</b><span>الأولوية</span><b>${esc(t.priority||'متوسط')} — ${fmt(s.lim)} ساعة</b><span>تاريخ البلاغ</span><b>${dts(t.created_at)}</b><span>المرحلة</span><b>${stageOf(st).ic} ${stageOf(st).t}</b>${t.supervisor?`<span>المشرف</span><b>${esc(t.supervisor)}</b>`:''}${t.contractor?`<span>المقاول</span><b>${esc(t.contractor)}</b>`:''}</div>
+   ${desc?`<div class="muted" style="margin-top:8px;line-height:1.8">${esc(desc.slice(0,400))}</div>`:''}</div>
+  <div class="card"><div class="btns"><button class="big d" id="arr" ${ro?'disabled':''}>📍 وصلت للموقع</button><a class="big" href="${nav}" target="_blank" rel="noopener">🗺️ الاتجاهات</a></div>
+   ${phones.length?`<div class="chips" style="margin-top:10px">${phones.map(p=>`<a class="chip c-pri" href="tel:${esc(S(p[1]).replace(/[^\d+]/g,''))}" style="text-decoration:none">📞 ${p[2]}: ${esc(p[0]||'')}</a>`).join('')}</div>`:''}</div>
+  <div class="card"><h3>المرحلة</h3><div class="stages">${STAGES.map(x=>`<button data-s="${x.k}" class="${x.k===st?'on':''}" ${ro||(x.k==='closed'&&!canClose())?'disabled':''}>${x.ic} ${x.t}</button>`).join('')}${done(st)&&!ro?'<button data-s="reopened">↩️ إعادة فتح</button>':''}</div>
+   ${!canClose()&&!ro?'<div class="muted" style="margin-top:6px">الإغلاق النهائي يعتمده المهندس.</div>':''}
+   <label class="l">ملاحظة مع المرحلة (اختياري)</label><input class="in" id="f-sn" ${ro?'disabled':''}></div>
+  <div class="card"><h3>الحل</h3>
+   <label class="l">ما الذي تم؟${D.rules.desc?' *':''}</label><textarea class="in" id="f-d" ${ro?'disabled':''}>${esc(rec.resolution?.desc||'')}</textarea>
+   <label class="l">سبب العطل${D.rules.cause?' *':''}</label><select class="in" id="f-c" ${ro?'disabled':''}><option value="">—</option>${CAUSES.map(c=>`<option ${rec.resolution?.cause===c?'selected':''}>${c}</option>`).join('')}</select>
+   <label class="l">تاريخ ووقت الحل</label><input class="in" type="datetime-local" id="f-t" value="${toLocalInput(w&&w.resolved_at?w.resolved_at:Date.now())}" ${ro?'disabled':''}>
+   <label class="l">الصور${D.rules.photo?' (صورة بعد الحل مطلوبة)':''}</label>
+   ${ro?'':`<div class="cam"><label>📷 قبل<input type="file" accept="image/*" capture="environment" multiple data-kind="before"></label><label>✅ بعد<input type="file" accept="image/*" capture="environment" multiple data-kind="after"></label></div>`}
+   <div class="ph">${photos.map(p=>`<figure><img src="${p.d}" alt=""><figcaption>${p.kind==='before'?'قبل':'بعد'}</figcaption></figure>`).join('')}${newPh.map(p=>`<figure style="outline:2px solid var(--pri)"><img src="${p.d}" alt=""><figcaption>${p.kind==='before'?'قبل':'بعد'} • جديدة</figcaption></figure>`).join('')}</div></div>
+  <div class="card"><h3>الملاحظات</h3>${E.filter(e=>e.type==='note').slice().reverse().map(e=>`<div class="note"><small>✍️ ${esc(e.by_name||'')} • ${dts(e.at)}</small>${esc(S(e.text).replace(/^✍️ ملاحظة: /,''))}</div>`).join('')||'<div class="muted">لا توجد ملاحظات.</div>'}
+   ${ro?'':'<div style="display:flex;gap:8px;margin-top:8px"><input class="in" id="f-n" placeholder="ملاحظة جديدة"><button class="big" id="add-n" style="flex:none;padding:10px 14px">إضافة</button></div>'}</div>
+  <div class="card"><h3>السجل</h3><ul class="tl">${E.slice().reverse().map(e=>`<li><small>${esc(e.by_name||'')} • ${dts(e.at)}</small>${esc(e.text||'')}${e.geo&&e.geo.lat?` <a class="link" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${+e.geo.lat},${+e.geo.lng}">📍</a>`:''}</li>`).join('')}<li><small>ملف البلاغات</small>الحالة في الملف: ${esc(t.status||'—')}</li></ul></div>
+  ${ro?'':`<div class="bar"><button class="big p" id="sv">💾 حفظ</button>${done(st)?'':'<button class="big g" id="rs">✅ تم الحل</button>'}</div>`}`,
+  esc(t.ticket_id),esc(t.school||''),true);
+ qBanner();
+ if(draft)restore(draft);
+ $('#bk').onclick=()=>listView();
+ let pick=null;document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{pick=b.dataset.s;document.querySelectorAll('[data-s]').forEach(x=>x.classList.toggle('on',x===b))});
+ document.querySelectorAll('.cam input').forEach(i=>i.onchange=async()=>{for(const f of [...i.files].slice(0,8)){try{newPh.push({kind:i.dataset.kind,d:await compress(f)})}catch(e){toast('تعذر قراءة الصورة','e')}}const d=readForm();ticketView(k,true).then(()=>restore(d))});
+ $('#arr')&&($('#arr').onclick=()=>arrive(t,sc));
+ $('#add-n')&&($('#add-n').onclick=async()=>{const n=S($('#f-n').value);if(!n){toast('اكتب الملاحظة','w');return}await commit(t,null,[{type:'note',text:'✍️ ملاحظة: '+n}]);$('#f-n').value=''});
+ $('#sv')&&($('#sv').onclick=()=>save(t,pick&&pick!==st?pick:null));
+ $('#rs')&&($('#rs').onclick=()=>save(t,'resolved'));
+}
+function readForm(){const v=id=>{const e=document.getElementById(id);return e?e.value:''};return {d:v('f-d'),c:v('f-c'),t:v('f-t'),sn:v('f-sn'),n:v('f-n')}}
+function restore(f){if(!f)return;const set=(id,x)=>{const e=document.getElementById(id);if(e&&x!=null)e.value=x};set('f-d',f.d);set('f-c',f.c);set('f-t',f.t);set('f-sn',f.sn);set('f-n',f.n)}
+function compress(file,max=1400,q=.78){return new Promise((res,rej)=>{const fr=new FileReader();fr.onerror=()=>rej(fr.error);fr.onload=()=>{const im=new Image();im.onload=()=>{let w=im.naturalWidth,h=im.naturalHeight;const k=Math.min(1,max/Math.max(w,h));w=Math.round(w*k);h=Math.round(h*k);const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);res(c.toDataURL('image/jpeg',q))};im.onerror=()=>rej(new Error('bad'));im.src=fr.result};fr.readAsDataURL(file)})}
+function geo(){return new Promise((res,rej)=>{if(!navigator.geolocation)return rej(new Error('الجهاز لا يدعم تحديد الموقع'));navigator.geolocation.getCurrentPosition(p=>res({lat:+p.coords.latitude.toFixed(6),lng:+p.coords.longitude.toFixed(6),acc:Math.round(p.coords.accuracy)}),e=>rej(new Error(e.code===1?'لم يُسمح بتحديد الموقع':'تعذر تحديد الموقع')),{enableHighAccuracy:true,timeout:15000,maximumAge:30000})})}
+async function arrive(t,sc){const b=$('#arr');b.disabled=true;b.textContent='📍 جارٍ تحديد الموقع…';
+ let g=null,txt='📍 وصل للموقع';try{g=await geo();if(sc&&hasXY(sc)){const m=dist(g,{lat:+sc.lat,lng:+sc.lng});txt+=' — '+(m<1000?fmt(m)+' م':fmt(m/1000,1)+' كم')+' من المدرسة'+(m>500?' ⚠️':'')}txt+=' (دقة '+fmt(g.acc)+' م)'}
+ catch(e){if(!confirm(e.message+' — تسجيل الوصول بدون موقع؟')){b.disabled=false;b.textContent='📍 وصلت للموقع';return}txt+=' (بدون تحديد الموقع)'}
+ await commit(t,null,[{type:'arrive',text:txt,geo:g}]);toast('تم تسجيل الوصول')}
+async function save(t,stage){
+ const f=readForm(),k=key(t),w=D.work.get(k),cur=stageT(t),target=stage||cur;
+ if(target==='resolved'||target==='closed'){const miss=[];if(D.rules.desc&&!S(f.d))miss.push('وصف الحل');if(D.rules.cause&&!f.c)miss.push('سبب العطل');if(D.rules.photo&&![...photos,...newPh].some(p=>p.kind!=='before'))miss.push('صورة بعد الحل');if(!f.t)miss.push('تاريخ الحل');
+  if(miss.length){toast('أكمل: '+miss.join('، '),'w');return}const ra=new Date(f.t).getTime();if(ra>Date.now()+5*6e4){toast('تاريخ الحل في المستقبل','w');return}if(t.created_at&&ra<new Date(t.created_at).getTime()){toast('تاريخ الحل قبل تاريخ البلاغ','w');return}}
+ if(target==='closed'&&!canClose()){toast('الإغلاق النهائي للمهندس','w');return}
+ const rec=Object.assign({},w?w.rec:{},{id:t.ticket_id,region:t.region,school:t.school,stage:target,updatedBy:myName(),updated:Date.now()});
+ const resOld=rec.resolution||{};rec.resolution=Object.assign({},resOld,{desc:S(f.d),cause:f.c});
+ const changed=stage||S(f.d)!==S(resOld.desc)||f.c!==S(resOld.cause)||newPh.length||S(f.sn);
+ if(!changed){toast('لا توجد تعديلات','w');return}
+ const resolved=done(target)&&target!=='cancelled'?new Date(f.t).toISOString():null;if(resolved)rec.resolvedAt=new Date(f.t).getTime();
+ const st=stageOf(target);const ev=[];
+ if(stage)ev.push({type:done(target)?'close':'stage',stage:target,text:st.ic+' المرحلة: '+st.t+(S(f.sn)?' — '+S(f.sn):'')+(done(target)&&S(f.d)?' — '+S(f.d):'')+(resolved?' (تاريخ الحل '+dts(resolved)+')':'')+' • من تطبيق الميدان'});
+ else ev.push({type:'edit',text:'✎ تحديث الحل'+(S(f.sn)?' — '+S(f.sn):'')+' • من تطبيق الميدان'});
+ if(newPh.length)ev.push({type:'photo',text:'📷 أُضيفت '+fmt(newPh.length)+' صورة'});
+ await commit(t,{region:t.region,ticket_id:t.ticket_id,stage:target,rec,resolved_at:resolved,updated_at:new Date().toISOString(),updated_by_name:myName()},ev);
+}
+async function commit(t,row,events){
+ const btns=document.querySelectorAll('.bar .big');btns.forEach(b=>b.disabled=true);let queued=false;
+ try{
+  for(const p of newPh){const r=await send({k:'photo',region:t.region,tid:t.ticket_id,kind:p.kind,d:p.d,by:myName(),geo:null});if(r==='queued')queued=true}
+  newPh=[];
+  if(row){const r=await send({k:'work',row});if(r==='queued')queued=true;D.work.set(key(t),row)}
+  const evs=events.map(e=>({region:t.region,ticket_id:t.ticket_id,by_name:myName(),type:e.type,stage:e.stage||null,text:e.text,geo:e.geo||null}));
+  const r=await send({k:'events',rows:evs});if(r==='queued')queued=true;
+  const arr=D.events.get(key(t))||[];evs.forEach(e=>arr.push(Object.assign({at:new Date().toISOString()},e)));D.events.set(key(t),arr);
+  toast(queued?'لا يوجد اتصال — حُفظ على الجهاز وسيُرسل تلقائياً':'تم الحفظ',queued?'w':'');
+  if(!queued)pull(true).catch(()=>{});else ticketView(key(t),true);
+ }catch(e){toast(C.msg(e.message),'e');btns.forEach(b=>b.disabled=false)}
+}
+async function boot(){
+ if(!C.configured()){loginView();return}
+ $('#app').innerHTML='<div class="empty" style="padding-top:30vh">⏳ جارٍ التحميل…</div>';
+ try{const s=await C.api.session();if(!s){loginView();return}D.me=await C.api.me();if(!D.me){loginView();return}
+  if(D.me.role==='pending'||D.me.active===false){pendingView();return}
+  await flush();await pull();
+  try{C.api.subscribe(()=>{clearTimeout(boot.t);boot.t=setTimeout(()=>pull(true).catch(()=>{}),1500)})}catch(e){}
+ }catch(e){if(fromCache()){toast('بدون اتصال — تعرض آخر بيانات محفوظة','w');listView()}else{toast(C.msg(e.message),'e');loginView()}}
+}
+window.__fmField={D,boot,pull,listView,ticketView};
+setTimeout(boot,60);
+})();
+</script>
+<script>
+/* new-version notice: compares this page's <meta name="fm-version"> with the copy on the server */
+(function(){
+'use strict';
+if(window.__fmVerCheck)return;window.__fmVerCheck=1;
+if(!/^https?:$/.test(location.protocol))return;
+/* clean the cache-busting parameter left by «تحديث الآن» */
+try{const u=new URL(location.href);if(u.searchParams.has('fmv')){u.searchParams.delete('fmv');history.replaceState(null,'',u.pathname+(u.search||'')+u.hash)}}catch(e){}
+const cur=()=>(document.querySelector('meta[name="fm-version"]')||{}).content||'';
+let dismissed='',busy=false,last=0;
+async function check(force){
+ if(busy||(!force&&Date.now()-last<60000))return;busy=true;last=Date.now();
+ try{const u=location.origin+location.pathname+'?fmc='+Date.now();
+  const r=await fetch(u,{cache:'no-store',headers:{Range:'bytes=0-4095'}});if(!r.ok&&r.status!==206)return;
+  let txt='';if(r.body&&r.body.getReader){const rd=r.body.getReader(),dec=new TextDecoder();while(txt.length<6000){const {value,done}=await rd.read();if(done)break;txt+=dec.decode(value,{stream:true});if(/name="fm-version"/.test(txt)&&/<\/head>|<script/i.test(txt))break}try{rd.cancel()}catch(e){}}else txt=(await r.text()).slice(0,6000);
+  const m=txt.match(/<meta\s+name="fm-version"\s+content="([^"]+)"/i);if(!m)return;const srv=m[1];
+  if(srv&&srv!==cur()&&srv!==dismissed)banner(srv);
+ }catch(e){}finally{busy=false}}
+function banner(v){
+ let b=document.getElementById('fm-newver');if(b){b.querySelector('b').textContent=v;return}
+ b=document.createElement('div');b.id='fm-newver';b.setAttribute('dir','rtl');
+ b.style.cssText='position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:50%;transform:translateX(-50%);z-index:2147483646;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;max-width:94vw;background:#1e3a8a;color:#fff;border-radius:14px;padding:10px 14px;box-shadow:0 10px 30px rgba(15,23,42,.35);font:800 13.5px Cairo,Tahoma,sans-serif';
+ b.innerHTML='<span>🔄 يوجد إصدار جديد (<b></b>) — احفظ ما تكتبه ثم حدّث</span><button type="button" data-a="go" style="border:0;border-radius:9px;padding:7px 14px;background:#fff;color:#1e3a8a;font:900 13px Cairo,sans-serif;cursor:pointer">تحديث الآن</button><button type="button" data-a="later" style="border:0;background:transparent;color:#c7d2fe;font:800 12.5px Cairo,sans-serif;cursor:pointer">لاحقاً</button>';
+ b.querySelector('b').textContent=v;document.body.appendChild(b);
+ b.querySelector('[data-a=go]').onclick=()=>{const u=new URL(location.href);u.searchParams.set('fmv',Date.now());location.replace(u.toString())};
+ b.querySelector('[data-a=later]').onclick=()=>{dismissed=v;b.remove()};
+}
+window.fmCheckVersion=()=>check(true);
+const start=()=>{setTimeout(()=>check(true),8000);setInterval(()=>{if(!document.hidden)check()},10*60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)check()});window.addEventListener('online',()=>check(true))};
+if(document.readyState==='complete')start();else window.addEventListener('load',start);
+})();
+
+</script>
+</body>
+</html>
