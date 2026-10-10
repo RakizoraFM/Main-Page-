@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V141">
+<meta name="fm-version" content="V142">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25527,9 +25527,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V141',date:'2026-10-10',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V142',date:'2026-10-10',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+ {v:'V142',d:'2026-10-10',t:'ملف المشرف في تطبيق الميدان',i:['تطبيق الميدان F6: صفحة «حسابي» تعرض تقييم المشرف بنفس معادلة المنصة، ومراجعة فترة مع مقارنة بفترة أخرى، ونسبة الاختراق، والمكررة والمعاد فتحها، ورسماً للمستلمة والمحلولة يومياً، وأكثر المدارس بلاغات','صورة شخصية، وتحديث رقم الجوال والبريد مع تحديثهما تلقائياً في قاعدة المدارس','الرئيسية: البلاغات التي تنتهي مهلتها خلال 3 ساعات، وتوجيه «ابدأ هنا» بأكثر البلاغات إلحاحاً','عند رفع ملف البلاغات للسحابة يُرسل تاريخ آخر بلاغ لكل منطقة حتى تُحسب المهلة في التطبيق بنفس طريقة المنصة','جدول المستخدمين يعرض الجوال والصورة، والتصدير يشمل الجوال','يتطلب تشغيل ملف supabase_setup.sql المحدَّث مرة واحدة']},
  {v:'V141',d:'2026-10-10',t:'إدارة المستخدمين',i:['إضافة مستخدم جديد من المنصة بكلمة مرور مؤقتة تُولَّد تلقائياً، مع نسخها أو إرسالها بواتساب','تعديل الاسم والدور والمناطق والتفعيل مباشرة في جدول المستخدمين، وإضافة أي اسم من البلاغات (أو كتابته) لأي دور','زر «🔑 كلمة مرور» لإعادة تعيين كلمة مرور مؤقتة جديدة','استيراد المستخدمين من Excel (إنشاء الجديد وتحديث الموجود) مع معاينة قبل التنفيذ وملف بكلمات المرور المؤقتة، وتصدير المستخدمين وقالب الاستيراد','عند أول دخول بكلمة مرور مؤقتة يُطلب من المستخدم تغييرها (المنصة وتطبيق الميدان وصفحة البدء)','يتطلب تشغيل ملف supabase_setup.sql المحدَّث مرة واحدة في Supabase']},
  {v:'V140',d:'2026-10-10',t:'رابط جاهز لتطبيق الميدان',i:['زر «📱 رابط تطبيق الميدان» يعطي الآن رابطاً كاملاً جاهزاً للإرسال بدلاً من كود الربط وحده','أزرار: نسخ الرابط، فتح التطبيق، إرسال عبر واتساب','العنوان يُحدَّد تلقائياً من عنوان المنصة، أو موقع GitHub Pages عند فتح المنصة من ملف محلي، ويمكن تغييره من «إعدادات متقدمة»']},
  {v:'V139',d:'2026-10-10',t:'هوية RakizoraFM',i:['اعتماد المنصة تحت اسم RakizoraFM — إدارة المرافق والأصول الذكية','شعار RakizoraFM في الشريط الجانبي وترويسة الصفحة وأيقونة المتصفح وشاشة تسجيل الدخول','اسم RakizoraFM في شريط تقارير PDF التنفيذية وفي تذييل التقارير المطبوعة وخصائص ملفات Excel المصدّرة','تطبيق الميدان: الشعار في الترويسة وشاشة الدخول']},
@@ -29531,6 +29532,8 @@ async function pushRegion(k){
  try{const T=rows.map(r=>ticketRow(r,k)).filter(x=>x.ticket_id);const uniq=[...new Map(T.map(x=>[x.ticket_id,x])).values()];
   syncNote('⬆ رفع البلاغات للسحابة…');await pushShared();
   await C.api.pushTickets(uniq,(a,b)=>syncNote(`⬆ رفع البلاغات ${fmt(a)} / ${fmt(b)}`));
+  /* V142: the file's latest ticket date, so the field app measures open tickets like the platform */
+  try{const mx=uniq.reduce((m,x)=>x.created_at&&x.created_at>m?x.created_at:m,'');if(mx)await C.api.setKV('fm_ref_date_'+k,mx)}catch(e){console.warn('ref date',e)}
   const del=await C.api.deleteTicketsNotIn(k,uniq.map(x=>x.ticket_id)).catch(()=>0);
   syncNote('☁️ متصل • آخر رفع '+new Date().toLocaleTimeString('ar-SA-u-ca-gregory',{hour:'2-digit',minute:'2-digit'}));toast(`تم رفع ${fmt(uniq.length)} بلاغ (${RN[k]||k}) للسحابة${del?' وحذف '+fmt(del)+' لم تعد في الملف':''} — يراها الفريق حسب صلاحياته`);
  }catch(e){toast('تعذر رفع البلاغات للسحابة: '+C.msg(e.message),'error');syncNote('⚠️ '+C.msg(e.message))}finally{pushing=false}}
@@ -29895,7 +29898,7 @@ function draw(box){
    <span class="fm125-src">${fmt(V.length)} من ${fmt(L.length)}</span><input type="file" accept=".xlsx,.xls,.csv" hidden data-t="file"></div>
   <div class="fm122-tw" style="max-height:none"><table class="fm122-t fm141-t"><thead><tr><th>المستخدم</th><th>الدور</th><th>اسمه في البلاغات</th><th>المناطق</th><th>مفعّل</th><th></th></tr></thead><tbody>
   ${V.map(u=>`<tr data-u="${esc(u.id)}" style="${u.role==='pending'?'background:#fffbeb':''}">
-   <td><input class="nm" data-f="full_name" value="${esc(u.full_name||'')}"><div class="fm125-src" dir="ltr" style="text-align:right">${esc(u.email||'')}</div>${u.must_change_pw?'<span class="fm141-flag">بانتظار تغيير كلمة المرور</span>':''}</td>
+   <td><div style="display:flex;gap:8px;align-items:flex-start">${u.avatar?`<img src="${esc(u.avatar)}" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex:none">`:''}<div style="flex:1"><input class="nm" data-f="full_name" value="${esc(u.full_name||'')}"><div class="fm125-src" dir="ltr" style="text-align:right">${esc(u.email||'')}${u.phone?' • '+esc(u.phone):''}</div></div></div>${u.must_change_pw?'<span class="fm141-flag">بانتظار تغيير كلمة المرور</span>':''}</td>
    <td><select data-f="role">${Object.entries(ROLE).map(([k,v])=>`<option value="${k}" ${u.role===k?'selected':''}>${v}</option>`).join('')}</select></td>
    <td data-names>${tagsHtml(u.person_names||[],u.id)}${datalist(u.id,u.role)}</td>
    <td>${['riyadh','qassim'].map(r=>`<label style="display:flex;gap:4px;align-items:center;font-weight:700;white-space:nowrap"><input type="checkbox" data-r="${r}" ${(u.regions||[]).includes(r)?'checked':''} style="width:auto">${RN[r]}</label>`).join('')}<div class="fm125-src">بدون اختيار = كل المناطق</div></td>
@@ -29973,8 +29976,8 @@ function needX(){if(window.XLSX&&XLSX.utils)return true;toast('مكتبة Excel 
 function save(rows,name,widths){const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=(widths||rows[0].map(()=>22)).map(w=>({wch:w}));ws['!views']=[{RTL:true}];const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};XLSX.utils.book_append_sheet(wb,ws,'المستخدمون');XLSX.writeFile(wb,name)}
 const today=()=>new Date().toISOString().slice(0,10);
 function exportUsers(){if(!needX())return;
- save([HEAD.concat(['بانتظار تغيير كلمة المرور','تاريخ الإنشاء']),...cache.map(cur).map(u=>[S(u.full_name),S(u.email),ROLE[u.role]||u.role,(u.regions||[]).map(r=>RN[r]||r).join('، ')||'الكل',(u.person_names||[]).join('، '),u.active!==false?'نعم':'لا',u.must_change_pw?'نعم':'',u.created_at?new Date(u.created_at).toLocaleDateString('ar-SA-u-ca-gregory'):''])],
-  `RakizoraFM-users-${today()}.xlsx`,[24,30,14,16,34,8,14,14]);toast('تم تصدير '+fmt(cache.length)+' مستخدم')}
+ save([HEAD.concat(['الجوال','بانتظار تغيير كلمة المرور','تاريخ الإنشاء']),...cache.map(cur).map(u=>[S(u.full_name),S(u.email),ROLE[u.role]||u.role,(u.regions||[]).map(r=>RN[r]||r).join('، ')||'الكل',(u.person_names||[]).join('، '),u.active!==false?'نعم':'لا',S(u.phone),u.must_change_pw?'نعم':'',u.created_at?new Date(u.created_at).toLocaleDateString('ar-SA-u-ca-gregory'):''])],
+  `RakizoraFM-users-${today()}.xlsx`,[24,30,14,16,34,8,14,14,14]);toast('تم تصدير '+fmt(cache.length)+' مستخدم')}
 function exportTemplate(){if(!needX())return;
  save([HEAD,['أحمد محمد','ahmed@example.com','مشرف','الرياض','أحمد محمد العتيبي','نعم'],['شركة المقاول','contractor@example.com','مقاول','الرياض، القصيم','مؤسسة البناء الحديث','نعم']],'RakizoraFM-users-template.xlsx',[24,30,14,16,34,8]);
  toast('الدور: '+Object.values(ROLE).filter(v=>v!=='بانتظار التفعيل').join(' / ')+' — افصل بين الأسماء والمناطق بفاصلة')}
