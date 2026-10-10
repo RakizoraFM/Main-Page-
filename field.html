@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F4">
+<meta name="fm-version" content="F5">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -126,7 +126,7 @@ const real={
  async signIn(email,pw){const c=await sb();return chk(await c.auth.signInWithPassword({email:S(email),password:pw}))},
  async signUp(email,pw,name){const c=await sb();return chk(await c.auth.signUp({email:S(email),password:pw,options:{data:{full_name:S(name)}}}))},
  async signOut(){const c=await sb();await c.auth.signOut()},
- async setPassword(pw){const c=await sb();return chk(await c.auth.updateUser({password:pw}))},
+ async setPassword(pw){const c=await sb();chk(await c.auth.updateUser({password:pw}));try{chk(await c.rpc('fm_password_changed'))}catch(e){}return true},
  async session(){const c=await sb();const {data}=await c.auth.getSession();return data?.session||null},
  async me(){const c=await sb();const {data:{user}}=await c.auth.getUser();if(!user)return null;const p=chk(await c.from('profiles').select('*').eq('id',user.id).maybeSingle());return p?Object.assign({},p,{email:p.email||user.email}):{id:user.id,email:user.email,role:'pending',person_names:[],regions:[]}},
  async listProfiles(){const c=await sb();return chk(await c.from('profiles').select('*').order('created_at'))},
@@ -232,6 +232,15 @@ function loginView(info){
 }
 function pendingView(){$('#app').innerHTML=`<div class="login"><div class="card"><div style="font-size:40px;text-align:center">⏳</div><h2>بانتظار التفعيل</h2><p>${esc(D.me?.email||'')}</p><div class="note">أبلغ مدير النظام ليحدد دورك واسمك في البلاغات، ثم اضغط «تحقق».</div><button class="big p" style="width:100%" id="re">تحقق</button><p><a href="#" class="link" id="out">تسجيل الخروج</a></p></div></div>`;
  $('#re').onclick=boot;$('#out').onclick=async e=>{e.preventDefault();await C.api.signOut().catch(()=>{});loginView()}}
+
+/* first sign-in with a temporary password set by the admin */
+function forcePwView(err){$('#app').innerHTML=`<div class="login"><div class="card"><img class="lg" src="${FM_BRAND.logo}" alt="${FM_BRAND.name}"><h2>تغيير كلمة المرور</h2><p>${esc(myName())} — هذا أول دخول لك، اختر كلمة مرور خاصة بك</p>
+  <label class="l">كلمة المرور الجديدة</label><input class="in" id="fp-1" type="password" dir="ltr" autocomplete="new-password"><label class="l">تأكيد كلمة المرور</label><input class="in" id="fp-2" type="password" dir="ltr" autocomplete="new-password">
+  ${err?`<div class="note" style="border-color:#fecaca;background:#fef2f2;color:var(--bad);margin-top:10px">${esc(err)}</div>`:''}
+  <button class="big p" style="width:100%;margin-top:16px" id="fp-go">حفظ والمتابعة</button><p style="margin-top:14px"><a href="#" class="link" id="fp-out">تسجيل الخروج</a></p></div></div>`;
+ $('#fp-out').onclick=async e=>{e.preventDefault();await C.api.signOut().catch(()=>{});loginView()};
+ $('#fp-go').onclick=async()=>{const a=$('#fp-1').value;if(a.length<8)return forcePwView('كلمة المرور 8 أحرف على الأقل');if(a!==$('#fp-2').value)return forcePwView('كلمتا المرور غير متطابقتين');
+  const b=$('#fp-go');b.disabled=true;try{await C.api.setPassword(a);D.me.must_change_pw=false;toast('تم تغيير كلمة المرور');boot()}catch(e){forcePwView(C.msg(e.message))}}}
 
 async function pull(silent){
  const [T,W,KV]=await Promise.all([C.api.pullTickets(null),C.api.pullWork(null),C.api.getKV(['fm_settings_v122','fm_work_rules_v135','fm_school_master_db_v1']).catch(()=>[])]);
@@ -418,7 +427,7 @@ function profileView(){
  qBanner();bindTop();
  $('#p-ns').onclick=async()=>{const n=S($('#p-n').value);if(!n){toast('اكتب الاسم','w');return}if(n===S(me.full_name)){toast('لا توجد تعديلات','w');return}
   const b=$('#p-ns');b.disabled=true;try{await C.api.saveProfile(me.id,{full_name:n});D.me.full_name=n;toast('تم حفظ الاسم');profileView()}catch(e){toast(C.msg(e.message),'e');b.disabled=false}};
- $('#p-ps').onclick=async()=>{const a=$('#p-p1').value,b2=$('#p-p2').value;if(a.length<6){toast('كلمة المرور 6 أحرف على الأقل','w');return}if(a!==b2){toast('كلمتا المرور غير متطابقتين','w');return}
+ $('#p-ps').onclick=async()=>{const a=$('#p-p1').value,b2=$('#p-p2').value;if(a.length<8){toast('كلمة المرور 8 أحرف على الأقل','w');return}if(a!==b2){toast('كلمتا المرور غير متطابقتين','w');return}
   const b=$('#p-ps');b.disabled=true;try{await C.api.setPassword(a);toast('تم تغيير كلمة المرور');$('#p-p1').value=$('#p-p2').value=''}catch(e){toast(C.msg(e.message),'e')}b.disabled=false};
  $('#p-sync').onclick=async()=>{toast('جارٍ المزامنة…');try{await flush();await pull(true);toast('تمت المزامنة')}catch(e){toast(C.msg(e.message),'e')}};
  $('#p-out').onclick=signOutNow;
@@ -506,6 +515,7 @@ async function boot(){
  $('#app').innerHTML='<div class="empty" style="padding-top:30vh">⏳ جارٍ التحميل…</div>';
  try{const s=await C.api.session();if(!s){loginView();return}D.me=await C.api.me();if(!D.me){loginView();return}
   if(D.me.role==='pending'||D.me.active===false){pendingView();return}
+  if(D.me.must_change_pw){forcePwView();return}
   await flush();await pull();
   try{C.api.subscribe(()=>{clearTimeout(boot.t);boot.t=setTimeout(()=>pull(true).catch(()=>{}),1500)})}catch(e){}
  }catch(e){if(fromCache()){toast('بدون اتصال — تعرض آخر بيانات محفوظة','w');main()}else{toast(C.msg(e.message),'e');loginView()}}
