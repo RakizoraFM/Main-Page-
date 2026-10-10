@@ -8,6 +8,7 @@ The owner is Mohamed (Facility Program Manager). Reply to him in **Arabic**, con
 |---|---|
 | `index.html` | The whole desktop platform. It is a single offline-capable HTML file (~1.8 MB) with all CSS and JS inline. |
 | `field.html` | The mobile field app (FM Field): a small standalone page for supervisors and contractors. |
+| `start.html` | The start page: one sign-in for every role, then admin/engineer/viewer go to `index.html` and supervisor/contractor go to `field.html`. Shares the cloud config and session with both. `DEFAULT_CFG` holds the site's Supabase URL and anon key (never a service_role key). |
 | `supabase_setup.sql` | Supabase schema and Row Level Security. The owner runs it in the Supabase SQL editor; it is idempotent. |
 
 GitHub Pages publishes the `main` branch. Every merge to `main` goes live within about a minute.
@@ -20,7 +21,7 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
   2. `const APP={version:'V1NN',date:'YYYY-MM-DD'` in the APP script.
   3. A new first entry after `const CHANGELOG=[` in this shape: `{v:'V1NN',d:'YYYY-MM-DD',t:'عنوان',i:['تغيير 1','تغيير 2']},` with the text in Arabic.
 
-  For `field.html`, bump `<meta name="fm-version" content="F…">`.
+  For `field.html`, bump `<meta name="fm-version" content="F…">`; for `start.html`, bump `content="S…"`.
 - **First script must stay first:** `fm-v116-health-capture` records load errors into `window.__fmHealth`.
 - **Key globals:**
   - `state` holds `rawTickets`, `filteredTickets`, `columnsMap{ticketId,school,status,priority,date,category,subCategory,description,resolvedDate?}` and `detectedMaxDate`.
