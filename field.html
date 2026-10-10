@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F6">
+<meta name="fm-version" content="F7">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -116,6 +116,15 @@ textarea.in{min-height:90px;line-height:1.8}
 .ctip i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:5px}
 .tsch{display:block;width:100%;text-align:start;border:0;background:none;padding:8px 0;border-bottom:1px solid var(--line);color:var(--ink)}.tsch:last-child{border-bottom:0}
 .tsch .r1{display:flex;justify-content:space-between;gap:8px;font-size:14px}.tsch .tb{height:6px;background:#f1f5f9;border-radius:99px;margin:5px 0 4px;overflow:hidden}.tsch .tb i{display:block;height:100%;background:#2a78d6;border-radius:99px}
+.goal .r1{display:flex;justify-content:space-between;align-items:center}.gnum{font-size:13.5px;font-weight:800;margin:6px 0}.gnum b{font-size:24px;font-weight:900}
+.gbar{height:10px;background:#f1f5f9;border-radius:99px;overflow:hidden;margin-bottom:6px}.gbar i{display:block;height:100%;background:var(--pri);border-radius:99px}.gbar i.ok{background:var(--ok)}.gbar i.warn{background:#d97706}
+.rank{margin-top:10px;border-top:1px dashed var(--line);padding-top:10px;font-size:13.5px}.dots{position:relative;height:18px;margin:8px 4px 4px;background:linear-gradient(90deg,#fee2e2,#fef3c7,#dcfce7);border-radius:99px}
+.dots i{position:absolute;top:4px;width:10px;height:10px;margin-right:-5px;border-radius:50%;background:#94a3b8;border:1.5px solid #fff}.dots i.me{background:var(--pri);width:14px;height:14px;top:2px;margin-right:-7px;z-index:2}
+.abar{position:fixed;top:calc(env(safe-area-inset-top) + 8px);inset-inline:8px;z-index:60;background:#7f1d1d;color:#fff;border-radius:14px;padding:10px 12px;display:flex;gap:8px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.abar div{flex:1;min-width:0}.abar small{display:block;font-size:12px;opacity:.9;font-weight:700}.abar button{border:0;border-radius:9px;padding:7px 10px;font-weight:900;background:#fff;color:#7f1d1d}.abar button[data-a=x]{background:rgba(255,255,255,.15);color:#fff}
+.plan{list-style:none;margin:10px 0 0;padding:0}.plan li{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px}.plan .r1{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:800;font-size:13.5px}.sw input{width:22px;height:22px}
+.plan-btn{width:100%;margin-bottom:10px;background:#0f172a!important;color:#fff!important}
 .pop .pb button,.pop .pb a{flex:1;border:0;border-radius:8px;padding:6px;background:#eff6ff;color:#1d4ed8;font:800 12px Cairo,sans-serif;text-align:center;text-decoration:none}
 </style>
 </head>
@@ -207,7 +216,7 @@ const XST={reopened:{k:'reopened',t:'أُعيد فتحه',ic:'↩️'},cancelled
 const stageOf=k=>STAGES.find(s=>s.k===k)||XST[k]||STAGES[0];
 const done=k=>k==='resolved'||k==='closed'||k==='cancelled';
 const CAUSES=['تلف / عطل فني','انتهاء العمر الافتراضي','سوء استخدام','تخريب','نقص صيانة وقائية','عوامل جوية','خطأ تركيب سابق','أخرى'];
-const D={me:null,tickets:[],work:new Map(),events:new Map(),hours:{'طارئ':24,'عالي':48,'متوسط':72},rules:{desc:true,photo:false,cause:false},db:[],ref:{},p:{k:'m',from:'',to:'',cmp:'prev',cfrom:'',cto:''},tab:'open',q:'',cur:null,view:'home',f:{pri:'',stage:'',cat:'',school:'',sort:'sla',ids:null},fOpen:false,s:{mode:'list',sort:'open',openOnly:true},myPos:null,syncAt:null};
+const D={me:null,tickets:[],work:new Map(),events:new Map(),hours:{'طارئ':24,'عالي':48,'متوسط':72},rules:{desc:true,photo:false,cause:false},db:[],ref:{},rank:{},myRank:null,plan:{n:5},p:{k:'m',from:'',to:'',cmp:'prev',cfrom:'',cto:''},tab:'open',q:'',cur:null,view:'home',f:{pri:'',stage:'',cat:'',school:'',sort:'sla',ids:null},fOpen:false,s:{mode:'list',sort:'open',openOnly:true},myPos:null,syncAt:null};
 const key=t=>t.region+':'+t.ticket_id;
 const canClose=()=>['admin','engineer'].includes(D.me?.role);
 const canEdit=()=>['admin','engineer','supervisor','contractor'].includes(D.me?.role);
@@ -268,19 +277,21 @@ function forcePwView(err){$('#app').innerHTML=`<div class="login"><div class="ca
 /* reference date for open tickets (the platform's detectedMaxDate): pushed by the admin per region, otherwise the newest ticket */
 function refFallback(){Object.keys(RN).forEach(r=>{if(D.ref[r])return;let mx=0;D.tickets.forEach(t=>{if(t.region===r&&t.created_at){const c=Date.parse(t.created_at);if(c>mx)mx=c}});if(mx)D.ref[r]=mx})}
 async function pull(silent){
- const [T,W,KV]=await Promise.all([C.api.pullTickets(null),C.api.pullWork(null),C.api.getKV(['fm_settings_v122','fm_work_rules_v135','fm_school_master_db_v1','fm_ref_date_riyadh','fm_ref_date_qassim']).catch(()=>[])]);
- D.tickets=T;D.ref={};D.work=new Map(W.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();W.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});
+ const [T,W,KV]=await Promise.all([C.api.pullTickets(null),C.api.pullWork(null),C.api.getKV(['fm_settings_v122','fm_work_rules_v135','fm_school_master_db_v1','fm_ref_date_riyadh','fm_ref_date_qassim','fm_rank_riyadh','fm_rank_qassim']).catch(()=>[])]);
+ D.tickets=T;D.ref={};D.rank={};D.work=new Map(W.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();W.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});
  KV.forEach(x=>{let v=x.value;if(typeof v==='string')try{v=JSON.parse(v)}catch(e){}
   if(x.key==='fm_settings_v122'&&v&&v.hours)Object.keys(D.hours).forEach(h=>{if(+v.hours[h]>0)D.hours[h]=+v.hours[h]});
   if(x.key==='fm_work_rules_v135'&&v)D.rules={desc:v.desc!==false,photo:!!v.photo,cause:!!v.cause};
   if(x.key==='fm_school_master_db_v1'&&Array.isArray(v))D.db=v;
+  if(/^fm_rank_/.test(x.key)&&v&&typeof v==='object')D.rank[x.key.slice(8)]=v;
   if(/^fm_ref_date_/.test(x.key)&&v){const ms=Date.parse(v);if(ms)D.ref[x.key.slice(12)]=ms}});
  refFallback();MEMO=new Map();
- try{localStorage.setItem('fmf_cache_v1',JSON.stringify({at:Date.now(),me:D.me,tickets:T,work:W.work,events:W.events,hours:D.hours,rules:D.rules,db:D.db,ref:D.ref}))}catch(e){}
+ try{localStorage.setItem('fmf_cache_v1',JSON.stringify({at:Date.now(),me:D.me,tickets:T,work:W.work,events:W.events,hours:D.hours,rules:D.rules,db:D.db,ref:D.ref,rank:D.rank}))}catch(e){}
  D.syncAt=Date.now();
  if(silent&&D.cur)ticketView(D.cur,true);else main();
+ loadMyRank().then(()=>{if(D.view==='me'&&!D.cur&&D.myRank){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});checkAlerts(false);
 }
-function fromCache(){try{const o=JSON.parse(localStorage.getItem('fmf_cache_v1')||'null');if(!o)return false;D.me=D.me||o.me;D.syncAt=o.at||null;D.ref=o.ref||{};D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
+function fromCache(){try{const o=JSON.parse(localStorage.getItem('fmf_cache_v1')||'null');if(!o)return false;D.me=D.me||o.me;D.syncAt=o.at||null;D.ref=o.ref||{};D.rank=o.rank||{};D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
 
 function shell(inner,title,sub,back){return `<div class="top">${back?'<button id="bk">→</button>':`<img class="bm" src="${FM_BRAND.mark}" alt="${FM_BRAND.name}">`}<h1>${title}<small>${sub||''}</small></h1>${back?'':'<button id="rf" title="تحديث">🔄</button><button id="lo" title="خروج">خروج</button>'}</div><div class="wrap"><div class="q" id="qb"></div>${inner}</div>`}
 /* ---------- main screens (F4): home, tickets, schools, profile ---------- */
@@ -398,6 +409,8 @@ function homeView(){
    ${tile('h3','🔥','تنتهي مهلتها خلال 3 ساعات',fmt(B.h3.length),B.h3.length?'bad':'')}${tile('soon','⏰','خلال 24 ساعة',fmt(B.soon.length),B.soon.length?'warn':'')}
    ${tile('today','✅','أُنجز اليوم',fmt(B.today.length),'ok')}${tile('me','⭐','تقييمي ('+R.label+')',fmt(R.score,R.score%1?1:0),'r-'+R.cls)}</div>
   <div class="card guide">${tip}</div>
+  ${goalCard()}
+  <button class="big plan-btn" id="h-plan">🗓️ خطة زيارات اليوم — أكثر المدارس إلحاحاً كمسار</button>
   <div class="card"><h3>📈 هذا الشهر</h3><div class="stats">
    <div><b>${fmt(m.n)}</b><span>بلاغ مُنجز</span></div>
    <div><b class="${m.pct==null?'':m.pct>=90?'t-ok':m.pct>=75?'t-warn':'t-bad'}">${m.pct==null?'—':fmt(m.pct)+'%'}</b><span>ضمن المهلة</span></div>
@@ -408,6 +421,7 @@ function homeView(){
  qBanner();bindTop();bindCards();
  document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{if(b.dataset.go==='me')return go('me');D.tab=b.dataset.go;D.f.ids=null;go('list')});
  $('#h-all')&&($('#h-all').onclick=()=>{D.tab='open';D.f.ids=null;go('list')});
+ bindGoal();$('#h-plan').onclick=()=>{D.s.mode='plan';go('schools')};
 }
 
 const SORTS=[['sla','الأقرب للتأخر'],['new','الأحدث'],['old','الأقدم'],['school','المدرسة']];
@@ -464,19 +478,20 @@ function schoolsView(){
  rows.sort(by);
  const noXY=rows.filter(r=>!r.xy).length;
  $('#app').innerHTML=shell(`
-  <div class="tabs"><button data-m="list" class="${s.mode==='list'?'on':''}">📋 قائمة</button><button data-m="map" class="${s.mode==='map'?'on':''}">🗺️ خريطة</button></div>
-  <div class="srow"><select class="in" id="s-so"><option value="open" ${s.sort==='open'?'selected':''}>الأكثر تأخراً وبلاغات مفتوحة</option><option value="near" ${s.sort==='near'?'selected':''}>الأقرب لموقعي</option><option value="name" ${s.sort==='name'?'selected':''}>الاسم</option></select>
+  <div class="tabs"><button data-m="list" class="${s.mode==='list'?'on':''}">📋 قائمة</button><button data-m="map" class="${s.mode==='map'?'on':''}">🗺️ خريطة</button><button data-m="plan" class="${s.mode==='plan'?'on':''}">🗓️ خطة اليوم</button></div>
+  ${s.mode==='plan'?planHtml():`<div class="srow"><select class="in" id="s-so"><option value="open" ${s.sort==='open'?'selected':''}>الأكثر تأخراً وبلاغات مفتوحة</option><option value="near" ${s.sort==='near'?'selected':''}>الأقرب لموقعي</option><option value="name" ${s.sort==='name'?'selected':''}>الاسم</option></select>
    <button class="fbtn ${D.myPos?'on':''}" id="s-me" title="تحديد موقعي">📍</button></div>
   <label class="chk"><input type="checkbox" id="s-oo" ${s.openOnly?'checked':''}> المدارس التي بها بلاغات مفتوحة فقط <span class="muted">(${fmt(rows.length)} من ${fmt(all)})</span></label>
   ${s.mode==='map'?`<div id="smap" class="smap"></div>${noXY?`<div class="muted" style="margin-top:6px">${fmt(noXY)} مدرسة بدون إحداثيات لا تظهر على الخريطة — تظهر في القائمة.</div>`:''}`
    :rows.length?rows.map(r=>`<div class="card sc"><div class="r1"><b>${esc(r.name)}</b>${r.d!=null?`<span class="chip">📍 ${distTxt(r.d)}</span>`:''}</div>
     <div class="chips">${r.late?`<span class="chip c-bad">⛔ ${fmt(r.late)} متأخر</span>`:''}${r.soon?`<span class="chip c-warn">⏰ ${fmt(r.soon)} خلال 24 س</span>`:''}<span class="chip ${r.open?'c-pri':'c-ok'}">📂 ${fmt(r.open)} مفتوح</span><span class="chip">الكل ${fmt(r.total)}</span></div>
     <div class="btns" style="margin-top:10px"><button class="big" data-sch="${esc(r.name)}">📋 البلاغات</button><a class="big" href="${navUrl(r)}" target="_blank" rel="noopener">🗺️ الاتجاهات</a></div></div>`).join('')
-   :'<div class="empty">لا توجد مدارس مطابقة</div>'}`
+   :'<div class="empty">لا توجد مدارس مطابقة</div>'}`}`
  +navHtml(),'المدارس',`${fmt(all)} مدرسة`);
  qBanner();bindTop();
  const openSchool=n=>{D.f.school=n;D.f.ids=null;const r=schoolRows().find(x=>x.name===n);D.tab=r&&r.open?'open':'all';go('list')};
  document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{s.mode=b.dataset.m;schoolsView()});
+ if(s.mode==='plan'){$('#pl-n').onchange=e=>{D.plan.n=+e.target.value;schoolsView()};$('#pl-me').onclick=async()=>{if(await locate())schoolsView()};document.querySelectorAll('[data-sch]').forEach(b=>b.onclick=()=>openSchool(b.dataset.sch));return}
  $('#s-so').onchange=async e=>{s.sort=e.target.value;if(s.sort==='near'&&!D.myPos)await locate();schoolsView()};
  $('#s-oo').onchange=e=>{s.openOnly=e.target.checked;schoolsView()};
  $('#s-me').onclick=async()=>{if(await locate()){s.sort='near'};schoolsView()};
@@ -570,6 +585,7 @@ function profileView(){
   <div class="card hello"><label class="avw" title="تغيير الصورة">${avatarHtml(me)}<span class="cam">📷</span><input type="file" accept="image/*" id="p-av" hidden></label><div><b>${esc(name)}</b><span>${esc(C.ROLE[me.role]||me.role||'')}${regions?' • '+esc(regions):''}</span><small dir="ltr" style="text-align:right">${esc(me.email||'')}${me.phone?' • '+esc(me.phone):''}</small></div></div>
   <div class="card"><h3>⭐ تقييمي الحالي</h3><div class="rate"><div class="rv r-${R.cls}"><b>${fmt(R.score,R.score%1?1:0)}</b><span>${R.label}</span></div><div class="rbars">${bar('نسبة الإنجاز',R.comp,'35%')}${bar('الالتزام بالمهلة',R.sla,'35%')}${bar('البلاغات الحرجة',R.crit,'15%')}${bar('تصفية العوالق',R.pend,'15%')}</div></div>
    <div class="muted" style="margin-top:6px">نفس معادلة تقييم المشرفين في المنصة، على كل بلاغاتك (${fmt(R.total)} بلاغ).</div>
+   ${rankHtml()}
    ${R.total?`<div class="guide" style="margin-top:8px">💡 لرفع تقييمك: ركّز على <b>${weakest[1]}</b> — ${weakest[2]}.</div>`:''}</div>
   <div class="card"><h3>📅 مراجعة فترة</h3>
    <div class="fgrid"><label>الفترة<select class="in" id="p-k">${PRESETS.map(([k,t])=>`<option value="${k}" ${p.k===k?'selected':''}>${t}</option>`).join('')}</select></label>
@@ -585,6 +601,7 @@ function profileView(){
     ${kpi('reo','↩️ أُعيد فتحها',fmt(cur.reo.size),delta(cur.reo.size,prv&&prv.reo.size,true),cur.reo.size)}
     ${kpi('','⭐ تقييم الفترة',fmt(cur.rate.score,cur.rate.score%1?1:0),delta(cur.rate.score,prv&&prv.rate.score,false,true),0)}
     ${kpi('','📋 على بلاغات الفترة',fmt(cur.rate.total)+' بلاغ','',0)}</div>
+   <button class="big" id="p-pdf" style="width:100%;margin-bottom:8px">📄 تقرير PDF لهذه الفترة</button>
    <div class="muted">اضغط على أي رقم لعرض بلاغاته. «المكررة»: بلاغات في نفس المدرسة بوصف متطابق أو متشابه بنسبة 50% فأكثر — نفس قاعدة المنصة.</div></div>
   <div class="card"><h3>📊 المستلمة والمحلولة ${S1.step>1?'أسبوعياً':'يومياً'}</h3>
    <div class="lg"><span><i style="background:#2a78d6"></i>مستلمة (${fmt(sR)})</span><span><i style="background:#eb6834"></i>محلولة (${fmt(sZ)})</span><button class="link" id="p-tbl" style="border:0;background:none">عرض كجدول</button></div>
@@ -597,6 +614,8 @@ function profileView(){
    <div class="muted" style="margin-top:4px">تغيير البريد يتطلب الضغط على رابط التأكيد الذي يصلك على البريد الجديد.</div></div>
   <div class="card"><h3>✏️ الاسم الظاهر</h3><div style="display:flex;gap:8px"><input class="in" id="p-n" value="${esc(me.full_name||'')}" autocomplete="name"><button class="big p" id="p-ns" style="flex:none;padding:10px 16px">حفظ</button></div></div>
   <div class="card"><h3>🔑 تغيير كلمة المرور</h3><input class="in" id="p-p1" type="password" dir="ltr" placeholder="كلمة المرور الجديدة" autocomplete="new-password"><input class="in" id="p-p2" type="password" dir="ltr" placeholder="تأكيد كلمة المرور" autocomplete="new-password" style="margin-top:8px"><button class="big" id="p-ps" style="width:100%;margin-top:10px">تغيير كلمة المرور</button></div>
+  <div class="card"><h3>🔔 التنبيهات</h3><label class="sw"><span>نبّهني عند اقتراب بلاغ من الاختراق (أقل من 3 ساعات)</span><input type="checkbox" id="p-al" ${notifOn()?'checked':''}></label>
+   <div class="muted" style="margin-top:6px">${'Notification' in window?(Notification.permission==='denied'?'⚠️ الإشعارات محظورة في إعدادات المتصفح — سيظهر التنبيه داخل التطبيق فقط.':'يظهر إشعار على الجهاز وتنبيه داخل التطبيق.'):'يظهر التنبيه داخل التطبيق.'} يعمل التنبيه ما دام التطبيق مفتوحاً (ولو في الخلفية).</div></div>
   <div class="card"><h3>⚙️ التطبيق</h3><div class="kv"><span>آخر مزامنة</span><b>${D.syncAt?dts(D.syncAt):'—'}</b><span>بانتظار الإرسال</span><b>${fmt(qLoad().length)} تحديث</b><span>الإصدار</span><b>${esc(ver)}</b></div>
    <div class="btns" style="margin-top:12px"><button class="big" id="p-sync">🔄 مزامنة الآن</button><a class="big" href="start.html">🏠 صفحة البدء</a></div>
    <button class="big" id="p-out" style="width:100%;margin-top:8px;color:var(--bad)">🚪 تسجيل الخروج</button></div>`
@@ -623,7 +642,101 @@ function profileView(){
   const b2=$('#p-ps');b2.disabled=true;try{await C.api.setPassword(x);toast('تم تغيير كلمة المرور');$('#p-p1').value=$('#p-p2').value=''}catch(er){toast(C.msg(er.message),'e')}b2.disabled=false};
  $('#p-sync').onclick=async()=>{toast('جارٍ المزامنة…');try{await flush();await pull(true);toast('تمت المزامنة')}catch(er){toast(C.msg(er.message),'e')}};
  $('#p-out').onclick=signOutNow;
+ $('#p-pdf').onclick=reportPdf;
+ $('#p-al').onchange=async e=>{await setAlerts(e.target.checked);re()};
 }
+/* ---------- F7: weekly goal, anonymous ranking, near-breach alerts, PDF report, today's visit plan ---------- */
+const weekStart=()=>{const t=d0(new Date());return addD(t,-t.getDay())};
+const uidKey=k=>k+'_'+(D.me?.id||'me');
+const lsGet=(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}};
+const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+/* weekly goal: closed this week vs a target; the suggestion is the average of the last 4 weeks + 10% */
+function goalInfo(){const ws=weekStart(),done=D.tickets.filter(t=>isClosedP(t)&&inR(resAt(t),ws,addD(new Date(),1))).length;
+ const past=[1,2,3,4].map(i=>D.tickets.filter(t=>isClosedP(t)&&inR(resAt(t),addD(ws,-7*i),addD(ws,-7*(i-1)))).length);
+ const sug=Math.max(5,Math.round(past.reduce((a,b)=>a+b,0)/4*1.1));const goal=+lsGet(uidKey('fmf_goal'),0)||sug;
+ const day=new Date().getDay()+1,expect=Math.round(goal*day/7);return {done,goal,sug,custom:!!lsGet(uidKey('fmf_goal'),0),pct:Math.min(100,Math.round(done*100/goal)),behind:done<expect,expect,daysLeft:7-day}}
+function goalCard(){const g=goalInfo();return `<div class="card goal"><div class="r1"><h3 style="margin:0">🎯 هدف الأسبوع</h3><button class="link" id="g-ed" style="border:0;background:none">تعديل</button></div>
+ <div class="gnum"><b>${fmt(g.done)}</b> / ${fmt(g.goal)} بلاغ مُغلق</div><div class="gbar"><i style="width:${g.pct}%" class="${g.pct>=100?'ok':g.behind?'warn':''}"></i></div>
+ <div class="muted">${g.pct>=100?'👏 حققت هدف الأسبوع':g.behind?`أنت متأخر عن الوتيرة — المتوقع حتى اليوم ${fmt(g.expect)}، تبقّى ${fmt(g.goal-g.done)} في ${fmt(g.daysLeft+1)} يوم`:`على الطريق الصحيح — تبقّى ${fmt(g.goal-g.done)} بلاغ`}${g.custom?'':` • الهدف مقترح من متوسط أسابيعك السابقة`}</div></div>`}
+function bindGoal(){const b=$('#g-ed');if(!b)return;b.onclick=()=>{const g=goalInfo(),v=prompt('هدف الأسبوع (عدد البلاغات المغلقة)',g.goal);if(v===null)return;const n=Math.round(+v);
+ if(!n||n<1){lsSet(uidKey('fmf_goal'),0)}else lsSet(uidKey('fmf_goal'),n);main()}}
+
+/* ranking published by the platform at the last upload: find my rank through the hash of my name */
+async function sha(t){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function loadMyRank(){D.myRank=null;if(!(window.crypto&&crypto.subtle))return;const names=(D.me?.person_names||[]).map(S).filter(Boolean);if(!names.length)return;
+ const hs=await Promise.all(names.map(sha));let best=null;
+ Object.entries(D.rank||{}).forEach(([reg,o])=>{if(!o||!o.ranks)return;hs.forEach(h=>{const x=o.ranks[h];if(x&&(!best||x.r<best.r))best={reg,r:x.r,s:x.s,n:o.n,at:o.at,scores:o.scores||[]}})});D.myRank=best}
+function rankHtml(){const k=D.myRank;if(!k)return '';const top=Math.round(k.r*100/Math.max(1,k.n));
+ return `<div class="rank"><div><b>🏅 ترتيبك ${fmt(k.r)} من ${fmt(k.n)}</b> بين مشرفي ${esc(RN[k.reg]||k.reg)}${top<=25?' — ضمن أفضل الربع 👏':''}</div>
+  <div class="dots" title="درجات المشرفين بدون أسماء">${k.scores.map(v=>`<i class="${v===k.s?'me':''}" style="right:${100-Math.max(0,Math.min(100,v))}%"></i>`).join('')}</div>
+  <div class="muted">حسب آخر رفع للملف (${dts(k.at)}) — بدرجتك وقتها ${fmt(k.s,k.s%1?1:0)}. لا تظهر أسماء المشرفين الآخرين.</div></div>`}
+
+/* near-breach alerts: checked every 5 minutes while the app is open (also in a background tab) */
+const NKEY=()=>uidKey('fmf_notified');
+const notifOn=()=>!!lsGet(uidKey('fmf_alerts'),false);
+async function setAlerts(on){if(on&&'Notification' in window&&Notification.permission==='default'){try{await Notification.requestPermission()}catch(e){}}lsSet(uidKey('fmf_alerts'),!!on);if(on)checkAlerts(true)}
+function checkAlerts(force){if(!notifOn()||!D.tickets.length)return;const sent=lsGet(NKEY(),{}),now=Date.now();let fresh=[];
+ Object.keys(sent).forEach(k=>{if(now-sent[k]>2*864e5)delete sent[k]});
+ items().filter(isH3).forEach(x=>{const k=key(x.t);if(!sent[k]){sent[k]=now;fresh.push(x)}});lsSet(NKEY(),sent);
+ if(!fresh.length){if(force)toast('التنبيهات مفعّلة — لا توجد بلاغات قريبة من الاختراق الآن');return}
+ const title=fresh.length>1?`⏰ ${fmt(fresh.length)} بلاغات تقترب من الاختراق`:'⏰ بلاغ يقترب من الاختراق',body=fresh.slice(0,3).map(x=>`${x.t.ticket_id} — ${x.t.school||''} — تبقّى ${fmt(Math.max(0,x.s.rem),1)} س`).join('\n');
+ let shown=false;try{if('Notification' in window&&Notification.permission==='granted'){const n=new Notification(title,{body,icon:FM_BRAND.mark,tag:'fmf-h3',renotify:true});n.onclick=()=>{window.focus();D.tab='h3';D.f.ids=null;go('list');n.close()};shown=true}}catch(e){}
+ try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}
+ alertBar(title,body,shown)}
+function alertBar(title,body){document.getElementById('fmf-alert')?.remove();const b=document.createElement('div');b.id='fmf-alert';b.className='abar';
+ b.innerHTML=`<div><b>${esc(title)}</b><small>${esc(body).replace(/\n/g,'<br>')}</small></div><button data-a="go">عرض</button><button data-a="x">✕</button>`;document.body.appendChild(b);
+ b.querySelector('[data-a=go]').onclick=()=>{b.remove();D.tab='h3';D.f.ids=null;go('list')};b.querySelector('[data-a=x]').onclick=()=>b.remove()}
+setInterval(()=>checkAlerts(false),5*6e4);
+
+/* printable report of the selected period (the browser saves it as PDF) */
+function reportPdf(){const p=D.p,[a,b]=range(p.k,p.from,p.to),[ca,cb]=cmpRange(a,b),cur=pstats(a,b),prv=p.cmp==='none'?null:pstats(ca,cb),R=rating(D.tickets),S1=series(a,b),me=D.me||{};
+ const row=(l,v,pv)=>`<tr><td>${l}</td><td><b>${v}</b></td>${prv?`<td>${pv}</td>`:''}</tr>`;
+ const top=(()=>{const m=new Map();cur.rec.forEach(t=>{const s=S(t.school)||'—';m.set(s,(m.get(s)||0)+1)});return [...m.entries()].sort((x,y)=>y[1]-x[1]).slice(0,10)})();
+ const br=cur.rec.filter(t=>slaP(t).breached).slice(0,40);
+ const html=`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقرير ${esc(myName())} — ${label(a,b)}</title>
+ <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;900&display=swap" rel="stylesheet">
+ <style>body{font-family:Cairo,Tahoma,sans-serif;color:#0f172a;margin:24px;font-size:13px}h1{font-size:20px;margin:0}h2{font-size:15px;margin:18px 0 6px;border-bottom:2px solid #e2e8f0;padding-bottom:4px}
+ .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #2563eb;padding-bottom:10px}.hd img{height:56px}.mut{color:#64748b}
+ table{width:100%;border-collapse:collapse}td,th{border:1px solid #e2e8f0;padding:5px 8px;text-align:right}th{background:#f8fafc}.big{font-size:30px;font-weight:900}
+ .chart{direction:ltr}.chart .gl{stroke:#eef2f7}.chart .ax{fill:#64748b;font:600 10px Cairo,Tahoma}.chart .ln{fill:none;stroke-width:2}.chart .xh,.chart .dt,.chart .hit{display:none}
+ .lg i{display:inline-block;width:12px;height:3px;margin-left:4px;vertical-align:middle}@media print{body{margin:10mm}}</style></head><body>
+ <div class="hd"><div><h1>تقرير أداء — ${esc(myName())}</h1><div class="mut">${esc(C.ROLE[me.role]||'')} • ${esc((me.regions||[]).map(r=>RN[r]||r).join('، '))} • الفترة: ${label(a,b)}${prv?` • مقارنة: ${label(ca,cb)}`:''}</div></div><img src="${FM_BRAND.logo}" alt=""></div>
+ <h2>التقييم الحالي (معادلة المنصة)</h2><div><span class="big">${fmt(R.score,R.score%1?1:0)}</span> — ${R.label}${D.myRank?` • الترتيب ${fmt(D.myRank.r)} من ${fmt(D.myRank.n)}`:''}</div>
+ <table><tr><th>المعيار</th><th>الدرجة</th></tr><tr><td>نسبة الإنجاز (35%)</td><td>${fmt(R.comp,1)}%</td></tr><tr><td>الالتزام بالمهلة (35%)</td><td>${fmt(R.sla,1)}%</td></tr><tr><td>البلاغات الحرجة (15%)</td><td>${fmt(R.crit,1)}%</td></tr><tr><td>تصفية العوالق (15%)</td><td>${fmt(R.pend,1)}%</td></tr></table>
+ <h2>مؤشرات الفترة</h2><table><tr><th>المؤشر</th><th>الفترة</th>${prv?'<th>المقارنة</th>':''}</tr>
+ ${row('البلاغات المستلمة',fmt(cur.rec.length),prv&&fmt(prv.rec.length))}${row('البلاغات المغلقة',fmt(cur.cls.length),prv&&fmt(prv.cls.length))}
+ ${row('نسبة الاختراق',cur.brPct==null?'—':fmt(cur.brPct,1)+'%',prv&&(prv.brPct==null?'—':fmt(prv.brPct,1)+'%'))}${row('متوسط زمن الحل',hrsTxt(cur.avg),prv&&hrsTxt(prv.avg))}
+ ${row('البلاغات المكررة',fmt(cur.rep.keys.size),prv&&fmt(prv.rep.keys.size))}${row('أُعيد فتحها',fmt(cur.reo.size),prv&&fmt(prv.reo.size))}${row('تقييم الفترة',fmt(cur.rate.score,1),prv&&fmt(prv.rate.score,1))}</table>
+ <h2>المستلمة والمحلولة ${S1.step>1?'أسبوعياً':'يومياً'}</h2><div class="lg"><i style="background:#2a78d6"></i>مستلمة &nbsp; <i style="background:#eb6834"></i>محلولة</div><div class="chart">${chartSvg(S1)}</div>
+ <h2>أكثر المدارس بلاغات</h2><table><tr><th>المدرسة</th><th>البلاغات</th></tr>${top.map(([s,n])=>`<tr><td>${esc(s)}</td><td>${fmt(n)}</td></tr>`).join('')||'<tr><td colspan="2">—</td></tr>'}</table>
+ <h2>البلاغات المخترقة في الفترة ${cur.br>br.length?`(أول ${fmt(br.length)} من ${fmt(cur.br)})`:''}</h2><table><tr><th>رقم البلاغ</th><th>المدرسة</th><th>العطل</th><th>الأولوية</th><th>التاريخ</th></tr>
+ ${br.map(t=>`<tr><td>${esc(t.ticket_id)}</td><td>${esc(t.school||'')}</td><td>${esc(t.sub_category||'')}</td><td>${esc(t.priority||'')}</td><td>${dts(t.created_at)}</td></tr>`).join('')||'<tr><td colspan="5">لا يوجد 👏</td></tr>'}</table>
+ <p class="mut">أُعد من تطبيق الميدان RakizoraFM • ${dts(Date.now())}</p><script>window.onload=()=>setTimeout(()=>window.print(),600)<\/script></body></html>`;
+ const w=window.open('','_blank');if(!w){toast('اسمح بفتح النوافذ المنبثقة لإنشاء التقرير','w');return}w.document.open();w.document.write(html);w.document.close()}
+
+/* today's visit plan: the most urgent schools, ordered as a route from my position (nearest next) */
+function planData(){const rows=schoolRows().filter(r=>r.open);const its=items();
+ rows.forEach(r=>{const L=its.filter(x=>isOpenX(x)&&(S(x.t.school)||'—')===r.name);r.h3=L.filter(isH3).length;r.emg=L.filter(x=>x.t.priority==='طارئ').length;
+  r.u=r.h3*100+Math.min(r.late,10)*10+r.soon*20+r.emg*5+r.open});
+ const pick=rows.filter(r=>r.xy).sort((a,b)=>b.u-a.u).slice(0,D.plan.n),noXY=rows.filter(r=>!r.xy).sort((a,b)=>b.u-a.u).slice(0,5);
+ const route=[];let cur=D.myPos,left=pick.slice();
+ if(!cur&&left.length){left.sort((a,b)=>b.u-a.u);cur=left[0].xy}
+ while(left.length){left.sort((a,b)=>dist(cur,a.xy)-dist(cur,b.xy)||b.u-a.u);
+  /* a school with tickets about to breach jumps the queue if it is less than 15 km further */
+  const urgent=left.find(r=>r.h3&&dist(cur,r.xy)-dist(cur,left[0].xy)<15000);const nx=urgent||left[0];
+  route.push(Object.assign(nx,{leg:D.myPos||route.length?dist(cur,nx.xy):null}));cur=nx.xy;left=left.filter(r=>r!==nx)}
+ return {route,noXY}}
+function planHtml(){const {route,noXY}=planData();const km=route.reduce((s,r)=>s+(r.leg||0),0);
+ const gmaps=route.length?'https://www.google.com/maps/dir/?api=1'+(D.myPos?`&origin=${D.myPos.lat},${D.myPos.lng}`:'')+`&destination=${route[route.length-1].xy.lat},${route[route.length-1].xy.lng}`+(route.length>1?'&waypoints='+encodeURIComponent(route.slice(0,-1).slice(0,9).map(r=>r.xy.lat+','+r.xy.lng).join('|')):'')+'&travelmode=driving':'';
+ return `<div class="card"><h3>🗓️ خطة زيارات اليوم</h3><div class="muted">أكثر المدارس إلحاحاً (القريب من الاختراق أولاً، ثم المتأخر والطارئ) مرتبة كمسار${D.myPos?' يبدأ من موقعك':' — حدّد موقعك 📍 ليبدأ المسار منك'}.</div>
+  <div class="fgrid" style="margin-top:8px"><label>عدد المدارس<select class="in" id="pl-n">${[3,5,8,10].map(n=>`<option ${D.plan.n===n?'selected':''}>${n}</option>`).join('')}</select></label>
+   <label>&nbsp;<button class="big ${D.myPos?'':'p'}" id="pl-me" style="padding:9px">📍 ${D.myPos?'تحديث موقعي':'حدّد موقعي'}</button></label></div>
+  ${route.length?`<ol class="plan">${route.map((r,i)=>`<li><div class="r1"><b>${fmt(i+1)}. ${esc(r.name)}</b>${r.leg!=null?`<span class="chip">🚗 ${distTxt(r.leg)}</span>`:''}</div>
+   <div class="chips">${r.h3?`<span class="chip c-bad">🔥 ${fmt(r.h3)} خلال 3 س</span>`:''}${r.late?`<span class="chip c-bad">⛔ ${fmt(r.late)} متأخر</span>`:''}${r.soon?`<span class="chip c-warn">⏰ ${fmt(r.soon)} خلال 24 س</span>`:''}<span class="chip c-pri">📂 ${fmt(r.open)} مفتوح</span></div>
+   <div class="btns" style="margin-top:8px"><button class="big" data-sch="${esc(r.name)}">📋 البلاغات</button><a class="big" href="${navUrl(r)}" target="_blank" rel="noopener">🗺️ الاتجاهات</a></div></li>`).join('')}</ol>
+   <div class="muted" style="margin:4px 2px 8px">${D.myPos?`المسافة التقريبية (خط مستقيم): ${distTxt(km)}`:''}</div>
+   <a class="big p" href="${gmaps}" target="_blank" rel="noopener" style="display:block">🧭 افتح المسار كاملاً في خرائط Google</a>`:'<div class="empty">لا توجد مدارس بها بلاغات مفتوحة وإحداثيات</div>'}
+  ${noXY.length?`<div class="muted" style="margin-top:10px">مدارس عاجلة بدون إحداثيات: ${noXY.map(r=>esc(r.name)+' ('+fmt(r.open)+')').join('، ')}</div>`:''}</div>`}
 let photos=[],newPh=[];
 async function ticketView(k,keep){
  const t=D.tickets.find(x=>key(x)===k);if(!t){main();return}
@@ -712,7 +825,7 @@ async function boot(){
   try{C.api.subscribe(()=>{clearTimeout(boot.t);boot.t=setTimeout(()=>pull(true).catch(()=>{}),1500)})}catch(e){}
  }catch(e){if(fromCache()){toast('بدون اتصال — تعرض آخر بيانات محفوظة','w');main()}else{toast(C.msg(e.message),'e');loginView()}}
 }
-window.__fmField={D,boot,pull,main,listView,ticketView,rating,slaP,pstats,resAt};
+window.__fmField={goalInfo,planData,checkAlerts,loadMyRank,D,boot,pull,main,listView,ticketView,rating,slaP,pstats,resAt};
 setTimeout(boot,60);
 })();
 </script>

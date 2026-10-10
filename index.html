@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V142">
+<meta name="fm-version" content="V143">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25527,9 +25527,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V142',date:'2026-10-10',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V143',date:'2026-10-10',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+ {v:'V143',d:'2026-10-10',t:'أدوات المشرف الإضافية',i:['تطبيق الميدان F7: تنبيهات البلاغات التي تقترب من الاختراق، هدف أسبوعي مع شريط تقدّم، ترتيب المشرف بين مشرفي منطقته بدون أسماء، تقرير PDF للفترة، وخطة زيارات اليوم حسب الإلحاح والقرب مع مسار في خرائط Google','عند رفع ملف البلاغات للسحابة تُحسب درجات المشرفين بمعادلة المنصة ويُنشر الترتيب بدون أسماء']},
  {v:'V142',d:'2026-10-10',t:'ملف المشرف في تطبيق الميدان',i:['تطبيق الميدان F6: صفحة «حسابي» تعرض تقييم المشرف بنفس معادلة المنصة، ومراجعة فترة مع مقارنة بفترة أخرى، ونسبة الاختراق، والمكررة والمعاد فتحها، ورسماً للمستلمة والمحلولة يومياً، وأكثر المدارس بلاغات','صورة شخصية، وتحديث رقم الجوال والبريد مع تحديثهما تلقائياً في قاعدة المدارس','الرئيسية: البلاغات التي تنتهي مهلتها خلال 3 ساعات، وتوجيه «ابدأ هنا» بأكثر البلاغات إلحاحاً','عند رفع ملف البلاغات للسحابة يُرسل تاريخ آخر بلاغ لكل منطقة حتى تُحسب المهلة في التطبيق بنفس طريقة المنصة','جدول المستخدمين يعرض الجوال والصورة، والتصدير يشمل الجوال','يتطلب تشغيل ملف supabase_setup.sql المحدَّث مرة واحدة']},
  {v:'V141',d:'2026-10-10',t:'إدارة المستخدمين',i:['إضافة مستخدم جديد من المنصة بكلمة مرور مؤقتة تُولَّد تلقائياً، مع نسخها أو إرسالها بواتساب','تعديل الاسم والدور والمناطق والتفعيل مباشرة في جدول المستخدمين، وإضافة أي اسم من البلاغات (أو كتابته) لأي دور','زر «🔑 كلمة مرور» لإعادة تعيين كلمة مرور مؤقتة جديدة','استيراد المستخدمين من Excel (إنشاء الجديد وتحديث الموجود) مع معاينة قبل التنفيذ وملف بكلمات المرور المؤقتة، وتصدير المستخدمين وقالب الاستيراد','عند أول دخول بكلمة مرور مؤقتة يُطلب من المستخدم تغييرها (المنصة وتطبيق الميدان وصفحة البدء)','يتطلب تشغيل ملف supabase_setup.sql المحدَّث مرة واحدة في Supabase']},
  {v:'V140',d:'2026-10-10',t:'رابط جاهز لتطبيق الميدان',i:['زر «📱 رابط تطبيق الميدان» يعطي الآن رابطاً كاملاً جاهزاً للإرسال بدلاً من كود الربط وحده','أزرار: نسخ الرابط، فتح التطبيق، إرسال عبر واتساب','العنوان يُحدَّد تلقائياً من عنوان المنصة، أو موقع GitHub Pages عند فتح المنصة من ملف محلي، ويمكن تغييره من «إعدادات متقدمة»']},
@@ -29526,6 +29527,20 @@ function ticketRow(r,region){const m=(()=>{try{return window.fmV81SchoolMeta?.(r
  return {region,ticket_id:tid(r),school:S(window.fmAuthoritativeSchoolName?.(r))||S(r[c.school])||null,building_id:nm(m.buildingId),supervisor:nm(sf.supervisor),engineer:nm(sf.engineer),contractor:nm(m.contractor),
   priority:(()=>{try{return normalizePriority(r[c.priority])}catch(e){return null}})(),sub_category:S(r[c.subCategory])||S(r[c.category])||null,status:(()=>{try{return normalizeStatus(r.__fm135file!==undefined?r.__fm135file:r[c.status])}catch(e){return null}})(),
   created_at:d&&!isNaN(d)?d.toISOString():null,raw:cleanRaw(Object.assign({},r,r.__fm135file!==undefined&&c.status?{[c.status]:r.__fm135file}:{}))}}
+/* V143: anonymous supervisor ranking with the platform's own score. Names are not published:
+   each person finds his own rank through the SHA-256 of the name he is linked to. */
+async function publishRank(k,rows){if(typeof window.calculateStaffPerformanceScore!=='function'||!(window.crypto&&crypto.subtle))return;
+ const c=cm(),m=new Map();
+ rows.forEach(r=>{let sup='';try{sup=S(getTicketStaff(r)?.supervisor)}catch(e){}if(!sup||/^غير (معرف|محدد)$/.test(sup))return;
+  const it=m.get(sup)||{totalTickets:0,resolvedClosed:0,inProgress:0,critical:0,slaBreached:0};it.totalTickets++;
+  let stt='',pr='';try{stt=normalizeStatus(r[c.status]);pr=normalizePriority(r[c.priority])}catch(e){}
+  if(stt==='تم حله'||stt==='مغلق')it.resolvedClosed++;else if(['قيد التنفيذ','تم التعيين','موافقة الاستشاري','معلق'].includes(stt))it.inProgress++;
+  if(pr==='طارئ'||pr==='عالي')it.critical++;try{if(getTicketSLAInfo(r).isBreached)it.slaBreached++}catch(e){}m.set(sup,it)});
+ const L=[...m.entries()].map(([n,it])=>({n,s:calculateStaffPerformanceScore(it).score})).sort((a,b)=>b.s-a.s);
+ const h=async t=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)))].map(x=>x.toString(16).padStart(2,'0')).join('');
+ const ranks={};for(const x of L)ranks[await h(x.n)]={r:L.findIndex(y=>y.s===x.s)+1,s:x.s};
+ await C.api.setKV('fm_rank_'+k,{at:new Date().toISOString(),n:L.length,scores:L.map(x=>x.s),ranks})}
+window.fmV143PublishRank=publishRank;
 let pushing=false;
 async function pushRegion(k){
  if(!st.on||!isAdmin()||pushing)return;const rows=window.FM41?.datasets?.[k]?.rows;if(!Array.isArray(rows)||!rows.length)return;pushing=true;
@@ -29534,6 +29549,7 @@ async function pushRegion(k){
   await C.api.pushTickets(uniq,(a,b)=>syncNote(`⬆ رفع البلاغات ${fmt(a)} / ${fmt(b)}`));
   /* V142: the file's latest ticket date, so the field app measures open tickets like the platform */
   try{const mx=uniq.reduce((m,x)=>x.created_at&&x.created_at>m?x.created_at:m,'');if(mx)await C.api.setKV('fm_ref_date_'+k,mx)}catch(e){console.warn('ref date',e)}
+  try{await publishRank(k,rows)}catch(e){console.warn('rank',e)}
   const del=await C.api.deleteTicketsNotIn(k,uniq.map(x=>x.ticket_id)).catch(()=>0);
   syncNote('☁️ متصل • آخر رفع '+new Date().toLocaleTimeString('ar-SA-u-ca-gregory',{hour:'2-digit',minute:'2-digit'}));toast(`تم رفع ${fmt(uniq.length)} بلاغ (${RN[k]||k}) للسحابة${del?' وحذف '+fmt(del)+' لم تعد في الملف':''} — يراها الفريق حسب صلاحياته`);
  }catch(e){toast('تعذر رفع البلاغات للسحابة: '+C.msg(e.message),'error');syncNote('⚠️ '+C.msg(e.message))}finally{pushing=false}}
