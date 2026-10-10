@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S2">
+<meta name="fm-version" content="S3">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <title>RakizoraFM | تسجيل الدخول</title>
@@ -94,7 +94,7 @@ const API=window.FMStartAPI=window.FMStartAPI||{
  async signIn(em,pw){const c=await sb();return chk(await c.auth.signInWithPassword({email:em,password:pw}))},
  async signUp(em,pw,name){const c=await sb();return chk(await c.auth.signUp({email:em,password:pw,options:{data:{full_name:name}}}))},
  async reset(em){const c=await sb();return chk(await c.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname}))},
- async setPassword(pw){const c=await sb();return chk(await c.auth.updateUser({password:pw}))},
+ async setPassword(pw){const c=await sb();chk(await c.auth.updateUser({password:pw}));try{chk(await c.rpc('fm_password_changed'))}catch(e){}return true},
  async signOut(){const c=await sb();await c.auth.signOut()}
 };
 
@@ -138,12 +138,16 @@ function loginView(mode,info,err){
  $('#l-e')?.focus();
 }
 
-function newPasswordView(err){
- frame(`<h2>كلمة مرور جديدة</h2><div class="sub">اكتب كلمة المرور الجديدة لحسابك</div>
+/* new password: after a reset link, or required on the first sign-in with a temporary password */
+function newPasswordView(err,first){
+ frame(`<h2>${first?'تغيير كلمة المرور المؤقتة':'كلمة مرور جديدة'}</h2><div class="sub">${first?'هذا أول دخول لك — اختر كلمة مرور خاصة بك':'اكتب كلمة المرور الجديدة لحسابك'}</div>
   <label>كلمة المرور الجديدة</label><input id="np" type="password" dir="ltr" autocomplete="new-password">
-  ${msg(err)}<button class="go" id="np-go">حفظ</button>`);
- $('#np-go').onclick=async()=>{const b=$('#np-go'),pw=$('#np').value;if(pw.length<6)return newPasswordView('6 أحرف على الأقل');busy(b,true,'…');
-  try{await API.setPassword(pw);await route()}catch(e){newPasswordView(ARmsg(e.message))}};
+  <label>تأكيد كلمة المرور</label><input id="np2" type="password" dir="ltr" autocomplete="new-password">
+  ${msg(err)}<button class="go" id="np-go">حفظ والمتابعة</button>${first?'<div class="links"><a href="#" class="mut" id="np-out">تسجيل الخروج</a></div>':''}`);
+ $('#np-out')&&($('#np-out').onclick=e=>{e.preventDefault();signOut()});
+ const go=async()=>{const b=$('#np-go'),pw=$('#np').value;if(pw.length<8)return newPasswordView('8 أحرف على الأقل',first);if(pw!==$('#np2').value)return newPasswordView('كلمتا المرور غير متطابقتين',first);busy(b,true,'…');
+  try{await API.setPassword(pw);await route()}catch(e){newPasswordView(ARmsg(e.message),first)}};
+ $('#np-go').onclick=go;app.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter')go()});$('#np').focus();
 }
 
 function pendingView(p){
@@ -174,6 +178,7 @@ async function signOut(){try{await API.signOut()}catch(e){}loginView('in')}
 async function route(){
  const p=await API.me();if(!p)return loginView('in');
  if(p.role==='pending'||p.active===false||!ROUTE[p.role])return pendingView(p);
+ if(p.must_change_pw)return newPasswordView('',true);
  welcomeView(p,ROUTE[p.role]);
 }
 
