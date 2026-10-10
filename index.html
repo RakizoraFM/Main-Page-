@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V143">
+<meta name="fm-version" content="V144">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -17,6 +17,9 @@
   var ce=console.error;console.error=function(){try{add('console',[].map.call(arguments,function(a){return a&&a.message||String(a)}).join(' '),'')}catch(x){}return ce.apply(console,arguments)};
 })();
 </script>
+<style id="fm-v144-gate-css">html.fm144-lock body{visibility:hidden}html.fm144-lock #fm144-gate,html.fm144-lock .fm136-login{visibility:visible}</style>
+<script id="fm-v144-gate-early">/* V144: on the published site the platform stays hidden until the signed-in role is allowed (fm-v144-access) */
+if(/^https?:$/.test(location.protocol))document.documentElement.classList.add('fm144-lock');</script>
 <script id="fm-school-code-canonical">
 /* School system prefix S- and the numeric ministerial identifier share one identity. */
 window.fmCanonicalSchoolCode=function(value){
@@ -25527,9 +25530,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V143',date:'2026-10-10',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V144',date:'2026-10-10',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+ {v:'V144',d:'2026-10-10',t:'حماية دخول المنصة',i:['المنصة على الموقع لا تظهر إلا بعد تسجيل الدخول والتأكد من أن دور المستخدم مسموح له','المشرف والمقاول يُمنعان من المنصة ويظهر لهما زر تطبيق الميدان','مدير النظام يحدد الأدوار المسموح لها من الإعدادات ← السحابة ← «من يدخل المنصة» (الافتراضي: المدير والمهندس والمشاهد)','فتح المنصة على الموقع بدون ربط بالسحابة يحوّل إلى صفحة الدخول']},
  {v:'V143',d:'2026-10-10',t:'أدوات المشرف الإضافية',i:['تطبيق الميدان F7: تنبيهات البلاغات التي تقترب من الاختراق، هدف أسبوعي مع شريط تقدّم، ترتيب المشرف بين مشرفي منطقته بدون أسماء، تقرير PDF للفترة، وخطة زيارات اليوم حسب الإلحاح والقرب مع مسار في خرائط Google','عند رفع ملف البلاغات للسحابة تُحسب درجات المشرفين بمعادلة المنصة ويُنشر الترتيب بدون أسماء']},
  {v:'V142',d:'2026-10-10',t:'ملف المشرف في تطبيق الميدان',i:['تطبيق الميدان F6: صفحة «حسابي» تعرض تقييم المشرف بنفس معادلة المنصة، ومراجعة فترة مع مقارنة بفترة أخرى، ونسبة الاختراق، والمكررة والمعاد فتحها، ورسماً للمستلمة والمحلولة يومياً، وأكثر المدارس بلاغات','صورة شخصية، وتحديث رقم الجوال والبريد مع تحديثهما تلقائياً في قاعدة المدارس','الرئيسية: البلاغات التي تنتهي مهلتها خلال 3 ساعات، وتوجيه «ابدأ هنا» بأكثر البلاغات إلحاحاً','عند رفع ملف البلاغات للسحابة يُرسل تاريخ آخر بلاغ لكل منطقة حتى تُحسب المهلة في التطبيق بنفس طريقة المنصة','جدول المستخدمين يعرض الجوال والصورة، والتصدير يشمل الجوال','يتطلب تشغيل ملف supabase_setup.sql المحدَّث مرة واحدة']},
  {v:'V141',d:'2026-10-10',t:'إدارة المستخدمين',i:['إضافة مستخدم جديد من المنصة بكلمة مرور مؤقتة تُولَّد تلقائياً، مع نسخها أو إرسالها بواتساب','تعديل الاسم والدور والمناطق والتفعيل مباشرة في جدول المستخدمين، وإضافة أي اسم من البلاغات (أو كتابته) لأي دور','زر «🔑 كلمة مرور» لإعادة تعيين كلمة مرور مؤقتة جديدة','استيراد المستخدمين من Excel (إنشاء الجديد وتحديث الموجود) مع معاينة قبل التنفيذ وملف بكلمات المرور المؤقتة، وتصدير المستخدمين وقالب الاستيراد','عند أول دخول بكلمة مرور مؤقتة يُطلب من المستخدم تغييرها (المنصة وتطبيق الميدان وصفحة البدء)','يتطلب تشغيل ملف supabase_setup.sql المحدَّث مرة واحدة في Supabase']},
@@ -29493,9 +29497,10 @@ async function start(fresh){
   const p=await C.api.me();if(!p){loginScreen();return}
   if(p.role==='pending'||p.active===false){pendingScreen(p);return}
   if(p.must_change_pw&&window.fmV141ForcePw){window.fmV141ForcePw(p,()=>start(fresh));return}
-  st.on=true;st.profile=p;applyRole();chip();
+  if(window.fmV144Allowed&&!(await window.fmV144Allowed(p))){window.fmV144Block?.(p);return}
+  st.on=true;st.profile=p;applyRole();chip();window.fmV144Unlock?.();
   await pullAll(fresh);live();
- }catch(e){console.warn('V136 start',e);toast('السحابة: '+C.msg(e.message),'error');chip(e.message)}
+ }catch(e){console.warn('V136 start',e);toast('السحابة: '+C.msg(e.message),'error');chip(e.message);window.fmV144Fail?.(e)}
 }
 window.fmV136Start=start;
 function applyRole(){const b=document.body;['admin','engineer','supervisor','contractor','viewer'].forEach(r=>b.classList.toggle('fm136-'+r,role()===r));b.classList.toggle('fm136-cloud',st.on);b.classList.toggle('fm136-ro',st.on&&role()==='viewer')}
@@ -30068,6 +30073,60 @@ window.fmV141ForcePw=function(p,done){
   w.querySelector('#fp-go').onclick=go;w.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter')go()});w.querySelector('#fp-1').focus()};
  draw();document.body.appendChild(w);
 };
+})();
+</script>
+<style id="fm-v144-access-css">
+/* V144 — platform access by role */
+.fm144-gate{position:fixed;inset:0;z-index:2147483400;background:linear-gradient(135deg,#0f172a,#1e3a8a 60%,#4c1d95);display:flex;align-items:center;justify-content:center;padding:16px;direction:rtl;font-family:Cairo,Tahoma,sans-serif}
+.fm144-gate .box{width:min(440px,100%);background:#fff;border-radius:20px;padding:26px 24px;box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center}
+.fm144-gate .lg{width:min(200px,64%);height:auto;margin:0 auto 10px;display:block}
+.fm144-gate h2{margin:6px 0;font:900 20px Cairo,sans-serif;color:#0f172a}.fm144-gate p{color:#64748b;font-size:13.5px;line-height:1.9;margin:6px 0}
+.fm144-gate .go,.fm144-gate button{display:block;width:100%;margin-top:10px;border:0;border-radius:12px;padding:12px;font:900 15px Cairo,sans-serif;cursor:pointer;text-decoration:none;box-sizing:border-box}
+.fm144-gate .go{background:#2563eb;color:#fff}.fm144-gate button{background:#eef2ff;color:#3730a3}
+.fm144-gate .spin{width:30px;height:30px;border:3px solid #dbeafe;border-top-color:#2563eb;border-radius:50%;margin:14px auto;animation:fm144r .8s linear infinite}
+@keyframes fm144r{to{transform:rotate(360deg)}}
+.fm144-roles{display:flex;flex-wrap:wrap;gap:8px 16px;margin:8px 0}.fm144-roles label{display:flex;gap:6px;align-items:center;font-weight:800;font-size:13px}
+</style>
+<script id="fm-v144-access">
+(function(){
+'use strict';
+const C=window.FMCloud;
+const KEY='fm_platform_access_v144',DEF=['admin','engineer','viewer'];
+const S=v=>String(v??'').trim();
+const esc=s=>S(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const locked=()=>document.documentElement.classList.contains('fm144-lock');
+const ROLE=C?C.ROLE:{};
+/* roles the admin allows into the platform (the admin is always allowed) */
+async function roles(){try{const r=await C.api.getKV([KEY]);let v=r&&r[0]&&r[0].value;if(typeof v==='string')v=JSON.parse(v);if(Array.isArray(v))return v}catch(e){}return DEF}
+let gate=null;
+function show(html){if(!gate){gate=document.createElement('div');gate.id='fm144-gate';gate.className='fm144-gate';document.body.appendChild(gate)}
+ gate.innerHTML=`<div class="box">${window.FM_BRAND?`<img class="lg" src="${FM_BRAND.logo}" alt="RakizoraFM">`:''}${html}</div>`;
+ gate.querySelectorAll('[data-a=out]').forEach(b=>b.onclick=async()=>{try{await C.api.signOut()}catch(e){}location.replace('start.html')});
+ gate.querySelectorAll('[data-a=re]').forEach(b=>b.onclick=()=>location.reload());return gate}
+window.fmV144Unlock=()=>{document.documentElement.classList.remove('fm144-lock');gate?.remove();gate=null};
+window.fmV144Allowed=async p=>p.role==='admin'||(p.active!==false&&(await roles()).includes(p.role));
+window.fmV144Block=p=>{if(!locked())return;
+ show(`<h2>🔒 ليس لديك صلاحية دخول المنصة</h2><p><b>${esc(p.full_name||p.email)}</b> — ${esc(ROLE[p.role]||p.role)}</p>
+  <p>المنصة متاحة فقط للأدوار التي يحددها مدير النظام. ${['supervisor','contractor'].includes(p.role)?'تابع بلاغاتك من تطبيق الميدان.':''}</p>
+  ${['supervisor','contractor','engineer'].includes(p.role)?'<a class="go" href="field.html">📱 فتح تطبيق الميدان</a>':''}<button type="button" data-a="out">تسجيل الخروج</button>`)};
+window.fmV144Fail=e=>{if(!locked())return;
+ show(`<h2>تعذر التحقق من الصلاحية</h2><p>${esc(C&&C.msg?C.msg(e&&e.message):e)}</p><button type="button" data-a="re" style="background:#2563eb;color:#fff">إعادة المحاولة</button><button type="button" data-a="out">تسجيل الخروج</button>`)};
+
+/* settings → cloud: the admin chooses which roles may open the platform */
+(window.fmHubExtras=window.fmHubExtras||[]).push(function(tab,pane){if(tab!=='cloud'||!C||C.state?.profile?.role!=='admin')return;
+ const card=document.createElement('div');card.className='fm103-card';card.style.marginTop='14px';pane.appendChild(card);
+ roles().then(cur=>{card.innerHTML=`<h3>🔒 من يدخل المنصة</h3><div class="q">مدير النظام يدخل دائماً. باقي الأدوار تُمنع من المنصة وتُوجَّه لتطبيق الميدان. البيانات نفسها محمية في قاعدة البيانات حسب الدور في كل الأحوال.</div>
+  <div class="fm144-roles">${['engineer','viewer','supervisor','contractor'].map(r=>`<label><input type="checkbox" data-r="${r}" ${cur.includes(r)?'checked':''} style="width:auto">${esc(ROLE[r]||r)}</label>`).join('')}</div>
+  <button type="button" class="fm103-btn primary" data-a="save">حفظ</button>`;
+  card.querySelector('[data-a=save]').onclick=async()=>{const v=['admin',...[...card.querySelectorAll('[data-r]:checked')].map(c=>c.dataset.r)];
+   try{await C.api.setKV(KEY,v);toast('تم حفظ صلاحيات دخول المنصة')}catch(e){toast(C.msg(e.message),'error')}}})});
+
+if(!locked())return;
+/* published site without a cloud link: sign in through the start page first */
+if(!C||!C.configured()){location.replace('start.html');return}
+show('<div class="spin"></div><p>جارٍ التحقق من صلاحية الدخول…</p>');
+setTimeout(()=>{if(locked()&&gate&&gate.querySelector('.spin'))show('<div class="spin"></div><p>جارٍ التحقق من صلاحية الدخول…</p><button type="button" data-a="re">إعادة المحاولة</button><button type="button" data-a="out">تسجيل الخروج</button>')},12000);
 })();
 </script>
 </body>
