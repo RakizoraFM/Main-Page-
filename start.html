@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S1">
+<meta name="fm-version" content="S2">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <title>RakizoraFM | تسجيل الدخول</title>
@@ -158,14 +158,15 @@ function welcomeView(p,dest){
  const name=S(p.full_name)||S(p.email);const regions=(p.regions||[]).map(r=>RN[r]||r).join('، ');
  const other=p.role==='admin'?(dest==='index.html'?'field.html':'index.html'):'';
  frame(`<div class="who"><div class="av">${esc(name.charAt(0))}</div><div><b>${esc(name)}</b><span>${esc(ROLE[p.role]||p.role)}${regions?' • '+esc(regions):''}</span></div></div>
-  <div class="sub" style="margin:10px 0 0">جارٍ فتح ${DEST[dest]}…</div>
+  <div class="sub" style="margin:10px 0 0">${other?'اختر ما تريد فتحه':`جارٍ فتح ${DEST[dest]}…`}</div>
   <button class="go" id="w-go">فتح ${DEST[dest]}</button>
   ${other?`<button class="go sec" id="w-alt">فتح ${DEST[other]}</button>`:''}
   <div class="links"><a href="#" class="mut" id="w-out">ليس أنت؟ تسجيل الخروج</a></div>`);
  const open=u=>{clearTimeout(timer);location.href=u};
  $('#w-go').onclick=()=>open(dest);if(other)$('#w-alt').onclick=()=>open(other);
  $('#w-out').onclick=e=>{e.preventDefault();clearTimeout(timer);signOut()};
- clearTimeout(timer);timer=setTimeout(()=>open(dest),p.role==='admin'?2500:1500);
+ /* the admin chooses; a role with one workspace opens it automatically */
+ clearTimeout(timer);if(!other)timer=setTimeout(()=>open(dest),1500);
 }
 
 async function signOut(){try{await API.signOut()}catch(e){}loginView('in')}
