@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V139">
+<meta name="fm-version" content="V140">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25527,9 +25527,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V139',date:'2026-10-10',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V140',date:'2026-10-10',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+ {v:'V140',d:'2026-10-10',t:'رابط جاهز لتطبيق الميدان',i:['زر «📱 رابط تطبيق الميدان» يعطي الآن رابطاً كاملاً جاهزاً للإرسال بدلاً من كود الربط وحده','أزرار: نسخ الرابط، فتح التطبيق، إرسال عبر واتساب','العنوان يُحدَّد تلقائياً من عنوان المنصة، أو موقع GitHub Pages عند فتح المنصة من ملف محلي، ويمكن تغييره من «إعدادات متقدمة»']},
  {v:'V139',d:'2026-10-10',t:'هوية RakizoraFM',i:['اعتماد المنصة تحت اسم RakizoraFM — إدارة المرافق والأصول الذكية','شعار RakizoraFM في الشريط الجانبي وترويسة الصفحة وأيقونة المتصفح وشاشة تسجيل الدخول','اسم RakizoraFM في شريط تقارير PDF التنفيذية وفي تذييل التقارير المطبوعة وخصائص ملفات Excel المصدّرة','تطبيق الميدان: الشعار في الترويسة وشاشة الدخول']},
  {v:'V138',d:'2026-10-10',t:'تجربة الربط مع GitHub',i:['تجربة الربط مع GitHub']},
  {v:'V137',d:'2026-10-09',t:'تنبيه الإصدار الجديد',i:['عند نشر نسخة جديدة على الموقع يظهر لكل مستخدم مفتوحة عنده النسخة القديمة شريط «يوجد إصدار جديد» مع زر «تحديث الآن»','الفحص كل 10 دقائق وعند العودة للصفحة وعند رجوع الاتصال، ويعمل فقط عندما تكون المنصة منشورة على موقع (وليس ملفاً على الجهاز)']},
@@ -29651,11 +29652,27 @@ async function hubCloud(pane){
 function atobSafe(k){try{return atob(k.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))}catch(e){return ''}}
 function fieldLink(){const c=C.cfg();if(!c.url){toast('اربط السحابة أولاً','warning');return}
  const code=btoa(unescape(encodeURIComponent(JSON.stringify(c))));
- const w=document.createElement('div');w.className='fm122-dlg-wrap';w.innerHTML=`<div class="fm122-dlg" style="width:min(640px,95vw)"><h3>📱 تطبيق الميدان</h3><div class="meta" style="line-height:1.9">ضع ملف <b>FM Field.html</b> على أي استضافة HTTPS (مثل Netlify Drop أو GitHub Pages) — الكاميرا وتحديد الموقع تحتاج HTTPS. ثم أضف كود الربط في آخر الرابط ليعمل التطبيق مباشرة بدون إعداد:</div>
-  <label>كود الربط (يُضاف بعد # في الرابط)</label><textarea readonly style="width:100%;min-height:70px;direction:ltr;font:12px monospace">#cfg=${code}</textarea>
-  <div class="fm125-hint">مثال: https://your-site.netlify.app/FM%20Field.html#cfg=…  — الكود يحتوي رابط المشروع والمفتاح العام فقط (لا يحتوي كلمات مرور). كل مستخدم يدخل بحسابه.</div>
-  <div class="row"><button class="p" data-a="cp">نسخ الكود</button><button data-a="x">إغلاق</button></div></div>`;document.body.appendChild(w);
- w.querySelector('[data-a=x]').onclick=()=>w.remove();w.querySelector('[data-a=cp]').onclick=async()=>{try{await navigator.clipboard.writeText('#cfg='+code);toast('تم النسخ')}catch(e){w.querySelector('textarea').select();document.execCommand('copy');toast('تم النسخ')}}}
+ /* V140 — build a ready-to-send link: field.html next to this page, or the published site when opened from a local file */
+ const BKEY='fm_field_base_v140',DEF='https://rakizorafm.github.io/Main-Page-/field.html';
+ const auto=()=>/^https?:$/.test(location.protocol)?location.origin+location.pathname.replace(/[^/]*$/,'')+'field.html':DEF;
+ let base='';try{base=S(localStorage.getItem(BKEY))}catch(e){}if(!base)base=auto();
+ const full=()=>base.replace(/#.*$/,'')+'#cfg='+code;
+ const copy=async(t,ta)=>{try{await navigator.clipboard.writeText(t);toast('تم النسخ')}catch(e){ta.select();document.execCommand('copy');toast('تم النسخ')}};
+ const w=document.createElement('div');w.className='fm122-dlg-wrap';w.innerHTML=`<div class="fm122-dlg" style="width:min(640px,95vw)"><h3>📱 رابط تطبيق الميدان</h3><div class="meta" style="line-height:1.9">انسخ الرابط وأرسله للمشرفين والمقاولين (واتساب أو بريد). عند فتحه يرتبط التطبيق بالسحابة تلقائياً وتظهر شاشة تسجيل الدخول — كل مستخدم يدخل بحسابه.</div>
+  <label>الرابط الجاهز</label><textarea readonly id="fl-full" style="width:100%;min-height:90px;direction:ltr;font:12px monospace"></textarea>
+  <div class="row"><button class="p" data-a="cp">📋 نسخ الرابط</button><button data-a="op">↗ فتح التطبيق</button><button data-a="wa">واتساب</button><button data-a="x">إغلاق</button></div>
+  <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:800;color:#334155;font-size:12.5px">إعدادات متقدمة</summary>
+   <label>عنوان تطبيق الميدان</label><input id="fl-base" dir="ltr" value="${esc(base)}">
+   <div class="fm125-hint">غيّره فقط إذا كان ملف field.html منشوراً على عنوان آخر. الرابط يحتوي رابط المشروع والمفتاح العام فقط (لا يحتوي كلمات مرور).</div>
+   <label>كود الربط وحده</label><textarea readonly id="fl-code" style="width:100%;min-height:60px;direction:ltr;font:12px monospace">#cfg=${code}</textarea>
+   <div class="row"><button data-a="cc">نسخ الكود</button></div></details></div>`;document.body.appendChild(w);
+ const ta=w.querySelector('#fl-full'),draw=()=>{ta.value=full()};draw();
+ w.querySelector('#fl-base').oninput=e=>{base=S(e.target.value)||auto();try{if(S(e.target.value))localStorage.setItem(BKEY,base);else localStorage.removeItem(BKEY)}catch(er){}draw()};
+ w.querySelector('[data-a=x]').onclick=()=>w.remove();
+ w.querySelector('[data-a=cp]').onclick=()=>copy(full(),ta);
+ w.querySelector('[data-a=cc]').onclick=()=>copy('#cfg='+code,w.querySelector('#fl-code'));
+ w.querySelector('[data-a=op]').onclick=()=>window.open(full(),'_blank','noopener');
+ w.querySelector('[data-a=wa]').onclick=()=>window.open('https://wa.me/?text='+encodeURIComponent('رابط تطبيق الميدان RakizoraFM:\n'+full()),'_blank','noopener')}
 const uEdits={};
 async function usersTable(box){
  let L=[];try{L=(await C.api.listProfiles()).map(u=>Object.assign({},u,uEdits[u.id]||{}))}catch(e){box.innerHTML='<h3>👥 المستخدمون</h3><div class="fm122-note">'+esc(C.msg(e.message))+'</div>';return}
