@@ -1,5 +1,5 @@
 -- =====================================================================
---  FM Platform — Supabase setup (V136, user management V141)
+--  FM Platform — Supabase setup (V136, user management V141, profile V142)
 --  Paste this whole file in Supabase → SQL Editor → New query → Run.
 --  Safe to run again: it only creates what is missing and refreshes policies.
 -- =====================================================================
@@ -256,5 +256,67 @@ revoke all on function public.fm_password_changed() from public, anon;
 grant execute on function public.fm_admin_create_user(text,text,text,text,text[],text[],boolean) to authenticated;
 grant execute on function public.fm_admin_set_password(uuid,text) to authenticated;
 grant execute on function public.fm_password_changed() to authenticated;
+
+-- ---------- 9) personal profile: phone, photo, contact sync (V142) ----------
+alter table public.profiles add column if not exists phone  text;
+alter table public.profiles add column if not exists avatar text;   -- small JPEG data URL (about 20 KB)
+
+-- copy a person's phone / e-mail into every school-DB row that carries one of his names,
+-- so the platform, the field app and the school pages all show the new contact details
+create or replace function public.fm_apply_contact(p_user uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare p public.profiles; v jsonb; e jsonb; outv jsonb := '[]'::jsonb; f text[];
+  fields text[][] := array[['supervisor','supervisorPhone','supervisorEmail'],
+                           ['engineer','engineerPhone','engineerEmail'],
+                           ['lightSupervisor','lightSupervisorPhone','lightSupervisorEmail'],
+                           ['lightEngineer','lightEngineerPhone','lightEngineerEmail'],
+                           ['contractor','contractorPhone','contractorEmail']];
+begin
+  select * into p from public.profiles where id = p_user;
+  if not found or cardinality(p.person_names) = 0 then return; end if;
+  select value into v from public.app_kv where key = 'fm_school_master_db_v1';
+  if v is null then return; end if;
+  if jsonb_typeof(v) = 'string' then v := (v #>> '{}')::jsonb; end if;
+  if jsonb_typeof(v) <> 'array' then return; end if;
+  for e in select * from jsonb_array_elements(v) loop
+    foreach f slice 1 in array fields loop
+      if coalesce(e->>f[1],'') <> '' and trim(e->>f[1]) = any(p.person_names) then
+        if coalesce(p.phone,'') <> '' then e := e || jsonb_build_object(f[2], p.phone); end if;
+        if coalesce(p.email,'') <> '' then e := e || jsonb_build_object(f[3], p.email); end if;
+      end if;
+    end loop;
+    outv := outv || jsonb_build_array(e);
+  end loop;
+  update public.app_kv set value = outv, updated_at = now() where key = 'fm_school_master_db_v1';
+end $$;
+revoke all on function public.fm_apply_contact(uuid) from public, anon, authenticated;
+
+-- the signed-in user saves his phone; it is copied to the school DB at once
+create or replace function public.fm_update_my_contact(p_phone text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'not allowed' using errcode = '42501'; end if;
+  update public.profiles set phone = nullif(trim(p_phone),''), updated_at = now() where id = auth.uid();
+  perform public.fm_apply_contact(auth.uid());
+end $$;
+revoke all on function public.fm_update_my_contact(text) from public, anon;
+grant execute on function public.fm_update_my_contact(text) to authenticated;
+
+-- a confirmed e-mail change (Supabase sends the confirmation link) reaches the profile and the school DB
+create or replace function public.fm_on_auth_email_change() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.email is distinct from old.email then
+    begin
+      update public.profiles set email = new.email, updated_at = now() where id = new.id;
+      perform public.fm_apply_contact(new.id);
+    exception when others then null;   -- never block the sign-in service
+    end;
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_on_auth_user_email on auth.users;
+create trigger fm_on_auth_user_email after update of email on auth.users
+  for each row execute function public.fm_on_auth_email_change();
 
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
