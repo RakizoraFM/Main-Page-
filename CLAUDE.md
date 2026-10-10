@@ -32,6 +32,7 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 - **Settings hub:** «الإعدادات» has tabs. Extend a tab with `(window.fmHubExtras=window.fmHubExtras||[]).push((tab,pane)=>{…})`.
 - **Ticket work (V135):** stages, solution, photos, notes. Records are stored in `localStorage['fm_ticket_work_v135']` and laid over the uploaded rows, so every indicator follows them. Photos go to IndexedDB `fm_photos_v135`, or to Supabase when the cloud is on.
 - **Cloud (V136):** `window.FMCloud` (in `fm-v136-cloud`). All network calls go through `FMCloud.api.*`; tests replace that object with a mock. Roles are `admin`, `engineer`, `supervisor`, `contractor`, `viewer` and `pending`, enforced by RLS in `supabase_setup.sql`. Never put a service_role key in any file.
+- **Work orders (V145, field F8):** tables `work_orders`, `wo_events`, `wo_photos` (bucket `wo-photos`). Reads go through RLS (`fm_wo_can_see`); every change goes through `fm_wo_create` / `fm_wo_act`, which enforce the hierarchy (`profiles.reports_to`, ranks admin > engineer > supervisor > contractor) and the allowed status steps. The assignee reports «done» (needs an «after» photo); the assigner approves (`close`) or returns it.
 - **School DB:** stored in `localStorage['fm_school_master_db_v1']`. The approved Excel template has 22 columns in a fixed order (see `rowObj` in `fm-school-db-maintenance-excel-v9`). Importing never wipes a column that is missing from the file.
 
 ## Rules

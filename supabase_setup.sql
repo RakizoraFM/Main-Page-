@@ -1,5 +1,5 @@
 -- =====================================================================
---  FM Platform — Supabase setup (V136, user management V141, profile V142)
+--  FM Platform — Supabase setup (V136, user management V141, profile V142, work orders V145)
 --  Paste this whole file in Supabase → SQL Editor → New query → Run.
 --  Safe to run again: it only creates what is missing and refreshes policies.
 -- =====================================================================
@@ -17,6 +17,8 @@ create table if not exists public.profiles (
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
+-- V145: the direct manager (work orders flow down this line)
+alter table public.profiles add column if not exists reports_to uuid references public.profiles(id) on delete set null;
 
 -- the first account becomes admin, everyone after that waits for the admin to assign a role
 create or replace function public.fm_handle_new_user() returns trigger
@@ -141,7 +143,8 @@ create policy p_profiles_self  on public.profiles for update using (id = auth.ui
   with check (id = auth.uid() and role = (select role from public.profiles where id = auth.uid())
               and person_names = (select person_names from public.profiles where id = auth.uid())
               and regions = (select regions from public.profiles where id = auth.uid())
-              and active = (select active from public.profiles where id = auth.uid()));
+              and active = (select active from public.profiles where id = auth.uid())
+              and reports_to is not distinct from (select reports_to from public.profiles where id = auth.uid()));
 
 drop policy if exists p_tickets_read  on public.tickets;
 drop policy if exists p_tickets_write on public.tickets;
@@ -318,5 +321,206 @@ end $$;
 drop trigger if exists fm_on_auth_user_email on auth.users;
 create trigger fm_on_auth_user_email after update of email on auth.users
   for each row execute function public.fm_on_auth_email_change();
+
+-- ---------- 10) work orders (V145) ----------
+-- Hierarchy: admin > engineer > supervisor > contractor. An order goes from a person to someone below him
+-- in his own line (profiles.reports_to); the admin may assign to anyone below him.
+-- All writes go through the functions below, which check the hierarchy and the allowed status changes.
+create or replace function public.fm_rank(r text) returns int language sql immutable as $$
+  select case r when 'admin' then 4 when 'engineer' then 3 when 'supervisor' then 2 when 'contractor' then 1 else 0 end $$;
+
+-- true when p_user reports to p_boss, directly or through other managers
+create or replace function public.fm_is_under(p_user uuid, p_boss uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  with recursive up(id, boss, depth) as (
+    select id, reports_to, 1 from public.profiles where id = p_user
+    union all
+    select p.id, p.reports_to, u.depth + 1 from public.profiles p join up u on p.id = u.boss where u.depth < 8)
+  select p_boss is not null and exists (select 1 from up where boss = p_boss) $$;
+
+-- may the signed-in user assign work to p_user?
+create or replace function public.fm_can_assign_to(p_user uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles t, public.profiles me
+    where t.id = p_user and me.id = auth.uid() and me.active and t.active and t.id <> me.id
+      and public.fm_rank(t.role) between 1 and public.fm_rank(me.role) - 1
+      and (me.role = 'admin' or public.fm_is_under(t.id, me.id))) $$;
+
+-- the people the signed-in user may assign to (names only, for the assignee list)
+create or replace function public.fm_wo_assignable() returns table(id uuid, full_name text, role text, regions text[], phone text)
+language sql stable security definer set search_path = public as $$
+  select p.id, coalesce(p.full_name, p.email), p.role, p.regions, p.phone from public.profiles p
+   where public.fm_can_assign_to(p.id) order by public.fm_rank(p.role) desc, p.full_name $$;
+
+create sequence if not exists public.wo_seq;
+create table if not exists public.work_orders (
+  id              uuid primary key default gen_random_uuid(),
+  code            text unique,
+  title           text not null,
+  description     text,
+  type            text not null default 'task',      -- repair | preventive | inspection | visit | data | task
+  region          text,
+  school          text,
+  priority        text not null default 'متوسط',
+  due_at          timestamptz,
+  status          text not null default 'assigned'
+                  check (status in ('assigned','accepted','rejected','in_progress','done','returned','closed','cancelled')),
+  checklist       jsonb not null default '[]',        -- [{t:'…', done:true|false}]
+  ticket_refs     text[] not null default '{}',
+  created_by      uuid not null default auth.uid() references public.profiles(id),
+  created_by_name text,
+  assignee        uuid references public.profiles(id),
+  assignee_name   text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  accepted_at     timestamptz,
+  done_at         timestamptz,
+  closed_at       timestamptz
+);
+create index if not exists work_orders_assignee_idx on public.work_orders (assignee, status);
+create index if not exists work_orders_creator_idx  on public.work_orders (created_by, status);
+create table if not exists public.wo_events (
+  id      uuid primary key default gen_random_uuid(),
+  wo_id   uuid not null references public.work_orders(id) on delete cascade,
+  at      timestamptz not null default now(),
+  by_id   uuid default auth.uid(),
+  by_name text,
+  type    text not null,
+  status  text,
+  text    text,
+  geo     jsonb
+);
+create index if not exists wo_events_wo_idx on public.wo_events (wo_id, at);
+create table if not exists public.wo_photos (
+  id      uuid primary key default gen_random_uuid(),
+  wo_id   uuid not null references public.work_orders(id) on delete cascade,
+  kind    text not null default 'after' check (kind in ('before','after','attach')),
+  path    text not null,
+  at      timestamptz not null default now(),
+  by_id   uuid default auth.uid(),
+  by_name text,
+  geo     jsonb
+);
+create index if not exists wo_photos_wo_idx on public.wo_photos (wo_id);
+
+-- who sees an order: its creator, its assignee, the admin, and the managers above either of them
+create or replace function public.fm_wo_can_see(p_wo uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.fm_role() <> 'pending' and exists (select 1 from public.work_orders w where w.id = p_wo
+    and (w.created_by = auth.uid() or w.assignee = auth.uid() or public.fm_role() = 'admin'
+         or public.fm_is_under(w.assignee, auth.uid()) or public.fm_is_under(w.created_by, auth.uid()))) $$;
+-- who may add photos: its creator and its assignee (while the order is not finished)
+create or replace function public.fm_wo_party(p_wo uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.fm_role() <> 'pending' and exists (select 1 from public.work_orders w where w.id = p_wo
+    and (w.created_by = auth.uid() or w.assignee = auth.uid()) and w.status not in ('closed','cancelled')) $$;
+create or replace function public.fm_uuid_or_null(t text) returns uuid language sql immutable as $$
+  select case when t ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then t::uuid end $$;
+
+alter table public.work_orders enable row level security;
+alter table public.wo_events   enable row level security;
+alter table public.wo_photos   enable row level security;
+drop policy if exists p_wo_read  on public.work_orders;
+drop policy if exists p_woev_read on public.wo_events;
+drop policy if exists p_woph_read on public.wo_photos;
+drop policy if exists p_woph_insert on public.wo_photos;
+create policy p_wo_read    on public.work_orders for select using (public.fm_wo_can_see(id));
+create policy p_woev_read  on public.wo_events   for select using (public.fm_wo_can_see(wo_id));
+create policy p_woph_read  on public.wo_photos   for select using (public.fm_wo_can_see(wo_id));
+create policy p_woph_insert on public.wo_photos  for insert with check (by_id = auth.uid() and public.fm_wo_party(wo_id));
+
+insert into storage.buckets (id, name, public) values ('wo-photos','wo-photos', false) on conflict (id) do nothing;
+drop policy if exists p_woobj_read   on storage.objects;
+drop policy if exists p_woobj_insert on storage.objects;
+create policy p_woobj_read   on storage.objects for select using (bucket_id = 'wo-photos'
+  and public.fm_wo_can_see(public.fm_uuid_or_null(split_part(name,'/',1))));
+create policy p_woobj_insert on storage.objects for insert with check (bucket_id = 'wo-photos'
+  and public.fm_wo_party(public.fm_uuid_or_null(split_part(name,'/',1))));
+
+-- create an order (admin / engineer / supervisor) for someone below in the line
+create or replace function public.fm_wo_create(p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare me public.profiles; t public.profiles; v_id uuid := gen_random_uuid(); v_code text;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not me.active or me.role not in ('admin','engineer','supervisor') then
+    raise exception 'not allowed' using errcode = '42501'; end if;
+  if coalesce(trim(p->>'title'),'') = '' then raise exception 'title required'; end if;
+  select * into t from public.profiles where id = public.fm_uuid_or_null(p->>'assignee');
+  if t.id is null or not public.fm_can_assign_to(t.id) then raise exception 'cannot assign to this user'; end if;
+  v_code := 'WO-' || to_char(now(),'YYYY') || '-' || lpad(nextval('public.wo_seq')::text, 4, '0');
+  insert into public.work_orders (id, code, title, description, type, region, school, priority, due_at, checklist, ticket_refs,
+                                  created_by, created_by_name, assignee, assignee_name)
+  values (v_id, v_code, trim(p->>'title'), nullif(trim(p->>'description'),''), coalesce(nullif(p->>'type',''),'task'),
+          nullif(p->>'region',''), nullif(trim(p->>'school'),''), coalesce(nullif(p->>'priority',''),'متوسط'),
+          nullif(p->>'due_at','')::timestamptz,
+          case when jsonb_typeof(p->'checklist') = 'array' then p->'checklist' else '[]'::jsonb end,
+          case when jsonb_typeof(p->'ticket_refs') = 'array' then array(select jsonb_array_elements_text(p->'ticket_refs')) else '{}' end,
+          me.id, coalesce(me.full_name, me.email), t.id, coalesce(t.full_name, t.email));
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (v_id, me.id, coalesce(me.full_name, me.email), 'create', 'assigned', '📝 أُنشئ الأمر وأُسند إلى ' || coalesce(t.full_name, t.email));
+  return v_id;
+end $$;
+
+-- every step of the order; the allowed step depends on who you are (assignee / creator) and the current status
+create or replace function public.fm_wo_act(p_id uuid, p_action text, p_note text default null, p_geo jsonb default null, p_data jsonb default null)
+returns text language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; me public.profiles; t public.profiles; nm text; isA boolean; isC boolean; ns text; msg text;
+  note text := nullif(trim(coalesce(p_note,'')),'');
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not me.active then raise exception 'not allowed' using errcode = '42501'; end if;
+  select * into w from public.work_orders where id = p_id for update;
+  if w.id is null or not public.fm_wo_can_see(w.id) then raise exception 'work order not found'; end if;
+  nm := coalesce(me.full_name, me.email);
+  isA := w.assignee = me.id;
+  isC := w.created_by = me.id or me.role = 'admin';
+  ns := w.status;
+  if p_action = 'accept' and isA and w.status = 'assigned' then ns := 'accepted'; msg := '✅ قبل الأمر';
+  elsif p_action = 'reject' and isA and w.status = 'assigned' then
+    if note is null then raise exception 'reason required'; end if; ns := 'rejected'; msg := '⛔ رفض الأمر';
+  elsif p_action = 'start' and isA and w.status in ('accepted','returned') then ns := 'in_progress'; msg := '🛠️ بدأ التنفيذ';
+  elsif p_action = 'arrive' and isA and w.status in ('accepted','in_progress','returned') then msg := '📍 وصل للموقع';
+  elsif p_action = 'checklist' and isA and w.status in ('accepted','in_progress','returned') then
+    update public.work_orders set checklist = coalesce(p_data,'[]'::jsonb), updated_at = now() where id = w.id;
+    return w.status;
+  elsif p_action = 'done' and isA and w.status in ('accepted','in_progress','returned') then
+    if not exists (select 1 from public.wo_photos where wo_id = w.id and kind = 'after') then raise exception 'after photo required'; end if;
+    if jsonb_typeof(p_data) = 'array' then update public.work_orders set checklist = p_data where id = w.id; end if;
+    ns := 'done'; msg := '📨 أبلغ: تم الإجراء — بانتظار الاعتماد';
+  elsif p_action = 'close' and isC and w.status = 'done' then ns := 'closed'; msg := '🔒 اعتمد الإنجاز وأغلق الأمر';
+  elsif p_action = 'return' and isC and w.status = 'done' then
+    if note is null then raise exception 'reason required'; end if; ns := 'returned'; msg := '↩️ أعاد الأمر للتصحيح';
+  elsif p_action = 'cancel' and isC and w.status not in ('closed','cancelled') then ns := 'cancelled'; msg := '🚫 ألغى الأمر';
+  elsif p_action = 'reassign' and isC and w.status in ('assigned','rejected','accepted','in_progress','returned') then
+    select * into t from public.profiles where id = public.fm_uuid_or_null(p_data->>'assignee');
+    if t.id is null or not public.fm_can_assign_to(t.id) then raise exception 'cannot assign to this user'; end if;
+    update public.work_orders set assignee = t.id, assignee_name = coalesce(t.full_name, t.email), accepted_at = null where id = w.id;
+    ns := 'assigned'; msg := '🔁 أعاد الإسناد إلى ' || coalesce(t.full_name, t.email);
+  elsif p_action = 'note' and note is not null then
+    insert into public.wo_events (wo_id, by_id, by_name, type, status, text, geo) values (w.id, me.id, nm, 'note', w.status, '✍️ ' || note, p_geo);
+    update public.work_orders set updated_at = now() where id = w.id;
+    return w.status;
+  else raise exception 'action not allowed'; end if;
+  update public.work_orders set status = ns, updated_at = now(),
+         accepted_at = case when ns = 'accepted' then now() else accepted_at end,
+         done_at     = case when ns = 'done' then now() else done_at end,
+         closed_at   = case when ns in ('closed','cancelled') then now() else closed_at end
+   where id = w.id;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text, geo)
+  values (w.id, me.id, nm, p_action, ns, msg || coalesce(' — ' || note, ''), p_geo);
+  return ns;
+end $$;
+
+revoke all on function public.fm_wo_create(jsonb) from public, anon;
+revoke all on function public.fm_wo_act(uuid,text,text,jsonb,jsonb) from public, anon;
+revoke all on function public.fm_wo_assignable() from public, anon;
+grant execute on function public.fm_wo_create(jsonb) to authenticated;
+grant execute on function public.fm_wo_act(uuid,text,text,jsonb,jsonb) to authenticated;
+grant execute on function public.fm_wo_assignable() to authenticated;
+do $$ begin
+  begin alter publication supabase_realtime add table public.work_orders; exception when others then null; end;
+  begin alter publication supabase_realtime add table public.wo_events;   exception when others then null; end;
+end $$;
 
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
