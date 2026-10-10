@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F3">
+<meta name="fm-version" content="F4">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -74,6 +74,28 @@ textarea.in{min-height:90px;line-height:1.8}
 .muted{color:var(--mut);font-size:12.5px}
 .top .bm{width:32px;height:32px;flex:none;border-radius:9px;background:#fff;padding:2px;object-fit:contain}
 .login .lg{display:block;width:min(220px,70%);height:auto;margin:0 auto 8px}
+.bnav{position:fixed;inset:auto 0 0 0;z-index:25;background:#fff;border-top:1px solid var(--line);display:flex;padding:4px 4px calc(env(safe-area-inset-bottom) + 4px);box-shadow:0 -4px 14px rgba(15,23,42,.06)}
+.bnav button{flex:1;border:0;background:none;padding:6px 2px;font-weight:800;font-size:11.5px;color:var(--mut);display:flex;flex-direction:column;align-items:center;gap:1px;border-radius:10px}
+.bnav button i{font-style:normal;font-size:20px;filter:grayscale(1);opacity:.7}
+.bnav button.on{color:var(--pri);background:#eff6ff}.bnav button.on i{filter:none;opacity:1}
+.hello{display:flex;align-items:center;gap:12px}
+.hello .av{width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;display:grid;place-items:center;font-weight:900;font-size:20px;flex:none}
+.hello b{display:block;font-size:16.5px}.hello span{display:block;color:var(--mut);font-size:12.5px;font-weight:800}.hello small{display:block;color:#94a3b8;font-size:12px;font-weight:700}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.kpi{border:1px solid var(--line);background:#fff;border-radius:14px;padding:12px;text-align:start;display:flex;flex-direction:column;gap:2px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.kpi i{font-style:normal;font-size:18px}.kpi b{font-size:26px;font-weight:900;line-height:1.2}.kpi span{color:var(--mut);font-size:12.5px;font-weight:800}
+.kpi.bad{border-color:#fecaca;background:#fef2f2}.kpi.bad b{color:var(--bad)}.kpi.warn{border-color:#fde68a;background:#fffbeb}.kpi.warn b{color:var(--warn)}.kpi.ok b{color:var(--ok)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center}.stats b{display:block;font-size:19px;font-weight:900}.stats span{color:var(--mut);font-size:12px;font-weight:800}
+.t-ok{color:var(--ok)}.t-warn{color:var(--warn)}.t-bad{color:var(--bad)}
+.srow{display:flex;gap:8px;align-items:flex-start}.srow .search,.srow select{flex:1;margin-bottom:10px}
+.fbtn{flex:none;border:1px solid var(--line);background:#fff;border-radius:12px;padding:9px 12px;font-weight:900;color:#334155}.fbtn.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.fgrid label{font-weight:800;font-size:12.5px;color:#475569;display:flex;flex-direction:column;gap:4px}
+.chk{display:flex;align-items:center;gap:6px;font-weight:800;font-size:13px;color:#334155;margin:0 2px 10px}.chk input{width:18px;height:18px}
+.smap{height:calc(100vh - 290px);min-height:320px;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#e2e8f0}
+.sc .r1{display:flex;justify-content:space-between;gap:8px;align-items:center}.sc .r1 b{font-size:15.5px}
+.pt{width:100%;border-collapse:collapse;font-size:13.5px}.pt th{color:var(--mut);font-size:12px;text-align:start;padding:4px}.pt td{padding:7px 4px;border-top:1px solid var(--line)}
+.pop{font-family:Cairo,Tahoma,sans-serif;direction:rtl;text-align:right;min-width:170px}.pop b{font-size:14px}.pop .pb{display:flex;gap:6px;margin-top:8px}
+.pop .pb button,.pop .pb a{flex:1;border:0;border-radius:8px;padding:6px;background:#eff6ff;color:#1d4ed8;font:800 12px Cairo,sans-serif;text-align:center;text-decoration:none}
 </style>
 </head>
 <body>
@@ -104,6 +126,7 @@ const real={
  async signIn(email,pw){const c=await sb();return chk(await c.auth.signInWithPassword({email:S(email),password:pw}))},
  async signUp(email,pw,name){const c=await sb();return chk(await c.auth.signUp({email:S(email),password:pw,options:{data:{full_name:S(name)}}}))},
  async signOut(){const c=await sb();await c.auth.signOut()},
+ async setPassword(pw){const c=await sb();return chk(await c.auth.updateUser({password:pw}))},
  async session(){const c=await sb();const {data}=await c.auth.getSession();return data?.session||null},
  async me(){const c=await sb();const {data:{user}}=await c.auth.getUser();if(!user)return null;const p=chk(await c.from('profiles').select('*').eq('id',user.id).maybeSingle());return p?Object.assign({},p,{email:p.email||user.email}):{id:user.id,email:user.email,role:'pending',person_names:[],regions:[]}},
  async listProfiles(){const c=await sb();return chk(await c.from('profiles').select('*').order('created_at'))},
@@ -161,7 +184,7 @@ const XST={reopened:{k:'reopened',t:'أُعيد فتحه',ic:'↩️'},cancelled
 const stageOf=k=>STAGES.find(s=>s.k===k)||XST[k]||STAGES[0];
 const done=k=>k==='resolved'||k==='closed'||k==='cancelled';
 const CAUSES=['تلف / عطل فني','انتهاء العمر الافتراضي','سوء استخدام','تخريب','نقص صيانة وقائية','عوامل جوية','خطأ تركيب سابق','أخرى'];
-const D={me:null,tickets:[],work:new Map(),events:new Map(),hours:{'طارئ':24,'عالي':48,'متوسط':72},rules:{desc:true,photo:false,cause:false},db:[],tab:'open',q:'',cur:null};
+const D={me:null,tickets:[],work:new Map(),events:new Map(),hours:{'طارئ':24,'عالي':48,'متوسط':72},rules:{desc:true,photo:false,cause:false},db:[],tab:'open',q:'',cur:null,view:'home',f:{pri:'',stage:'',cat:'',school:'',sort:'sla'},fOpen:false,s:{mode:'list',sort:'open',openOnly:true},myPos:null,syncAt:null};
 const key=t=>t.region+':'+t.ticket_id;
 const canClose=()=>['admin','engineer'].includes(D.me?.role);
 const canEdit=()=>['admin','engineer','supervisor','contractor'].includes(D.me?.role);
@@ -218,35 +241,191 @@ async function pull(silent){
   if(x.key==='fm_work_rules_v135'&&v)D.rules={desc:v.desc!==false,photo:!!v.photo,cause:!!v.cause};
   if(x.key==='fm_school_master_db_v1'&&Array.isArray(v))D.db=v});
  try{localStorage.setItem('fmf_cache_v1',JSON.stringify({at:Date.now(),me:D.me,tickets:T,work:W.work,events:W.events,hours:D.hours,rules:D.rules,db:D.db}))}catch(e){}
- if(!silent)listView();else if(D.cur)ticketView(D.cur,true);else listView();
+ D.syncAt=Date.now();
+ if(silent&&D.cur)ticketView(D.cur,true);else main();
 }
-function fromCache(){try{const o=JSON.parse(localStorage.getItem('fmf_cache_v1')||'null');if(!o)return false;D.me=D.me||o.me;D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
+function fromCache(){try{const o=JSON.parse(localStorage.getItem('fmf_cache_v1')||'null');if(!o)return false;D.me=D.me||o.me;D.syncAt=o.at||null;D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
 
 function shell(inner,title,sub,back){return `<div class="top">${back?'<button id="bk">→</button>':`<img class="bm" src="${FM_BRAND.mark}" alt="${FM_BRAND.name}">`}<h1>${title}<small>${sub||''}</small></h1>${back?'':'<button id="rf" title="تحديث">🔄</button><button id="lo" title="خروج">خروج</button>'}</div><div class="wrap"><div class="q" id="qb"></div>${inner}</div>`}
+/* ---------- main screens (F4): home, tickets, schools, profile ---------- */
+const VIEWS=[['home','🏠','الرئيسية'],['list','📋','البلاغات'],['schools','🏫','المدارس'],['me','👤','حسابي']];
+const navHtml=()=>`<nav class="bnav">${VIEWS.map(([k,ic,t])=>`<button data-v="${k}" class="${D.view===k?'on':''}"><i>${ic}</i>${t}</button>`).join('')}</nav>`;
+function main(){D.cur=null;({home:homeView,list:listView,schools:schoolsView,me:profileView}[D.view]||homeView)()}
+function go(v){D.view=v;window.scrollTo(0,0);main()}
+function bindTop(){
+ document.querySelectorAll('.bnav [data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
+ $('#rf')&&($('#rf').onclick=async()=>{toast('جارٍ التحديث…');try{await flush();await pull()}catch(e){toast(C.msg(e.message),'e')}});
+ $('#lo')&&($('#lo').onclick=signOutNow);
+}
+async function signOutNow(){if(!confirm('تسجيل الخروج؟'))return;await C.api.signOut().catch(()=>{});localStorage.removeItem('fmf_cache_v1');loginView()}
+const dayStart=()=>{const d=new Date();d.setHours(0,0,0,0);return d};
+const monthStart=(off=0)=>{const d=new Date();d.setHours(0,0,0,0);d.setDate(1);d.setMonth(d.getMonth()+off);return d};
+const resAt=t=>{const w=D.work.get(key(t));return w&&w.resolved_at?new Date(w.resolved_at):null};
+const SOON_H=24;
+function items(){return D.tickets.map(t=>({t,st:stageT(t),s:sla(t)}))}
+const isOpenX=x=>!done(x.st);
+const isSoon=x=>isOpenX(x)&&!x.s.late&&x.s.rem!=null&&x.s.rem<=SOON_H;
+const evToday=k=>(D.events.get(k)||[]).some(e=>(e.type==='close'||e.stage==='resolved'||e.stage==='closed')&&new Date(e.at)>=dayStart());
+const arrivedToday=k=>(D.events.get(k)||[]).some(e=>e.type==='arrive'&&new Date(e.at)>=dayStart());
+function buckets(all){all=all||items();return {open:all.filter(isOpenX),late:all.filter(x=>isOpenX(x)&&x.s.late),soon:all.filter(isSoon),today:all.filter(x=>evToday(key(x.t))),all}}
+/* resolved within a period: count, share inside the SLA, average hours to resolve */
+function period(from,to){
+ const L=D.tickets.filter(t=>{const r=resAt(t);return r&&r>=from&&r<to&&stageT(t)!=='cancelled'});
+ const hrs=L.map(t=>t.created_at?(resAt(t)-new Date(t.created_at))/36e5:null).filter(h=>h!=null&&h>=0);
+ const ok=L.filter(t=>{const h=t.created_at?(resAt(t)-new Date(t.created_at))/36e5:null;return h!=null&&h<=(D.hours[S(t.priority)]||72)}).length;
+ return {n:L.length,pct:L.length?Math.round(ok*100/L.length):null,avg:hrs.length?hrs.reduce((a,b)=>a+b,0)/hrs.length:null}}
+const hrsTxt=h=>h==null?'—':h<48?fmt(h,0)+' ساعة':fmt(h/24,1)+' يوم';
+function tkCard(x){const t=x.t,s=stageOf(x.st);return `<button class="card tk" data-k="${esc(key(t))}"><div class="r1"><span class="id">${esc(t.ticket_id)}</span><span class="chip ${x.s.cls}">${x.s.txt}</span></div><div class="sch">${esc(t.school||'—')}</div><div class="cat">${esc(t.sub_category||'')}</div>
+   <div class="chips"><span class="chip">${s.ic} ${s.t}</span><span class="chip ${t.priority==='طارئ'?'c-bad':t.priority==='عالي'?'c-warn':''}">${esc(t.priority||'متوسط')}</span>${arrivedToday(key(t))?'<span class="chip c-pri">📍 تمت الزيارة اليوم</span>':''}</div></button>`}
+const bindCards=()=>document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>ticketView(b.dataset.k));
+const urgentSort=(a,b)=>(isOpenX(a)?0:1)-(isOpenX(b)?0:1)||(a.s.rem??1e9)-(b.s.rem??1e9);
+
+function homeView(){
+ const B=buckets(),m=period(monthStart(),monthStart(1)),name=myName(),regions=(D.me?.regions||[]).map(r=>RN[r]||r).join('، ');
+ const tile=(k,ic,label,n,cls)=>`<button class="kpi ${cls||''}" data-go="${k}"><i>${ic}</i><b>${fmt(n)}</b><span>${label}</span></button>`;
+ const urgent=B.open.slice().sort(urgentSort).slice(0,5);
+ $('#app').innerHTML=shell(`
+  <div class="card hello"><div class="av">${esc(name.charAt(0))}</div><div><b>مرحباً، ${esc(name)}</b><span>${esc(C.ROLE[D.me?.role]||'')}${regions?' • '+esc(regions):''}</span><small>${new Date().toLocaleDateString(GREG,{weekday:'long',day:'numeric',month:'long'})}</small></div></div>
+  <div class="kpis">${tile('open','📂','مفتوحة',B.open.length)}${tile('late','⛔','متأخرة',B.late.length,B.late.length?'bad':'')}${tile('soon','⏰','تنتهي مهلتها خلال 24 ساعة',B.soon.length,B.soon.length?'warn':'')}${tile('today','✅','أُنجز اليوم',B.today.length,'ok')}</div>
+  <div class="card"><h3>📈 هذا الشهر</h3><div class="stats">
+   <div><b>${fmt(m.n)}</b><span>بلاغ مُنجز</span></div>
+   <div><b class="${m.pct==null?'':m.pct>=90?'t-ok':m.pct>=75?'t-warn':'t-bad'}">${m.pct==null?'—':fmt(m.pct)+'%'}</b><span>ضمن المهلة</span></div>
+   <div><b>${hrsTxt(m.avg)}</b><span>متوسط زمن الحل</span></div></div></div>
+  <div class="card"><h3>🔥 الأكثر إلحاحاً</h3>${urgent.length?urgent.map(tkCard).join(''):'<div class="empty" style="padding:14px">لا توجد بلاغات مفتوحة 👏</div>'}
+   ${B.open.length>urgent.length?`<button class="big" id="h-all" style="width:100%;margin-top:4px">عرض كل المفتوحة (${fmt(B.open.length)})</button>`:''}</div>`
+ +navHtml(),'الرئيسية',`${fmt(D.tickets.length)} بلاغ`);
+ qBanner();bindTop();bindCards();
+ document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{D.tab=b.dataset.go;go('list')});
+ $('#h-all')&&($('#h-all').onclick=()=>{D.tab='open';go('list')});
+}
+
+const SORTS=[['sla','الأقرب للتأخر'],['new','الأحدث'],['old','الأقدم'],['school','المدرسة']];
 function listView(){
- D.cur=null;const today=new Date();today.setHours(0,0,0,0);
- const all=D.tickets.map(t=>({t,st:stageT(t),s:sla(t)}));
- const isOpen=x=>!done(x.st);
- const evToday=k=>(D.events.get(k)||[]).some(e=>(e.type==='close'||e.stage==='resolved'||e.stage==='closed')&&new Date(e.at)>=today);
- const T={open:all.filter(isOpen),late:all.filter(x=>isOpen(x)&&x.s.late),today:all.filter(x=>evToday(key(x.t))),all};
- const q=S(D.q).toLowerCase();let L=T[D.tab]||T.open;if(q)L=L.filter(x=>(x.t.ticket_id+' '+x.t.school+' '+x.t.sub_category).toLowerCase().includes(q));
- L=L.slice().sort((a,b)=>(isOpen(a)?0:1)-(isOpen(b)?0:1)||(a.s.rem??1e9)-(b.s.rem??1e9));
- const arrived=k=>(D.events.get(k)||[]).some(e=>e.type==='arrive'&&new Date(e.at)>=today);
- $('#app').innerHTML=shell(`<div class="tabs">${[['open','المفتوحة'],['late','المتأخرة'],['today','أُنجز اليوم'],['all','الكل']].map(([k,t])=>`<button data-t="${k}" class="${D.tab===k?'on':''}">${t}<b>${fmt(T[k].length)}</b></button>`).join('')}</div>
-  <input class="search" id="q" placeholder="🔎 رقم البلاغ أو المدرسة أو العطل" value="${esc(D.q)}">
-  ${L.length?L.slice(0,300).map(x=>{const t=x.t,s=stageOf(x.st);return `<button class="card tk" data-k="${esc(key(t))}"><div class="r1"><span class="id">${esc(t.ticket_id)}</span><span class="chip ${x.s.cls}">${x.s.txt}</span></div><div class="sch">${esc(t.school||'—')}</div><div class="cat">${esc(t.sub_category||'')}</div>
-   <div class="chips"><span class="chip">${s.ic} ${s.t}</span><span class="chip ${t.priority==='طارئ'?'c-bad':t.priority==='عالي'?'c-warn':''}">${esc(t.priority||'متوسط')}</span>${arrived(key(t))?'<span class="chip c-pri">📍 تمت الزيارة اليوم</span>':''}${(D.events.get(key(t))||[]).some(e=>e.type==='note')?'<span class="chip">💬</span>':''}</div></button>`}).join(''):`<div class="empty">${D.tickets.length?'لا توجد بلاغات هنا ✓':'لا توجد بلاغات مرتبطة بحسابك — تأكد مع مدير النظام من اسمك في البلاغات'}</div>`}`,
-  'بلاغاتي',`${esc(myName())} • ${esc(C.ROLE[D.me.role]||'')}`);
- qBanner();
+ D.cur=null;const B=buckets(),f=D.f;
+ const q=S(D.q).toLowerCase();let L=B[D.tab]||B.open;
+ if(q)L=L.filter(x=>(x.t.ticket_id+' '+x.t.school+' '+x.t.sub_category).toLowerCase().includes(q));
+ if(f.pri)L=L.filter(x=>S(x.t.priority||'متوسط')===f.pri);
+ if(f.stage)L=L.filter(x=>x.st===f.stage);
+ if(f.cat)L=L.filter(x=>S(x.t.sub_category)===f.cat);
+ if(f.school)L=L.filter(x=>S(x.t.school)===f.school);
+ const ct=t=>t.created_at?new Date(t.created_at).getTime():0;
+ L=L.slice().sort(f.sort==='new'?(a,b)=>ct(b.t)-ct(a.t):f.sort==='old'?(a,b)=>ct(a.t)-ct(b.t):f.sort==='school'?(a,b)=>S(a.t.school).localeCompare(S(b.t.school),'ar')||urgentSort(a,b):urgentSort);
+ const cats=[...new Set(D.tickets.map(t=>S(t.sub_category)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'));
+ const nF=['pri','stage','cat'].filter(k=>f[k]).length+(f.sort!=='sla'?1:0);
+ const opt=(v,t,cur)=>`<option value="${esc(v)}" ${cur===v?'selected':''}>${esc(t)}</option>`;
+ $('#app').innerHTML=shell(`<div class="tabs">${[['open','المفتوحة'],['late','المتأخرة'],['soon','خلال 24 س'],['today','أُنجز اليوم'],['all','الكل']].map(([k,t])=>`<button data-t="${k}" class="${D.tab===k?'on':''}">${t}<b>${fmt(B[k].length)}</b></button>`).join('')}</div>
+  <div class="srow"><input class="search" id="q" placeholder="🔎 رقم البلاغ أو المدرسة أو العطل" value="${esc(D.q)}"><button class="fbtn ${nF?'on':''}" id="fx">⚙️${nF?` ${fmt(nF)}`:''}</button></div>
+  ${f.school?`<div class="chips" style="margin:-2px 0 10px"><button class="chip c-pri" id="x-sch">🏫 ${esc(f.school)} ✕</button></div>`:''}
+  <div class="card fpanel" style="display:${D.fOpen?'block':'none'}">
+   <div class="fgrid"><label>الأولوية<select class="in" id="f-pri">${opt('','الكل',f.pri)}${['طارئ','عالي','متوسط'].map(p=>opt(p,p,f.pri)).join('')}</select></label>
+   <label>المرحلة<select class="in" id="f-st">${opt('','الكل',f.stage)}${[...STAGES,XST.reopened,XST.cancelled].map(s=>opt(s.k,s.ic+' '+s.t,f.stage)).join('')}</select></label>
+   <label>نوع العطل<select class="in" id="f-cat">${opt('','الكل',f.cat)}${cats.map(c=>opt(c,c,f.cat)).join('')}</select></label>
+   <label>الترتيب<select class="in" id="f-so">${SORTS.map(([k,t])=>opt(k,t,f.sort)).join('')}</select></label></div>
+   <button class="big" id="f-clr" style="width:100%;margin-top:10px">مسح الفلاتر</button></div>
+  <div class="muted" style="margin:0 2px 8px">${fmt(L.length)} بلاغ</div>
+  ${L.length?L.slice(0,300).map(tkCard).join(''):`<div class="empty">${D.tickets.length?'لا توجد بلاغات مطابقة':'لا توجد بلاغات مرتبطة بحسابك — تأكد مع مدير النظام من اسمك في البلاغات'}</div>`}`
+ +navHtml(),'البلاغات',`${esc(myName())} • ${esc(C.ROLE[D.me?.role]||'')}`);
+ qBanner();bindTop();bindCards();
  document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{D.tab=b.dataset.t;listView()});
  let qt=null;$('#q').oninput=e=>{D.q=e.target.value;clearTimeout(qt);qt=setTimeout(()=>{listView();const i=$('#q');i.focus();i.setSelectionRange(i.value.length,i.value.length)},300)};
- document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>ticketView(b.dataset.k));
- $('#rf').onclick=async()=>{toast('جارٍ التحديث…');try{await flush();await pull()}catch(e){toast(C.msg(e.message),'e')}};
- $('#lo').onclick=async()=>{if(!confirm('تسجيل الخروج؟'))return;await C.api.signOut().catch(()=>{});localStorage.removeItem('fmf_cache_v1');loginView()};
+ $('#fx').onclick=()=>{D.fOpen=!D.fOpen;listView()};
+ $('#x-sch')&&($('#x-sch').onclick=()=>{f.school='';listView()});
+ [['f-pri','pri'],['f-st','stage'],['f-cat','cat'],['f-so','sort']].forEach(([id,k])=>$('#'+id).onchange=e=>{f[k]=e.target.value;listView()});
+ $('#f-clr').onclick=()=>{Object.assign(f,{pri:'',stage:'',cat:'',school:'',sort:'sla'});listView()};
+}
+
+/* ---------- schools: grouped list + map ---------- */
+function schoolRows(){
+ const m=new Map();
+ items().forEach(x=>{const n=S(x.t.school)||'—';let r=m.get(n);if(!r){r={name:n,region:x.t.region,sc:school(x.t),total:0,open:0,late:0,soon:0};m.set(n,r)}
+  r.total++;if(isOpenX(x))r.open++;if(isOpenX(x)&&x.s.late)r.late++;if(isSoon(x))r.soon++});
+ const rows=[...m.values()];rows.forEach(r=>{r.xy=hasXY(r.sc)?{lat:+r.sc.lat,lng:+r.sc.lng}:null;r.d=D.myPos&&r.xy?dist(D.myPos,r.xy):null});
+ return rows}
+const navUrl=r=>r.xy?`https://www.google.com/maps/dir/?api=1&destination=${r.xy.lat},${r.xy.lng}`:`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.name+' '+(RN[r.region]||''))}`;
+const distTxt=m=>m==null?'':m<1000?fmt(m)+' م':fmt(m/1000,1)+' كم';
+function schoolsView(){
+ const s=D.s;let rows=schoolRows();const all=rows.length;
+ if(s.openOnly)rows=rows.filter(r=>r.open);
+ const by={open:(a,b)=>b.late-a.late||b.open-a.open,near:(a,b)=>(a.d??1e12)-(b.d??1e12),name:(a,b)=>a.name.localeCompare(b.name,'ar')}[s.sort]||((a,b)=>b.late-a.late||b.open-a.open);
+ rows.sort(by);
+ const noXY=rows.filter(r=>!r.xy).length;
+ $('#app').innerHTML=shell(`
+  <div class="tabs"><button data-m="list" class="${s.mode==='list'?'on':''}">📋 قائمة</button><button data-m="map" class="${s.mode==='map'?'on':''}">🗺️ خريطة</button></div>
+  <div class="srow"><select class="in" id="s-so"><option value="open" ${s.sort==='open'?'selected':''}>الأكثر تأخراً وبلاغات مفتوحة</option><option value="near" ${s.sort==='near'?'selected':''}>الأقرب لموقعي</option><option value="name" ${s.sort==='name'?'selected':''}>الاسم</option></select>
+   <button class="fbtn ${D.myPos?'on':''}" id="s-me" title="تحديد موقعي">📍</button></div>
+  <label class="chk"><input type="checkbox" id="s-oo" ${s.openOnly?'checked':''}> المدارس التي بها بلاغات مفتوحة فقط <span class="muted">(${fmt(rows.length)} من ${fmt(all)})</span></label>
+  ${s.mode==='map'?`<div id="smap" class="smap"></div>${noXY?`<div class="muted" style="margin-top:6px">${fmt(noXY)} مدرسة بدون إحداثيات لا تظهر على الخريطة — تظهر في القائمة.</div>`:''}`
+   :rows.length?rows.map(r=>`<div class="card sc"><div class="r1"><b>${esc(r.name)}</b>${r.d!=null?`<span class="chip">📍 ${distTxt(r.d)}</span>`:''}</div>
+    <div class="chips">${r.late?`<span class="chip c-bad">⛔ ${fmt(r.late)} متأخر</span>`:''}${r.soon?`<span class="chip c-warn">⏰ ${fmt(r.soon)} خلال 24 س</span>`:''}<span class="chip ${r.open?'c-pri':'c-ok'}">📂 ${fmt(r.open)} مفتوح</span><span class="chip">الكل ${fmt(r.total)}</span></div>
+    <div class="btns" style="margin-top:10px"><button class="big" data-sch="${esc(r.name)}">📋 البلاغات</button><a class="big" href="${navUrl(r)}" target="_blank" rel="noopener">🗺️ الاتجاهات</a></div></div>`).join('')
+   :'<div class="empty">لا توجد مدارس مطابقة</div>'}`
+ +navHtml(),'المدارس',`${fmt(all)} مدرسة`);
+ qBanner();bindTop();
+ const openSchool=n=>{D.f.school=n;const r=schoolRows().find(x=>x.name===n);D.tab=r&&r.open?'open':'all';go('list')};
+ document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{s.mode=b.dataset.m;schoolsView()});
+ $('#s-so').onchange=async e=>{s.sort=e.target.value;if(s.sort==='near'&&!D.myPos)await locate();schoolsView()};
+ $('#s-oo').onchange=e=>{s.openOnly=e.target.checked;schoolsView()};
+ $('#s-me').onclick=async()=>{if(await locate()){s.sort='near'};schoolsView()};
+ document.querySelectorAll('[data-sch]').forEach(b=>b.onclick=()=>openSchool(b.dataset.sch));
+ if(s.mode==='map')drawMap(rows,openSchool);
+}
+async function locate(){toast('جارٍ تحديد موقعك…');try{const g=await geo();D.myPos={lat:g.lat,lng:g.lng};return true}catch(e){toast(e.message||'تعذر تحديد الموقع','w');return false}}
+let lfP=null;
+function needLeaflet(){if(window.L&&window.L.map)return Promise.resolve(true);if(lfP)return lfP;
+ if(!document.getElementById('lf-css')){const l=document.createElement('link');l.id='lf-css';l.rel='stylesheet';l.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';document.head.appendChild(l)}
+ lfP=new Promise(res=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';const t=setTimeout(()=>{lfP=null;res(false)},12000);s.onload=()=>{clearTimeout(t);res(!!(window.L&&window.L.map))};s.onerror=()=>{clearTimeout(t);lfP=null;res(false)};document.head.appendChild(s)});
+ return lfP}
+async function drawMap(rows,openSchool){
+ const box=$('#smap');box.innerHTML='<div class="empty">جارٍ تحميل الخريطة…</div>';
+ const ok=await needLeaflet();if(!box.isConnected)return;
+ if(!ok){box.innerHTML='<div class="empty">تعذر تحميل الخريطة — تحقق من الاتصال بالإنترنت</div>';return}
+ box.innerHTML='';const pts=rows.filter(r=>r.xy);
+ const map=L.map(box,{zoomControl:true,attributionControl:true});
+ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(map);
+ const col=r=>r.late?'#dc2626':r.open?'#f59e0b':'#16a34a',bounds=[];
+ pts.forEach(r=>{const ll=[r.xy.lat,r.xy.lng];bounds.push(ll);
+  L.circleMarker(ll,{radius:7+Math.min(10,Math.sqrt(r.open)*2.5),color:'#fff',weight:2,fillColor:col(r),fillOpacity:.9}).addTo(map)
+   .bindPopup(`<div class="pop"><b>${esc(r.name)}</b><div>📂 ${fmt(r.open)} مفتوح${r.late?` • ⛔ ${fmt(r.late)} متأخر`:''}${r.d!=null?` • 📍 ${distTxt(r.d)}`:''}</div><div class="pb"><button data-psch="${esc(r.name)}">📋 البلاغات</button><a href="${navUrl(r)}" target="_blank" rel="noopener">🗺️ الاتجاهات</a></div></div>`)});
+ if(D.myPos){const ll=[D.myPos.lat,D.myPos.lng];bounds.push(ll);L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).addTo(map).bindTooltip('موقعي')}
+ if(bounds.length)map.fitBounds(bounds,{padding:[30,30],maxZoom:15});else map.setView([24.71,46.68],10);
+ box.addEventListener('click',e=>{const b=e.target.closest('[data-psch]');if(b)openSchool(b.dataset.psch)});
+ setTimeout(()=>map.invalidateSize(),200);
+}
+
+/* ---------- profile ---------- */
+function profileView(){
+ const me=D.me||{},name=myName(),regions=(me.regions||[]).map(r=>RN[r]||r).join('، ');
+ const cur=period(monthStart(),monthStart(1)),prev=period(monthStart(-1),monthStart());
+ const mine=[...D.events.values()].flat().filter(e=>S(e.by_name)===name&&new Date(e.at)>=monthStart());
+ const arr=mine.filter(e=>e.type==='arrive').length,upd=mine.length;
+ const ver=(document.querySelector('meta[name="fm-version"]')||{}).content||'';
+ const row=(l,a,b)=>`<tr><td>${l}</td><td><b>${a}</b></td><td class="muted">${b}</td></tr>`;
+ $('#app').innerHTML=shell(`
+  <div class="card hello"><div class="av">${esc(name.charAt(0))}</div><div><b>${esc(name)}</b><span>${esc(C.ROLE[me.role]||me.role||'')}${regions?' • '+esc(regions):''}</span><small dir="ltr" style="text-align:right">${esc(me.email||'')}</small></div></div>
+  ${(me.person_names||[]).length?`<div class="card"><h3>🔗 مرتبط في البلاغات بالاسم</h3><div class="chips">${me.person_names.map(n=>`<span class="chip">${esc(n)}</span>`).join('')}</div><div class="muted" style="margin-top:6px">يحدده مدير النظام — تظهر لك البلاغات المسجلة بهذا الاسم فقط.</div></div>`:''}
+  <div class="card"><h3>📊 أدائي</h3><table class="pt"><thead><tr><th></th><th>هذا الشهر</th><th>الشهر الماضي</th></tr></thead><tbody>
+   ${row('بلاغات مُنجزة',fmt(cur.n),fmt(prev.n))}
+   ${row('ضمن المهلة',cur.pct==null?'—':fmt(cur.pct)+'%',prev.pct==null?'—':fmt(prev.pct)+'%')}
+   ${row('متوسط زمن الحل',hrsTxt(cur.avg),hrsTxt(prev.avg))}
+   ${row('زيارات مسجّلة',fmt(arr),'')}
+   ${row('تحديثات أرسلتها',fmt(upd),'')}</tbody></table></div>
+  <div class="card"><h3>✏️ الاسم الظاهر</h3><div style="display:flex;gap:8px"><input class="in" id="p-n" value="${esc(me.full_name||'')}" autocomplete="name"><button class="big p" id="p-ns" style="flex:none;padding:10px 16px">حفظ</button></div></div>
+  <div class="card"><h3>🔑 تغيير كلمة المرور</h3><input class="in" id="p-p1" type="password" dir="ltr" placeholder="كلمة المرور الجديدة" autocomplete="new-password"><input class="in" id="p-p2" type="password" dir="ltr" placeholder="تأكيد كلمة المرور" autocomplete="new-password" style="margin-top:8px"><button class="big" id="p-ps" style="width:100%;margin-top:10px">تغيير كلمة المرور</button></div>
+  <div class="card"><h3>⚙️ التطبيق</h3><div class="kv"><span>آخر مزامنة</span><b>${D.syncAt?dts(D.syncAt):'—'}</b><span>بانتظار الإرسال</span><b>${fmt(qLoad().length)} تحديث</b><span>الإصدار</span><b>${esc(ver)}</b></div>
+   <div class="btns" style="margin-top:12px"><button class="big" id="p-sync">🔄 مزامنة الآن</button><a class="big" href="start.html">🏠 صفحة البدء</a></div>
+   <button class="big" id="p-out" style="width:100%;margin-top:8px;color:var(--bad)">🚪 تسجيل الخروج</button></div>`
+ +navHtml(),'حسابي','');
+ qBanner();bindTop();
+ $('#p-ns').onclick=async()=>{const n=S($('#p-n').value);if(!n){toast('اكتب الاسم','w');return}if(n===S(me.full_name)){toast('لا توجد تعديلات','w');return}
+  const b=$('#p-ns');b.disabled=true;try{await C.api.saveProfile(me.id,{full_name:n});D.me.full_name=n;toast('تم حفظ الاسم');profileView()}catch(e){toast(C.msg(e.message),'e');b.disabled=false}};
+ $('#p-ps').onclick=async()=>{const a=$('#p-p1').value,b2=$('#p-p2').value;if(a.length<6){toast('كلمة المرور 6 أحرف على الأقل','w');return}if(a!==b2){toast('كلمتا المرور غير متطابقتين','w');return}
+  const b=$('#p-ps');b.disabled=true;try{await C.api.setPassword(a);toast('تم تغيير كلمة المرور');$('#p-p1').value=$('#p-p2').value=''}catch(e){toast(C.msg(e.message),'e')}b.disabled=false};
+ $('#p-sync').onclick=async()=>{toast('جارٍ المزامنة…');try{await flush();await pull(true);toast('تمت المزامنة')}catch(e){toast(C.msg(e.message),'e')}};
+ $('#p-out').onclick=signOutNow;
 }
 let photos=[],newPh=[];
 async function ticketView(k,keep){
- const t=D.tickets.find(x=>key(x)===k);if(!t){listView();return}
+ const t=D.tickets.find(x=>key(x)===k);if(!t){main();return}
  if(!keep||D.cur!==k){photos=[];newPh=[];try{photos=await C.api.listPhotos(t.region,t.ticket_id)}catch(e){}}
  D.cur=k;const w=D.work.get(k);const rec=w?w.rec||{}:{};const st=stageT(t),s=sla(t),E=D.events.get(k)||[],sc=school(t),ro=!canEdit()||(st==='closed'&&!canClose())||(st==='cancelled'&&!canClose());
  const draft=keep?readForm():null;
@@ -277,7 +456,7 @@ async function ticketView(k,keep){
   esc(t.ticket_id),esc(t.school||''),true);
  qBanner();
  if(draft)restore(draft);
- $('#bk').onclick=()=>listView();
+ $('#bk').onclick=()=>main();
  let pick=null;document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{pick=b.dataset.s;document.querySelectorAll('[data-s]').forEach(x=>x.classList.toggle('on',x===b))});
  document.querySelectorAll('.cam input').forEach(i=>i.onchange=async()=>{for(const f of [...i.files].slice(0,8)){try{newPh.push({kind:i.dataset.kind,d:await compress(f)})}catch(e){toast('تعذر قراءة الصورة','e')}}const d=readForm();ticketView(k,true).then(()=>restore(d))});
  $('#arr')&&($('#arr').onclick=()=>arrive(t,sc));
@@ -329,9 +508,9 @@ async function boot(){
   if(D.me.role==='pending'||D.me.active===false){pendingView();return}
   await flush();await pull();
   try{C.api.subscribe(()=>{clearTimeout(boot.t);boot.t=setTimeout(()=>pull(true).catch(()=>{}),1500)})}catch(e){}
- }catch(e){if(fromCache()){toast('بدون اتصال — تعرض آخر بيانات محفوظة','w');listView()}else{toast(C.msg(e.message),'e');loginView()}}
+ }catch(e){if(fromCache()){toast('بدون اتصال — تعرض آخر بيانات محفوظة','w');main()}else{toast(C.msg(e.message),'e');loginView()}}
 }
-window.__fmField={D,boot,pull,listView,ticketView};
+window.__fmField={D,boot,pull,main,listView,ticketView};
 setTimeout(boot,60);
 })();
 </script>
