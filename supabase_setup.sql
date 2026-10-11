@@ -346,10 +346,12 @@ language sql stable security definer set search_path = public as $$
       and public.fm_rank(t.role) between 1 and public.fm_rank(me.role) - 1
       and (me.role = 'admin' or public.fm_is_under(t.id, me.id))) $$;
 
--- the people the signed-in user may assign to (names only, for the assignee list)
-create or replace function public.fm_wo_assignable() returns table(id uuid, full_name text, role text, regions text[], phone text)
+-- the people the signed-in user may assign to (for the assignee list; V146 adds email and
+-- person_names so a group of schools can be matched to each school's own supervisor)
+drop function if exists public.fm_wo_assignable();
+create or replace function public.fm_wo_assignable() returns table(id uuid, full_name text, role text, regions text[], phone text, email text, person_names text[])
 language sql stable security definer set search_path = public as $$
-  select p.id, coalesce(p.full_name, p.email), p.role, p.regions, p.phone from public.profiles p
+  select p.id, coalesce(p.full_name, p.email), p.role, p.regions, p.phone, p.email, p.person_names from public.profiles p
    where public.fm_can_assign_to(p.id) order by public.fm_rank(p.role) desc, p.full_name $$;
 
 create sequence if not exists public.wo_seq;
@@ -377,6 +379,11 @@ create table if not exists public.work_orders (
   done_at         timestamptz,
   closed_at       timestamptz
 );
+-- V146: orders created together for a group of schools share a batch («حملة»)
+alter table public.work_orders add column if not exists batch_id    uuid;
+alter table public.work_orders add column if not exists batch_title text;
+alter table public.work_orders add column if not exists building_id text;
+create index if not exists work_orders_batch_idx on public.work_orders (batch_id);
 create index if not exists work_orders_assignee_idx on public.work_orders (assignee, status);
 create index if not exists work_orders_creator_idx  on public.work_orders (created_by, status);
 create table if not exists public.wo_events (
@@ -450,16 +457,40 @@ begin
   if t.id is null or not public.fm_can_assign_to(t.id) then raise exception 'cannot assign to this user'; end if;
   v_code := 'WO-' || to_char(now(),'YYYY') || '-' || lpad(nextval('public.wo_seq')::text, 4, '0');
   insert into public.work_orders (id, code, title, description, type, region, school, priority, due_at, checklist, ticket_refs,
-                                  created_by, created_by_name, assignee, assignee_name)
+                                  created_by, created_by_name, assignee, assignee_name, batch_id, batch_title, building_id)
   values (v_id, v_code, trim(p->>'title'), nullif(trim(p->>'description'),''), coalesce(nullif(p->>'type',''),'task'),
           nullif(p->>'region',''), nullif(trim(p->>'school'),''), coalesce(nullif(p->>'priority',''),'متوسط'),
           nullif(p->>'due_at','')::timestamptz,
           case when jsonb_typeof(p->'checklist') = 'array' then p->'checklist' else '[]'::jsonb end,
           case when jsonb_typeof(p->'ticket_refs') = 'array' then array(select jsonb_array_elements_text(p->'ticket_refs')) else '{}' end,
-          me.id, coalesce(me.full_name, me.email), t.id, coalesce(t.full_name, t.email));
+          me.id, coalesce(me.full_name, me.email), t.id, coalesce(t.full_name, t.email),
+          public.fm_uuid_or_null(p->>'batch_id'), nullif(trim(p->>'batch_title'),''), nullif(trim(p->>'building_id'),''));
   insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
   values (v_id, me.id, coalesce(me.full_name, me.email), 'create', 'assigned', '📝 أُنشئ الأمر وأُسند إلى ' || coalesce(t.full_name, t.email));
   return v_id;
+end $$;
+
+-- V146: one order per school for a group of schools, all in one batch, all or nothing.
+-- p = {batch_id?, batch_title, items:[{title, assignee, school, …}]}; a large group is sent in
+-- several calls with the same batch_id, which only the batch's own creator may add to.
+create or replace function public.fm_wo_create_many(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_b uuid := coalesce(public.fm_uuid_or_null(p->>'batch_id'), gen_random_uuid()); it jsonb; n int := 0;
+  bt text := nullif(trim(p->>'batch_title'),'');
+begin
+  if jsonb_typeof(p->'items') <> 'array' or jsonb_array_length(p->'items') = 0 then raise exception 'items required'; end if;
+  if jsonb_array_length(p->'items') > 500 then raise exception 'too many items'; end if;
+  if exists (select 1 from public.work_orders where batch_id = v_b and created_by <> auth.uid()) then
+    raise exception 'not allowed' using errcode = '42501'; end if;
+  for it in select * from jsonb_array_elements(p->'items') loop
+    begin
+      perform public.fm_wo_create(it || jsonb_build_object('batch_id', v_b, 'batch_title', coalesce(bt, it->>'title')));
+    exception when others then
+      raise exception '% — %', sqlerrm, coalesce(nullif(it->>'school',''), '#' || (n + 1)) using errcode = sqlstate;
+    end;
+    n := n + 1;
+  end loop;
+  return jsonb_build_object('batch_id', v_b, 'count', n);
 end $$;
 
 -- every step of the order; the allowed step depends on who you are (assignee / creator) and the current status
@@ -515,6 +546,8 @@ end $$;
 revoke all on function public.fm_wo_create(jsonb) from public, anon;
 revoke all on function public.fm_wo_act(uuid,text,text,jsonb,jsonb) from public, anon;
 revoke all on function public.fm_wo_assignable() from public, anon;
+revoke all on function public.fm_wo_create_many(jsonb) from public, anon;
+grant execute on function public.fm_wo_create_many(jsonb) to authenticated;
 grant execute on function public.fm_wo_create(jsonb) to authenticated;
 grant execute on function public.fm_wo_act(uuid,text,text,jsonb,jsonb) to authenticated;
 grant execute on function public.fm_wo_assignable() to authenticated;

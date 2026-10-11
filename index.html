@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V145">
+<meta name="fm-version" content="V146">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25530,9 +25530,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V145',date:'2026-10-10',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V146',date:'2026-10-11',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+{v:'V146',d:'2026-10-11',t:'أوامر عمل لمجموعة مدارس',i:['زر «أمر لمجموعة مدارس»: أمر مستقل لكل مدرسة ضمن «حملة» واحدة','اختيار المدارس حسب المنطقة أو مكتب التعليم أو المدينة أو المشرف/المهندس/المقاول، أو اختيار يدوي، أو من ملف Excel','إسناد تلقائي لمسؤول كل مدرسة من قاعدة بيانات المدارس، أو لشخص واحد، مع بديل للمدارس غير المطابقة','لوحة الحملات: نسبة الإنجاز والمتأخر وبانتظار الاعتماد، وإلغاء المتبقي','تصدير Excel يشمل الحملة والرقم الوزاري، وقراءة كل الأوامر بدون حد الألف']},
  {v:'V145',d:'2026-10-10',t:'أوامر العمل (المرحلة 1)',i:['صفحة «أوامر العمل» في أعلى القائمة: إنشاء أمر مستقل (إصلاح، صيانة وقائية، معاينة، زيارة، تجميع معلومات، مهمة) وإسناده لمن هو أدنى في التدرج','الموظف يستلم الأمر في تطبيق الميدان: قبول أو رفض بسبب، بدء التنفيذ، تسجيل الوصول بالموقع، قائمة المهام، صور قبل وبعد، ثم «تم الإجراء»','المُسنِد يعتمد ويغلق الأمر أو يعيده للتصحيح، ويمكنه إعادة الإسناد أو الإلغاء، مع سجل كامل لكل خطوة','عمود «يتبع لـ» في المستخدمين والصلاحيات (والاستيراد والتصدير) لتحديد التدرج: مدير ← مهندس ← مشرف ← مقاول','الصلاحيات مفروضة في قاعدة البيانات — يتطلب تشغيل ملف supabase_setup.sql المحدَّث']},
  {v:'V144',d:'2026-10-10',t:'حماية دخول المنصة',i:['المنصة على الموقع لا تظهر إلا بعد تسجيل الدخول والتأكد من أن دور المستخدم مسموح له','المشرف والمقاول يُمنعان من المنصة ويظهر لهما زر تطبيق الميدان','مدير النظام يحدد الأدوار المسموح لها من الإعدادات ← السحابة ← «من يدخل المنصة» (الافتراضي: المدير والمهندس والمشاهد)','فتح المنصة على الموقع بدون ربط بالسحابة يحوّل إلى صفحة الدخول']},
  {v:'V143',d:'2026-10-10',t:'أدوات المشرف الإضافية',i:['تطبيق الميدان F7: تنبيهات البلاغات التي تقترب من الاختراق، هدف أسبوعي مع شريط تقدّم، ترتيب المشرف بين مشرفي منطقته بدون أسماء، تقرير PDF للفترة، وخطة زيارات اليوم حسب الإلحاح والقرب مع مسار في خرائط Google','عند رفع ملف البلاغات للسحابة تُحسب درجات المشرفين بمعادلة المنصة ويُنشر الترتيب بدون أسماء']},
@@ -29425,10 +29426,11 @@ const real={
   chk(await c.storage.from('ticket-photos').upload(path,b64ToBlob(dataUrl),{contentType:'image/jpeg',upsert:false}));
   chk(await c.from('ticket_photos').insert({id,region,ticket_id:tid,kind,path,by_name:byName,geo:geo||null}));return {id,path}},
  /* V145 work orders: reads go through RLS, every change through fm_wo_create / fm_wo_act */
- async woList(){const c=await sb();return chk(await c.from('work_orders').select('*').order('updated_at',{ascending:false}).limit(1000))},
+ async woList(){const c=await sb();let out=[];for(let i=0;i<10;i++){const r=chk(await c.from('work_orders').select('*').order('updated_at',{ascending:false}).order('id').range(i*1000,i*1000+999));out=out.concat(r);if(r.length<1000)break}return out},
  async woEvents(id){const c=await sb();return chk(await c.from('wo_events').select('*').eq('wo_id',id).order('at'))},
  async woAssignable(){const c=await sb();return chk(await c.rpc('fm_wo_assignable'))},
  async woCreate(o){const c=await sb();return chk(await c.rpc('fm_wo_create',{p:o}))},
+ async woCreateMany(p){const c=await sb();return chk(await c.rpc('fm_wo_create_many',{p}))},
  async woAct(id,action,note,geo,data){const c=await sb();return chk(await c.rpc('fm_wo_act',{p_id:id,p_action:action,p_note:note||null,p_geo:geo||null,p_data:data===undefined?null:data}))},
  async woUpload(id,kind,dataUrl,byName,geo){const c=await sb();const pid=uuid();const path=`${id}/${pid}.jpg`;
   chk(await c.storage.from('wo-photos').upload(path,b64ToBlob(dataUrl),{contentType:'image/jpeg',upsert:false}));
@@ -30211,12 +30213,12 @@ function page(){let p=document.getElementById('fm145-page');if(!p){p=document.cr
 async function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.getElementById('fm116-page')?.classList.remove('open');document.body.classList.remove('v2-mobile-nav');
  try{window.v2SetActive?.(btn)}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;p.querySelector('.body').innerHTML='<div class="fm125-src">جارٍ التحميل…</div>';await load();render()}
 function render(){const p=page(),me_=me(),ex=p.querySelector('.extra');
- ex.innerHTML=`${canAssign()?'<button class="fm103-btn primary" type="button" data-a="new">➕ أمر عمل جديد</button>':''}<button class="fm103-btn" type="button" data-a="re">🔄 تحديث</button><button class="fm103-btn" type="button" data-a="xl">⬇️ Excel</button>`;
- ex.querySelector('[data-a=new]')&&(ex.querySelector('[data-a=new]').onclick=()=>createDlg());ex.querySelector('[data-a=re]').onclick=async()=>{await load();render()};ex.querySelector('[data-a=xl]').onclick=exportXl;
+ ex.innerHTML=`${canAssign()?'<button class="fm103-btn primary" type="button" data-a="new">➕ أمر عمل جديد</button>':''}${canAssign()&&window.fmV146GroupDlg?'<button class="fm103-btn primary" type="button" data-a="grp">🏘️ أمر لمجموعة مدارس</button>':''}<button class="fm103-btn" type="button" data-a="re">🔄 تحديث</button><button class="fm103-btn" type="button" data-a="xl">⬇️ Excel</button>`;
+ ex.querySelector('[data-a=new]')&&(ex.querySelector('[data-a=new]').onclick=()=>createDlg());ex.querySelector('[data-a=grp]')&&(ex.querySelector('[data-a=grp]').onclick=()=>window.fmV146GroupDlg());ex.querySelector('[data-a=re]').onclick=async()=>{await load();render()};ex.querySelector('[data-a=xl]').onclick=exportXl;
  const box=p.querySelector('.body');
  if(!C.state?.on){box.innerHTML='<div class="fm122-note">أوامر العمل تعمل مع السحابة — سجّل الدخول أولاً.</div>';return}
  if(err){box.innerHTML=`<div class="fm122-note">${esc(sqlMsg(err))}</div>`;return}
- const scope=w=>F.scope==='mine'?w.created_by===me_.id:F.scope==='tome'?w.assignee===me_.id:true;
+ const scope=w=>(!F.batch||w.batch_id===F.batch)&&(F.scope==='mine'?w.created_by===me_.id:F.scope==='tome'?w.assignee===me_.id:true);
  const K=[['open','نشطة',w=>!FINAL(w.status)&&!['done','rejected'].includes(w.status),''],['approve','بانتظار الاعتماد',w=>w.status==='done','warn'],['late','متأخرة',late,'bad'],['rej','مرفوضة',w=>w.status==='rejected','bad'],['closed','مغلقة',w=>w.status==='closed','ok'],['all','الكل',()=>true,'']];
  const base=L.filter(scope),kf=(K.find(k=>k[0]===F.k)||K[0])[2],q=S(F.q).toLowerCase();
  const V=base.filter(kf).filter(w=>(!F.type||w.type===F.type)&&(!F.who||w.assignee===F.who)&&(!q||(S(w.code)+' '+w.title+' '+S(w.school)+' '+S(w.assignee_name)+' '+S(w.created_by_name)).toLowerCase().includes(q)))
@@ -30228,14 +30230,16 @@ function render(){const p=page(),me_=me(),ex=p.querySelector('.extra');
    <select data-f="scope"><option value="all" ${F.scope==='all'?'selected':''}>كل ما أراه</option><option value="mine" ${F.scope==='mine'?'selected':''}>أسندتها أنا</option><option value="tome" ${F.scope==='tome'?'selected':''}>مُسندة إليّ</option></select>
    <select data-f="type"><option value="">كل الأنواع</option>${Object.entries(T).map(([k,v])=>`<option value="${k}" ${F.type===k?'selected':''}>${v[0]} ${v[1]}</option>`).join('')}</select>
    <select data-f="who"><option value="">كل الموظفين</option>${people.map(([id,n])=>`<option value="${esc(id)}" ${F.who===id?'selected':''}>${esc(n)}</option>`).join('')}</select></div>
+  ${window.fmV146Panel?fmV146Panel(base,F):''}
   ${load_.size?`<div class="fm125-src" style="margin-bottom:8px">الأوامر المفتوحة لكل موظف: ${[...load_.entries()].sort((a,b)=>b[1]-a[1]).map(([n,c])=>`<b>${esc(n)}</b> ${fmt(c)}`).join(' • ')}</div>`:''}
   <div class="fm122-tw" style="max-height:none"><table class="fm122-t fm145-t"><thead><tr><th>الرقم</th><th>الأمر</th><th>المدرسة</th><th>المُسند إليه</th><th>من</th><th>الأولوية</th><th>الموعد</th><th>الحالة</th></tr></thead><tbody>
-  ${V.map(w=>`<tr data-id="${esc(w.id)}"><td><b>${esc(w.code||'')}</b>${needsMe(w)?'<span class="fm145-me">مطلوب منك</span>':''}</td><td>${(T[w.type]||T.task)[0]} ${esc(w.title)}</td><td>${esc(w.school||'—')}</td><td>${esc(w.assignee_name||'')}</td><td>${esc(w.created_by_name||'')}</td>
+  ${V.map(w=>`<tr data-id="${esc(w.id)}"><td><b>${esc(w.code||'')}</b>${needsMe(w)?'<span class="fm145-me">مطلوب منك</span>':''}</td><td>${(T[w.type]||T.task)[0]} ${esc(w.title)}${w.batch_id&&!F.batch?`<small class="fm146-bt">🏘️ ${esc(w.batch_title||'حملة')}</small>`:''}</td><td>${esc(w.school||'—')}</td><td>${esc(w.assignee_name||'')}</td><td>${esc(w.created_by_name||'')}</td>
    <td>${esc(w.priority||'')}</td><td>${w.due_at?dts(w.due_at):'—'}${late(w)?' <span class="fm145-st bad">متأخر</span>':''}</td><td>${chip(w)}</td></tr>`).join('')||'<tr><td colspan="8" class="fm125-src" style="text-align:center;padding:18px">لا توجد أوامر هنا</td></tr>'}</tbody></table></div>`;
  box.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{F.k=b.dataset.k;render()});
  box.querySelectorAll('[data-f]').forEach(i=>{const go=()=>{F[i.dataset.f]=i.value;render();if(i.dataset.f==='q'){const n=box.querySelector('[data-f=q]');n.focus();n.setSelectionRange(n.value.length,n.value.length)}};
   if(i.tagName==='INPUT'){let t=null;i.oninput=()=>{clearTimeout(t);t=setTimeout(go,300)}}else i.onchange=go});
  box.querySelectorAll('tr[data-id]').forEach(tr=>tr.onclick=()=>detail(tr.dataset.id));
+ window.fmV146Bind?.(box,F);
  badge();
 }
 function dlg(html,w){const d=document.createElement('div');d.className='fm122-dlg-wrap';d.innerHTML=`<div class="fm122-dlg" style="width:min(${w||720}px,96vw)">${html}</div>`;document.body.appendChild(d);
@@ -30304,17 +30308,222 @@ async function createDlg(){let P=[];try{P=await C.api.woAssignable()}catch(e){to
   catch(er){toast(/cannot assign/.test(er.message)?'لا يمكنك الإسناد لهذا الشخص':sqlMsg(er.message),'error');b.disabled=false;b.textContent='📤 إسناد الأمر'}};
 }
 function exportXl(){if(!(window.XLSX&&XLSX.utils)){toast('مكتبة Excel غير محمّلة','error');return}
- const rows=[['الرقم','العنوان','النوع','المدرسة','المنطقة','المُسند إليه','من','الأولوية','موعد الإنجاز','الحالة','متأخر','قائمة المهام','أُنشئ','أُبلغ بالإنجاز','أُغلق'],
-  ...L.map(w=>[w.code,w.title,(T[w.type]||T.task)[1],w.school||'',RN[w.region]||w.region||'',w.assignee_name||'',w.created_by_name||'',w.priority||'',w.due_at?dts(w.due_at):'',(ST[w.status]||['',''])[1],late(w)?'نعم':'',
+ const rows=[['الرقم','العنوان','النوع','الحملة','المدرسة','الرقم الوزاري / رقم المبنى','المنطقة','المُسند إليه','من','الأولوية','موعد الإنجاز','الحالة','متأخر','قائمة المهام','أُنشئ','أُبلغ بالإنجاز','أُغلق'],
+  ...L.filter(w=>!F.batch||w.batch_id===F.batch).map(w=>[w.code,w.title,(T[w.type]||T.task)[1],w.batch_title||'',w.school||'',w.building_id||'',RN[w.region]||w.region||'',w.assignee_name||'',w.created_by_name||'',w.priority||'',w.due_at?dts(w.due_at):'',(ST[w.status]||['',''])[1],late(w)?'نعم':'',
    Array.isArray(w.checklist)&&w.checklist.length?`${w.checklist.filter(x=>x.done).length}/${w.checklist.length}`:'',dts(w.created_at),w.done_at?dts(w.done_at):'',w.closed_at?dts(w.closed_at):''])];
- const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=rows[0].map((_,i)=>({wch:[14,34,14,26,10,22,22,10,18,16,8,10,18,18,18][i]}));ws['!views']=[{RTL:true}];
+ const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=rows[0].map((_,i)=>({wch:[14,34,14,26,26,16,10,22,22,10,18,16,8,10,18,18,18][i]}));ws['!views']=[{RTL:true}];
  const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};XLSX.utils.book_append_sheet(wb,ws,'أوامر العمل');XLSX.writeFile(wb,`RakizoraFM-work-orders-${new Date().toISOString().slice(0,10)}.xlsx`)}
 
 window.fmV145OpenWorkOrders=()=>openPage(document.getElementById('v2-nav-fm145-wo'));
+/* V146 reaches the page through this */
+window.fmV145X={list:()=>L,F,load,render,dlg,detail,me,late,FINAL,T,PH,RN,toLocal,sqlMsg,dts};
 window.fmV145Load=load;
 /* sidebar button + badge refresh once the cloud session is up */
 const tick=()=>{navBtn();if(C.state?.on){load().then(()=>{const p=document.getElementById('fm145-page');if(p?.classList.contains('open')&&!p.contains(document.activeElement)&&!document.querySelector('.fm122-dlg-wrap'))render()})}};
 setTimeout(tick,2500);setTimeout(tick,6000);setInterval(()=>{if(!document.hidden)tick()},120000);
+})();
+</script>
+<style id="fm-v146-wo-group-css">
+/* V146 — work orders for a group of schools (batches) */
+.fm146 h4{margin:14px 0 6px;font:900 14.5px Cairo,sans-serif;color:#0f172a}
+.fm146 .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.fm146-tabs{display:flex;gap:6px;margin:6px 0 8px;flex-wrap:wrap}.fm146-tabs button{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:5px 14px;font:800 13px Cairo,sans-serif;cursor:pointer}
+.fm146-tabs button.on{background:#2563eb;border-color:#2563eb;color:#fff}
+.fm146-fl{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.fm146-fl>div>label{margin-top:0}
+.fm146-sel{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}.fm146-sel button{border:1px solid #cbd5e1;background:#f8fafc;border-radius:8px;padding:4px 10px;font:800 12.5px Cairo,sans-serif;cursor:pointer}
+.fm146-sel b{margin-right:auto;color:#1d4ed8}
+.fm146-ls{max-height:260px;overflow:auto;border:1px solid #e2e8f0;border-radius:12px}
+.fm146-ls label{display:grid!important;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;margin:0!important;padding:6px 10px;border-bottom:1px solid #f1f5f9;font-weight:700!important;font-size:13px!important;cursor:pointer}
+.fm146-ls label:hover{background:#f8fafc}.fm146-ls small{color:#64748b;font-weight:700;font-size:11.5px}
+.fm146 input[type=checkbox],.fm146 input[type=radio]{width:auto!important;margin:0}
+.fm146-as label.r{display:flex!important;gap:8px;align-items:center;font-size:13.5px!important;margin:8px 0 4px!important}
+.fm146-pv{max-height:220px;overflow:auto;border:1px solid #e2e8f0;border-radius:12px;margin-top:8px}.fm146-pv table{width:100%;border-collapse:collapse;font-size:12.5px}
+.fm146-pv th,.fm146-pv td{padding:5px 8px;border-bottom:1px solid #f1f5f9;text-align:right}.fm146-pv th{background:#f8fafc;position:sticky;top:0}
+.fm146-pv tr.no td{background:#fef2f2;color:#b91c1c}
+.fm146-sum{background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:8px 12px;margin-top:10px;font-weight:800;font-size:13px;color:#1e3a8a}
+.fm146-bt{display:block;color:#6d28d9;font-weight:800;font-size:11.5px}
+.fm146-bp{margin:0 0 12px;border:1px solid #e2e8f0;border-radius:14px;background:#fff}.fm146-bp>summary{cursor:pointer;padding:10px 14px;font-weight:900}
+.fm146-bp table{width:100%;border-collapse:collapse;font-size:13px}.fm146-bp td,.fm146-bp th{padding:6px 10px;border-top:1px solid #f1f5f9;text-align:right}
+.fm146-bar{height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden;min-width:90px;display:flex}.fm146-bar i{display:block;height:100%}
+.fm146-bar .c{background:#15803d}.fm146-bar .d{background:#f59e0b}
+.fm146-bp button,.fm146-cur button{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:3px 10px;font:800 12px Cairo,sans-serif;cursor:pointer}
+.fm146-cur{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:14px;padding:10px 14px;margin-bottom:12px;font-size:13px}
+.fm146-cur h4{margin:0;font-size:15px;color:#4c1d95}
+@media(max-width:760px){.fm146 .three,.fm146-fl{grid-template-columns:1fr 1fr}}
+</style>
+<script id="fm-v146-wo-group">
+(function(){
+'use strict';
+const C=window.FMCloud,X=window.fmV145X;if(!C||!X)return;
+const S=v=>String(v??'').trim();
+const esc=s=>S(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n||0).toLocaleString('ar-EG');
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+/* same loose matching the school DB uses: letters and digits only, Arabic letter variants folded */
+const N=v=>S(v).normalize('NFKC').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^\dA-Za-z؀-ۿ]/g,'').toLowerCase();
+const RK=v=>{const n=N(v);return /رياض|riyadh/.test(n)?'riyadh':/قصيم|qassim|qaseem/.test(n)?'qassim':S(v)};
+/* the responsible person columns of the school DB */
+const ROLES={supervisor:'مشرف الصيانة',engineer:'مهندس الصيانة',lightSupervisor:'مشرف الخدمات الخفيفة',lightEngineer:'مهندس الخدمات الخفيفة',contractor:'المقاول'};
+const XH={school:'اسم المدرسة',bid:'الرقم الوزاري / رقم المبنى',region:'المنطقة',office:'مكتب التعليم',city:'المدينة / الحي',who:'بريد المُسند إليه',due:'موعد الإنجاز',pri:'الأولوية',note:'ملاحظات خاصة بالمدرسة'};
+
+/* every school of the school DB, plus the city from the uploaded tickets (the DB has no city / district column) */
+function schools(){let db=[];try{db=JSON.parse(localStorage.getItem('fm_school_master_db_v1')||'[]')||[]}catch(e){}
+ const city=cityMap(),m=new Map();
+ db.forEach(x=>{const name=S(x.school);if(!name)return;const k=N(x.buildingId)||N(name);if(m.has(k))return;
+  m.set(k,{k,school:name,bid:S(x.buildingId),region:RK(x.region),office:S(x.office),city:S(x.city||x['المدينة'])||city.get(N(name))||'',raw:x})});
+ return [...m.values()].sort((a,b)=>a.school.localeCompare(b.school,'ar'))}
+function cityMap(){const out=new Map();try{const ds=window.FM41?.datasets||{},m=window.state?.columnsMap||{};
+  const CK=['المدينة التابع لها المدرسة','المدينة التابعة لها المدرسة','المدينة','المدينه','city'];
+  Object.values(ds).forEach(d=>(d.rows||[]).forEach(r=>{const keys=Object.keys(r||{}),ck=keys.find(k=>CK.includes(S(k)));if(!ck)return;
+   const sc=N(r[m.school]||r['اسم المبنى']||r['اسم المدرسة']),c=S(r[ck]);if(sc&&c&&!out.has(sc))out.set(sc,c)}))}catch(e){}return out}
+
+/* who in my team is this school's supervisor / engineer / contractor? (email first, then the name) */
+function matcher(P){const byE=new Map(),byN=new Map();
+ P.forEach(p=>{if(p.email)byE.set(S(p.email).toLowerCase(),p);[p.full_name,...(p.person_names||[])].forEach(n=>{const k=N(n);if(k&&!byN.has(k))byN.set(k,p)})});
+ return (email,name)=>(email&&byE.get(S(email).toLowerCase()))||(name&&byN.get(N(name)))||null}
+
+/* ---------- the dialog ---------- */
+window.fmV146GroupDlg=async function(){let P=[];try{P=await C.api.woAssignable()}catch(e){toast(X.sqlMsg(e.message),'error');return}
+ if(!P.length){toast('لا يوجد موظفون تحتك في التدرج — اضبط «يتبع لـ» في المستخدمين والصلاحيات','warning');return}
+ const ALL=schools(),byK=new Map(ALL.map(s=>[s.k,s])),find=matcher(P),pById=new Map(P.map(p=>[p.id,p]));
+ /* picked: key → school; a school picked from Excel carries its row (assignee email, due date, priority, note) */
+ const picked=new Map();let src=ALL.length?'filter':'excel',xlInfo='';
+ const f={region:window.FM41?.active||'',office:'',city:'',role:'supervisor',person:'',q:''};
+ const d=X.dlg(`<h3>🏘️ أمر عمل لمجموعة مدارس</h3>
+  <div class="fm125-hint">يُنشأ أمر مستقل لكل مدرسة (له رقمه وصوره واعتماده)، وتُجمع كلها في «حملة» واحدة تتابع تقدمها من صفحة أوامر العمل.</div>
+  <h4>1) تفاصيل الأمر</h4>
+  <label>عنوان الأمر *</label><input id="g-ti" placeholder="مثال: صيانة وقائية لوحدات التكييف — أكتوبر">
+  <div class="three"><div><label>النوع</label><select id="g-ty">${Object.entries(X.T).map(([k,v])=>`<option value="${k}" ${k==='preventive'?'selected':''}>${v[0]} ${v[1]}</option>`).join('')}</select></div>
+   <div><label>الأولوية</label><select id="g-pr">${['متوسط','عالي','طارئ'].map(p=>`<option>${p}</option>`).join('')}</select></div>
+   <div><label>موعد الإنجاز</label><input type="datetime-local" id="g-du" value="${X.toLocal(Date.now()+7*864e5)}"></div></div>
+  <label>الوصف والتعليمات</label><textarea id="g-de" style="min-height:64px"></textarea>
+  <label>قائمة المهام (بند في كل سطر — اختياري)</label><textarea id="g-cl" style="min-height:56px" placeholder="فحص الفلاتر&#10;اختبار التشغيل"></textarea>
+  <h4>2) المدارس</h4>
+  <div class="fm146-tabs"><button type="button" data-src="filter">🔎 حسب المنطقة / المكتب / المدينة / المسؤول أو اختيار يدوي</button><button type="button" data-src="excel">📄 من ملف Excel</button></div>
+  <div id="g-src"></div>
+  <h4>3) الإسناد</h4>
+  <div class="fm146-as">
+   <label class="r"><input type="radio" name="g-am" value="auto" checked> تلقائي: مسؤول كل مدرسة من قاعدة بيانات المدارس —
+    <select id="g-ar" style="width:auto">${Object.entries(ROLES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
+   <div style="padding-right:26px"><label style="margin-top:2px">إذا لم يكن مسؤول المدرسة ضمن فريقك</label><select id="g-fb"><option value="">تخطَّ المدرسة (لا يُنشأ لها أمر)</option>${P.map(p=>`<option value="${esc(p.id)}">أسندها إلى: ${esc(p.full_name)} — ${esc(C.ROLE[p.role]||p.role)}</option>`).join('')}</select></div>
+   <label class="r"><input type="radio" name="g-am" value="one"> شخص واحد لكل المدارس —
+    <select id="g-one" style="width:auto">${P.map(p=>`<option value="${esc(p.id)}">${esc(p.full_name)} — ${esc(C.ROLE[p.role]||p.role)}</option>`).join('')}</select></label>
+   <div class="fm125-hint">عمود «${XH.who}» في ملف Excel (إن وُجد) يتقدّم على الخيارين.</div>
+  </div>
+  <div id="g-pv"></div>
+  <div class="row"><button class="p" id="g-go">📤 إسناد</button><button id="g-x">إلغاء</button></div>`,980);
+ d.querySelector('.fm122-dlg').classList.add('fm146');
+ const $=s=>d.querySelector(s);
+ $('#g-x').onclick=d.close;
+ $('#g-pr').onchange=e=>{const h=X.PH[e.target.value];if(h&&h<72)$('#g-du').value=X.toLocal(Date.now()+h*36e5)};
+ d.querySelectorAll('[name=g-am],#g-ar,#g-fb,#g-one').forEach(i=>i.onchange=preview);
+
+ /* --- source: filters + manual ticks --- */
+ const visible=()=>{const q=N(f.q);return ALL.filter(s=>(!f.region||s.region===f.region)&&(!f.office||s.office===f.office)&&(!f.city||s.city===f.city)
+   &&(!f.person||N(s.raw[f.role])===N(f.person))&&(!q||N(s.school+' '+s.bid+' '+s.office).includes(q)))};
+ const opts=(vals,cur,all)=>`<option value="">${all}</option>`+[...new Set(vals.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar')).map(v=>`<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('');
+ function drawSrc(){d.querySelectorAll('[data-src]').forEach(b=>b.classList.toggle('on',b.dataset.src===src));const box=$('#g-src');
+  if(src==='excel'){box.innerHTML=`<div class="fm125-hint">ارفع ملف Excel فيه عمود «${XH.school}» أو «${XH.bid}» (يكفي أحدهما). أعمدة اختيارية: «${XH.who}»، «${XH.due}»، «${XH.pri}»، «${XH.note}». يمكنك أيضاً رفع نسخة مُصفّاة من ملف قاعدة بيانات المدارس كما هو.</div>
+    <div class="fm146-sel"><button type="button" data-a="tpl">⬇️ تنزيل النموذج</button><button type="button" data-a="tplsel">⬇️ تصدير المدارس المحددة لتعديلها</button><label class="fm103-btn primary" style="margin:0;cursor:pointer">📤 رفع ملف<input type="file" accept=".xlsx,.xls,.csv" hidden data-a="up"></label><b>المحدد: ${fmt(picked.size)} مدرسة</b></div>
+    ${xlInfo?`<div class="fm122-note">${xlInfo}</div>`:''}`;
+   box.querySelector('[data-a=tpl]').onclick=()=>tpl([]);box.querySelector('[data-a=tplsel]').onclick=()=>tpl([...picked.values()]);
+   box.querySelector('[data-a=up]').onchange=e=>{const fl=e.target.files[0];if(fl)readXl(fl)};preview();return}
+  const R=ALL.filter(s=>!f.region||s.region===f.region),V=visible();
+  box.innerHTML=ALL.length?`<div class="fm146-fl">
+    <div><label>المنطقة</label><select data-f="region"><option value="">الكل</option>${Object.entries(X.RN).map(([k,v])=>`<option value="${k}" ${f.region===k?'selected':''}>${v}</option>`).join('')}</select></div>
+    <div><label>مكتب التعليم</label><select data-f="office">${opts(R.map(s=>s.office),f.office,'كل المكاتب')}</select></div>
+    <div><label>المدينة / الحي</label><select data-f="city">${opts(R.map(s=>s.city),f.city,'الكل')}</select></div>
+    <div><label>بحث</label><input type="search" data-f="q" value="${esc(f.q)}" placeholder="اسم أو رقم"></div></div>
+   <div class="fm146-fl" style="grid-template-columns:1fr 2fr"><div><label>تتبع</label><select data-f="role">${Object.entries(ROLES).map(([k,v])=>`<option value="${k}" ${f.role===k?'selected':''}>${v}</option>`).join('')}</select></div>
+    <div><label>الاسم</label><select data-f="person">${opts(R.map(s=>S(s.raw[f.role])),f.person,'الكل')}</select></div></div>
+   <div class="fm146-sel"><span class="fm125-src">الظاهر: ${fmt(V.length)}</span><button type="button" data-a="all">☑️ تحديد كل الظاهر</button><button type="button" data-a="none">⬜ إلغاء تحديد الظاهر</button><button type="button" data-a="clr">مسح كل التحديد</button><b>المحدد: ${fmt(picked.size)} مدرسة</b></div>
+   <div class="fm146-ls">${V.slice(0,1500).map(s=>`<label><input type="checkbox" data-k="${esc(s.k)}" ${picked.has(s.k)?'checked':''}><span>${esc(s.school)} <small>${esc([s.bid,X.RN[s.region]||s.region,s.office,s.city].filter(Boolean).join(' • '))}</small></span><small>${esc(S(s.raw[f.role]))}</small></label>`).join('')||'<div class="fm125-src" style="padding:12px">لا توجد مدارس بهذه التصفية</div>'}</div>
+   <div class="fm125-hint">التحديد يبقى عند تغيير التصفية، فيمكنك جمع أكثر من مكتب أو مشرف في نفس الحملة. «المدينة» مأخوذة من ملف البلاغات المرفوع لأن قاعدة بيانات المدارس لا تحتوي عمود حي.</div>`
+   :'<div class="fm122-note">قاعدة بيانات المدارس فارغة على هذا الجهاز — استخدم «من ملف Excel»، أو ارفع قاعدة بيانات المدارس أولاً.</div>';
+  box.querySelectorAll('[data-f]').forEach(i=>{const go=()=>{f[i.dataset.f]=i.value;if(i.dataset.f==='region'){f.office='';f.city='';f.person=''}if(i.dataset.f==='role')f.person='';drawSrc();
+    if(i.dataset.f==='q'){const n=box.querySelector('[data-f=q]');n.focus();n.setSelectionRange(n.value.length,n.value.length)}};
+   if(i.tagName==='INPUT'){let t=null;i.oninput=()=>{clearTimeout(t);t=setTimeout(go,300)}}else i.onchange=go});
+  box.querySelectorAll('input[data-k]').forEach(c=>c.onchange=()=>{if(c.checked)picked.set(c.dataset.k,byK.get(c.dataset.k));else picked.delete(c.dataset.k);count()});
+  box.querySelector('[data-a=all]')&&(box.querySelector('[data-a=all]').onclick=()=>{V.forEach(s=>picked.set(s.k,picked.get(s.k)||s));drawSrc()});
+  box.querySelector('[data-a=none]')&&(box.querySelector('[data-a=none]').onclick=()=>{V.forEach(s=>picked.delete(s.k));drawSrc()});
+  box.querySelector('[data-a=clr]')&&(box.querySelector('[data-a=clr]').onclick=()=>{picked.clear();drawSrc()});
+  preview()}
+ const count=()=>{d.querySelectorAll('.fm146-sel b').forEach(b=>b.textContent=`المحدد: ${fmt(picked.size)} مدرسة`);preview()};
+ d.querySelectorAll('[data-src]').forEach(b=>b.onclick=()=>{src=b.dataset.src;drawSrc()});
+
+ /* --- source: Excel --- */
+ function tpl(list){if(!(window.XLSX&&XLSX.utils)){toast('مكتبة Excel غير محمّلة','error');return}
+  const role=$('#g-ar').value,rows=[Object.values(XH),...list.map(s=>[s.school,s.bid,X.RN[s.region]||s.region||'',s.office||'',s.city||'',S(s.x?.who)||S(s.raw?.[role+'Email']),'',S(s.x?.pri),S(s.x?.note)])];
+  const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=[34,18,10,22,16,26,18,10,30].map(w=>({wch:w}));ws['!views']=[{RTL:true}];
+  const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};XLSX.utils.book_append_sheet(wb,ws,'مدارس الحملة');XLSX.writeFile(wb,list.length?'RakizoraFM-wo-schools.xlsx':'RakizoraFM-wo-schools-template.xlsx')}
+ async function readXl(fl){if(!(window.XLSX&&XLSX.read)){toast('مكتبة Excel غير محمّلة','error');return}
+  let rows=[];try{const wb=XLSX.read(await fl.arrayBuffer(),{type:'array',cellDates:true});rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''})}catch(e){toast('تعذر قراءة الملف','error');return}
+  const col=(r,...names)=>{const ks=Object.keys(r);for(const n of names){const k=ks.find(x=>N(x)===N(n));if(k!==undefined&&S(r[k]))return r[k]}return ''};
+  let inDb=0,outDb=0,bad=0;
+  rows.forEach(r=>{const name=S(col(r,XH.school,'اسم المبنى','المدرسة')),bid=S(col(r,XH.bid,'الرقم الوزاري','رقم المبنى'));if(!name&&!bid){bad++;return}
+   const hit=(bid&&byK.get(N(bid)))||ALL.find(s=>name&&N(s.school)===N(name))||(bid&&ALL.find(s=>N(s.bid)===N(bid)));
+   const s=hit?Object.assign({},hit):{k:N(bid)||N(name),school:name||bid,bid,region:RK(col(r,XH.region,'المنطقة')),office:S(col(r,XH.office)),city:S(col(r,XH.city,'المدينة')),raw:{}};hit?inDb++:outDb++;
+   const due=col(r,XH.due,'الموعد');let dt=due instanceof Date?due:due?new Date(due):null;if(dt&&isNaN(dt))dt=null;
+   s.x={who:S(col(r,XH.who,'المسند إليه','البريد')),due:dt?dt.toISOString():'',pri:['متوسط','عالي','طارئ'].includes(S(col(r,XH.pri)))?S(col(r,XH.pri)):'',note:S(col(r,XH.note,'ملاحظات'))};
+   /* a school-DB file: its responsible-person columns (name / email) win over the DB on this device */
+   const raw=Object.assign({},s.raw);Object.entries(ROLES).forEach(([k,v])=>{const nm=S(col(r,'اسم '+v)),em=S(col(r,'بريد '+v));if(nm)raw[k]=nm;if(em)raw[k+'Email']=em});s.raw=raw;
+   picked.set(s.k,s)});
+  xlInfo=`تمت قراءة ${fmt(rows.length)} صف: ${fmt(inDb)} مدرسة من قاعدة البيانات${outDb?` • ${fmt(outDb)} غير موجودة في القاعدة (تُضاف بالاسم كما في الملف)`:''}${bad?` • ${fmt(bad)} صف بلا اسم أو رقم (تم تجاهله)`:''}`;
+  drawSrc()}
+
+ /* --- who gets each school --- */
+ function plan(){const mode=d.querySelector('[name=g-am]:checked').value,role=$('#g-ar').value,fb=pById.get($('#g-fb').value),one=pById.get($('#g-one').value);
+  return [...picked.values()].map(s=>{let p=null,why='';
+   if(s.x?.who){p=find(s.x.who,s.x.who);why=p?'من الملف':'«'+s.x.who+'» ليس ضمن فريقك'}
+   if(!p&&mode==='one'){p=one;why=''}
+   if(!p&&mode==='auto'){const nm=S(s.raw?.[role]),em=S(s.raw?.[role+'Email']);p=find(em,nm);
+    if(p)why='';else{why=nm?`${ROLES[role]} «${nm}» ليس ضمن فريقك`:`لا يوجد ${ROLES[role]} مسجل`;if(fb){p=fb;why+=' → بديل'}}}
+   return {s,p,why}})}
+ function preview(){const pl=plan(),ok=pl.filter(x=>x.p),miss=pl.length-ok.length,people=new Map();ok.forEach(x=>people.set(x.p.full_name,(people.get(x.p.full_name)||0)+1));
+  $('#g-pv').innerHTML=pl.length?`<div class="fm146-pv"><table><thead><tr><th>المدرسة</th><th>المُسند إليه</th><th>ملاحظة</th></tr></thead><tbody>${pl.slice(0,600).map(x=>`<tr class="${x.p?'':'no'}"><td>${esc(x.s.school)}</td><td>${x.p?esc(x.p.full_name):'— لن يُنشأ أمر'}</td><td>${esc(x.why)}</td></tr>`).join('')}</tbody></table></div>
+   <div class="fm146-sum">سيُنشأ ${fmt(ok.length)} أمر عمل لـ ${fmt(people.size)} موظف${miss?` • ${fmt(miss)} مدرسة بدون مُسند إليه (لن يُنشأ لها أمر)`:''}<br><span style="font-weight:700">${[...people.entries()].sort((a,b)=>b[1]-a[1]).map(([n,c])=>`${esc(n)}: ${fmt(c)}`).join(' • ')}</span></div>`:'<div class="fm125-src">لم تُحدَّد مدارس بعد</div>';
+  $('#g-go').textContent=ok.length?`📤 إسناد ${fmt(ok.length)} أمر`:'📤 إسناد';$('#g-go').disabled=!ok.length}
+
+ $('#g-go').onclick=async e=>{const g=s=>$(s).value,title=S(g('#g-ti'));if(!title){toast('اكتب عنوان الأمر','warning');$('#g-ti').focus();return}
+  const ok=plan().filter(x=>x.p);if(!ok.length)return;
+  if(ok.length>=20&&!confirm(`سيتم إنشاء ${ok.length} أمر عمل. متابعة؟`))return;
+  const base={title,type:g('#g-ty'),priority:g('#g-pr'),due_at:g('#g-du')?new Date(g('#g-du')).toISOString():'',description:S(g('#g-de')),
+   checklist:g('#g-cl').split('\n').map(S).filter(Boolean).map(t=>({t,done:false})),ticket_refs:[]};
+  const items=ok.map(({s,p})=>Object.assign({},base,{assignee:p.id,school:s.school,building_id:s.bid||'',region:s.region||'',
+   priority:s.x?.pri||base.priority,due_at:s.x?.due||base.due_at,description:[base.description,s.x?.note].filter(Boolean).join('\n\n')}));
+  const b=e.currentTarget;b.disabled=true;let batch=null,done=0;
+  try{for(let i=0;i<items.length;i+=200){b.textContent=`… ${fmt(done)} / ${fmt(items.length)}`;
+    const r=await C.api.woCreateMany({batch_id:batch,batch_title:title,items:items.slice(i,i+200)});batch=(r&&r.batch_id)||batch;done+=(r&&r.count)||items.slice(i,i+200).length}
+   toast(`تم إسناد ${fmt(done)} أمر عمل`);d.close();X.F.k='all';X.F.batch=batch||'';await X.load();X.render()}
+  catch(er){const m=String(er.message||er);
+   toast(done?`أُنشئ ${fmt(done)} أمر ثم توقف: ${m}`:/cannot assign/.test(m)?'لا يمكنك الإسناد لأحد الموظفين: '+m.split('—').pop():X.sqlMsg(m),'error');
+   b.disabled=false;preview();if(done){d.close();X.F.k='all';X.F.batch=batch||'';await X.load();X.render()}}};
+ drawSrc();
+};
+
+/* ---------- batches on the work-orders page ---------- */
+function batches(list){const m=new Map();list.forEach(w=>{if(!w.batch_id)return;let b=m.get(w.batch_id);
+  if(!b)m.set(w.batch_id,b={id:w.batch_id,title:w.batch_title||w.title,by:w.created_by_name,byId:w.created_by,at:w.created_at,n:0,closed:0,done:0,late:0,cancelled:0,rej:0,schools:new Set(),people:new Set()});
+  b.n++;if(w.status==='closed')b.closed++;if(w.status==='done')b.done++;if(w.status==='cancelled')b.cancelled++;if(w.status==='rejected')b.rej++;if(X.late(w))b.late++;
+  if(w.created_at<b.at)b.at=w.created_at;b.schools.add(w.school);b.people.add(w.assignee_name)});
+ return [...m.values()].sort((a,b)=>String(b.at).localeCompare(String(a.at)))}
+const bar=b=>{const live=b.n-b.cancelled||1;return `<div class="fm146-bar" title="مغلق ${b.closed} • بانتظار الاعتماد ${b.done}"><i class="c" style="width:${b.closed/live*100}%"></i><i class="d" style="width:${b.done/live*100}%"></i></div>`};
+const pct=b=>Math.round(b.closed/((b.n-b.cancelled)||1)*100);
+window.fmV146Panel=function(base,F){const B=batches(base);if(!B.length)return '';
+ if(F.batch){const b=B.find(x=>x.id===F.batch);if(!b)return '';
+  return `<div class="fm146-cur"><h4>🏘️ ${esc(b.title)}</h4><span>${fmt(b.n)} أمر • ${fmt(b.schools.size)} مدرسة • ${fmt(b.people.size)} موظف</span><span>✅ ${fmt(b.closed)} مغلق (${fmt(pct(b))}٪)</span><span>📨 ${fmt(b.done)} بانتظار الاعتماد</span>${b.late?`<span style="color:#b91c1c">⏰ ${fmt(b.late)} متأخر</span>`:''}${b.rej?`<span style="color:#b91c1c">⛔ ${fmt(b.rej)} مرفوض</span>`:''}
+   <div style="flex:1;min-width:120px">${bar(b)}</div>${(b.byId===X.me().id||X.me().role==='admin')?'<button type="button" data-b146="cancel">🚫 إلغاء المتبقي</button>':''}<button type="button" data-b146="all">✕ كل الأوامر</button></div>`}
+ return `<details class="fm146-bp" ${B.length<=5?'open':''}><summary>🏘️ الحملات (${fmt(B.length)})</summary><table><thead><tr><th>الحملة</th><th>من</th><th>الأوامر</th><th>الإنجاز</th><th>مغلق</th><th>بانتظار الاعتماد</th><th>متأخر</th><th></th></tr></thead><tbody>
+  ${B.map(b=>`<tr><td><b>${esc(b.title)}</b><br><small class="fm125-src">${X.dts(b.at)}</small></td><td>${esc(b.by||'')}</td><td>${fmt(b.n)}</td><td>${bar(b)}<small>${fmt(pct(b))}٪</small></td><td>${fmt(b.closed)}</td><td>${fmt(b.done)}</td><td>${b.late?`<b style="color:#b91c1c">${fmt(b.late)}</b>`:fmt(0)}</td><td><button type="button" data-b146-open="${esc(b.id)}">عرض</button></td></tr>`).join('')}</tbody></table></details>`};
+window.fmV146Bind=function(box,F){
+ box.querySelectorAll('[data-b146-open]').forEach(b=>b.onclick=()=>{F.batch=b.dataset.b146Open;F.k='all';X.render()});
+ const all=box.querySelector('[data-b146=all]');if(all)all.onclick=()=>{F.batch='';X.render()};
+ const can=box.querySelector('[data-b146=cancel]');if(can)can.onclick=async()=>{
+  const rest=X.list().filter(w=>w.batch_id===F.batch&&!X.FINAL(w.status)&&w.status!=='done');
+  if(!rest.length){toast('لا توجد أوامر متبقية قابلة للإلغاء','warning');return}
+  if(!confirm(`إلغاء ${rest.length} أمر لم يُنجز بعد في هذه الحملة؟ (الأوامر المنجزة أو بانتظار الاعتماد لا تتأثر)`))return;
+  can.disabled=true;let n=0;for(const w of rest){try{await C.api.woAct(w.id,'cancel',null,null,null);n++}catch(e){}can.textContent=`… ${fmt(n)}`}
+  toast(`تم إلغاء ${fmt(n)} أمر`);await X.load();X.render()}};
 })();
 </script>
 </body>
