@@ -1,5 +1,5 @@
 -- =====================================================================
---  FM Platform — Supabase setup (V136, user management V141, profile V142, work orders V145)
+--  FM Platform — Supabase setup (V136, user management V141, profile V142, work orders V145–V147)
 --  Paste this whole file in Supabase → SQL Editor → New query → Run.
 --  Safe to run again: it only creates what is missing and refreshes policies.
 -- =====================================================================
@@ -338,18 +338,24 @@ language sql stable security definer set search_path = public as $$
     select p.id, p.reports_to, u.depth + 1 from public.profiles p join up u on p.id = u.boss where u.depth < 8)
   select p_boss is not null and exists (select 1 from up where boss = p_boss) $$;
 
+-- may p_me assign work to p_user? (V147: the scheduled campaigns check it for the schedule's owner)
+create or replace function public.fm_can_assign_as(p_me uuid, p_user uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles t, public.profiles me
+    where t.id = p_user and me.id = p_me and me.active and t.active and t.id <> me.id
+      and public.fm_rank(t.role) between 1 and public.fm_rank(me.role) - 1
+      and (me.role = 'admin' or public.fm_is_under(t.id, me.id))) $$;
 -- may the signed-in user assign work to p_user?
 create or replace function public.fm_can_assign_to(p_user uuid) returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.profiles t, public.profiles me
-    where t.id = p_user and me.id = auth.uid() and me.active and t.active and t.id <> me.id
-      and public.fm_rank(t.role) between 1 and public.fm_rank(me.role) - 1
-      and (me.role = 'admin' or public.fm_is_under(t.id, me.id))) $$;
+  select public.fm_can_assign_as(auth.uid(), p_user) $$;
 
--- the people the signed-in user may assign to (names only, for the assignee list)
-create or replace function public.fm_wo_assignable() returns table(id uuid, full_name text, role text, regions text[], phone text)
+-- the people the signed-in user may assign to (for the assignee list; V146 adds email and
+-- person_names so a group of schools can be matched to each school's own supervisor)
+drop function if exists public.fm_wo_assignable();
+create or replace function public.fm_wo_assignable() returns table(id uuid, full_name text, role text, regions text[], phone text, email text, person_names text[])
 language sql stable security definer set search_path = public as $$
-  select p.id, coalesce(p.full_name, p.email), p.role, p.regions, p.phone from public.profiles p
+  select p.id, coalesce(p.full_name, p.email), p.role, p.regions, p.phone, p.email, p.person_names from public.profiles p
    where public.fm_can_assign_to(p.id) order by public.fm_rank(p.role) desc, p.full_name $$;
 
 create sequence if not exists public.wo_seq;
@@ -377,6 +383,11 @@ create table if not exists public.work_orders (
   done_at         timestamptz,
   closed_at       timestamptz
 );
+-- V146: orders created together for a group of schools share a batch («حملة»)
+alter table public.work_orders add column if not exists batch_id    uuid;
+alter table public.work_orders add column if not exists batch_title text;
+alter table public.work_orders add column if not exists building_id text;
+create index if not exists work_orders_batch_idx on public.work_orders (batch_id);
 create index if not exists work_orders_assignee_idx on public.work_orders (assignee, status);
 create index if not exists work_orders_creator_idx  on public.work_orders (created_by, status);
 create table if not exists public.wo_events (
@@ -437,29 +448,57 @@ create policy p_woobj_read   on storage.objects for select using (bucket_id = 'w
 create policy p_woobj_insert on storage.objects for insert with check (bucket_id = 'wo-photos'
   and public.fm_wo_party(public.fm_uuid_or_null(split_part(name,'/',1))));
 
--- create an order (admin / engineer / supervisor) for someone below in the line
-create or replace function public.fm_wo_create(p jsonb) returns uuid
+-- create an order (admin / engineer / supervisor) for someone below in the line.
+-- fm_wo_create_as is internal (also used by the scheduled campaigns for the schedule's owner).
+create or replace function public.fm_wo_create_as(p_me uuid, p jsonb) returns uuid
 language plpgsql security definer set search_path = public as $$
 declare me public.profiles; t public.profiles; v_id uuid := gen_random_uuid(); v_code text;
 begin
-  select * into me from public.profiles where id = auth.uid();
+  select * into me from public.profiles where id = p_me;
   if me.id is null or not me.active or me.role not in ('admin','engineer','supervisor') then
     raise exception 'not allowed' using errcode = '42501'; end if;
   if coalesce(trim(p->>'title'),'') = '' then raise exception 'title required'; end if;
   select * into t from public.profiles where id = public.fm_uuid_or_null(p->>'assignee');
-  if t.id is null or not public.fm_can_assign_to(t.id) then raise exception 'cannot assign to this user'; end if;
+  if t.id is null or not public.fm_can_assign_as(me.id, t.id) then raise exception 'cannot assign to this user'; end if;
   v_code := 'WO-' || to_char(now(),'YYYY') || '-' || lpad(nextval('public.wo_seq')::text, 4, '0');
   insert into public.work_orders (id, code, title, description, type, region, school, priority, due_at, checklist, ticket_refs,
-                                  created_by, created_by_name, assignee, assignee_name)
+                                  created_by, created_by_name, assignee, assignee_name, batch_id, batch_title, building_id)
   values (v_id, v_code, trim(p->>'title'), nullif(trim(p->>'description'),''), coalesce(nullif(p->>'type',''),'task'),
           nullif(p->>'region',''), nullif(trim(p->>'school'),''), coalesce(nullif(p->>'priority',''),'متوسط'),
           nullif(p->>'due_at','')::timestamptz,
           case when jsonb_typeof(p->'checklist') = 'array' then p->'checklist' else '[]'::jsonb end,
           case when jsonb_typeof(p->'ticket_refs') = 'array' then array(select jsonb_array_elements_text(p->'ticket_refs')) else '{}' end,
-          me.id, coalesce(me.full_name, me.email), t.id, coalesce(t.full_name, t.email));
+          me.id, coalesce(me.full_name, me.email), t.id, coalesce(t.full_name, t.email),
+          public.fm_uuid_or_null(p->>'batch_id'), nullif(trim(p->>'batch_title'),''), nullif(trim(p->>'building_id'),''));
   insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
-  values (v_id, me.id, coalesce(me.full_name, me.email), 'create', 'assigned', '📝 أُنشئ الأمر وأُسند إلى ' || coalesce(t.full_name, t.email));
+  values (v_id, me.id, coalesce(me.full_name, me.email), 'create', 'assigned',
+          case when p->>'schedule' is not null then '🔁 أُنشئ تلقائياً (حملة متكررة) وأُسند إلى ' else '📝 أُنشئ الأمر وأُسند إلى ' end || coalesce(t.full_name, t.email));
   return v_id;
+end $$;
+create or replace function public.fm_wo_create(p jsonb) returns uuid
+language sql security definer set search_path = public as $$ select public.fm_wo_create_as(auth.uid(), p - 'schedule') $$;
+
+-- V146: one order per school for a group of schools, all in one batch, all or nothing.
+-- p = {batch_id?, batch_title, items:[{title, assignee, school, …}]}; a large group is sent in
+-- several calls with the same batch_id, which only the batch's own creator may add to.
+create or replace function public.fm_wo_create_many(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_b uuid := coalesce(public.fm_uuid_or_null(p->>'batch_id'), gen_random_uuid()); it jsonb; n int := 0;
+  bt text := nullif(trim(p->>'batch_title'),'');
+begin
+  if jsonb_typeof(p->'items') <> 'array' or jsonb_array_length(p->'items') = 0 then raise exception 'items required'; end if;
+  if jsonb_array_length(p->'items') > 500 then raise exception 'too many items'; end if;
+  if exists (select 1 from public.work_orders where batch_id = v_b and created_by <> auth.uid()) then
+    raise exception 'not allowed' using errcode = '42501'; end if;
+  for it in select * from jsonb_array_elements(p->'items') loop
+    begin
+      perform public.fm_wo_create(it || jsonb_build_object('batch_id', v_b, 'batch_title', coalesce(bt, it->>'title')));
+    exception when others then
+      raise exception '% — %', sqlerrm, coalesce(nullif(it->>'school',''), '#' || (n + 1)) using errcode = sqlstate;
+    end;
+    n := n + 1;
+  end loop;
+  return jsonb_build_object('batch_id', v_b, 'count', n);
 end $$;
 
 -- every step of the order; the allowed step depends on who you are (assignee / creator) and the current status
@@ -513,14 +552,214 @@ begin
 end $$;
 
 revoke all on function public.fm_wo_create(jsonb) from public, anon;
+revoke all on function public.fm_wo_create_as(uuid,jsonb) from public, anon, authenticated;
+revoke all on function public.fm_can_assign_as(uuid,uuid) from public, anon, authenticated;
 revoke all on function public.fm_wo_act(uuid,text,text,jsonb,jsonb) from public, anon;
 revoke all on function public.fm_wo_assignable() from public, anon;
+revoke all on function public.fm_wo_create_many(jsonb) from public, anon;
+grant execute on function public.fm_wo_create_many(jsonb) to authenticated;
 grant execute on function public.fm_wo_create(jsonb) to authenticated;
 grant execute on function public.fm_wo_act(uuid,text,text,jsonb,jsonb) to authenticated;
 grant execute on function public.fm_wo_assignable() to authenticated;
 do $$ begin
   begin alter publication supabase_realtime add table public.work_orders; exception when others then null; end;
   begin alter publication supabase_realtime add table public.wo_events;   exception when others then null; end;
+end $$;
+
+-- ---------- 11) templates and recurring campaigns (V147) ----------
+-- Templates: a saved title / type / priority / due days / instructions / checklist (and optionally schools).
+-- Shared templates are seen by every admin / engineer / supervisor; private ones only by their owner.
+create table if not exists public.wo_templates (
+  id              uuid primary key default gen_random_uuid(),
+  name            text not null,
+  data            jsonb not null default '{}',
+  shared          boolean not null default true,
+  created_by      uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  created_by_name text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+alter table public.wo_templates enable row level security;
+drop policy if exists p_wot_read on public.wo_templates;
+drop policy if exists p_wot_ins  on public.wo_templates;
+drop policy if exists p_wot_upd  on public.wo_templates;
+drop policy if exists p_wot_del  on public.wo_templates;
+create policy p_wot_read on public.wo_templates for select using (public.fm_role() in ('admin','engineer','supervisor') and (shared or created_by = auth.uid()));
+create policy p_wot_ins  on public.wo_templates for insert with check (created_by = auth.uid() and public.fm_role() in ('admin','engineer','supervisor'));
+create policy p_wot_upd  on public.wo_templates for update using (created_by = auth.uid() or public.fm_role() = 'admin') with check (created_by = auth.uid() or public.fm_role() = 'admin');
+create policy p_wot_del  on public.wo_templates for delete using (created_by = auth.uid() or public.fm_role() = 'admin');
+
+-- Recurring campaigns: the same group of schools gets a new batch of orders every week / month / quarter / N days.
+-- The schools and their assignees are a snapshot taken when the schedule is saved. Each run creates the orders
+-- in the owner's name and re-checks the hierarchy: a school whose assignee is no longer in the owner's line is skipped.
+create table if not exists public.wo_schedules (
+  id              uuid primary key default gen_random_uuid(),
+  name            text not null,
+  active          boolean not null default true,
+  freq            text not null check (freq in ('weekly','monthly','quarterly','days')),
+  every_n         int  not null default 1 check (every_n between 1 and 365),
+  start_at        timestamptz not null,           -- the first run; later runs keep its weekday / day of month and hour
+  next_run_at     timestamptz not null,
+  due_days        int  not null default 7 check (due_days between 1 and 365),
+  data            jsonb not null default '{}',     -- {title, type, priority, description, checklist}
+  items           jsonb not null default '[]',     -- [{school, building_id, region, assignee, priority?, description?}]
+  created_by      uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  created_by_name text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  last_run_at     timestamptz,
+  last_batch      uuid,
+  last_result     jsonb,
+  runs            int not null default 0
+);
+create index if not exists wo_schedules_due_idx on public.wo_schedules (active, next_run_at);
+alter table public.wo_schedules enable row level security;
+drop policy if exists p_wos_read on public.wo_schedules;
+create policy p_wos_read on public.wo_schedules for select using (public.fm_role() <> 'pending'
+  and (created_by = auth.uid() or public.fm_role() = 'admin' or public.fm_is_under(created_by, auth.uid())));
+
+-- the first run time after p_after: start_at + k × the interval (counted from the start, so the 31st stays the end of the month)
+create or replace function public.fm_wo_next_run(s public.wo_schedules, p_after timestamptz) returns timestamptz
+language plpgsql stable as $$
+declare k int := 0; step interval; t timestamptz;
+begin
+  step := case s.freq when 'weekly' then make_interval(days => 7 * s.every_n) when 'days' then make_interval(days => s.every_n)
+                      when 'monthly' then make_interval(months => s.every_n) else make_interval(months => 3 * s.every_n) end;
+  if s.start_at > p_after then return s.start_at; end if;
+  -- jump close to p_after first, then step
+  if s.freq in ('weekly','days') then k := greatest(0, floor(extract(epoch from (p_after - s.start_at)) / extract(epoch from step))::int - 1);
+  else k := greatest(0, ((extract(year from age(p_after, s.start_at)) * 12 + extract(month from age(p_after, s.start_at)))::int
+                        / (case s.freq when 'monthly' then s.every_n else 3 * s.every_n end)) - 1); end if;
+  loop
+    t := (s.start_at at time zone 'Asia/Riyadh' + step * k) at time zone 'Asia/Riyadh';
+    exit when t > p_after or k > 100000;
+    k := k + 1;
+  end loop;
+  return t;
+end $$;
+
+-- one run of a schedule: a new batch for every school whose assignee is still in the owner's line
+create or replace function public.fm_wo_run_schedule(p_id uuid, p_manual boolean default false) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s public.wo_schedules; me public.profiles; it jsonb; v_b uuid := gen_random_uuid(); n int := 0;
+  skipped jsonb := '[]'; res jsonb; bt text;
+begin
+  select * into s from public.wo_schedules where id = p_id for update skip locked;
+  if s.id is null then return null; end if;
+  select * into me from public.profiles where id = s.created_by;
+  bt := s.name || ' — ' || to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM-DD');
+  if me.id is null or not me.active or me.role not in ('admin','engineer','supervisor') then
+    res := jsonb_build_object('count', 0, 'error', 'owner not active');
+  else
+    for it in select * from jsonb_array_elements(s.items) loop
+      if public.fm_can_assign_as(me.id, public.fm_uuid_or_null(it->>'assignee')) then
+        perform public.fm_wo_create_as(me.id, s.data || it || jsonb_build_object(
+          'title', s.data->>'title', 'batch_id', v_b, 'batch_title', bt, 'schedule', s.id,
+          'due_at', now() + make_interval(days => s.due_days),
+          'description', concat_ws(E'\n\n', nullif(s.data->>'description',''), nullif(it->>'note',''))));
+        n := n + 1;
+      else
+        skipped := skipped || to_jsonb(coalesce(it->>'school','?'));
+      end if;
+    end loop;
+    res := jsonb_build_object('count', n, 'skipped', skipped, 'batch_id', case when n > 0 then v_b end);
+  end if;
+  update public.wo_schedules set last_run_at = now(), last_result = res, runs = runs + 1, updated_at = now(),
+         last_batch = case when n > 0 then v_b else last_batch end,
+         next_run_at = case when p_manual and next_run_at > now() then next_run_at else public.fm_wo_next_run(s, now()) end
+   where id = s.id;
+  return res;
+end $$;
+
+-- run every schedule that is due (pg_cron calls it every hour; the platform also calls it when it opens)
+create or replace function public.fm_wo_run_due() returns int
+language plpgsql security definer set search_path = public as $$
+declare r record; n int := 0;
+begin
+  if auth.uid() is not null and public.fm_role() not in ('admin','engineer','supervisor') then return 0; end if;
+  for r in select id from public.wo_schedules where active and next_run_at <= now() order by next_run_at limit 25 loop
+    perform public.fm_wo_run_schedule(r.id, false); n := n + 1;
+  end loop;
+  return n;
+end $$;
+
+-- save a schedule (new, or edit your own); every school's assignee must be in your line
+create or replace function public.fm_wo_schedule_save(p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare me public.profiles; s public.wo_schedules; it jsonb; v_id uuid := public.fm_uuid_or_null(p->>'id');
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not me.active or me.role not in ('admin','engineer','supervisor') then
+    raise exception 'not allowed' using errcode = '42501'; end if;
+  if coalesce(trim(p->>'name'),'') = '' or coalesce(trim(p->'data'->>'title'),'') = '' then raise exception 'title required'; end if;
+  if jsonb_typeof(p->'items') <> 'array' or jsonb_array_length(p->'items') = 0 then raise exception 'items required'; end if;
+  if jsonb_array_length(p->'items') > 2000 then raise exception 'too many items'; end if;
+  for it in select * from jsonb_array_elements(p->'items') loop
+    if not public.fm_can_assign_as(me.id, public.fm_uuid_or_null(it->>'assignee')) then
+      raise exception 'cannot assign to this user — %', coalesce(it->>'school','?'); end if;
+  end loop;
+  if v_id is not null then
+    select * into s from public.wo_schedules where id = v_id;
+    if s.id is null or (s.created_by <> me.id and me.role <> 'admin') then raise exception 'not allowed' using errcode = '42501'; end if;
+  end if;
+  s.id := coalesce(v_id, gen_random_uuid());
+  s.name := trim(p->>'name'); s.freq := p->>'freq'; s.every_n := coalesce((p->>'every_n')::int, 1);
+  s.start_at := (p->>'start_at')::timestamptz; s.due_days := coalesce((p->>'due_days')::int, 7);
+  s.next_run_at := public.fm_wo_next_run(s, now() - interval '1 minute');
+  insert into public.wo_schedules (id, name, active, freq, every_n, start_at, next_run_at, due_days, data, items, created_by, created_by_name)
+  values (s.id, s.name, true, s.freq, s.every_n, s.start_at, s.next_run_at, s.due_days, p->'data', p->'items', me.id, coalesce(me.full_name, me.email))
+  on conflict (id) do update set name = excluded.name, freq = excluded.freq, every_n = excluded.every_n, start_at = excluded.start_at,
+     next_run_at = excluded.next_run_at, due_days = excluded.due_days, data = excluded.data, items = excluded.items, updated_at = now();
+  return s.id;
+end $$;
+
+-- pause / resume / delete / run now (the owner or the admin)
+create or replace function public.fm_wo_schedule_act(p_id uuid, p_action text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s public.wo_schedules;
+begin
+  select * into s from public.wo_schedules where id = p_id;
+  if s.id is null or not (s.created_by = auth.uid() or public.fm_role() = 'admin') or public.fm_role() = 'pending' then
+    raise exception 'not allowed' using errcode = '42501'; end if;
+  if p_action = 'pause' then update public.wo_schedules set active = false, updated_at = now() where id = p_id;
+  elsif p_action = 'resume' then update public.wo_schedules set active = true, updated_at = now(), next_run_at = public.fm_wo_next_run(s, now()) where id = p_id;
+  elsif p_action = 'delete' then delete from public.wo_schedules where id = p_id;
+  elsif p_action = 'run' then return public.fm_wo_run_schedule(p_id, true);
+  else raise exception 'action not allowed'; end if;
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- is the hourly automatic run (pg_cron) set up?
+create or replace function public.fm_wo_cron_on() returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare ok boolean := false;
+begin
+  begin execute 'select exists (select 1 from cron.job where jobname = ''fm-wo-schedules'')' into ok;
+  exception when others then ok := false; end;
+  return ok;
+end $$;
+
+revoke all on function public.fm_wo_next_run(public.wo_schedules, timestamptz) from public, anon;
+revoke all on function public.fm_wo_run_schedule(uuid, boolean) from public, anon, authenticated;
+revoke all on function public.fm_wo_run_due() from public, anon;
+revoke all on function public.fm_wo_schedule_save(jsonb) from public, anon;
+revoke all on function public.fm_wo_schedule_act(uuid, text) from public, anon;
+revoke all on function public.fm_wo_cron_on() from public, anon;
+grant select, insert, update, delete on public.wo_templates to authenticated;
+grant select on public.wo_schedules to authenticated;
+grant execute on function public.fm_wo_run_due() to authenticated;
+grant execute on function public.fm_wo_schedule_save(jsonb) to authenticated;
+grant execute on function public.fm_wo_schedule_act(uuid, text) to authenticated;
+grant execute on function public.fm_wo_cron_on() to authenticated;
+
+-- hourly automatic run. Needs the pg_cron extension (Supabase → Database → Extensions → pg_cron);
+-- without it the campaigns still run whenever an admin / engineer / supervisor opens the platform.
+do $$ begin
+  begin execute 'create extension if not exists pg_cron'; exception when others then null; end;
+  begin
+    execute 'select cron.unschedule(jobid) from cron.job where jobname = ''fm-wo-schedules''';
+    execute 'select cron.schedule(''fm-wo-schedules'', ''7 * * * *'', ''select public.fm_wo_run_due()'')';
+  exception when others then raise notice 'pg_cron is not available: recurring campaigns run when the platform is opened'; end;
 end $$;
 
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
