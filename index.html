@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V147">
+<meta name="fm-version" content="V148">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25530,9 +25530,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V147',date:'2026-10-11',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V148',date:'2026-10-11',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+{v:'V148',d:'2026-10-11',t:'أوامر الصيانة الوقائية المعتمدة',i:['اعتماد 20 أمر صيانة وقائية (8 أنظمة، 125 بنداً) كقوالب جاهزة، ولكل بند أداة الفحص','نتيجة لكل بند في تطبيق الميدان: سليم / يحتاج إصلاح / لا ينطبق، مع ملاحظة','عرض نتائج البنود في تفاصيل الأمر، وعدد البنود التي تحتاج إصلاح في رأس الحملة','ورقة «بنود الفحص» في تصدير Excel: صف لكل بند لكل مدرسة','استيراد نسخة معدّلة من ملف أوامر الصيانة الوقائية كقوالب مشتركة']},
 {v:'V147',d:'2026-10-11',t:'قوالب أوامر العمل والحملات المتكررة',i:['قوالب جاهزة (تكييف، حريق، كهرباء، سباكة، خزانات، عدادات، زيارة تفقدية) وقوالب يحفظها المستخدم، مع إمكانية حفظ المدارس داخل القالب','حملات متكررة: أسبوعي، كل أسبوعين، شهري، كل 3 أو 6 أشهر، سنوي، أو كل عدد أيام، مع مهلة إنجاز لكل تشغيل','صفحة «الحملات المتكررة»: التشغيل القادم، نتيجة آخر تشغيل، تشغيل الآن، إيقاف وتفعيل، حذف','التشغيل التلقائي من الخادم كل ساعة (pg_cron)، أو عند فتح المنصة إن لم يكن مفعّلاً']},
 {v:'V146',d:'2026-10-11',t:'أوامر عمل لمجموعة مدارس',i:['زر «أمر لمجموعة مدارس»: أمر مستقل لكل مدرسة ضمن «حملة» واحدة','اختيار المدارس حسب المنطقة أو مكتب التعليم أو المدينة أو المشرف/المهندس/المقاول، أو اختيار يدوي، أو من ملف Excel','إسناد تلقائي لمسؤول كل مدرسة من قاعدة بيانات المدارس، أو لشخص واحد، مع بديل للمدارس غير المطابقة','لوحة الحملات: نسبة الإنجاز والمتأخر وبانتظار الاعتماد، وإلغاء المتبقي','تصدير Excel يشمل الحملة والرقم الوزاري، وقراءة كل الأوامر بدون حد الألف']},
  {v:'V145',d:'2026-10-10',t:'أوامر العمل (المرحلة 1)',i:['صفحة «أوامر العمل» في أعلى القائمة: إنشاء أمر مستقل (إصلاح، صيانة وقائية، معاينة، زيارة، تجميع معلومات، مهمة) وإسناده لمن هو أدنى في التدرج','الموظف يستلم الأمر في تطبيق الميدان: قبول أو رفض بسبب، بدء التنفيذ، تسجيل الوصول بالموقع، قائمة المهام، صور قبل وبعد، ثم «تم الإجراء»','المُسنِد يعتمد ويغلق الأمر أو يعيده للتصحيح، ويمكنه إعادة الإسناد أو الإلغاء، مع سجل كامل لكل خطوة','عمود «يتبع لـ» في المستخدمين والصلاحيات (والاستيراد والتصدير) لتحديد التدرج: مدير ← مهندس ← مشرف ← مقاول','الصلاحيات مفروضة في قاعدة البيانات — يتطلب تشغيل ملف supabase_setup.sql المحدَّث']},
@@ -30269,7 +30270,7 @@ async function detail(id){const w=L.find(x=>x.id===id);if(!w)return;
   <div class="fm145-grid"><span>النوع</span><b>${esc(t[1])}</b><span>المدرسة</span><b>${esc(w.school||'—')}</b><span>المُسند إليه</span><b>${esc(w.assignee_name||'')}</b><span>من</span><b>${esc(w.created_by_name||'')}</b>
    <span>الأولوية</span><b>${esc(w.priority||'')}</b><span>موعد الإنجاز</span><b>${dts(w.due_at)}${late(w)?' <span class="fm145-st bad">متأخر</span>':''}</b><span>أُنشئ</span><b>${dts(w.created_at)}</b><span>أُبلغ بالإنجاز</span><b>${dts(w.done_at)}</b></div>
   ${w.description?`<div class="fm122-note" style="white-space:pre-wrap">${esc(w.description)}</div>`:''}
-  ${cl.length?`<h4 style="margin:10px 0 2px">☑️ قائمة المهام (${fmt(cl.filter(x=>x.done).length)} من ${fmt(cl.length)})</h4><ul class="fm145-cl">${cl.map(x=>`<li>${x.done?'✅':'⬜'} ${esc(x.t)}</li>`).join('')}</ul>`:''}
+  ${cl.length?(window.fmV148ClHtml?fmV148ClHtml(cl):`<h4 style="margin:10px 0 2px">☑️ قائمة المهام (${fmt(cl.filter(x=>x.done).length)} من ${fmt(cl.length)})</h4><ul class="fm145-cl">${cl.map(x=>`<li>${x.done?'✅':'⬜'} ${esc(x.t)}</li>`).join('')}</ul>`):''}
   ${(w.ticket_refs||[]).length?`<div class="fm125-src">بلاغات مرتبطة: ${w.ticket_refs.map(esc).join('، ')}</div>`:''}
   <h4 style="margin:10px 0 2px">📷 الصور (${fmt(ph.length)})</h4><div class="fm145-ph">${ph.map(p=>`<a href="${esc(p.d)}" target="_blank" rel="noopener"><img src="${esc(p.d)}" alt=""><i>${p.kind==='before'?'قبل':p.kind==='after'?'بعد':'مرفق'} • ${esc(p.by||'')}</i></a>`).join('')||'<span class="fm125-src">لا توجد صور</span>'}</div>
   <h4 style="margin:10px 0 4px">🕓 السجل</h4><ul class="fm145-tl">${ev.slice().reverse().map(e=>`<li><small>${esc(e.by_name||'')} • ${dts(e.at)}</small>${esc(e.text||'')}${e.geo&&e.geo.lat?` <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${e.geo.lat},${e.geo.lng}">📍</a>`:''}</li>`).join('')}</ul>
@@ -30312,7 +30313,7 @@ async function createDlg(){let P=[];try{P=await C.api.woAssignable()}catch(e){to
  d.querySelector('#n-x').onclick=d.close;
  d.querySelector('#n-go').onclick=async e=>{const g=s=>d.querySelector(s).value;
   const o={title:S(g('#n-ti')),type:g('#n-ty'),assignee:g('#n-as'),school:S(g('#n-sc')),region:g('#n-rg'),priority:g('#n-pr'),due_at:g('#n-du')?new Date(g('#n-du')).toISOString():'',description:S(g('#n-de')),
-   checklist:g('#n-cl').split('\n').map(S).filter(Boolean).map(t=>({t,done:false})),ticket_refs:g('#n-tk').split(/[,،\s]+/).map(S).filter(Boolean)};
+   checklist:window.fmWoParseCl?fmWoParseCl(g('#n-cl')):g('#n-cl').split('\n').map(S).filter(Boolean).map(t=>({t,done:false})),ticket_refs:g('#n-tk').split(/[,،\s]+/).map(S).filter(Boolean)};
   if(!o.title){toast('اكتب عنوان الأمر','warning');return}
   const b=e.currentTarget;b.disabled=true;b.textContent='…';
   try{await C.api.woCreate(o);toast('تم إسناد الأمر');d.close();F.k='open';await load();render()}
@@ -30323,7 +30324,7 @@ function exportXl(){if(!(window.XLSX&&XLSX.utils)){toast('مكتبة Excel غي�
   ...L.filter(w=>!F.batch||w.batch_id===F.batch).map(w=>[w.code,w.title,(T[w.type]||T.task)[1],w.batch_title||'',w.school||'',w.building_id||'',RN[w.region]||w.region||'',w.assignee_name||'',w.created_by_name||'',w.priority||'',w.due_at?dts(w.due_at):'',(ST[w.status]||['',''])[1],late(w)?'نعم':'',
    Array.isArray(w.checklist)&&w.checklist.length?`${w.checklist.filter(x=>x.done).length}/${w.checklist.length}`:'',dts(w.created_at),w.done_at?dts(w.done_at):'',w.closed_at?dts(w.closed_at):''])];
  const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=rows[0].map((_,i)=>({wch:[14,34,14,26,26,16,10,22,22,10,18,16,8,10,18,18,18][i]}));ws['!views']=[{RTL:true}];
- const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};XLSX.utils.book_append_sheet(wb,ws,'أوامر العمل');XLSX.writeFile(wb,`RakizoraFM-work-orders-${new Date().toISOString().slice(0,10)}.xlsx`)}
+ const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};XLSX.utils.book_append_sheet(wb,ws,'أوامر العمل');window.fmV148XlSheet?.(wb,L.filter(w=>!F.batch||w.batch_id===F.batch));XLSX.writeFile(wb,`RakizoraFM-work-orders-${new Date().toISOString().slice(0,10)}.xlsx`)}
 
 window.fmV145OpenWorkOrders=()=>openPage(document.getElementById('v2-nav-fm145-wo'));
 /* V146 reaches the page through this */
@@ -30498,7 +30499,7 @@ window.fmV146GroupDlg=async function(){let P=[];try{P=await C.api.woAssignable()
  $('#g-go').onclick=async e=>{const g=s=>$(s).value,title=S(g('#g-ti'));if(!title){toast('اكتب عنوان الأمر','warning');$('#g-ti').focus();return}
   const ok=plan().filter(x=>x.p);if(!ok.length)return;
   const base={title,type:g('#g-ty'),priority:g('#g-pr'),due_at:g('#g-du')?new Date(g('#g-du')).toISOString():'',description:S(g('#g-de')),
-   checklist:g('#g-cl').split('\n').map(S).filter(Boolean).map(t=>({t,done:false})),ticket_refs:[]};
+   checklist:window.fmWoParseCl?fmWoParseCl(g('#g-cl')):g('#g-cl').split('\n').map(S).filter(Boolean).map(t=>({t,done:false})),ticket_refs:[]};
   const items=ok.map(({s,p})=>Object.assign({},base,{assignee:p.id,school:s.school,building_id:s.bid||'',region:s.region||'',
    priority:s.x?.pri||base.priority,due_at:s.x?.due||base.due_at,description:[base.description,s.x?.note].filter(Boolean).join('\n\n')}));
   /* V147: a recurring campaign is saved as a schedule instead */
@@ -30570,14 +30571,11 @@ const msg=e=>{const m=String(e&&e.message||e);return /wo_templates|wo_schedules|
   ?'هذه الميزة تحتاج تشغيل ملف supabase_setup.sql المحدَّث (القسم 11) مرة واحدة في Supabase':/cannot assign/.test(m)?'لا يمكنك الإسناد لأحد الموظفين: '+m.split('—').pop():X.sqlMsg(m)};
 
 /* ---------- ready-made templates (built in, always available) ---------- */
-const READY=[
- {id:'r:ac',name:'صيانة وقائية للتكييف',data:{title:'صيانة وقائية لوحدات التكييف',type:'preventive',priority:'متوسط',due_days:7,description:'صيانة وقائية لكل وحدات التكييف في المبنى مع تصوير قبل وبعد.',checklist:['تنظيف أو تغيير الفلاتر','فحص ضغط الفريون','فحص خطوط التصريف','فحص التوصيلات الكهربائية','اختبار التشغيل ودرجة التبريد']}},
- {id:'r:fire',name:'فحص أنظمة الحريق والسلامة',data:{title:'فحص أنظمة الحريق والسلامة',type:'inspection',priority:'عالي',due_days:5,description:'فحص دوري لأنظمة الإنذار والإطفاء ومخارج الطوارئ.',checklist:['الطفايات: الصلاحية والضغط','لوحة إنذار الحريق','الكواشف وأجراس الإنذار','خراطيم وصناديق الحريق','مخارج وإنارة الطوارئ']}},
- {id:'r:elec',name:'فحص الكهرباء واللوحات',data:{title:'فحص الكهرباء واللوحات',type:'inspection',priority:'عالي',due_days:5,description:'فحص اللوحات والقواطع والإنارة ورصد أي خطر كهربائي.',checklist:['اللوحة الرئيسية واللوحات الفرعية','القواطع والتوصيلات','أسلاك مكشوفة أو تالفة','الإنارة الداخلية والخارجية','التأريض']}},
- {id:'r:plumb',name:'السباكة ودورات المياه',data:{title:'صيانة السباكة ودورات المياه',type:'preventive',priority:'متوسط',due_days:7,description:'فحص التسربات والمحابس والمضخات والصرف.',checklist:['التسربات','المحابس والخلاطات','المضخات','السخانات','الصرف والسيفونات']}},
- {id:'r:tank',name:'تنظيف وتعقيم خزانات المياه',data:{title:'تنظيف وتعقيم خزانات المياه',type:'preventive',priority:'متوسط',due_days:14,description:'تفريغ الخزانات وتنظيفها وتعقيمها مع تصوير قبل وبعد.',checklist:['تفريغ وتنظيف الخزان','التعقيم','فحص الغطاء والعوامة','فحص المواسير والمحابس']}},
+/* general templates; the approved preventive-maintenance set (V148) is added in front of them */
+const BASE=[
  {id:'r:meter',name:'حصر العدادات',data:{title:'حصر قراءات العدادات',type:'data',priority:'متوسط',due_days:3,description:'تسجيل رقم العداد والقراءة مع صورة واضحة لكل عداد.',checklist:['عداد الكهرباء: الرقم والقراءة','عداد المياه: الرقم والقراءة','صورة لكل عداد']}},
  {id:'r:visit',name:'زيارة تفقدية للمبنى',data:{title:'زيارة تفقدية للمبنى',type:'visit',priority:'متوسط',due_days:3,description:'جولة تفقدية على المبنى وتسجيل الملاحظات بالصور.',checklist:['الأسوار والبوابات','الأسقف والجدران','الأبواب والنوافذ','الساحات والملاعب','ملاحظات السلامة']}}];
+const READY_ALL=()=>[...(window.fmV148Ready?.()||[]),...BASE];
 let mine=null;
 async function templates(force){if(mine&&!force)return mine;try{mine=await C.api.woTemplates()}catch(e){mine=[];if(!/does not exist|schema cache|Could not find/i.test(String(e.message)))toast(msg(e),'error')}return mine}
 
@@ -30587,19 +30585,20 @@ window.fmV147TplBar=async function(d,pre,ctx){const h=d.querySelector('.fm122-dl
  const $=s=>d.querySelector(s),meId=X.me().id,isAdmin=X.me().role==='admin';
  async function draw(sel){const T=await templates();const own=T.filter(t=>t.created_by===meId),team=T.filter(t=>t.created_by!==meId);
   bar.innerHTML=`<b>📑 القوالب</b><select data-t><option value="">— ابدأ من قالب —</option>
-   <optgroup label="قوالب جاهزة">${READY.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</optgroup>
+   ${[...new Set(READY_ALL().map(t=>t.g||'قوالب عامة'))].map(g=>`<optgroup label="${esc(g)}">${READY_ALL().filter(t=>(t.g||'قوالب عامة')===g).map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</optgroup>`).join('')}
    ${own.length?`<optgroup label="قوالبي">${own.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}${t.data?.schools?.length?` (${fmt(t.data.schools.length)} مدرسة)`:''}${t.shared?'':' 🔒'}</option>`).join('')}</optgroup>`:''}
    ${team.length?`<optgroup label="قوالب الفريق">${team.map(t=>`<option value="${esc(t.id)}">${esc(t.name)} — ${esc(t.created_by_name||'')}${t.data?.schools?.length?` (${fmt(t.data.schools.length)} مدرسة)`:''}</option>`).join('')}</optgroup>`:''}</select>
-   <button type="button" data-s>💾 حفظ كقالب</button><button type="button" data-del hidden>🗑️ حذف القالب</button>`;
+   <button type="button" data-s>💾 حفظ كقالب</button><button type="button" data-del hidden>🗑️ حذف القالب</button>${window.fmV148Import&&['admin','engineer'].includes(X.me().role)?'<button type="button" data-imp>📥 استيراد من Excel</button>':''}`;
+  bar.querySelector('[data-imp]')&&(bar.querySelector('[data-imp]').onclick=()=>window.fmV148Import(async()=>{mine=null;await templates(true);draw('')}));
   const se=bar.querySelector('[data-t]'),del=bar.querySelector('[data-del]');if(sel)se.value=sel;
-  const find=()=>READY.find(t=>t.id===se.value)||T.find(t=>t.id===se.value);
+  const find=()=>READY_ALL().find(t=>t.id===se.value)||T.find(t=>t.id===se.value);
   const canDel=()=>{const t=T.find(x=>x.id===se.value);return !!t&&(t.created_by===meId||isAdmin)};del.hidden=!canDel();
   se.onchange=()=>{del.hidden=!canDel();const t=find();if(t)apply(t)};
   del.onclick=async()=>{const t=T.find(x=>x.id===se.value);if(!t||!confirm(`حذف القالب «${t.name}»؟`))return;
    try{await C.api.woTemplateDelete(t.id);toast('تم حذف القالب');await templates(true);draw('')}catch(e){toast(msg(e),'error')}};
   bar.querySelector('[data-s]').onclick=save}
  function apply(t){const v=t.data||{},set=(id,x)=>{const el=$(`#${pre}-${id}`);if(el&&x!==undefined&&x!==null)el.value=x};
-  set('ti',v.title);set('ty',v.type);set('pr',v.priority);set('de',v.description||'');set('cl',(v.checklist||[]).map(x=>typeof x==='string'?x:x.t).join('\n'));
+  set('ti',v.title);set('ty',v.type);set('pr',v.priority);set('de',v.description||'');set('cl',(v.checklist||[]).map(x=>typeof x==='string'?x:(x.tool?x.t+' | '+x.tool:x.t)).join('\n'));
   if(v.due_days)set('du',X.toLocal(Date.now()+v.due_days*DAY));
   if(pre==='g'&&ctx){if(v.am){const r=d.querySelector(`[name=g-am][value=${v.am}]`);if(r)r.checked=true}if(v.role&&$('#g-ar'))$('#g-ar').value=v.role;
    if(Array.isArray(v.schools)&&v.schools.length){ctx.picked.clear();let miss=0;v.schools.forEach(k=>{const s=ctx.byK.get(k)||ctx.byK.get(N(k));if(s)ctx.picked.set(s.k,s);else miss++});ctx.setSrc('filter');
@@ -30609,7 +30608,7 @@ window.fmV147TplBar=async function(d,pre,ctx){const h=d.querySelector('.fm122-dl
  async function save(){const g=id=>$(`#${pre}-${id}`)?.value||'',title=S(g('ti'));if(!title){toast('اكتب عنوان الأمر أولاً','warning');return}
   const name=S(prompt('اسم القالب',title));if(!name)return;
   const due=g('du')?Math.max(1,Math.round((new Date(g('du'))-Date.now())/DAY)):7;
-  const data={title,type:g('ty'),priority:g('pr'),due_days:due,description:S(g('de')),checklist:g('cl').split('\n').map(S).filter(Boolean)};
+  const data={title,type:g('ty'),priority:g('pr'),due_days:due,description:S(g('de')),checklist:window.fmWoParseCl?fmWoParseCl(g('cl')).map(x=>x.tool?{t:x.t,tool:x.tool}:x.t):g('cl').split('\n').map(S).filter(Boolean)};
   if(pre==='g'&&ctx){data.am=d.querySelector('[name=g-am]:checked')?.value;data.role=$('#g-ar')?.value;
    if(ctx.picked.size&&confirm(`حفظ المدارس المحددة (${ctx.picked.size}) مع القالب؟\nموافق = القالب يحدد نفس المدارس عند استخدامه • إلغاء = بدون مدارس`))data.schools=[...ctx.picked.keys()]}
   const shared=confirm('مشاركة القالب مع فريقك؟\nموافق = يراه المدير والمهندسون والمشرفون • إلغاء = لك فقط');
@@ -30678,6 +30677,77 @@ let ran=false;
 const runDue=()=>{if(ran||!C.state?.on||!['admin','engineer','supervisor'].includes(X.me().role))return;ran=true;
  C.api.woRunDue().then(n=>{if(n>0)X.load().then(()=>{if(document.getElementById('fm145-page')?.classList.contains('open')&&!document.querySelector('.fm122-dlg-wrap'))X.render()})}).catch(()=>{})};
 setTimeout(runDue,8000);setTimeout(runDue,20000);
+})();
+</script>
+<style id="fm-v148-ppm-css">
+/* V148 — approved preventive-maintenance work orders + inspection results per checklist item */
+.fm148-cl{list-style:none;margin:4px 0 8px;padding:0}.fm148-cl li{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;padding:5px 0;border-bottom:1px dashed #e2e8f0;font-size:13.5px}
+.fm148-cl small{grid-column:2;color:#64748b;font-weight:700;font-size:11.5px}.fm148-cl .n{grid-column:2;color:#b45309;font-weight:800;font-size:12.5px}
+.fm148-sum{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}.fm148-sum span{border-radius:999px;padding:1px 9px;font-size:12px;font-weight:800;border:1px solid #e2e8f0;background:#f8fafc}
+.fm148-sum .ok{background:#f0fdf4;border-color:#bbf7d0;color:#15803d}.fm148-sum .fix{background:#fffbeb;border-color:#fde68a;color:#92400e}.fm148-sum .na{color:#64748b}.fm148-sum .no{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+</style>
+<script id="fm-v148-ppm">
+(function(){
+'use strict';
+const S=v=>String(v??'').trim();
+const esc=s=>S(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n||0).toLocaleString('ar-EG');
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const pad=n=>String(n).padStart(2,'0');
+
+/* the approved preventive-maintenance work orders (20 orders, from «أوامر العمل — الصيانة الوقائية.xlsx»):
+   system → order → [action, tool] */
+const PPM={"sys":["الأعمال الكهربائية","أعمال دورات المياه","أنظمة إنذار الحريق والإطفاء","المصاعد","الأعمال المدنية والمعمارية","أعمال صيانة التكييف","أعمال شبكة المياه"],"wo":[[1,0,"الأفياش والمفاتيح والتوصيلات",[["سلامة الفيش وعدم وجود كسر أو احتراق","فحص بصري"],["إحكام تثبيت الفيش في الجدار","فحص بصري"],["سلامة المفاتيح وعدم وجود شرر أو سخونة","فحص بصري"],["عمل المفاتيح بشكل طبيعي عند التشغيل والإيقاف","فحص يدوي"],["ثبات أغطية المفاتيح والفيش","فحص يدوي"],["سلامة التوصيلات الداخلية وعدم ارتخائها","مفكات"],["قياس الجهد في الفيش والمفاتيح","Multimeter"],["فحص توصيلات (الجرس - السماعات - الشاشات - البروجيكتور)","فحص بصري ويدوي"]]],[2,0,"الإضاءة وإنارة الطوارئ",[["سلامة الإضاءة وعدم وجود وميض","فحص بصري"],["مطابقة نوع اللمبات للمواصفات","فحص بصري"],["سلامة وحدات الإنارة وعدم وجود كسر","فحص بصري"],["نظافة وحدات الإنارة وخلوها من الأتربة","منفاخ هواء"],["اختبار إنارة الطوارئ والتأكد من كفاءة بطارياتها","فحص بصري"],["فحص لوحات مخارج الطوارئ (Exit) وعملها بشكل مستمر","فحص بصري"],["فحص الإنارة الخارجية وحساسات الضوء والمؤقتات","فحص بصري"],["قياس شدة الإضاءة ومطابقتها للمعدلات المطلوبة","فحص بصري"]]],[3,0,"اللوحات الرئيسية والفرعية",[["سلامة هيكل اللوحة وعدم وجود تلف أو صدأ","فحص بصري"],["وضوح وترتيب الترقيم والتسميات داخل اللوحة","فحص بصري"],["إحكام ربط القواطع والوصلات","فحص بصري"],["عدم وجود سخونة أو آثار احتراق","Multimeter"],["سلامة القواطع وعدم الفصل غير المبرر","Multimeter"],["مطابقة القواطع للأحمال المصممة","فحص بصري"],["سلامة قضبان التوزيع","فحص بصري"],["وجود غطاء حماية داخلي وعدم وجود أجزاء مكشوفة","فحص بصري"],["سلامة التأريض وربطه بشكل صحيح","فحص بصري"],["نظافة اللوحة وخلوها من الأتربة والرطوبة","منفاخ هواء"],["سلامة أجهزة القياس والمؤشرات","فحص بصري"],["سهولة الوصول وإمكانية الفتح والإغلاق الآمن","فحص بصري"]]],[4,1,"شبكة التغذية الداخلية",[["فحص محابس المياه والتأكد من عدم وجود تسريب","فحص بصري وطقم مفاتيح بلدي"],["فحص التوصيلات والمواسير والتأكد من عدم وجود تسريب","فحص بصري وطقم مفاتيح بلدي"],["فحص خلاطات المياه","فحص يدوي"],["فحص شطافات المياه والتأكد من ضغط المياه وتثبيتها وعدم وجود تسريب","فحص بصري"]]],[5,1,"محتويات وأكسسوارات دورات المياه",[["فحص السخانات الكهربائية والتأكد من عملها وعدم وجود تسريبات","فحص بصري ويدوي"],["فحص مراوح الشفط والتأكد من عملها ونظافتها","فحص بصري ويدوي"],["فحص الكراسي العربي والافرنجي","فحص بصري ويدوي"],["فحص المرايات والتأكد من تثبيتها وسلامتها","فحص بصري"],["فحص حاقن الصابون وحامل المناديل واكسسوارات ذوي الإعاقة","فحص بصري ويدوي"]]],[6,1,"شبكة الصرف",[["عدم وجود تسريب أو طفح بمواسير الصرف","فحص بصري"],["سلامة المواسير وعدم وجود تشققات أو كسر","فحص بصري"],["إحكام الوصلات وعدم وجود ارتخاء","فحص بصري ويدوي"],["عدم وجود انسداد في الخطوط","اختبار تدفق المياه"],["كفاءة الميول باتجاه غرف التفتيش","ميزان مياه"],["سلامة أغطية الأرضيات والبالوعات","فحص بصري"]]],[7,2,"إطفاء الحريق",[["اختبار ضغط الشبكة","عداد ضغط"],["فحص صناديق الحريق والتأكد من سلامة المحتويات","فحص بصري ويدوي"],["فحص التسريب في المواسير والبلفات والميكانيكال سيل","فحص بصري ويدوي"],["اختبار البلفات","فحص بصري ويدوي"],["فحص ضغط طفايات الحريق وتاريخ الانتهاء","فحص بصري ويدوي"],["فحص عمل مضخات الحريق الجوكى والكهرباء والديزل","فحص بصري ويدوي"]]],[8,2,"إنذار الحريق",[["اختبار الكواشف","Smoke detector tester"],["اختبار الأجراس","فحص يدوي وسمعي"],["فحص بطارية مضخة الديزل","الفولتميتر"],["فحص لوحة الإنذار","فحص بصري ويدوي"],["فحص عمل لوحة التحكم بجميع محتوياتها","فحص بصري ويدوي"]]],[9,3,"صيانة كهربائية",[["فحص لوحة التحكم والكونتاكتورات","مفكات، Multimeter"],["التأكد من سلامة التوصيلات الكهربائية","مفكات، Voltage tester"],["اختبار أنظمة الأمان الكهربائية","جهاز اختبار العزل (Megger)"],["فحص الإضاءة والتهوية داخل الكابينة","فحص بصري ويدوي"],["فحص نظام الطوارئ والبطارية","مفكات، Voltage tester"]]],[10,3,"صيانة ميكانيكية",[["فحص الماكينة والفرامل","طقم مفاتيح"],["تشحيم الأجزاء المتحركة","مشحمة"],["فحص الحبال والبكرات","فحص بصري"],["التأكد من اتزان الكابينة","ميزان مياه"],["فحص الأبواب الميكانيكية","فحص بصري، طقم مفاتيح، مفكات"],["اختبار التشغيل الكامل للمصعد","فحص بصري"]]],[11,4,"الأعمال المدنية",[["فحص الهياكل الإنشائية خرسانية أو معدنية","فحص بصري"],["فحص الأسقف الخرسانية والتأكد من عدم وجود أي أجزاء قابله للسقوط","فحص بصري"],["فحص الحوائط الداخلية","فحص بصري"],["فحص الحوائط الخارجية","فحص بصري"],["فحص السلالم والدرج","فحص بصري"],["التأكد من سلامة الأرضيات وعلامات الهبوط","فحص بصري ويدوي"],["فحص المظلات الداخلية","فحص بصري ويدوي"],["فحص مظلات الساحات الخارجية","فحص بصري"]]],[12,4,"أعمال الأرضيات والعزل",[["فحص جميع الأرضيات والتأكد من عدم وجود هبوطات ومعالجتها","فحص بصري"],["فحص حوائط وقيشاني دورات المياه","فحص بصري"],["فحص الموقع العام والأرصفة والمنحدرات","فحص بصري"],["فحص سلامة الصالات الرياضية ومعالجة التالف","فحص بصري"],["فحص درج الرخام ومعالجة التالف","فحص بصري"],["فحص رخام المغاسل ومعالجة التالف","فحص بصري"],["فحص العزل المائي للأسطح ومعالجة التالف","فحص بصري"],["فحص العزل المائي لدورات المياه ومعالجة التالف","فحص بصري"],["فحص المزاريب ومعالجة التالف","فحص بصري"]]],[13,4,"أعمال الدهانات والتشطيبات",[["صيانة الدهانات والتشطيبات الداخلية","فحص بصري"],["صيانة الدهانات والتشطيبات الخارجية","فحص بصري"],["فحص فواصل التمدد بالحوائط والجدران والأرضيات ومعالجة التالف","فحص بصري"],["فحص التشققات بالجدران والأسقف ومعالجة التالف","فحص بصري"],["فحص الأسقف المستعارة للمرات والغرف ودورات المياه","فحص بصري"]]],[14,4,"أعمال الأبواب والنوافذ",[["فحص النوافذ واكسسواراتها ومعالجة التالف والتأكد من سلامة الزجاج","فحص بصري"],["فحص أبواب الفصول ودورات المياه والاكسسوارات ومعالجة التالف","فحص بصري"],["فحص البوابات المعدنية والتأكد من سلامة مكوناتها ومعالجة التالف","فحص بصري"],["فحص تثبيت درابزين السلالم المعدنية ومعالجة التالف","فحص بصري"],["فحص تثبيت كوبستات منحدرات المعاقين والأفنية الداخلية","فحص بصري"]]],[15,5,"صيانة المكونات الكهربائية",[["فحص لوحات التحكم","مفكات، Multimeter"],["قياس الجهد والتيار","clamp meter, Multimeter"],["فحص الكونتاكتورات والحمايات","مفكات، Multimeter"],["التأكد من سلامة الكابلات","جهاز اختبار العزل (Megger)"],["اختبار المقابس والأفياش والتشغيل الامن","مفكات، Multimeter"]]],[16,5,"صيانة المكونات الميكانيكية",[["فحص الضاغط","clamp meter, Multimeter"],["التأكد من ضغط الفريون","عداد ضغط"],["فحص عمل المراوح الداخلية والخارجية","فحص بصري"],["فحص عمل المواتير الداخلية والخارجية","فحص بصري"]]],[17,5,"سلامة التمديدات والتركيبات",[["تنظيف الفلاتر","ماكينة غسيل المكيف"],["تنظيف المكثف والمبخر في حالة لزم الأمر","ماكينة غسيل المكيف"],["مراجعة تثبيت أوجه المكيفات","فحص بصري"],["فحص تثبيت وحدات المكيف الداخلية والخارجية","فحص بصري"],["فحص عزل مواسير الفريون","فحص بصري"],["فحص صرف المكيفات ومعالجتها","فحص بصري"],["التأكد من تبريد المكيف وقياس درجة التبريد","ثيرمومتر رقمي"]]],[18,6,"وحدة المضخات",[["فحص لوحة التحكم والكونتاكتورات","مفكات، Multimeter"],["اختبار تشغيل مضخة الرفع الرئيسية والاحتياطى","فحص بصري ويدوي"],["اختبار وتشغيل مضخة النقل إن وجدت","فحص بصري ويدوي"],["فحص التسريب من المضخة وتغيير الميكانيكال سيل إذا تطلب الأمر","فحص بصري ويدوي"],["فحص التسريب في الشبكة","فحص بصري"],["فحص تثبيت المضخات لتجنب حدوث تلف","فحص بصري، طقم مفاتيح"]]],[19,6,"وحدة الخزانات",[["فحص الخزانات العلوية (تثبيت الخزانات - التأكد من عدم وجود تسريبات للخزانات والتوصيلات)","فحص بصري"],["فحص مكونات الخزانات العلوية (العوامات - فحص تواجد واحكام اغلاق أغطية الخزانات)","فحص بصري"],["فحص خطوط التغذية للخزانات العلوية","فحص بصري"],["فحص الخزانات السفلية بما تشمل (العوامات - الشفاط \"الرداد السفلي\" - التسريبات)","فحص بصري"],["فحص المحابس الخاصة بشبكة التغذية والتأكد من ضغط المياه","فحص بصري ويدوي"]]],[20,6,"وحدة برادات المياه والفلاتر",[["فحص برادات المياه والتأكد من تثبيتها","فحص بصري ويدوي"],["فحص التوصيلات الكهربائية الخاصة ببرادات المياه","فحص بصري ويدوي"],["فحص فلاتر المياه والتأكد من نظافتها","فحص بصري"],["فحص واختبار الضاغط الخاص ببرادات المياه وكذلك شحنتها","فحص بصري ويدوي"],["فحص صرف البرادات","فحص بصري"],["فحص الصنابير والتأكد من عدم وجود صدأ","فحص بصري"]]]]};
+const HIGH=new Set([7,8]);   // fire fighting and fire alarm
+const RES_NOTE='افحص كل بند وسجّل نتيجته في التطبيق: ✅ سليم / ⚠️ يحتاج إصلاح (مع وصف المشكلة) / ➖ لا ينطبق، مع صور قبل وبعد.';
+window.FM_PPM=PPM;
+window.fmV148Ready=()=>PPM.wo.map(([n,si,name,items])=>({id:'ppm:'+pad(n),g:'الصيانة الوقائية المعتمدة (20 أمر)',name:`${pad(n)} — ${name} (${PPM.sys[si]})`,
+ data:{title:`صيانة وقائية — ${name}`,type:'preventive',priority:HIGH.has(n)?'عالي':'متوسط',due_days:7,description:`النظام: ${PPM.sys[si]}\n${RES_NOTE}`,checklist:items.map(([t,tool])=>({t,tool}))}}));
+
+/* «البند | الأداة» per line → checklist items */
+window.fmWoParseCl=txt=>S(txt).split('\n').map(S).filter(Boolean).map(l=>{const i=l.lastIndexOf('|');const t=i>0?S(l.slice(0,i)):l,tool=i>0?S(l.slice(i+1)):'';return Object.assign({t,done:false},tool?{tool}:{})});
+
+/* inspection result of one item: ok | fix | na; older orders only have done */
+const res=x=>x.res||(x.done?'ok':'');
+const R={ok:['✅','سليم'],fix:['⚠️','يحتاج إصلاح'],na:['➖','لا ينطبق'],'':['⬜','لم يُسجَّل']};
+const tally=cl=>{const c={ok:0,fix:0,na:0,'':0};cl.forEach(x=>c[res(x)]++);return c};
+window.fmV148Tally=tally;
+window.fmV148ClHtml=cl=>{const c=tally(cl);
+ return `<h4 style="margin:10px 0 2px">☑️ بنود الفحص (${fmt(cl.length-c[''])} من ${fmt(cl.length)})</h4>
+  <div class="fm148-sum"><span class="ok">✅ سليم ${fmt(c.ok)}</span><span class="fix">⚠️ يحتاج إصلاح ${fmt(c.fix)}</span><span class="na">➖ لا ينطبق ${fmt(c.na)}</span>${c['']?`<span class="no">⬜ لم يُسجَّل ${fmt(c[''])}</span>`:''}</div>
+  <ul class="fm148-cl">${cl.map(x=>{const r=R[res(x)];return `<li><span title="${r[1]}">${r[0]}</span><span>${esc(x.t)}</span>${x.tool?`<small>🔧 ${esc(x.tool)}</small>`:''}${x.note?`<span class="n">📝 ${esc(x.note)}</span>`:''}</li>`}).join('')}</ul>`};
+
+/* Excel: a second sheet with one row per checklist item, for the inspection record */
+window.fmV148XlSheet=(wb,list)=>{const X=window.fmV145X,rows=[['رقم الأمر','الأمر','الحملة','المدرسة','الرقم الوزاري / رقم المبنى','المُسند إليه','حالة الأمر','البند','الأداة','النتيجة','ملاحظة','أُبلغ بالإنجاز']];
+ const ST={assigned:'بانتظار القبول',accepted:'مقبول',rejected:'مرفوض',in_progress:'قيد التنفيذ',done:'بانتظار الاعتماد',returned:'مُعاد للتصحيح',closed:'مغلق',cancelled:'ملغى'};
+ list.forEach(w=>(Array.isArray(w.checklist)?w.checklist:[]).forEach(x=>rows.push([w.code,w.title,w.batch_title||'',w.school||'',w.building_id||'',w.assignee_name||'',ST[w.status]||w.status,x.t,x.tool||'',R[res(x)][1],x.note||'',w.done_at&&X?X.dts(w.done_at):''])));
+ if(rows.length<2)return;const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=[14,30,26,26,14,20,14,46,22,14,30,18].map(w=>({wch:w}));ws['!views']=[{RTL:true}];ws['!autofilter']={ref:ws['!ref']};
+ XLSX.utils.book_append_sheet(wb,ws,'بنود الفحص')};
+
+/* campaign header: how many items need repair */
+const P0=window.fmV146Panel;
+if(P0)window.fmV146Panel=function(base,F){let h=P0.apply(this,arguments);if(!F.batch||!h)return h;
+ let fix=0,orders=0;base.filter(w=>w.batch_id===F.batch).forEach(w=>{const n=(Array.isArray(w.checklist)?w.checklist:[]).filter(x=>x.res==='fix').length;if(n){fix+=n;orders++}});
+ return fix?h.replace('<div style="flex:1;min-width:120px">',`<span style="color:#92400e">⚠️ ${fmt(fix)} بند يحتاج إصلاح في ${fmt(orders)} مدرسة</span><div style="flex:1;min-width:120px">`):h};
+
+/* import revised templates from Excel in the same layout as the approved file:
+   column A system, B order number, C order name, D action, E tool (merged cells are filled down) */
+window.fmV148Import=function(done){const C=window.FMCloud;if(!(window.XLSX&&XLSX.read)){toast('مكتبة Excel غير محمّلة','error');return}
+ const inp=document.createElement('input');inp.type='file';inp.accept='.xlsx,.xls';inp.onchange=async()=>{const f=inp.files[0];if(!f)return;
+  let A=[];try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});A=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''})}catch(e){toast('تعذر قراءة الملف','error');return}
+  const h=A.findIndex(r=>r.some(c=>/ال[اإ]جراء/.test(S(c))));if(h<0){toast('لم أجد عمود «الإجراء» في الملف','error');return}
+  const ai=A[h].findIndex(c=>/ال[اإ]جراء/.test(S(c))),ti=A[h].findIndex(c=>/ال[اأ]دو?ات|ال[اأ]داة/.test(S(c)));
+  const out=[];let sys='',cur=null;
+  A.slice(h+1).forEach(r=>{if(S(r[ai-3]))sys=S(r[ai-3]);const n=S(r[ai-2]);if(n){cur={n,sys,name:S(r[ai-1]),items:[]};out.push(cur)}
+   const t=S(r[ai]);if(cur&&t)cur.items.push({t,tool:ti>=0?S(r[ti]):''})});
+  const ok=out.filter(o=>o.name&&o.items.length);if(!ok.length){toast('لم أجد أوامر عمل في الملف','error');return}
+  if(!confirm(`سيتم حفظ ${ok.length} قالب (${ok.reduce((a,o)=>a+o.items.length,0)} بند) كقوالب مشتركة للفريق. متابعة؟`))return;
+  let T=[];try{T=await C.api.woTemplates()}catch(e){}const me=C.state?.profile||{};let n=0;
+  try{for(const o of ok){const name=`${pad(o.n)} — ${o.name} (${o.sys})`,old=T.find(t=>t.name===name&&t.created_by===me.id);
+    await C.api.woTemplateSave({id:old&&old.id,name,shared:true,created_by_name:me.full_name||me.email,
+     data:{title:`صيانة وقائية — ${o.name}`,type:'preventive',priority:'متوسط',due_days:7,description:`النظام: ${o.sys}\n${RES_NOTE}`,checklist:o.items}});n++}
+   toast(`تم حفظ ${fmt(n)} قالب`);done&&done()}catch(e){toast((n?`حُفظ ${n} ثم توقف: `:'')+String(e.message||e),'error')}};
+ inp.click()};
 })();
 </script>
 </body>

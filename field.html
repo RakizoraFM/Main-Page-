@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F8">
+<meta name="fm-version" content="F9">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -126,6 +126,12 @@ textarea.in{min-height:90px;line-height:1.8}
 .sw{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:800;font-size:13.5px}.sw input{width:22px;height:22px}
 .plan-btn{width:100%;margin-bottom:10px;background:#0f172a!important;color:#fff!important}
 .bnav button{position:relative}.bnav em{position:absolute;top:2px;left:calc(50% - 22px);min-width:17px;height:17px;border-radius:99px;background:#dc2626;color:#fff;font:900 10.5px/17px Cairo,sans-serif;font-style:normal;padding:0 4px}
+/* F9: inspection result per checklist item */
+.ci{padding:9px 0;border-bottom:1px solid var(--line)}.ci:last-child{border-bottom:0}.ci .t{font-weight:800;font-size:14px;line-height:1.7}.ci .t small{display:block;color:var(--mut);font-weight:700;font-size:12px}
+.ci .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}.ci .seg button{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 2px;font:800 12.5px Cairo,Tahoma,sans-serif;color:var(--ink)}
+.ci .seg button:disabled{opacity:.55}.ci .seg .on.ok{background:#dcfce7;border-color:#16a34a;color:#14532d}.ci .seg .on.fix{background:#fef3c7;border-color:#d97706;color:#78350f}.ci .seg .on.na{background:#e2e8f0;border-color:#64748b}
+.ci .in{margin-top:6px}.ci.fixed{background:linear-gradient(90deg,transparent,#fffbeb)}
+.cisum{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 6px}.cisum span{border-radius:999px;padding:1px 9px;font-size:12px;font-weight:800;background:#f8fafc;border:1px solid var(--line)}
 .cli{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-weight:700;font-size:14px}.cli:last-child{border-bottom:0}.cli input{width:22px;height:22px;flex:none}
 .abar.wo{background:#1e3a8a}.abar.wo button[data-a=go]{color:#1e3a8a}
 .wocard{background:#eef2ff;border-color:#c7d2fe;color:#3730a3;font-weight:800;display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:start}
@@ -813,7 +819,7 @@ async function woDetail(id,keep){
  if(D.curWo!==id)return;
  const t=WO_T[w.type]||WO_T.task,isA=woMine(w),isC=woSent(w)||D.me?.role==='admin',act=!WO_FINAL(w.status)&&w.status!=='done'&&w.status!=='rejected',working=isA&&['accepted','in_progress','returned'].includes(w.status);
  const sc=w.school?D.db.find(x=>S(x.school)===S(w.school)):null,nav=sc&&hasXY(sc)?`https://www.google.com/maps/dir/?api=1&destination=${+sc.lat},${+sc.lng}`:w.school?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(w.school)}`:'';
- const cl=Array.isArray(w.checklist)?w.checklist:[],clDone=cl.filter(x=>x.done).length;
+ const cl=Array.isArray(w.checklist)?w.checklist:[],clDone=cl.filter(x=>ciRes(x)).length;
  const tick=k=>D.tickets.find(x=>S(x.ticket_id)===S(k));
  const lastRet=ev.slice().reverse().find(e=>e.type==='return'||e.type==='reject');
  const btn=(a,l,cls)=>`<button class="big ${cls||''}" data-act="${a}">${l}</button>`;
@@ -832,7 +838,7 @@ async function woDetail(id,keep){
    ${lastRet&&['returned','rejected'].includes(w.status)?`<div class="note" style="margin-top:8px;border-color:#fecaca;background:#fef2f2">${esc(lastRet.text)}</div>`:''}
    ${(w.ticket_refs||[]).length?`<div class="chips" style="margin-top:8px">${w.ticket_refs.map(k=>{const x=tick(k);return `<button class="chip c-pri" ${x?`data-tk="${esc(key(x))}"`:'disabled'}>🎫 ${esc(k)}</button>`}).join('')}</div>`:''}
    ${nav?`<a class="big" href="${nav}" target="_blank" rel="noopener" style="margin-top:10px">🗺️ الاتجاهات</a>`:''}</div>
-  ${cl.length?`<div class="card"><h3>☑️ قائمة المهام <span class="muted">(${fmt(clDone)} من ${fmt(cl.length)})</span></h3>${cl.map((x,i)=>`<label class="cli"><input type="checkbox" data-cl="${i}" ${x.done?'checked':''} ${working?'':'disabled'}><span>${esc(x.t)}</span></label>`).join('')}</div>`:''}
+  ${cl.length?`<div class="card"><h3>☑️ بنود الفحص <span class="muted">(${fmt(clDone)} من ${fmt(cl.length)})</span></h3>${ciSum(cl)}${cl.map((x,i)=>ciRow(x,i,working)).join('')}</div>`:''}
   <div class="card"><h3>📷 الصور</h3>
    ${working?`<div class="cam"><label>📷 قبل<input type="file" accept="image/*" capture="environment" multiple data-wk="before"></label><label>✅ بعد<input type="file" accept="image/*" capture="environment" multiple data-wk="after"></label></div>`:''}
    ${isC&&!isA&&act?`<div class="cam"><label>📎 مرفق توضيحي<input type="file" accept="image/*" multiple data-wk="attach"></label></div>`:''}
@@ -843,18 +849,34 @@ async function woDetail(id,keep){
   ${bar?`<div class="bar">${bar}</div>`:''}`,esc(w.code||''),esc(w.title),true);
  $('#bk').onclick=()=>woView();
  document.querySelectorAll('[data-tk]').forEach(b=>b.onclick=()=>{D.curWo=null;ticketView(b.dataset.tk)});
- let clT=null;document.querySelectorAll('[data-cl]').forEach(c=>c.onchange=()=>{cl[+c.dataset.cl].done=c.checked;clearTimeout(clT);clT=setTimeout(async()=>{try{await C.api.woAct(id,'checklist',null,null,cl);w.checklist=cl}catch(e){toast(woSql(e.message),'e')}},500)});
+ /* F9: each item gets a result (ok / fix / na) and, when it needs repair, a short note; saved after a short pause */
+ let clT=null;const clSave=()=>{clearTimeout(clT);clT=setTimeout(async()=>{try{await C.api.woAct(id,'checklist',null,null,cl);w.checklist=cl}catch(e){toast(woSql(e.message),'e')}},600)};
+ const ciBind=()=>{document.querySelectorAll('[data-ci]').forEach(b=>b.onclick=()=>{const i=+b.dataset.ci,x=cl[i],r=b.dataset.r;x.res=ciRes(x)===r?'':r;x.done=!!x.res;if(x.res!=='fix')delete x.note;
+  b.closest('.ci').outerHTML=ciRow(x,i,true);const h=b.closest?document.querySelector('.ci')?.closest('.card')?.querySelector('h3 .muted'):null;if(h)h.textContent=`(${fmt(cl.filter(ciRes).length)} من ${fmt(cl.length)})`;
+  const sm=document.querySelector('.cisum');if(sm)sm.outerHTML=ciSum(cl);ciBind();if(x.res==='fix')document.querySelector(`[data-cn="${i}"]`)?.focus();clSave()});
+  woBindCi(cl,clSave)};
+ ciBind();
  document.querySelectorAll('[data-wk]').forEach(i=>i.onchange=async()=>{const files=[...i.files].slice(0,8);if(!files.length)return;toast('جارٍ رفع الصور…');
   try{for(const f of files){const d=await compress(f);await C.api.woUpload(id,i.dataset.wk,d,myName(),null)}toast('تم رفع الصور');woDetail(id,true)}catch(e){toast(woSql(e.message),'e')}});
  $('#wo-na').onclick=async()=>{const n=S($('#wo-n').value);if(!n){toast('اكتب الملاحظة','w');return}try{await C.api.woAct(id,'note',n);await woRefresh(id)}catch(e){toast(woSql(e.message),'e')}};
  document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>woDo(w,b.dataset.act,cl));
 }
+function ciRes(x){return x.res||(x.done?'ok':'')}
+function ciRow(x,i,on){const r=ciRes(x),b=(k,l)=>`<button type="button" class="${k} ${r===k?'on':''}" data-ci="${i}" data-r="${k}" ${on?'':'disabled'}>${l}</button>`;
+ return `<div class="ci ${r==='fix'?'fixed':''}" data-row="${i}"><div class="t">${esc(x.t)}${x.tool?`<small>🔧 ${esc(x.tool)}</small>`:''}</div>
+  <div class="seg">${b('ok','✅ سليم')}${b('fix','⚠️ يحتاج إصلاح')}${b('na','➖ لا ينطبق')}</div>
+  ${r==='fix'?(on?`<input class="in" data-cn="${i}" placeholder="صف المشكلة (مثال: فيش مكسور في فصل 3)" value="${esc(x.note||'')}">`:x.note?`<div class="muted" style="margin-top:4px">📝 ${esc(x.note)}</div>`:''):''}</div>`}
+function ciSum(cl){const c={ok:0,fix:0,na:0};cl.forEach(x=>{const r=ciRes(x);if(r)c[r]++});return `<div class="cisum"><span>✅ ${fmt(c.ok)}</span><span>⚠️ ${fmt(c.fix)}</span><span>➖ ${fmt(c.na)}</span></div>`}
+function woBindCi(cl,save){document.querySelectorAll('[data-cn]').forEach(n=>n.oninput=()=>{cl[+n.dataset.cn].note=S(n.value);save()})}
 async function woRefresh(id){try{D.wo=await C.api.woList()}catch(e){}if(id&&(D.wo||[]).some(x=>x.id===id))woDetail(id,true);else woView()}
 async function woDo(w,a,cl){let note=null,gp=null,data=undefined;
  if(a==='reject'||a==='return'){note=prompt(a==='reject'?'سبب الرفض (مطلوب)':'ما المطلوب تصحيحه؟ (مطلوب)');if(note===null)return;if(!S(note)){toast('السبب مطلوب','w');return}}
  if(a==='cancel'&&!confirm('إلغاء أمر العمل نهائياً؟'))return;
  if(a==='close'&&!confirm('اعتماد الإنجاز وإغلاق الأمر؟'))return;
- if(a==='done'){const open=cl.filter(x=>!x.done).length;if(open&&!confirm(`${fmt(open)} من بنود قائمة المهام غير مؤشَّرة. إرسال «تم الإجراء» على أي حال؟`))return;data=cl;note=prompt('ملاحظة الإنجاز (اختياري)')||null}
+ if(a==='done'){const open=cl.filter(x=>!ciRes(x)).length,fix=cl.filter(x=>ciRes(x)==='fix'),noNote=fix.filter(x=>!S(x.note)).length;
+  if(open&&!confirm(`${fmt(open)} من بنود الفحص بدون نتيجة. إرسال «تم الإجراء» على أي حال؟`))return;
+  if(noNote&&!confirm(`${fmt(noNote)} بند «يحتاج إصلاح» بدون وصف للمشكلة. إرسال على أي حال؟`))return;
+  data=cl;note=prompt(fix.length?`ملاحظة الإنجاز (اختياري) — ${fmt(fix.length)} بند يحتاج إصلاح`:'ملاحظة الإنجاز (اختياري)')||null;if(fix.length)note=[note,`⚠️ ${fmt(fix.length)} بند يحتاج إصلاح`].filter(Boolean).join(' — ')}
  if(a==='arrive'){try{const g=await geo();gp={lat:g.lat,lng:g.lng,acc:g.acc}}catch(e){if(!confirm((e.message||'تعذر تحديد الموقع')+' — تسجيل الوصول بدون موقع؟'))return}}
  if(a==='reassign'){let L=[];try{L=await C.api.woAssignable()}catch(e){toast(woSql(e.message),'e');return}
   const opts=L.filter(p=>p.id!==w.assignee);if(!opts.length){toast('لا يوجد موظفون آخرون يمكن الإسناد لهم','w');return}
@@ -886,7 +908,7 @@ async function woNew(pre){pre=pre||{};let L=[];try{L=await C.api.woAssignable()}
  $('#f-pr').onchange=e=>{$('#f-du').value=dueFor(e.target.value)};
  $('#f-go').onclick=async()=>{const o={title:S($('#f-ti').value),type:$('#f-ty').value,assignee:$('#f-as').value,school:S($('#f-sc').value),priority:$('#f-pr').value,
    due_at:$('#f-du').value?new Date($('#f-du').value).toISOString():'',description:S($('#f-de').value),
-   checklist:$('#f-cl').value.split('\n').map(S).filter(Boolean).map(t=>({t,done:false})),ticket_refs:$('#f-tk').value.split(/[,،\s]+/).map(S).filter(Boolean),
+   checklist:$('#f-cl').value.split('\n').map(S).filter(Boolean).map(l=>{const i=l.lastIndexOf('|');return i>0?{t:S(l.slice(0,i)),tool:S(l.slice(i+1)),done:false}:{t:l,done:false}}),ticket_refs:$('#f-tk').value.split(/[,،\s]+/).map(S).filter(Boolean),
    region:(D.tickets.find(t=>S(t.school)===S($('#f-sc').value))||{}).region||(D.me?.regions||[])[0]||''};
   if(!o.title){toast('اكتب عنوان الأمر','w');return}
   const b=$('#f-go');b.disabled=true;b.textContent='…';
