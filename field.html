@@ -132,7 +132,11 @@ textarea.in{min-height:90px;line-height:1.8}
 .cph{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}.cph>span{font-weight:800;font-size:12.5px;min-width:52px}.cph>span.req{color:var(--bad)}
 .cph img{width:54px;height:54px;object-fit:cover;border-radius:8px;display:block}.cph .plus{width:54px;height:54px;border:2px dashed #94a3b8;border-radius:8px;display:grid;place-items:center;font:900 24px Cairo,sans-serif;color:#475569;cursor:pointer}
 .mat{margin-top:6px;border:1px solid #a5f3fc;background:#f0fdff;border-radius:10px;padding:6px 8px}.mat .mh{font-weight:900;font-size:13px;margin-bottom:4px}
-.mr{display:grid;grid-template-columns:1fr 1fr 1.1fr 1.1fr auto;gap:4px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px dashed #a5f3fc}.mr .w{grid-column:1/-1}.mr .u{align-self:center;font-weight:800;font-size:12.5px;color:#0e7490}.mr .in{margin:0;padding:7px 6px;font-size:13px}.mr .del{border:0;background:none;font-size:16px}
+.mr{display:grid;grid-template-columns:1fr 1fr 1.1fr 1.1fr auto;gap:4px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px dashed #a5f3fc}.mr .w{grid-column:1/-1}
+.cb{position:relative}.cb .in{width:100%;box-sizing:border-box;padding-left:30px}.cbok{position:absolute;left:10px;top:9px;color:var(--ok);font-weight:900}.cbok.o{color:var(--warn)}
+.cbl{position:absolute;z-index:30;top:100%;right:0;left:0;max-height:260px;overflow:auto;background:#fff;border:1px solid #94a3b8;border-radius:10px;box-shadow:0 10px 24px rgba(15,23,42,.18);margin-top:2px}
+.cbl button{display:block;width:100%;text-align:right;border:0;border-bottom:1px solid #f1f5f9;background:#fff;padding:9px 10px;font:700 14px Cairo,Tahoma,sans-serif;color:var(--ink)}
+.cbl button b{background:#fef08a;font-weight:900}.cbl button small{display:block;color:var(--mut);font-size:11.5px}.cbl button:active{background:#eff6ff}.cbl .oth{color:var(--warn)}.cbn{padding:8px 10px;color:var(--mut);font-size:12.5px}.mr .u{align-self:center;font-weight:800;font-size:12.5px;color:#0e7490}.mr .in{margin:0;padding:7px 6px;font-size:13px}.mr .del{border:0;background:none;font-size:16px}
 .mat .madd,.ci .shph{border:1px dashed #64748b;background:#fff;border-radius:8px;padding:5px 10px;font:800 12.5px Cairo,sans-serif;margin-top:4px}.mrv{font-size:13px;padding:2px 0}
 .arr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.arr .as{border:1px dashed #94a3b8;border-radius:12px;padding:6px;text-align:center;font-size:12.5px}.arr .as.done{border:1px solid #16a34a;background:#f0fdf4}
 .arr img{width:100%;height:70px;object-fit:cover;border-radius:8px;display:block}.arr .ph0{height:70px;display:grid;place-items:center;font-size:30px;background:#f8fafc;border-radius:8px}
@@ -896,7 +900,11 @@ async function woDetail(id,keep){
  const card=$('#ci-card'),redraw=i=>{const row=card.querySelector(`[data-row="${i}"]`);if(row)row.outerHTML=ciRow(cl[i],i,itemsOn,openPh);
   const n=$('#ci-n');if(n)n.textContent=`(${fmt(cl.filter(ciRes).length)} من ${fmt(cl.length)})`;const sm=card.querySelector('.cisum');if(sm)sm.outerHTML=ciSum(cl)};
  if(card&&itemsOn){
-  card.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  card.addEventListener('focusin',e=>{const t=e.target;if(t.dataset&&t.dataset.mf==='find'){card.querySelectorAll('.cbl').forEach(x=>{if(x!==t.parentNode.querySelector('.cbl'))x.hidden=true});ciList(t.parentNode.querySelector('.cbl'),t.value)}});
+  card.addEventListener('click',e=>{if(!e.target.closest('.cb'))card.querySelectorAll('.cbl').forEach(x=>x.hidden=true);const b=e.target.closest('button');if(!b)return;
+   if(b.dataset.pick!=null){const inp=b.closest('.cb').querySelector('[data-mf=find]'),i=+inp.dataset.mi,m=cl[i].materials[+inp.dataset.mj],c=(D.mats||[]).find(x=>x.id===b.dataset.pick);
+    if(c){m.id=c.id;m.n=c.name;m.u=c.unit||'';if(m.src!=='buy')m.price=c.price!=null?String(c.price):''}else{m.id='__other';m.n=S(inp.value);if(m.src!=='buy')m.price=''}
+    redraw(i);clSave();const q=card.querySelector(`[data-row="${i}"] [data-mi="${i}"][data-mj="${inp.dataset.mj}"][data-mf=q]`);if(q&&!S(q.value))q.focus();return}
    if(b.dataset.ci!=null){const i=+b.dataset.ci,x=cl[i],r=b.dataset.r;x.res=ciRes(x)===r?'':r;x.done=!!x.res;
     if(x.res!=='fixed')delete x.materials;else if(!(x.materials||[]).length)x.materials=[{n:'',q:'',u:'',src:'store'}];
     if(!['fix','fixed'].includes(x.res))delete x.note;redraw(i);if(['fix','fixed'].includes(x.res))card.querySelector(`[data-cn="${i}"]`)?.focus();clSave()}
@@ -905,6 +913,7 @@ async function woDetail(id,keep){
    else if(b.dataset.shph!=null){openPh.add(+b.dataset.shph);redraw(+b.dataset.shph)}});
   card.addEventListener('input',e=>{const t=e.target;
    if(t.dataset.cn!=null){cl[+t.dataset.cn].note=S(t.value);clSave()}
+   else if(t.dataset.mf==='find'){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m.n=S(t.value);if(m.id){m.id='';t.parentNode.querySelector('.cbok')?.remove()}ciList(t.parentNode.querySelector('.cbl'),t.value);clSave()}
    else if(t.dataset.mf&&!['id','src'].includes(t.dataset.mf)){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m[t.dataset.mf]=['q','price'].includes(t.dataset.mf)?t.value.replace(/[^\d.٫٠-٩]/g,''):t.value;clSave()}});
   card.addEventListener('change',async e=>{const t=e.target;
    /* a material picked from the list brings its name, unit and (from the warehouse) its unit price */
@@ -945,6 +954,15 @@ async function woRepair(w,F){if(!navigator.onLine){toast('إنشاء أمر ال
  catch(e){toast(/nothing to repair/.test(e.message)?'لا توجد بنود بحاجة لأمر إصلاح':/cannot assign/.test(e.message)?'لا يمكنك الإسناد لهذا الشخص':woSql(e.message),'e')}}
 const CI_R=[['ok','✅ سليم'],['fix','⚠️ يحتاج إصلاح'],['fixed','🔧 تم الإصلاح'],['na','➖ لا ينطبق']];
 const MAT_SRC={store:'مستودع',buy:'شراء'};
+/* Arabic-tolerant matching: أ/إ/آ = ا, ة = ه, ى = ي, no diacritics, every typed word must appear */
+const ciN=v=>S(v).normalize('NFKC').replace(/[\u064B-\u065F\u0640]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').toLowerCase();
+function ciFind(q){const M=D.mats||[],w=ciN(q).split(/\s+/).filter(Boolean);return w.length?M.filter(x=>{const h=ciN(x.name+' '+(x.category||'')+' '+(x.code||''));return w.every(t=>h.includes(t))}):M}
+function ciList(box,q){const L=ciFind(q),w=ciN(q).split(/\s+/).filter(Boolean)[0]||'',e=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ /* highlight the first typed word (same length in the normalised text, so the indexes line up) */
+ const hl=t=>{const k=w?ciN(t).indexOf(w):-1;return k<0||ciN(t).length!==t.length?e(t):e(t.slice(0,k))+'<b>'+e(t.slice(k,k+w.length))+'</b>'+e(t.slice(k+w.length))};
+ box.innerHTML=(L.slice(0,40).map(x=>`<button type="button" data-pick="${esc(x.id)}">${hl(x.name)}<small>${esc([x.unit,x.category].filter(Boolean).join(' • '))}</small></button>`).join('')||'<div class="cbn">لا يوجد صنف بهذا الاسم</div>')
+  +(L.length>40?`<div class="cbn">${fmt(L.length-40)} صنف آخر — اكتب أكثر لتضييق البحث</div>`:'')
+  +(S(q)?`<button type="button" data-pick="__other" class="oth">✏️ «${esc(S(q))}» — صنف غير موجود في القائمة</button>`:'');box.hidden=false}
 const ciNum=v=>+String(v??'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace('٫','.').replace(/[^\d.]/g,'')||0;
 function ciPhotos(i,on,need){const P=(D.curPh||[]).filter(p=>p.item===i),row=(k,l,req)=>{const L=P.filter(p=>p.kind===k);if(k==='invoice'&&!req&&!L.length)return '';
   return `<div class="cph"><span class="${req&&!L.length?'req':''}">${l}${req?' *':''}</span>${L.map(p=>`<a href="${esc(p.d)}" target="_blank" rel="noopener"><img src="${esc(p.d)}" alt=""></a>`).join('')}${on?`<label class="plus">+<input type="file" accept="image/*" capture="environment" multiple data-ip="${i}" data-k="${k}" hidden></label>`:''}${!on&&!L.length?'<i class="muted">—</i>':''}</div>`};
@@ -952,7 +970,8 @@ function ciPhotos(i,on,need){const P=(D.curPh||[]).filter(p=>p.item===i),row=(k,
 function ciRow(x,i,on,open){const r=ciRes(x),b=([k,l])=>`<button type="button" class="${k} ${r===k?'on':''}" data-ci="${i}" data-r="${k}" ${on?'':'disabled'}>${l}</button>`;
  const P=(D.curPh||[]).filter(p=>p.item===i),buy=r==='fixed'&&(x.materials||[]).some(m=>m.src==='buy'),need={b:r==='fix'||r==='fixed',a:r==='fixed',inv:buy},showPh=need.b||P.length||(open&&open.has(i));
  const M=D.mats||[],cats=[...new Set(M.map(c=>c.category||'أخرى'))],dat=(m,j,f)=>`data-mi="${i}" data-mj="${j}" data-mf="${f}"`;
- const pickM=(m,j)=>M.length?`<select class="in w" ${dat(m,j,'id')}><option value="">— اختر الصنف —</option>${cats.map(c=>`<optgroup label="${esc(c)}">${M.filter(x=>(x.category||'أخرى')===c).map(x=>`<option value="${esc(x.id)}" ${m.id===x.id?'selected':''}>${esc(x.name)}${x.unit?' — '+esc(x.unit):''}</option>`).join('')}</optgroup>`).join('')}<option value="__other" ${m.id==='__other'?'selected':''}>✏️ صنف غير موجود في القائمة</option></select>${m.id==='__other'?`<input class="in w" ${dat(m,j,'n')} placeholder="اسم المادة" value="${esc(m.n||'')}">`:''}`
+ /* searchable list: type part of a name, every item containing it shows below (like a drop-down) */
+ const pickM=(m,j)=>M.length?`<div class="cb w"><input class="in" ${dat(m,j,'find')} placeholder="🔎 اكتب جزءاً من اسم الصنف…" autocomplete="off" value="${esc(m.n||'')}">${m.id&&m.id!=='__other'?'<span class="cbok">✓</span>':m.id==='__other'?'<span class="cbok o">✏️</span>':''}<div class="cbl" hidden></div></div>`
    :`<input class="in w" ${dat(m,j,'n')} placeholder="المادة" value="${esc(m.n||'')}">`;
  const cat=m=>M.find(c=>c.id===m.id),cost=m=>ciNum(m.q)*ciNum(m.price);
  const mats=r==='fixed'?`<div class="mat"><div class="mh">🧰 المواد المستخدمة *</div>${(x.materials||[]).map((m,j)=>on?`<div class="mr">${pickM(m,j)}<input class="in" ${dat(m,j,'q')} inputmode="decimal" placeholder="الكمية" value="${esc(m.q||'')}">${cat(m)?`<span class="u">${esc(m.u||'')}</span>`:`<input class="in" ${dat(m,j,'u')} placeholder="الوحدة" value="${esc(m.u||'')}">`}<select class="in" ${dat(m,j,'src')}>${Object.entries(MAT_SRC).map(([k,l])=>`<option value="${k}" ${m.src===k?'selected':''}>${l}</option>`).join('')}</select>${m.src==='buy'?`<input class="in" ${dat(m,j,'price')} inputmode="decimal" placeholder="سعر الوحدة *" value="${esc(m.price||'')}">`:`<span class="u">${ciNum(m.price)?ciNum(m.price)+' ر.س':''}</span>`}<button type="button" class="del" data-mi="${i}" data-mdel="${j}">🗑</button></div>`
@@ -966,7 +985,8 @@ function ciSum(cl){const c={ok:0,fix:0,fixed:0,na:0};cl.forEach(x=>{const r=ciRe
 function woMissing(w,cl){const out=[],P=D.curPh||[];
  if(S(w.school)&&!WO_ARR.every(([t])=>P.some(p=>p.kind==='arrival'&&p.tag===t)))out.push('صور الوصول الثلاث (لوحة المدرسة، المدخل، السور)');
  cl.forEach((x,i)=>{const r=ciRes(x),has=k=>P.some(p=>p.item===i&&p.kind===k),miss=[];
-  if(r==='fixed'){const M=x.materials||[];if(!M.some(m=>S(m.n)&&ciNum(m.q)>0)||M.some(m=>!S(m.n)||!(ciNum(m.q)>0)))miss.push('المواد وكمياتها');if(!has('before'))miss.push('صورة قبل');if(!has('after'))miss.push('صورة بعد');
+  if(r==='fixed'){const M=x.materials||[];if(!M.some(m=>S(m.n)&&ciNum(m.q)>0)||M.some(m=>!S(m.n)||!(ciNum(m.q)>0)))miss.push('المواد وكمياتها');
+   if((D.mats||[]).length&&M.some(m=>S(m.n)&&!m.id))miss.push('اختيار المادة من نتائج البحث');if(!has('before'))miss.push('صورة قبل');if(!has('after'))miss.push('صورة بعد');
    if(M.some(m=>m.src==='buy')){if(M.some(m=>m.src==='buy'&&!(ciNum(m.price)>0)))miss.push('سعر المادة المشتراة');if(!has('invoice'))miss.push('صورة الفاتورة')}}
   if(r==='fix'){if(!has('before'))miss.push('صورة قبل');if(!S(x.note))miss.push('وصف المشكلة')}
   if(miss.length)out.push(`البند ${i+1}: ${miss.join('، ')}`)});
