@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F9">
+<meta name="fm-version" content="F10">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -132,7 +132,7 @@ textarea.in{min-height:90px;line-height:1.8}
 .cph{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}.cph>span{font-weight:800;font-size:12.5px;min-width:52px}.cph>span.req{color:var(--bad)}
 .cph img{width:54px;height:54px;object-fit:cover;border-radius:8px;display:block}.cph .plus{width:54px;height:54px;border:2px dashed #94a3b8;border-radius:8px;display:grid;place-items:center;font:900 24px Cairo,sans-serif;color:#475569;cursor:pointer}
 .mat{margin-top:6px;border:1px solid #a5f3fc;background:#f0fdff;border-radius:10px;padding:6px 8px}.mat .mh{font-weight:900;font-size:13px;margin-bottom:4px}
-.mr{display:grid;grid-template-columns:2fr 1fr 1fr 1.2fr auto;gap:4px;margin-bottom:4px}.mr .in{margin:0;padding:7px 6px;font-size:13px}.mr .del{border:0;background:none;font-size:16px}
+.mr{display:grid;grid-template-columns:1fr 1fr 1.1fr 1.1fr auto;gap:4px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px dashed #a5f3fc}.mr .w{grid-column:1/-1}.mr .u{align-self:center;font-weight:800;font-size:12.5px;color:#0e7490}.mr .in{margin:0;padding:7px 6px;font-size:13px}.mr .del{border:0;background:none;font-size:16px}
 .mat .madd,.ci .shph{border:1px dashed #64748b;background:#fff;border-radius:8px;padding:5px 10px;font:800 12.5px Cairo,sans-serif;margin-top:4px}.mrv{font-size:13px;padding:2px 0}
 .arr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.arr .as{border:1px dashed #94a3b8;border-radius:12px;padding:6px;text-align:center;font-size:12.5px}.arr .as.done{border:1px solid #16a34a;background:#f0fdf4}
 .arr img{width:100%;height:70px;object-fit:cover;border-radius:8px;display:block}.arr .ph0{height:70px;display:grid;place-items:center;font-size:30px;background:#f8fafc;border-radius:8px}
@@ -208,6 +208,8 @@ const real={
  async woUpload(id,kind,dataUrl,byName,geo,item,tag){const c=await sb();const pid=uuid();const path=`${id}/${pid}.jpg`;
   chk(await c.storage.from('wo-photos').upload(path,b64ToBlob(dataUrl),{contentType:'image/jpeg',upsert:false}));
   chk(await c.from('wo_photos').insert(Object.assign({id:pid,wo_id:id,kind,path,by_name:byName,geo:geo||null},item!=null?{item}:{},tag?{tag}:{})));return {id:pid,path}},
+ async woRepair(src,p){const c=await sb();return chk(await c.rpc('fm_wo_repair',{p_src:src,p}))},
+ async woMaterials(){const c=await sb();return chk(await c.from('wo_materials').select('id,name,unit,price,category').eq('active',true).order('category').order('name'))},
  async woPhotos(id){const c=await sb();const rows=chk(await c.from('wo_photos').select('*').eq('wo_id',id).order('at'));if(!rows.length)return [];
   const signed=chk(await c.storage.from('wo-photos').createSignedUrls(rows.map(r=>r.path),3600));const m=new Map(signed.map(s=>[s.path,s.signedUrl]));
   return rows.map(r=>({id:r.id,kind:r.kind,d:m.get(r.path)||'',by:r.by_name,at:r.at,item:r.item??null,tag:r.tag||null}))},
@@ -249,7 +251,7 @@ const XST={reopened:{k:'reopened',t:'أُعيد فتحه',ic:'↩️'},cancelled
 const stageOf=k=>STAGES.find(s=>s.k===k)||XST[k]||STAGES[0];
 const done=k=>k==='resolved'||k==='closed'||k==='cancelled';
 const CAUSES=['تلف / عطل فني','انتهاء العمر الافتراضي','سوء استخدام','تخريب','نقص صيانة وقائية','عوامل جوية','خطأ تركيب سابق','أخرى'];
-const D={me:null,tickets:[],work:new Map(),events:new Map(),hours:{'طارئ':24,'عالي':48,'متوسط':72},rules:{desc:true,photo:false,cause:false},db:[],ref:{},rank:{},wo:null,woErr:'',woSeg:'mine',woFlt:'active',curWo:null,myRank:null,plan:{n:5},p:{k:'m',from:'',to:'',cmp:'prev',cfrom:'',cto:''},tab:'open',q:'',cur:null,view:'home',f:{pri:'',stage:'',cat:'',school:'',sort:'sla',ids:null},fOpen:false,s:{mode:'list',sort:'open',openOnly:true},myPos:null,syncAt:null};
+const D={woC:new Map(),mats:null,me:null,tickets:[],work:new Map(),events:new Map(),hours:{'طارئ':24,'عالي':48,'متوسط':72},rules:{desc:true,photo:false,cause:false},db:[],ref:{},rank:{},wo:null,woErr:'',woSeg:'mine',woFlt:'active',curWo:null,myRank:null,plan:{n:5},p:{k:'m',from:'',to:'',cmp:'prev',cfrom:'',cto:''},tab:'open',q:'',cur:null,view:'home',f:{pri:'',stage:'',cat:'',school:'',sort:'sla',ids:null},fOpen:false,s:{mode:'list',sort:'open',openOnly:true},myPos:null,syncAt:null};
 const key=t=>t.region+':'+t.ticket_id;
 const canClose=()=>['admin','engineer'].includes(D.me?.role);
 const canEdit=()=>['admin','engineer','supervisor','contractor'].includes(D.me?.role);
@@ -271,10 +273,26 @@ const qLoad=()=>{try{return JSON.parse(localStorage.getItem(QK)||'[]')}catch(e){
 const qSave=a=>{try{localStorage.setItem(QK,JSON.stringify(a))}catch(e){toast('مساحة الجهاز لا تكفي لحفظ التحديث بدون اتصال','e')}qBanner()};
 function qBanner(){const n=qLoad().length,b=$('#qb');if(b){b.style.display=n?'block':'none';b.textContent='⏳ '+fmt(n)+' تحديث محفوظ على الجهاز بانتظار الاتصال — يُرسل تلقائياً'}}
 const netErr=e=>/fetch|network|Failed|اتصال|timeout/i.test(String(e&&e.message||e));
-async function run(op){if(op.k==='work')return C.api.pushWork(op.row);if(op.k==='events')return C.api.addEvents(op.rows);if(op.k==='photo')return C.api.uploadPhoto(op.region,op.tid,op.kind,op.d,op.by,op.geo)}
+/* F10: work-order actions and photos also wait on the phone; the photo itself is kept in IndexedDB */
+const PDB=(()=>{let p=null;const open=()=>p||(p=new Promise((res,rej)=>{const r=indexedDB.open('fmf_photos',1);r.onupgradeneeded=()=>r.result.createObjectStore('p');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}));
+ const tx=async(m,f)=>{const db=await open();return new Promise((res,rej)=>{const t=db.transaction('p',m),q=f(t.objectStore('p'));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)})};
+ return {put:(k,v)=>tx('readwrite',s=>s.put(v,k)),get:k=>tx('readonly',s=>s.get(k)),del:k=>tx('readwrite',s=>s.delete(k))}})();
+const pendMem=new Map();
+const qid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+async function woSend(op){if(op.k==='woup'&&op.d){op.pid=op.pid||qid();pendMem.set(op.pid,op.d)}
+ try{if(!navigator.onLine)throw new Error('offline network');await run(op);if(op.pid)pendMem.delete(op.pid);return true}
+ catch(e){if(netErr(e)||!navigator.onLine){const o=Object.assign({},op);delete o.d;if(op.k==='woup')await PDB.put(op.pid,op.d).catch(()=>{});
+   let q=qLoad();if(o.k==='woact'&&o.a==='checklist')q=q.filter(x=>!(x.k==='woact'&&x.a==='checklist'&&x.id===o.id));q.push(o);qSave(q);return 'queued'}
+  if(op.pid)pendMem.delete(op.pid);throw e}}
+/* photos of an order still waiting on the phone, shown like the uploaded ones */
+async function woPending(id){const out=[];for(const o of qLoad().filter(x=>x.k==='woup'&&x.id===id)){const d=pendMem.get(o.pid)||await PDB.get(o.pid).catch(()=>null);if(d){pendMem.set(o.pid,d);out.push({kind:o.kind,item:o.item??null,tag:o.tag||null,d,pending:true})}}return out}
+async function run(op){if(op.k==='woact')return C.api.woAct(op.id,op.a,op.note||null,op.geo||null,op.data);
+ if(op.k==='woup'){const d=op.d||pendMem.get(op.pid)||await PDB.get(op.pid).catch(()=>null);if(!d)return;const r=await C.api.woUpload(op.id,op.kind,d,op.by,op.geo,op.item,op.tag);if(op.pid){PDB.del(op.pid).catch(()=>{});pendMem.delete(op.pid)}return r}
+ if(op.k==='work')return C.api.pushWork(op.row);if(op.k==='events')return C.api.addEvents(op.rows);if(op.k==='photo')return C.api.uploadPhoto(op.region,op.tid,op.kind,op.d,op.by,op.geo)}
 async function send(op){try{await run(op);return true}catch(e){if(netErr(e)||!navigator.onLine){const q=qLoad();q.push(op);qSave(q);return 'queued'}throw e}}
 let flushing=false;async function flush(){if(flushing||!navigator.onLine)return;const q=qLoad();if(!q.length)return;flushing=true;const rest=[];
- for(const op of q){try{await run(op)}catch(e){if(netErr(e)){rest.push(op)}else console.warn('dropped',e)}}qSave(rest);flushing=false;if(q.length!==rest.length){toast('تم إرسال '+fmt(q.length-rest.length)+' تحديث محفوظ');await pull(true)}}
+ let stop=false;for(const op of q){if(stop){rest.push(op);continue}try{await run(op)}catch(e){if(netErr(e)){rest.push(op);stop=/^wo/.test(op.k)}else{console.warn('dropped',e);if(/^wo/.test(op.k)){toast('تعذر إرسال تحديث محفوظ لأمر عمل: '+woSql(e.message),'e');if(op.pid)PDB.del(op.pid).catch(()=>{})}}}}
+ qSave(rest);flushing=false;if(q.length!==rest.length){toast('تم إرسال '+fmt(q.length-rest.length)+' تحديث محفوظ');await pull(true);if(q.some(o=>/^wo/.test(o.k))){await woPull();if(D.curWo&&D.curWo!=='new')woRefresh(D.curWo)}}}
 window.addEventListener('online',flush);setInterval(flush,30000);
 
 /* ---------- screens ---------- */
@@ -788,7 +806,8 @@ const woSql=e=>/does not exist|schema cache|Could not find/i.test(String(e))?'أ
 function woDue(w){if(!w.due_at||WO_FINAL(w.status)||w.status==='done')return '';const h=(new Date(w.due_at)-Date.now())/36e5;
  return h<0?`<span class="chip c-bad">⏰ متأخر ${hrsTxt(-h)}</span>`:`<span class="chip ${h<=24?'c-warn':''}">⏳ متبقي ${hrsTxt(h)}</span>`}
 const woChip=w=>{const s=WO_S[w.status]||['','—',''];return `<span class="chip ${s[2]}">${s[0]} ${s[1]}</span>`};
-async function woPull(){const before=woBadge();try{const L=await C.api.woList();D.woErr='';const first=D.wo===null;D.wo=L;woAlerts(first)}catch(e){D.woErr=String(e.message||e);if(!D.wo)D.wo=[]}
+async function woPull(){const before=woBadge();try{const L=await C.api.woList();D.woErr='';const first=D.wo===null;D.wo=L;woAlerts(first);try{localStorage.setItem(uidKey('fmf_wo_cache'),JSON.stringify(L))}catch(_){}}
+ catch(e){if(netErr(e)||!navigator.onLine){if(!D.wo)D.wo=lsGet(uidKey('fmf_wo_cache'),null)||[]}else{D.woErr=String(e.message||e);if(!D.wo)D.wo=[]}}
  const b=document.querySelector('.bnav [data-v=wo] em');if(b){const n=woBadge();b.textContent=n?fmt(n):'';b.style.display=n?'':'none'}
  if(!D.cur&&!D.curWo){if(D.view==='wo'&&!document.querySelector('.wof'))woView();else if(D.view==='home'&&woBadge()!==before){const y=window.scrollY;homeView();window.scrollTo(0,y)}}}
 /* tell the user once about a new order for him, or an order waiting for his approval */
@@ -827,13 +846,15 @@ function woView(){D.curWo=null;const L=D.wo||[],mine=L.filter(woMine),sent=L.fil
 async function woDetail(id,keep){
  const w=(D.wo||[]).find(x=>x.id===id);if(!w){woView();return}
  D.curWo=id;if(!keep){$('#app').innerHTML=shell('<div class="empty">⏳ جارٍ التحميل…</div>',esc(w.code||''),'',true);$('#bk').onclick=()=>woView()}
- let ev=[],ph=[];try{[ev,ph]=await Promise.all([C.api.woEvents(id),C.api.woPhotos(id)])}catch(e){toast(woSql(e.message),'e')}
+ let ev=[],ph=[],off=false;try{[ev,ph]=await Promise.all([C.api.woEvents(id),C.api.woPhotos(id)]);D.woC.set(id,{ev,ph})}
+ catch(e){if(netErr(e)||!navigator.onLine){off=true;const c=D.woC.get(id);if(c){ev=c.ev;ph=c.ph}}else toast(woSql(e.message),'e')}
+ ph=ph.concat(await woPending(id));if(!D.mats)woMats();
  if(D.curWo!==id)return;
  const t=WO_T[w.type]||WO_T.task,isA=woMine(w),isC=woSent(w)||D.me?.role==='admin',act=!WO_FINAL(w.status)&&w.status!=='done'&&w.status!=='rejected',working=isA&&['accepted','in_progress','returned'].includes(w.status);
  const sc=w.school?D.db.find(x=>S(x.school)===S(w.school)):null,nav=sc&&hasXY(sc)?`https://www.google.com/maps/dir/?api=1&destination=${+sc.lat},${+sc.lng}`:w.school?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(w.school)}`:'';
  const cl=Array.isArray(w.checklist)?w.checklist:[],clDone=cl.filter(x=>ciRes(x)).length;
  /* F9: arrival documentation (3 photos) for a school order; checklist items carry their own before / after photos */
- D.curPh=ph;const isSchool=!!S(w.school),arr=WO_ARR.map(([tag])=>ph.find(p=>p.kind==='arrival'&&p.tag===tag)),arrDone=!isSchool||arr.every(Boolean),itemsOn=working&&arrDone,openPh=new Set();
+ D.curPh=ph;D.curOff=off;const isSchool=!!S(w.school),arr=WO_ARR.map(([tag])=>ph.find(p=>p.kind==='arrival'&&p.tag===tag)),arrDone=!isSchool||arr.every(Boolean),itemsOn=working&&arrDone,openPh=new Set();
  const tick=k=>D.tickets.find(x=>S(x.ticket_id)===S(k));
  const lastRet=ev.slice().reverse().find(e=>e.type==='return'||e.type==='reject');
  const btn=(a,l,cls)=>`<button class="big ${cls||''}" data-act="${a}">${l}</button>`;
@@ -842,9 +863,12 @@ async function woDetail(id,keep){
  else if(isA&&['accepted','returned'].includes(w.status))bar=btn('start','🛠️ بدء التنفيذ','p')+(isSchool?'':btn('arrive','📍 وصلت','d'));
  else if(isA&&w.status==='in_progress')bar=(isSchool?'':btn('arrive','📍 وصلت','d'))+btn('done','📨 تم الإجراء','g');
  else if(isC&&!isA&&w.status==='done')bar=btn('close','✔️ اعتماد وإغلاق','g')+btn('return','↩️ إعادة للتصحيح','');
- const cmore=isC&&!isA&&!WO_FINAL(w.status)?`<div class="btns" style="margin-top:8px">${w.status!=='done'?btn('reassign','🔁 إعادة إسناد',''):''}${btn('cancel','🚫 إلغاء الأمر','')}</div>`:'';
+ const fixOpen=cl.map((x,i)=>[x,i]).filter(([x])=>ciRes(x)==='fix'&&!x.rwo),canRep=fixOpen.length&&['admin','engineer','supervisor'].includes(D.me?.role)&&!working;
+ const cmore=(canRep?`<div class="btns" style="margin-top:8px"><button class="big p" id="wo-rep">🔧 أمر إصلاح (${fmt(fixOpen.length)} بند)</button></div>`:'')+(isC&&!isA&&!WO_FINAL(w.status)?`<div class="btns" style="margin-top:8px">${w.status!=='done'?btn('reassign','🔁 إعادة إسناد',''):''}${btn('cancel','🚫 إلغاء الأمر','')}</div>`:'');
  $('#app').innerHTML=shell(`
+  ${off?'<div class="note" style="border-color:#fde68a;background:#fffbeb">📴 بدون اتصال — تعرض آخر بيانات محفوظة. ما تسجّله الآن يُحفظ على الجوال ويُرسل تلقائياً عند عودة الاتصال.</div>':''}
   <div class="card"><div class="r1" style="display:flex;justify-content:space-between;gap:8px"><b style="font:900 14px monospace;color:var(--pri)">${esc(w.code||'')}</b>${woChip(w)}</div>
+   ${w.source_wo?`<div class="muted" style="margin-top:2px">🔍 ناتج عن أمر فحص: <b>${esc((D.wo||[]).find(x=>x.id===w.source_wo)?.code||'')}</b></div>`:''}
    <div style="font-weight:900;font-size:17px;margin:4px 0">${t[0]} ${esc(w.title)}</div>
    <div class="kv"><span>النوع</span><b>${esc(t[1])}</b>${w.school?`<span>المدرسة</span><b>${esc(w.school)}</b>`:''}<span>الأولوية</span><b>${esc(w.priority||'متوسط')}</b>
     <span>موعد الإنجاز</span><b>${w.due_at?dts(w.due_at):'—'} ${woDue(w)}</b><span>من</span><b>${esc(w.created_by_name||'')}</b><span>إلى</span><b>${esc(w.assignee_name||'')}</b><span>أُنشئ</span><b>${dts(w.created_at)}</b></div>
@@ -868,7 +892,7 @@ async function woDetail(id,keep){
  document.querySelectorAll('[data-tk]').forEach(b=>b.onclick=()=>{D.curWo=null;ticketView(b.dataset.tk)});
  /* F9: each item gets a result — ok / fix (needs repair) / fixed (repaired on the spot) / na — with a note, the materials used
     (when fixed) and its own before / after photos; saved after a short pause. One delegated handler for the whole card. */
- let clT=null;const clSave=()=>{clearTimeout(clT);clT=setTimeout(async()=>{try{await C.api.woAct(id,'checklist',null,null,cl);w.checklist=cl}catch(e){toast(woSql(e.message),'e')}},600)};
+ let clT=null;const clSave=()=>{clearTimeout(clT);clT=setTimeout(async()=>{try{await woSend({k:'woact',id,a:'checklist',data:JSON.parse(JSON.stringify(cl))});w.checklist=cl}catch(e){toast(woSql(e.message),'e')}},600)};
  const card=$('#ci-card'),redraw=i=>{const row=card.querySelector(`[data-row="${i}"]`);if(row)row.outerHTML=ciRow(cl[i],i,itemsOn,openPh);
   const n=$('#ci-n');if(n)n.textContent=`(${fmt(cl.filter(ciRes).length)} من ${fmt(cl.length)})`;const sm=card.querySelector('.cisum');if(sm)sm.outerHTML=ciSum(cl)};
  if(card&&itemsOn){
@@ -881,50 +905,73 @@ async function woDetail(id,keep){
    else if(b.dataset.shph!=null){openPh.add(+b.dataset.shph);redraw(+b.dataset.shph)}});
   card.addEventListener('input',e=>{const t=e.target;
    if(t.dataset.cn!=null){cl[+t.dataset.cn].note=S(t.value);clSave()}
-   else if(t.dataset.mf){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m[t.dataset.mf]=t.dataset.mf==='q'?t.value.replace(/[^\d.٫٠-٩]/g,''):t.value;clSave()}});
-  card.addEventListener('change',async e=>{const t=e.target;if(t.dataset.mf==='src'){cl[+t.dataset.mi].materials[+t.dataset.mj].src=t.value;clSave();return}
+   else if(t.dataset.mf&&!['id','src'].includes(t.dataset.mf)){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m[t.dataset.mf]=['q','price'].includes(t.dataset.mf)?t.value.replace(/[^\d.٫٠-٩]/g,''):t.value;clSave()}});
+  card.addEventListener('change',async e=>{const t=e.target;
+   /* a material picked from the list brings its name, unit and (from the warehouse) its unit price */
+   if(t.dataset.mf==='id'||t.dataset.mf==='src'){const i=+t.dataset.mi,m=cl[i].materials[+t.dataset.mj];
+    if(t.dataset.mf==='id'){m.id=t.value;const c=(D.mats||[]).find(x=>x.id===t.value);if(c){m.n=c.name;m.u=c.unit||''}else if(t.value==='__other'){m.n='';m.u=''}}
+    else m.src=t.value;
+    const c=(D.mats||[]).find(x=>x.id===m.id);if(m.src==='store')m.price=c&&c.price!=null?String(c.price):(m.price||'');else if(t.dataset.mf==='src')m.price='';
+    redraw(i);clSave();return}
    if(t.dataset.ip==null)return;const i=+t.dataset.ip,files=[...t.files].slice(0,10);if(!files.length)return;toast('جارٍ رفع الصور…');
-   try{let gp=null;try{const g=await geo();gp={lat:g.lat,lng:g.lng,acc:g.acc}}catch(_){}
-    for(const f of files){const d=await compress(f);await C.api.woUpload(id,t.dataset.k,d,myName(),gp,i)}
-    D.curPh=await C.api.woPhotos(id);openPh.add(i);redraw(i);toast('تم رفع الصور')}catch(er){toast(woSql(er.message),'e')}});
+   try{let gp=null;try{const g=await geo();gp={lat:g.lat,lng:g.lng,acc:g.acc}}catch(_){}let q=0;
+    for(const f of files){const d=await compress(f);if(await woSend({k:'woup',id,kind:t.dataset.k,d,by:myName(),geo:gp,item:i})==='queued')q++}
+    D.curPh=await woPhotosNow(id);openPh.add(i);redraw(i);toast(q?'📴 حُفظت الصور على الجوال وتُرفع عند عودة الاتصال':'تم رفع الصور')}catch(er){toast(woSql(er.message),'e')}});
  }
  /* arrival photos: fresh pictures only; the third one also records «وصل للموقع» with the location */
  document.querySelectorAll('[data-arr]').forEach(inp=>inp.onchange=async()=>{const f=inp.files[0];if(!f)return;
   if(f.lastModified&&Date.now()-f.lastModified>2*36e5){toast('هذه الصورة قديمة — التقط صورة جديدة الآن','w');inp.value='';return}
   toast('جارٍ رفع الصورة…');let gp=null;try{const g=await geo();gp={lat:g.lat,lng:g.lng,acc:g.acc}}catch(_){}
-  try{const d=await compress(f,2600,.8);await C.api.woUpload(id,'arrival',d,myName(),gp,null,inp.dataset.arr);
-   const P=await C.api.woPhotos(id),all=WO_ARR.every(([t])=>P.some(p=>p.kind==='arrival'&&p.tag===t));
-   if(all&&!ev.some(e=>e.type==='arrive'))try{await C.api.woAct(id,'arrive',null,gp)}catch(_){}
-   toast(all?'✅ اكتمل توثيق الوصول':'تم رفع الصورة');const y=scrollY;await woRefresh(id);scrollTo(0,y)}catch(er){toast(woSql(er.message),'e')}});
+  try{const d=await compress(f,2600,.8);const q=await woSend({k:'woup',id,kind:'arrival',d,by:myName(),geo:gp,tag:inp.dataset.arr});
+   const P=await woPhotosNow(id),all=WO_ARR.every(([t])=>P.some(p=>p.kind==='arrival'&&p.tag===t));
+   if(all&&!ev.some(e=>e.type==='arrive'))try{await woSend({k:'woact',id,a:'arrive',geo:gp})}catch(_){}
+   toast(q==='queued'?'📴 حُفظت الصورة على الجوال وتُرفع عند عودة الاتصال':all?'✅ اكتمل توثيق الوصول':'تم رفع الصورة');const y=scrollY;await woRefresh(id);scrollTo(0,y)}catch(er){toast(woSql(er.message),'e')}});
+ $('#wo-rep')&&($('#wo-rep').onclick=()=>woRepair(w,fixOpen));
+ qBanner();
  document.querySelectorAll('[data-wk]').forEach(i=>i.onchange=async()=>{const files=[...i.files].slice(0,8);if(!files.length)return;toast('جارٍ رفع الصور…');
-  try{for(const f of files){const d=await compress(f);await C.api.woUpload(id,i.dataset.wk,d,myName(),null)}toast('تم رفع الصور');woDetail(id,true)}catch(e){toast(woSql(e.message),'e')}});
+  try{let q=0;for(const f of files){const d=await compress(f);if(await woSend({k:'woup',id,kind:i.dataset.wk,d,by:myName()})==='queued')q++}toast(q?'📴 حُفظت الصور على الجوال وتُرفع عند عودة الاتصال':'تم رفع الصور');woDetail(id,true)}catch(e){toast(woSql(e.message),'e')}});
  $('#wo-na').onclick=async()=>{const n=S($('#wo-n').value);if(!n){toast('اكتب الملاحظة','w');return}try{await C.api.woAct(id,'note',n);await woRefresh(id)}catch(e){toast(woSql(e.message),'e')}};
  document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>woDo(w,b.dataset.act,cl));
 }
 function ciRes(x){return x.res||(x.done?'ok':'')}
+async function woPhotosNow(id){let P=[];try{P=await C.api.woPhotos(id);const c=D.woC.get(id);if(c)c.ph=P}catch(e){P=(D.woC.get(id)||{}).ph||[]}return P.concat(await woPending(id))}
+async function woMats(){D.mats=lsGet('fmf_mats',null)||[];try{D.mats=await C.api.woMaterials();try{localStorage.setItem('fmf_mats',JSON.stringify(D.mats))}catch(_){}}catch(e){}return D.mats}
+async function woRepair(w,F){if(!navigator.onLine){toast('إنشاء أمر الإصلاح يحتاج اتصالاً بالإنترنت','w');return}
+ let L=[];try{L=await C.api.woAssignable()}catch(e){toast(woSql(e.message),'e');return}if(!L.length){toast('لا يوجد موظفون تحت إشرافك يمكن الإسناد لهم','w');return}
+ const def=Math.max(0,L.findIndex(p=>p.id===w.assignee));
+ const pick=prompt(`أمر إصلاح لـ ${F.length} بند:\n${F.slice(0,6).map(([x,i])=>`• ${i+1}. ${x.t}`).join('\n')}${F.length>6?'\n…':''}\n\nأسنده إلى (اكتب الرقم):\n`+L.map((p,i)=>`${i+1}. ${p.full_name} — ${C.ROLE[p.role]||p.role}`).join('\n'),String(def+1));if(pick===null)return;
+ const p=L[(+pick||0)-1];if(!p){toast('اختيار غير صحيح','w');return}
+ try{const r=await C.api.woRepair(w.id,{assignee:p.id,due_at:new Date(Date.now()+3*864e5).toISOString()});toast(`تم إنشاء أمر الإصلاح ${r&&r.code||''}`);await woRefresh(w.id);woPull()}
+ catch(e){toast(/nothing to repair/.test(e.message)?'لا توجد بنود بحاجة لأمر إصلاح':/cannot assign/.test(e.message)?'لا يمكنك الإسناد لهذا الشخص':woSql(e.message),'e')}}
 const CI_R=[['ok','✅ سليم'],['fix','⚠️ يحتاج إصلاح'],['fixed','🔧 تم الإصلاح'],['na','➖ لا ينطبق']];
 const MAT_SRC={store:'مستودع',buy:'شراء'};
-function ciPhotos(i,on,need){const P=(D.curPh||[]).filter(p=>p.item===i),row=(k,l,req)=>{const L=P.filter(p=>p.kind===k);
+const ciNum=v=>+String(v??'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace('٫','.').replace(/[^\d.]/g,'')||0;
+function ciPhotos(i,on,need){const P=(D.curPh||[]).filter(p=>p.item===i),row=(k,l,req)=>{const L=P.filter(p=>p.kind===k);if(k==='invoice'&&!req&&!L.length)return '';
   return `<div class="cph"><span class="${req&&!L.length?'req':''}">${l}${req?' *':''}</span>${L.map(p=>`<a href="${esc(p.d)}" target="_blank" rel="noopener"><img src="${esc(p.d)}" alt=""></a>`).join('')}${on?`<label class="plus">+<input type="file" accept="image/*" capture="environment" multiple data-ip="${i}" data-k="${k}" hidden></label>`:''}${!on&&!L.length?'<i class="muted">—</i>':''}</div>`};
- return row('before','📷 قبل',need.b)+row('after','✅ بعد',need.a)}
+ return row('before','📷 قبل',need.b)+row('after','✅ بعد',need.a)+row('invoice','🧾 فاتورة',need.inv)}
 function ciRow(x,i,on,open){const r=ciRes(x),b=([k,l])=>`<button type="button" class="${k} ${r===k?'on':''}" data-ci="${i}" data-r="${k}" ${on?'':'disabled'}>${l}</button>`;
- const P=(D.curPh||[]).filter(p=>p.item===i),need={b:r==='fix'||r==='fixed',a:r==='fixed'},showPh=need.b||P.length||(open&&open.has(i));
- const mats=r==='fixed'?`<div class="mat"><div class="mh">🧰 المواد المستخدمة *</div>${(x.materials||[]).map((m,j)=>on?`<div class="mr"><input class="in" data-mi="${i}" data-mj="${j}" data-mf="n" placeholder="المادة" value="${esc(m.n||'')}"><input class="in" data-mi="${i}" data-mj="${j}" data-mf="q" inputmode="decimal" placeholder="الكمية" value="${esc(m.q||'')}"><input class="in" data-mi="${i}" data-mj="${j}" data-mf="u" placeholder="الوحدة" value="${esc(m.u||'')}"><select class="in" data-mi="${i}" data-mj="${j}" data-mf="src">${Object.entries(MAT_SRC).map(([k,l])=>`<option value="${k}" ${m.src===k?'selected':''}>${l}</option>`).join('')}</select><button type="button" class="del" data-mi="${i}" data-mdel="${j}">🗑</button></div>`
-   :`<div class="mrv">• ${esc(m.n)} — ${esc(m.q)} ${esc(m.u||'')} <span class="muted">(${MAT_SRC[m.src]||'—'})</span></div>`).join('')}${on?`<button type="button" class="madd" data-madd="${i}">➕ إضافة مادة</button>`:''}</div>`:'';
+ const P=(D.curPh||[]).filter(p=>p.item===i),buy=r==='fixed'&&(x.materials||[]).some(m=>m.src==='buy'),need={b:r==='fix'||r==='fixed',a:r==='fixed',inv:buy},showPh=need.b||P.length||(open&&open.has(i));
+ const M=D.mats||[],cats=[...new Set(M.map(c=>c.category||'أخرى'))],dat=(m,j,f)=>`data-mi="${i}" data-mj="${j}" data-mf="${f}"`;
+ const pickM=(m,j)=>M.length?`<select class="in w" ${dat(m,j,'id')}><option value="">— اختر الصنف —</option>${cats.map(c=>`<optgroup label="${esc(c)}">${M.filter(x=>(x.category||'أخرى')===c).map(x=>`<option value="${esc(x.id)}" ${m.id===x.id?'selected':''}>${esc(x.name)}${x.unit?' — '+esc(x.unit):''}</option>`).join('')}</optgroup>`).join('')}<option value="__other" ${m.id==='__other'?'selected':''}>✏️ صنف غير موجود في القائمة</option></select>${m.id==='__other'?`<input class="in w" ${dat(m,j,'n')} placeholder="اسم المادة" value="${esc(m.n||'')}">`:''}`
+   :`<input class="in w" ${dat(m,j,'n')} placeholder="المادة" value="${esc(m.n||'')}">`;
+ const cat=m=>M.find(c=>c.id===m.id),cost=m=>ciNum(m.q)*ciNum(m.price);
+ const mats=r==='fixed'?`<div class="mat"><div class="mh">🧰 المواد المستخدمة *</div>${(x.materials||[]).map((m,j)=>on?`<div class="mr">${pickM(m,j)}<input class="in" ${dat(m,j,'q')} inputmode="decimal" placeholder="الكمية" value="${esc(m.q||'')}">${cat(m)?`<span class="u">${esc(m.u||'')}</span>`:`<input class="in" ${dat(m,j,'u')} placeholder="الوحدة" value="${esc(m.u||'')}">`}<select class="in" ${dat(m,j,'src')}>${Object.entries(MAT_SRC).map(([k,l])=>`<option value="${k}" ${m.src===k?'selected':''}>${l}</option>`).join('')}</select>${m.src==='buy'?`<input class="in" ${dat(m,j,'price')} inputmode="decimal" placeholder="سعر الوحدة *" value="${esc(m.price||'')}">`:`<span class="u">${ciNum(m.price)?ciNum(m.price)+' ر.س':''}</span>`}<button type="button" class="del" data-mi="${i}" data-mdel="${j}">🗑</button></div>`
+   :`<div class="mrv">• ${esc(m.n)} — ${esc(m.q)} ${esc(m.u||'')} <span class="muted">(${MAT_SRC[m.src]||'—'}${cost(m)?' • '+fmt(cost(m))+' ر.س':''})</span></div>`).join('')}${on?`<button type="button" class="madd" data-madd="${i}">➕ إضافة مادة</button>`:''}${buy?'<div class="muted" style="margin-top:4px">🧾 المواد المشتراة تحتاج سعر الوحدة وصورة الفاتورة.</div>':''}</div>`:'';
  const note=['fix','fixed'].includes(r)?(on?`<input class="in" data-cn="${i}" placeholder="${r==='fix'?'صف المشكلة (مثال: فيش مكسور في فصل 3)':'ما الذي تم إصلاحه؟'}" value="${esc(x.note||'')}">`:x.note?`<div class="muted" style="margin-top:4px">📝 ${esc(x.note)}</div>`:''):'';
  return `<div class="ci ${r==='fix'?'fixed':r==='fixed'?'rep':''}" data-row="${i}"><div class="t"><span class="no">${i+1}</span> ${esc(x.t)}${x.tool?`<small>🔧 ${esc(x.tool)}</small>`:''}</div>
-  <div class="seg">${CI_R.map(b).join('')}</div>${note}${mats}
+  <div class="seg">${CI_R.map(b).join('')}</div>${note}${mats}${x.rwo?`<div class="muted" style="margin-top:4px;color:var(--pri)">🔧 صدر لها أمر إصلاح ${esc(x.rwo)}</div>`:''}${x.src_item?`<div class="muted" style="margin-top:2px">من البند ${fmt(x.src_item)} في أمر الفحص</div>`:''}
   ${showPh?ciPhotos(i,on,need):on?`<button type="button" class="shph" data-shph="${i}">📷 إضافة صور للبند</button>`:''}</div>`}
 function ciSum(cl){const c={ok:0,fix:0,fixed:0,na:0};cl.forEach(x=>{const r=ciRes(x);if(r)c[r]++});return `<div class="cisum"><span>✅ ${fmt(c.ok)}</span><span>⚠️ ${fmt(c.fix)}</span><span>🔧 ${fmt(c.fixed)}</span><span>➖ ${fmt(c.na)}</span></div>`}
 /* what is still missing before «تم الإجراء» (the server checks the same) */
 function woMissing(w,cl){const out=[],P=D.curPh||[];
  if(S(w.school)&&!WO_ARR.every(([t])=>P.some(p=>p.kind==='arrival'&&p.tag===t)))out.push('صور الوصول الثلاث (لوحة المدرسة، المدخل، السور)');
  cl.forEach((x,i)=>{const r=ciRes(x),has=k=>P.some(p=>p.item===i&&p.kind===k),miss=[];
-  if(r==='fixed'){if(!(x.materials||[]).some(m=>S(m.n)&&+String(m.q).replace('٫','.')>0))miss.push('المواد وكمياتها');if(!has('before'))miss.push('صورة قبل');if(!has('after'))miss.push('صورة بعد')}
+  if(r==='fixed'){const M=x.materials||[];if(!M.some(m=>S(m.n)&&ciNum(m.q)>0)||M.some(m=>!S(m.n)||!(ciNum(m.q)>0)))miss.push('المواد وكمياتها');if(!has('before'))miss.push('صورة قبل');if(!has('after'))miss.push('صورة بعد');
+   if(M.some(m=>m.src==='buy')){if(M.some(m=>m.src==='buy'&&!(ciNum(m.price)>0)))miss.push('سعر المادة المشتراة');if(!has('invoice'))miss.push('صورة الفاتورة')}}
   if(r==='fix'){if(!has('before'))miss.push('صورة قبل');if(!S(x.note))miss.push('وصف المشكلة')}
   if(miss.length)out.push(`البند ${i+1}: ${miss.join('، ')}`)});
  return out}
-async function woRefresh(id){try{D.wo=await C.api.woList()}catch(e){}if(id&&(D.wo||[]).some(x=>x.id===id))woDetail(id,true);else woView()}
+async function woRefresh(id){try{D.wo=await C.api.woList()}catch(e){}if(!D.wo)D.wo=[];if(id&&(D.wo||[]).some(x=>x.id===id))woDetail(id,true);else woView()}
 async function woDo(w,a,cl){let note=null,gp=null,data=undefined;
  if(a==='reject'||a==='return'){note=prompt(a==='reject'?'سبب الرفض (مطلوب)':'ما المطلوب تصحيحه؟ (مطلوب)');if(note===null)return;if(!S(note)){toast('السبب مطلوب','w');return}}
  if(a==='cancel'&&!confirm('إلغاء أمر العمل نهائياً؟'))return;
@@ -940,8 +987,11 @@ async function woDo(w,a,cl){let note=null,gp=null,data=undefined;
   const p=opts[(+pick||0)-1];if(!p){toast('اختيار غير صحيح','w');return}data={assignee:p.id}}
  const ok={accept:'تم قبول الأمر',reject:'تم رفض الأمر',start:'بدأ التنفيذ',arrive:'تم تسجيل الوصول',done:'تم الإرسال — بانتظار الاعتماد',close:'تم اعتماد الأمر وإغلاقه',return:'أُعيد الأمر للتصحيح',cancel:'تم إلغاء الأمر',reassign:'تمت إعادة الإسناد'};
  document.querySelectorAll('[data-act]').forEach(b=>b.disabled=true);
- try{await C.api.woAct(w.id,a,note,gp,data);toast(ok[a]||'تم');await woRefresh(w.id);woPull()}
- catch(e){const m=String(e.message);toast(/after photo/.test(m)?'أضف صورة «بعد» أولاً':/arrival photos/.test(m)?'التقط صور الوصول الثلاث أولاً':/item documentation required/.test(m)?`البند ${m.match(/(\d+)/)?.[1]||''} ينقصه توثيق (صور أو مواد)`:/reason required/.test(m)?'السبب مطلوب':/not allowed/.test(m)?'هذا الإجراء غير متاح لك الآن':woSql(m),'e');document.querySelectorAll('[data-act]').forEach(b=>b.disabled=false)}}
+ try{const r=await woSend({k:'woact',id:w.id,a,note,geo:gp,data:data===undefined?null:JSON.parse(JSON.stringify(data))});
+  if(r==='queued'){const ns={accept:'accepted',reject:'rejected',start:'in_progress',done:'done',close:'closed',return:'returned',cancel:'cancelled'}[a];if(ns)w.status=ns;if(a==='done'&&Array.isArray(data))w.checklist=data;
+   toast('📴 حُفظ على الجوال — يُرسل تلقائياً عند عودة الاتصال','w');woDetail(w.id,true);return}
+  toast(ok[a]||'تم');await woRefresh(w.id);woPull()}
+ catch(e){const m=String(e.message);toast(/after photo/.test(m)?'أضف صورة «بعد» أولاً':/arrival photos/.test(m)?'التقط صور الوصول الثلاث أولاً':/item documentation required/.test(m)?`البند ${m.match(/(\d+)/)?.[1]||''} ينقصه توثيق (صور أو مواد)`:/invoice required/.test(m)?`البند ${m.match(/(\d+)/)?.[1]||''}: المادة المشتراة تحتاج سعراً وصورة فاتورة`:/reason required/.test(m)?'السبب مطلوب':/not allowed/.test(m)?'هذا الإجراء غير متاح لك الآن':woSql(m),'e');document.querySelectorAll('[data-act]').forEach(b=>b.disabled=false)}}
 
 /* new order — standalone, or prefilled from a ticket */
 async function woNew(pre){pre=pre||{};let L=[];try{L=await C.api.woAssignable()}catch(e){toast(woSql(e.message),'e');return}
