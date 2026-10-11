@@ -1,5 +1,5 @@
 -- =====================================================================
---  FM Platform — Supabase setup (V136, user management V141, profile V142, work orders V145–V147)
+--  FM Platform — Supabase setup (V136, user management V141, profile V142, work orders V145–V149)
 --  Paste this whole file in Supabase → SQL Editor → New query → Run.
 --  Safe to run again: it only creates what is missing and refreshes policies.
 -- =====================================================================
@@ -413,6 +413,12 @@ create table if not exists public.wo_photos (
   geo     jsonb
 );
 create index if not exists wo_photos_wo_idx on public.wo_photos (wo_id);
+-- V148: a photo may belong to one checklist item (its index) and arrival photos carry a tag
+-- (sign = the school sign, entrance = the entrance, fence = the fence)
+alter table public.wo_photos add column if not exists item int;
+alter table public.wo_photos add column if not exists tag  text;
+alter table public.wo_photos drop constraint if exists wo_photos_kind_check;
+alter table public.wo_photos add constraint wo_photos_kind_check check (kind in ('before','after','attach','arrival','invoice'));
 
 -- who sees an order: its creator, its assignee, the admin, and the managers above either of them
 create or replace function public.fm_wo_can_see(p_wo uuid) returns boolean
@@ -444,7 +450,9 @@ insert into storage.buckets (id, name, public) values ('wo-photos','wo-photos', 
 drop policy if exists p_woobj_read   on storage.objects;
 drop policy if exists p_woobj_insert on storage.objects;
 create policy p_woobj_read   on storage.objects for select using (bucket_id = 'wo-photos'
-  and public.fm_wo_can_see(public.fm_uuid_or_null(split_part(name,'/',1))));
+  and (public.fm_wo_can_see(public.fm_uuid_or_null(split_part(name,'/',1)))
+       -- V149: a repair order shows the photos it copied from the inspection order
+       or exists (select 1 from public.wo_photos ph where ph.path = storage.objects.name and public.fm_wo_can_see(ph.wo_id))));
 create policy p_woobj_insert on storage.objects for insert with check (bucket_id = 'wo-photos'
   and public.fm_wo_party(public.fm_uuid_or_null(split_part(name,'/',1))));
 
@@ -504,7 +512,7 @@ end $$;
 -- every step of the order; the allowed step depends on who you are (assignee / creator) and the current status
 create or replace function public.fm_wo_act(p_id uuid, p_action text, p_note text default null, p_geo jsonb default null, p_data jsonb default null)
 returns text language plpgsql security definer set search_path = public as $$
-declare w public.work_orders; me public.profiles; t public.profiles; nm text; isA boolean; isC boolean; ns text; msg text;
+declare w public.work_orders; me public.profiles; t public.profiles; nm text; isA boolean; isC boolean; ns text; msg text; it jsonb; i int;
   note text := nullif(trim(coalesce(p_note,'')),'');
 begin
   select * into me from public.profiles where id = auth.uid();
@@ -525,6 +533,25 @@ begin
     return w.status;
   elsif p_action = 'done' and isA and w.status in ('accepted','in_progress','returned') then
     if not exists (select 1 from public.wo_photos where wo_id = w.id and kind = 'after') then raise exception 'after photo required'; end if;
+    -- V148: a school order needs the three arrival photos; a repaired item needs materials and before / after photos,
+    -- an item that still needs repair needs a before photo
+    if w.school is not null and (select count(distinct tag) from public.wo_photos
+        where wo_id = w.id and kind = 'arrival' and tag in ('sign','entrance','fence')) < 3 then
+      raise exception 'arrival photos required'; end if;
+    for it, i in select e, (o - 1)::int from jsonb_array_elements(case when jsonb_typeof(p_data) = 'array' then p_data else w.checklist end) with ordinality as t(e, o) loop
+      if it->>'res' = 'fixed' and (jsonb_typeof(it->'materials') is distinct from 'array' or jsonb_array_length(it->'materials') = 0
+          or not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'before')
+          or not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'after')) then
+        raise exception 'item documentation required: %', i + 1; end if;
+      -- V149: a purchased material needs its unit price and an invoice photo on the item
+      if it->>'res' = 'fixed' and exists (select 1 from jsonb_array_elements(it->'materials') m where m->>'src' = 'buy') and (
+          exists (select 1 from jsonb_array_elements(it->'materials') m where m->>'src' = 'buy'
+                    and coalesce(nullif(regexp_replace(m->>'price', '[^0-9.]', '', 'g'), '')::numeric, 0) <= 0)
+          or not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'invoice')) then
+        raise exception 'invoice required: %', i + 1; end if;
+      if it->>'res' = 'fix' and not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'before') then
+        raise exception 'item documentation required: %', i + 1; end if;
+    end loop;
     if jsonb_typeof(p_data) = 'array' then update public.work_orders set checklist = p_data where id = w.id; end if;
     ns := 'done'; msg := '📨 أبلغ: تم الإجراء — بانتظار الاعتماد';
   elsif p_action = 'close' and isC and w.status = 'done' then ns := 'closed'; msg := '🔒 اعتمد الإنجاز وأغلق الأمر';
@@ -761,5 +788,69 @@ do $$ begin
     execute 'select cron.schedule(''fm-wo-schedules'', ''7 * * * *'', ''select public.fm_wo_run_due()'')';
   exception when others then raise notice 'pg_cron is not available: recurring campaigns run when the platform is opened'; end;
 end $$;
+
+-- ---------- 12) repair orders and the materials list (V149) ----------
+-- A repair order is created from the items of an inspection order marked «يحتاج إصلاح»; it carries their
+-- description and before photos and points back to the inspection order (source_wo).
+alter table public.work_orders add column if not exists source_wo uuid references public.work_orders(id) on delete set null;
+
+-- the materials list (warehouse items) the field app picks from; the unit price is copied into each use
+create table if not exists public.wo_materials (
+  id         uuid primary key default gen_random_uuid(),
+  code       text,
+  name       text not null,
+  unit       text,
+  price      numeric(12,2),
+  category   text,
+  active     boolean not null default true,
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists wo_materials_name_uq on public.wo_materials (lower(name));
+alter table public.wo_materials enable row level security;
+drop policy if exists p_wom_read  on public.wo_materials;
+drop policy if exists p_wom_write on public.wo_materials;
+create policy p_wom_read  on public.wo_materials for select using (public.fm_role() in ('admin','engineer','supervisor','contractor'));
+create policy p_wom_write on public.wo_materials for all using (public.fm_role() in ('admin','engineer')) with check (public.fm_role() in ('admin','engineer'));
+grant select, insert, update, delete on public.wo_materials to authenticated;
+
+-- create a repair order from the «يحتاج إصلاح» items of p_src (all of them, or the indexes in p->items)
+create or replace function public.fm_wo_repair(p_src uuid, p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s public.work_orders; me public.profiles; it jsonb; i int; idx int[] := '{}'; items jsonb := '[]'; probs text := '';
+  v_id uuid; v_code text;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  select * into s from public.work_orders where id = p_src for update;
+  if s.id is null or not public.fm_wo_can_see(s.id) then raise exception 'work order not found'; end if;
+  for it, i in select e, (o - 1)::int from jsonb_array_elements(s.checklist) with ordinality as t(e, o) loop
+    if it->>'res' = 'fix' and it->>'rwo' is null
+       and (jsonb_typeof(p->'items') is distinct from 'array' or (p->'items') @> to_jsonb(i)) then
+      idx := idx || i;
+      items := items || jsonb_strip_nulls(jsonb_build_object('t', it->>'t', 'tool', it->>'tool', 'src_item', i + 1, 'done', false));
+      probs := probs || E'\n• ' || (it->>'t') || coalesce(' — ' || nullif(it->>'note',''), '');
+    end if;
+  end loop;
+  if cardinality(idx) = 0 then raise exception 'nothing to repair'; end if;
+  v_id := public.fm_wo_create_as(me.id, jsonb_build_object(
+    'title', coalesce(nullif(trim(p->>'title'),''), 'إصلاح — ' || coalesce(s.school, s.title)),
+    'type', 'repair', 'school', s.school, 'region', s.region, 'building_id', s.building_id,
+    'priority', coalesce(nullif(p->>'priority',''), s.priority), 'due_at', p->>'due_at', 'assignee', p->>'assignee',
+    'description', 'أمر إصلاح للبنود التي سُجّلت «يحتاج إصلاح» في ' || coalesce(s.code,'') || ' (' || s.title || '):' || probs
+       || coalesce(E'\n\n' || nullif(trim(p->>'note'),''), ''),
+    'checklist', items));
+  update public.work_orders set source_wo = s.id where id = v_id returning code into v_code;
+  -- the before photos of those items, attached to the matching item of the repair order
+  insert into public.wo_photos (wo_id, kind, path, at, by_id, by_name, geo, item)
+  select v_id, 'before', ph.path, ph.at, ph.by_id, ph.by_name, ph.geo, array_position(idx, ph.item) - 1
+    from public.wo_photos ph where ph.wo_id = s.id and ph.kind = 'before' and ph.item = any(idx);
+  update public.work_orders set updated_at = now(), checklist = (
+    select jsonb_agg(case when (o - 1)::int = any(idx) then e || jsonb_build_object('rwo', v_code) else e end order by o)
+      from jsonb_array_elements(s.checklist) with ordinality as t(e, o)) where id = s.id;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (s.id, me.id, coalesce(me.full_name, me.email), 'note', s.status, '🔧 أُنشئ أمر الإصلاح ' || v_code || ' لـ ' || cardinality(idx) || ' بند');
+  return jsonb_build_object('id', v_id, 'code', v_code, 'count', cardinality(idx));
+end $$;
+revoke all on function public.fm_wo_repair(uuid, jsonb) from public, anon;
+grant execute on function public.fm_wo_repair(uuid, jsonb) to authenticated;
 
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
