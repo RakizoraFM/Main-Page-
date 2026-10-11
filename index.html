@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V146">
+<meta name="fm-version" content="V147">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25530,9 +25530,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V146',date:'2026-10-11',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V147',date:'2026-10-11',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+{v:'V147',d:'2026-10-11',t:'قوالب أوامر العمل والحملات المتكررة',i:['قوالب جاهزة (تكييف، حريق، كهرباء، سباكة، خزانات، عدادات، زيارة تفقدية) وقوالب يحفظها المستخدم، مع إمكانية حفظ المدارس داخل القالب','حملات متكررة: أسبوعي، كل أسبوعين، شهري، كل 3 أو 6 أشهر، سنوي، أو كل عدد أيام، مع مهلة إنجاز لكل تشغيل','صفحة «الحملات المتكررة»: التشغيل القادم، نتيجة آخر تشغيل، تشغيل الآن، إيقاف وتفعيل، حذف','التشغيل التلقائي من الخادم كل ساعة (pg_cron)، أو عند فتح المنصة إن لم يكن مفعّلاً']},
 {v:'V146',d:'2026-10-11',t:'أوامر عمل لمجموعة مدارس',i:['زر «أمر لمجموعة مدارس»: أمر مستقل لكل مدرسة ضمن «حملة» واحدة','اختيار المدارس حسب المنطقة أو مكتب التعليم أو المدينة أو المشرف/المهندس/المقاول، أو اختيار يدوي، أو من ملف Excel','إسناد تلقائي لمسؤول كل مدرسة من قاعدة بيانات المدارس، أو لشخص واحد، مع بديل للمدارس غير المطابقة','لوحة الحملات: نسبة الإنجاز والمتأخر وبانتظار الاعتماد، وإلغاء المتبقي','تصدير Excel يشمل الحملة والرقم الوزاري، وقراءة كل الأوامر بدون حد الألف']},
  {v:'V145',d:'2026-10-10',t:'أوامر العمل (المرحلة 1)',i:['صفحة «أوامر العمل» في أعلى القائمة: إنشاء أمر مستقل (إصلاح، صيانة وقائية، معاينة، زيارة، تجميع معلومات، مهمة) وإسناده لمن هو أدنى في التدرج','الموظف يستلم الأمر في تطبيق الميدان: قبول أو رفض بسبب، بدء التنفيذ، تسجيل الوصول بالموقع، قائمة المهام، صور قبل وبعد، ثم «تم الإجراء»','المُسنِد يعتمد ويغلق الأمر أو يعيده للتصحيح، ويمكنه إعادة الإسناد أو الإلغاء، مع سجل كامل لكل خطوة','عمود «يتبع لـ» في المستخدمين والصلاحيات (والاستيراد والتصدير) لتحديد التدرج: مدير ← مهندس ← مشرف ← مقاول','الصلاحيات مفروضة في قاعدة البيانات — يتطلب تشغيل ملف supabase_setup.sql المحدَّث']},
  {v:'V144',d:'2026-10-10',t:'حماية دخول المنصة',i:['المنصة على الموقع لا تظهر إلا بعد تسجيل الدخول والتأكد من أن دور المستخدم مسموح له','المشرف والمقاول يُمنعان من المنصة ويظهر لهما زر تطبيق الميدان','مدير النظام يحدد الأدوار المسموح لها من الإعدادات ← السحابة ← «من يدخل المنصة» (الافتراضي: المدير والمهندس والمشاهد)','فتح المنصة على الموقع بدون ربط بالسحابة يحوّل إلى صفحة الدخول']},
@@ -29431,6 +29432,15 @@ const real={
  async woAssignable(){const c=await sb();return chk(await c.rpc('fm_wo_assignable'))},
  async woCreate(o){const c=await sb();return chk(await c.rpc('fm_wo_create',{p:o}))},
  async woCreateMany(p){const c=await sb();return chk(await c.rpc('fm_wo_create_many',{p}))},
+ /* V147 templates + recurring campaigns */
+ async woTemplates(){const c=await sb();return chk(await c.from('wo_templates').select('*').order('name'))},
+ async woTemplateSave(t){const c=await sb();return t.id?chk(await c.from('wo_templates').update({name:t.name,data:t.data,shared:t.shared!==false,updated_at:new Date().toISOString()}).eq('id',t.id).select()):chk(await c.from('wo_templates').insert({name:t.name,data:t.data,shared:t.shared!==false,created_by_name:t.created_by_name||null}).select())},
+ async woTemplateDelete(id){const c=await sb();return chk(await c.from('wo_templates').delete().eq('id',id))},
+ async woSchedules(){const c=await sb();return chk(await c.from('wo_schedules').select('*').order('next_run_at'))},
+ async woScheduleSave(p){const c=await sb();return chk(await c.rpc('fm_wo_schedule_save',{p}))},
+ async woScheduleAct(id,action){const c=await sb();return chk(await c.rpc('fm_wo_schedule_act',{p_id:id,p_action:action}))},
+ async woRunDue(){const c=await sb();return chk(await c.rpc('fm_wo_run_due'))},
+ async woCronOn(){const c=await sb();return chk(await c.rpc('fm_wo_cron_on'))},
  async woAct(id,action,note,geo,data){const c=await sb();return chk(await c.rpc('fm_wo_act',{p_id:id,p_action:action,p_note:note||null,p_geo:geo||null,p_data:data===undefined?null:data}))},
  async woUpload(id,kind,dataUrl,byName,geo){const c=await sb();const pid=uuid();const path=`${id}/${pid}.jpg`;
   chk(await c.storage.from('wo-photos').upload(path,b64ToBlob(dataUrl),{contentType:'image/jpeg',upsert:false}));
@@ -30213,8 +30223,8 @@ function page(){let p=document.getElementById('fm145-page');if(!p){p=document.cr
 async function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.getElementById('fm116-page')?.classList.remove('open');document.body.classList.remove('v2-mobile-nav');
  try{window.v2SetActive?.(btn)}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;p.querySelector('.body').innerHTML='<div class="fm125-src">جارٍ التحميل…</div>';await load();render()}
 function render(){const p=page(),me_=me(),ex=p.querySelector('.extra');
- ex.innerHTML=`${canAssign()?'<button class="fm103-btn primary" type="button" data-a="new">➕ أمر عمل جديد</button>':''}${canAssign()&&window.fmV146GroupDlg?'<button class="fm103-btn primary" type="button" data-a="grp">🏘️ أمر لمجموعة مدارس</button>':''}<button class="fm103-btn" type="button" data-a="re">🔄 تحديث</button><button class="fm103-btn" type="button" data-a="xl">⬇️ Excel</button>`;
- ex.querySelector('[data-a=new]')&&(ex.querySelector('[data-a=new]').onclick=()=>createDlg());ex.querySelector('[data-a=grp]')&&(ex.querySelector('[data-a=grp]').onclick=()=>window.fmV146GroupDlg());ex.querySelector('[data-a=re]').onclick=async()=>{await load();render()};ex.querySelector('[data-a=xl]').onclick=exportXl;
+ ex.innerHTML=`${canAssign()?'<button class="fm103-btn primary" type="button" data-a="new">➕ أمر عمل جديد</button>':''}${canAssign()&&window.fmV146GroupDlg?'<button class="fm103-btn primary" type="button" data-a="grp">🏘️ أمر لمجموعة مدارس</button>':''}${canAssign()&&window.fmV147Schedules?'<button class="fm103-btn" type="button" data-a="sch">🔁 الحملات المتكررة</button>':''}<button class="fm103-btn" type="button" data-a="re">🔄 تحديث</button><button class="fm103-btn" type="button" data-a="xl">⬇️ Excel</button>`;
+ ex.querySelector('[data-a=new]')&&(ex.querySelector('[data-a=new]').onclick=()=>createDlg());ex.querySelector('[data-a=grp]')&&(ex.querySelector('[data-a=grp]').onclick=()=>window.fmV146GroupDlg());ex.querySelector('[data-a=sch]')&&(ex.querySelector('[data-a=sch]').onclick=()=>window.fmV147Schedules());ex.querySelector('[data-a=re]').onclick=async()=>{await load();render()};ex.querySelector('[data-a=xl]').onclick=exportXl;
  const box=p.querySelector('.body');
  if(!C.state?.on){box.innerHTML='<div class="fm122-note">أوامر العمل تعمل مع السحابة — سجّل الدخول أولاً.</div>';return}
  if(err){box.innerHTML=`<div class="fm122-note">${esc(sqlMsg(err))}</div>`;return}
@@ -30298,6 +30308,7 @@ async function createDlg(){let P=[];try{P=await C.api.woAssignable()}catch(e){to
   <div class="fm125-hint">يصل الأمر للموظف في تطبيق الميدان. يقبله ثم ينفذه ويرفق صور «بعد» ويبلغ «تم الإجراء»، ثم تعتمده أنت أو تعيده للتصحيح.</div>
   <div class="row"><button class="p" id="n-go">📤 إسناد الأمر</button><button id="n-x">إلغاء</button></div>`,720);
  d.querySelector('#n-pr').onchange=e=>{d.querySelector('#n-du').value=toLocal(Date.now()+(PH[e.target.value]||72)*36e5)};
+ window.fmV147TplBar?.(d,'n');
  d.querySelector('#n-x').onclick=d.close;
  d.querySelector('#n-go').onclick=async e=>{const g=s=>d.querySelector(s).value;
   const o={title:S(g('#n-ti')),type:g('#n-ty'),assignee:g('#n-as'),school:S(g('#n-sc')),region:g('#n-rg'),priority:g('#n-pr'),due_at:g('#n-du')?new Date(g('#n-du')).toISOString():'',description:S(g('#n-de')),
@@ -30482,15 +30493,17 @@ window.fmV146GroupDlg=async function(){let P=[];try{P=await C.api.woAssignable()
  function preview(){const pl=plan(),ok=pl.filter(x=>x.p),miss=pl.length-ok.length,people=new Map();ok.forEach(x=>people.set(x.p.full_name,(people.get(x.p.full_name)||0)+1));
   $('#g-pv').innerHTML=pl.length?`<div class="fm146-pv"><table><thead><tr><th>المدرسة</th><th>المُسند إليه</th><th>ملاحظة</th></tr></thead><tbody>${pl.slice(0,600).map(x=>`<tr class="${x.p?'':'no'}"><td>${esc(x.s.school)}</td><td>${x.p?esc(x.p.full_name):'— لن يُنشأ أمر'}</td><td>${esc(x.why)}</td></tr>`).join('')}</tbody></table></div>
    <div class="fm146-sum">سيُنشأ ${fmt(ok.length)} أمر عمل لـ ${fmt(people.size)} موظف${miss?` • ${fmt(miss)} مدرسة بدون مُسند إليه (لن يُنشأ لها أمر)`:''}<br><span style="font-weight:700">${[...people.entries()].sort((a,b)=>b[1]-a[1]).map(([n,c])=>`${esc(n)}: ${fmt(c)}`).join(' • ')}</span></div>`:'<div class="fm125-src">لم تُحدَّد مدارس بعد</div>';
-  $('#g-go').textContent=ok.length?`📤 إسناد ${fmt(ok.length)} أمر`:'📤 إسناد';$('#g-go').disabled=!ok.length}
+  $('#g-go').textContent=ok.length?`📤 إسناد ${fmt(ok.length)} أمر`:'📤 إسناد';$('#g-go').disabled=!ok.length;d.__afterPreview?.(ok.length)}
 
  $('#g-go').onclick=async e=>{const g=s=>$(s).value,title=S(g('#g-ti'));if(!title){toast('اكتب عنوان الأمر','warning');$('#g-ti').focus();return}
   const ok=plan().filter(x=>x.p);if(!ok.length)return;
-  if(ok.length>=20&&!confirm(`سيتم إنشاء ${ok.length} أمر عمل. متابعة؟`))return;
   const base={title,type:g('#g-ty'),priority:g('#g-pr'),due_at:g('#g-du')?new Date(g('#g-du')).toISOString():'',description:S(g('#g-de')),
    checklist:g('#g-cl').split('\n').map(S).filter(Boolean).map(t=>({t,done:false})),ticket_refs:[]};
   const items=ok.map(({s,p})=>Object.assign({},base,{assignee:p.id,school:s.school,building_id:s.bid||'',region:s.region||'',
    priority:s.x?.pri||base.priority,due_at:s.x?.due||base.due_at,description:[base.description,s.x?.note].filter(Boolean).join('\n\n')}));
+  /* V147: a recurring campaign is saved as a schedule instead */
+  if(d.__submit)return d.__submit({title,base,items,ok,btn:e.currentTarget});
+  if(ok.length>=20&&!confirm(`سيتم إنشاء ${ok.length} أمر عمل. متابعة؟`))return;
   const b=e.currentTarget;b.disabled=true;let batch=null,done=0;
   try{for(let i=0;i<items.length;i+=200){b.textContent=`… ${fmt(done)} / ${fmt(items.length)}`;
     const r=await C.api.woCreateMany({batch_id:batch,batch_title:title,items:items.slice(i,i+200)});batch=(r&&r.batch_id)||batch;done+=(r&&r.count)||items.slice(i,i+200).length}
@@ -30498,6 +30511,8 @@ window.fmV146GroupDlg=async function(){let P=[];try{P=await C.api.woAssignable()
   catch(er){const m=String(er.message||er);
    toast(done?`أُنشئ ${fmt(done)} أمر ثم توقف: ${m}`:/cannot assign/.test(m)?'لا يمكنك الإسناد لأحد الموظفين: '+m.split('—').pop():X.sqlMsg(m),'error');
    b.disabled=false;preview();if(done){d.close();X.F.k='all';X.F.batch=batch||'';await X.load();X.render()}}};
+ const ctx={picked,byK,ALL,plan,preview,redraw:drawSrc,setSrc:v=>{src=v}};
+ window.fmV147TplBar?.(d,'g',ctx);window.fmV147Recur?.(d,ctx);
  drawSrc();
 };
 
@@ -30524,6 +30539,145 @@ window.fmV146Bind=function(box,F){
   if(!confirm(`إلغاء ${rest.length} أمر لم يُنجز بعد في هذه الحملة؟ (الأوامر المنجزة أو بانتظار الاعتماد لا تتأثر)`))return;
   can.disabled=true;let n=0;for(const w of rest){try{await C.api.woAct(w.id,'cancel',null,null,null);n++}catch(e){}can.textContent=`… ${fmt(n)}`}
   toast(`تم إلغاء ${fmt(n)} أمر`);await X.load();X.render()}};
+})();
+</script>
+<style id="fm-v147-wo-templates-css">
+/* V147 — work-order templates and recurring campaigns */
+.fm147-tb{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:12px;padding:8px 10px;margin:4px 0 6px}
+.fm147-tb b{font-size:13px;color:#4c1d95;white-space:nowrap}.fm122-dlg .fm147-tb select{flex:1;min-width:200px;width:auto}
+.fm147-tb button{border:1px solid #c4b5fd;background:#fff;border-radius:8px;padding:5px 10px;font:800 12.5px Cairo,sans-serif;cursor:pointer;white-space:nowrap}
+.fm147-rc{border:1px dashed #a78bfa;border-radius:12px;padding:4px 12px 10px;margin-top:6px}
+.fm147-rc.on{background:#faf5ff;border-style:solid}
+.fm147-rc label.r{display:flex!important;gap:8px;align-items:center;font-size:13px!important}
+.fm147-rc input[type=checkbox]{width:auto!important}
+.fm147-st{display:inline-block;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:800;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+.fm147-st.off{background:#f8fafc;color:#64748b;border-color:#e2e8f0}
+.fm147-t{width:100%;border-collapse:collapse;font-size:13px}.fm147-t th,.fm147-t td{padding:7px 8px;border-bottom:1px solid #f1f5f9;text-align:right;vertical-align:top}
+.fm147-t th{background:#f8fafc;font-weight:900}.fm147-t td small{display:block;color:#64748b;font-weight:700}
+.fm147-t .acts{display:flex;flex-wrap:wrap;gap:4px}.fm147-t .acts button{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:3px 8px;font:800 12px Cairo,sans-serif;cursor:pointer}
+</style>
+<script id="fm-v147-wo-templates">
+(function(){
+'use strict';
+const C=window.FMCloud,X=window.fmV145X;if(!C||!X)return;
+const S=v=>String(v??'').trim();
+const esc=s=>S(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n||0).toLocaleString('ar-EG');
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const DAY=864e5;
+const N=v=>S(v).normalize('NFKC').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^\dA-Za-z\u0600-\u06FF]/g,'').toLowerCase();
+const msg=e=>{const m=String(e&&e.message||e);return /wo_templates|wo_schedules|fm_wo_schedule|fm_wo_run_due|fm_wo_cron_on/.test(m)&&/does not exist|schema cache|Could not find/i.test(m)
+  ?'هذه الميزة تحتاج تشغيل ملف supabase_setup.sql المحدَّث (القسم 11) مرة واحدة في Supabase':/cannot assign/.test(m)?'لا يمكنك الإسناد لأحد الموظفين: '+m.split('—').pop():X.sqlMsg(m)};
+
+/* ---------- ready-made templates (built in, always available) ---------- */
+const READY=[
+ {id:'r:ac',name:'صيانة وقائية للتكييف',data:{title:'صيانة وقائية لوحدات التكييف',type:'preventive',priority:'متوسط',due_days:7,description:'صيانة وقائية لكل وحدات التكييف في المبنى مع تصوير قبل وبعد.',checklist:['تنظيف أو تغيير الفلاتر','فحص ضغط الفريون','فحص خطوط التصريف','فحص التوصيلات الكهربائية','اختبار التشغيل ودرجة التبريد']}},
+ {id:'r:fire',name:'فحص أنظمة الحريق والسلامة',data:{title:'فحص أنظمة الحريق والسلامة',type:'inspection',priority:'عالي',due_days:5,description:'فحص دوري لأنظمة الإنذار والإطفاء ومخارج الطوارئ.',checklist:['الطفايات: الصلاحية والضغط','لوحة إنذار الحريق','الكواشف وأجراس الإنذار','خراطيم وصناديق الحريق','مخارج وإنارة الطوارئ']}},
+ {id:'r:elec',name:'فحص الكهرباء واللوحات',data:{title:'فحص الكهرباء واللوحات',type:'inspection',priority:'عالي',due_days:5,description:'فحص اللوحات والقواطع والإنارة ورصد أي خطر كهربائي.',checklist:['اللوحة الرئيسية واللوحات الفرعية','القواطع والتوصيلات','أسلاك مكشوفة أو تالفة','الإنارة الداخلية والخارجية','التأريض']}},
+ {id:'r:plumb',name:'السباكة ودورات المياه',data:{title:'صيانة السباكة ودورات المياه',type:'preventive',priority:'متوسط',due_days:7,description:'فحص التسربات والمحابس والمضخات والصرف.',checklist:['التسربات','المحابس والخلاطات','المضخات','السخانات','الصرف والسيفونات']}},
+ {id:'r:tank',name:'تنظيف وتعقيم خزانات المياه',data:{title:'تنظيف وتعقيم خزانات المياه',type:'preventive',priority:'متوسط',due_days:14,description:'تفريغ الخزانات وتنظيفها وتعقيمها مع تصوير قبل وبعد.',checklist:['تفريغ وتنظيف الخزان','التعقيم','فحص الغطاء والعوامة','فحص المواسير والمحابس']}},
+ {id:'r:meter',name:'حصر العدادات',data:{title:'حصر قراءات العدادات',type:'data',priority:'متوسط',due_days:3,description:'تسجيل رقم العداد والقراءة مع صورة واضحة لكل عداد.',checklist:['عداد الكهرباء: الرقم والقراءة','عداد المياه: الرقم والقراءة','صورة لكل عداد']}},
+ {id:'r:visit',name:'زيارة تفقدية للمبنى',data:{title:'زيارة تفقدية للمبنى',type:'visit',priority:'متوسط',due_days:3,description:'جولة تفقدية على المبنى وتسجيل الملاحظات بالصور.',checklist:['الأسوار والبوابات','الأسقف والجدران','الأبواب والنوافذ','الساحات والملاعب','ملاحظات السلامة']}}];
+let mine=null;
+async function templates(force){if(mine&&!force)return mine;try{mine=await C.api.woTemplates()}catch(e){mine=[];if(!/does not exist|schema cache|Could not find/i.test(String(e.message)))toast(msg(e),'error')}return mine}
+
+/* ---------- template bar at the top of the single and the group dialogs ---------- */
+window.fmV147TplBar=async function(d,pre,ctx){const h=d.querySelector('.fm122-dlg h3');if(!h)return;
+ const bar=document.createElement('div');bar.className='fm147-tb';h.after(bar);
+ const $=s=>d.querySelector(s),meId=X.me().id,isAdmin=X.me().role==='admin';
+ async function draw(sel){const T=await templates();const own=T.filter(t=>t.created_by===meId),team=T.filter(t=>t.created_by!==meId);
+  bar.innerHTML=`<b>📑 القوالب</b><select data-t><option value="">— ابدأ من قالب —</option>
+   <optgroup label="قوالب جاهزة">${READY.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</optgroup>
+   ${own.length?`<optgroup label="قوالبي">${own.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}${t.data?.schools?.length?` (${fmt(t.data.schools.length)} مدرسة)`:''}${t.shared?'':' 🔒'}</option>`).join('')}</optgroup>`:''}
+   ${team.length?`<optgroup label="قوالب الفريق">${team.map(t=>`<option value="${esc(t.id)}">${esc(t.name)} — ${esc(t.created_by_name||'')}${t.data?.schools?.length?` (${fmt(t.data.schools.length)} مدرسة)`:''}</option>`).join('')}</optgroup>`:''}</select>
+   <button type="button" data-s>💾 حفظ كقالب</button><button type="button" data-del hidden>🗑️ حذف القالب</button>`;
+  const se=bar.querySelector('[data-t]'),del=bar.querySelector('[data-del]');if(sel)se.value=sel;
+  const find=()=>READY.find(t=>t.id===se.value)||T.find(t=>t.id===se.value);
+  const canDel=()=>{const t=T.find(x=>x.id===se.value);return !!t&&(t.created_by===meId||isAdmin)};del.hidden=!canDel();
+  se.onchange=()=>{del.hidden=!canDel();const t=find();if(t)apply(t)};
+  del.onclick=async()=>{const t=T.find(x=>x.id===se.value);if(!t||!confirm(`حذف القالب «${t.name}»؟`))return;
+   try{await C.api.woTemplateDelete(t.id);toast('تم حذف القالب');await templates(true);draw('')}catch(e){toast(msg(e),'error')}};
+  bar.querySelector('[data-s]').onclick=save}
+ function apply(t){const v=t.data||{},set=(id,x)=>{const el=$(`#${pre}-${id}`);if(el&&x!==undefined&&x!==null)el.value=x};
+  set('ti',v.title);set('ty',v.type);set('pr',v.priority);set('de',v.description||'');set('cl',(v.checklist||[]).map(x=>typeof x==='string'?x:x.t).join('\n'));
+  if(v.due_days)set('du',X.toLocal(Date.now()+v.due_days*DAY));
+  if(pre==='g'&&ctx){if(v.am){const r=d.querySelector(`[name=g-am][value=${v.am}]`);if(r)r.checked=true}if(v.role&&$('#g-ar'))$('#g-ar').value=v.role;
+   if(Array.isArray(v.schools)&&v.schools.length){ctx.picked.clear();let miss=0;v.schools.forEach(k=>{const s=ctx.byK.get(k)||ctx.byK.get(N(k));if(s)ctx.picked.set(s.k,s);else miss++});ctx.setSrc('filter');
+    if(miss)toast(`${fmt(miss)} مدرسة من القالب غير موجودة في قاعدة بيانات المدارس على هذا الجهاز`,'warning')}
+   ctx.redraw()}
+  toast(`تم تطبيق القالب «${t.name}»`)}
+ async function save(){const g=id=>$(`#${pre}-${id}`)?.value||'',title=S(g('ti'));if(!title){toast('اكتب عنوان الأمر أولاً','warning');return}
+  const name=S(prompt('اسم القالب',title));if(!name)return;
+  const due=g('du')?Math.max(1,Math.round((new Date(g('du'))-Date.now())/DAY)):7;
+  const data={title,type:g('ty'),priority:g('pr'),due_days:due,description:S(g('de')),checklist:g('cl').split('\n').map(S).filter(Boolean)};
+  if(pre==='g'&&ctx){data.am=d.querySelector('[name=g-am]:checked')?.value;data.role=$('#g-ar')?.value;
+   if(ctx.picked.size&&confirm(`حفظ المدارس المحددة (${ctx.picked.size}) مع القالب؟\nموافق = القالب يحدد نفس المدارس عند استخدامه • إلغاء = بدون مدارس`))data.schools=[...ctx.picked.keys()]}
+  const shared=confirm('مشاركة القالب مع فريقك؟\nموافق = يراه المدير والمهندسون والمشرفون • إلغاء = لك فقط');
+  try{const r=await C.api.woTemplateSave({name,data,shared,created_by_name:X.me().full_name||X.me().email});mine=null;await templates(true);draw(r&&r[0]&&r[0].id||'');toast('تم حفظ القالب')}catch(e){toast(msg(e),'error')}}
+ draw('');
+};
+
+/* ---------- recurrence in the group dialog ---------- */
+const FQ=[['weekly',1,'أسبوعي'],['weekly',2,'كل أسبوعين'],['monthly',1,'شهري'],['quarterly',1,'كل 3 أشهر'],['monthly',6,'كل 6 أشهر'],['monthly',12,'سنوي']];
+const fqLabel=s=>s.freq==='days'?`كل ${fmt(s.every_n)} يوم`:(FQ.find(f=>f[0]===s.freq&&f[1]===s.every_n)||[])[2]||(s.freq==='weekly'?`كل ${fmt(s.every_n)} أسابيع`:s.freq==='monthly'?`كل ${fmt(s.every_n)} أشهر`:`كل ${fmt(3*s.every_n)} أشهر`);
+window.fmV147Recur=function(d,ctx){const row=d.querySelector('#g-go')?.closest('.row');if(!row)return;
+ const t=new Date(Date.now()+DAY);t.setHours(6,0,0,0);
+ const box=document.createElement('div');box.innerHTML=`<h4>4) التكرار (اختياري)</h4><div class="fm147-rc">
+  <div class="three"><div><label>التكرار</label><select id="r-fq"><option value="">لا يتكرر — مرة واحدة الآن</option>${FQ.map(f=>`<option value="${f[0]}:${f[1]}">🔁 ${f[2]}</option>`).join('')}<option value="days">🔁 كل عدد من الأيام…</option></select></div>
+   <div><label>أول تشغيل</label><input type="datetime-local" id="r-st" value="${X.toLocal(t)}"></div>
+   <div><label>مهلة الإنجاز من كل تشغيل (أيام)</label><input type="number" id="r-dd" min="1" max="365" value="7"></div></div>
+  <div id="r-dw" hidden><label>كل كم يوم؟</label><input type="number" id="r-n" min="1" max="365" value="10" style="max-width:160px"></div>
+  <div id="r-more" hidden><label class="r"><input type="checkbox" id="r-now" checked> أنشئ أول حملة الآن أيضاً (ثم تتكرر حسب الجدول)</label>
+   <div class="fm125-hint">تُحفظ المدارس والمُسند إليهم كما في المعاينة أعلاه. في كل موعد تُنشأ حملة جديدة باسم «العنوان — التاريخ» بمهلة الإنجاز المحددة، وتظهر للموظفين في تطبيق الميدان. المدرسة التي لم يعد مسؤولها ضمن فريقك تُتخطّى. تديرها من زر «🔁 الحملات المتكررة».</div></div></div>`;
+ row.before(box);const $=s=>d.querySelector(s),go=$('#g-go');
+ const on=()=>!!$('#r-fq').value;
+ const sync=()=>{const v=$('#r-fq').value;$('#r-dw').hidden=v!=='days';$('#r-more').hidden=!v;box.querySelector('.fm147-rc').classList.toggle('on',!!v);
+  d.__submit=v?submit:null;const du=$('#g-du');if(du){du.disabled=!!v;du.title=v?'في الحملات المتكررة يُحسب الموعد من «مهلة الإنجاز»':''}ctx.preview()};
+ d.__afterPreview=n=>{if(on()&&n)go.textContent=`🔁 حفظ الحملة المتكررة (${fmt(n)} مدرسة)`};
+ $('#r-fq').onchange=sync;
+ async function submit({title,base,items,ok,btn}){const v=$('#r-fq').value,[freq,n]=v==='days'?['days',Math.max(1,+$('#r-n').value||1)]:[v.split(':')[0],+v.split(':')[1]];
+  const st=$('#r-st').value;if(!st){toast('حدد موعد أول تشغيل','warning');return}
+  const p={name:title,freq,every_n:n,start_at:new Date(st).toISOString(),due_days:Math.max(1,+$('#r-dd').value||7),
+   data:{title,type:base.type,priority:base.priority,description:base.description,checklist:base.checklist},
+   items:ok.map(({s,p:who})=>Object.assign({school:s.school,building_id:s.bid||'',region:s.region||'',assignee:who.id},s.x?.pri?{priority:s.x.pri}:{},s.x?.note?{note:s.x.note}:{}))};
+  if(!confirm(`حفظ حملة متكررة (${fqLabel({freq,every_n:n})}) لـ ${items.length} مدرسة؟`))return;
+  btn.disabled=true;btn.textContent='…';
+  try{const id=await C.api.woScheduleSave(p);let batch='';
+   if($('#r-now').checked){const r=await C.api.woScheduleAct(id,'run');batch=r&&r.batch_id||'';toast(`تم حفظ الحملة المتكررة وإنشاء ${fmt(r&&r.count)} أمر الآن`)}else toast('تم حفظ الحملة المتكررة');
+   d.close();X.F.k='all';X.F.batch=batch;await X.load();X.render()}
+  catch(e){toast(msg(e),'error');btn.disabled=false;ctx.preview()}}
+ sync()};
+
+/* ---------- the recurring campaigns list ---------- */
+window.fmV147Schedules=async function(){const d=X.dlg('<div class="fm125-src">جارٍ التحميل…</div>',1100);let L=[],cron=false;
+ const draw=async()=>{try{[L,cron]=await Promise.all([C.api.woSchedules(),C.api.woCronOn().catch(()=>false)])}catch(e){d.querySelector('.fm122-dlg').innerHTML=`<h3>🔁 الحملات المتكررة</h3><div class="fm122-note">${esc(msg(e))}</div><div class="row"><button data-x>إغلاق</button></div>`;d.querySelector('[data-x]').onclick=d.close;return}
+  const meId=X.me().id,isAdmin=X.me().role==='admin';
+  d.querySelector('.fm122-dlg').innerHTML=`<h3>🔁 الحملات المتكررة</h3>
+   <div class="${cron?'fm125-hint':'fm122-note'}">${cron?'✅ التشغيل التلقائي مفعّل على الخادم: تُفحص المواعيد كل ساعة حتى لو لم يفتح أحد المنصة.'
+    :'⚠️ التشغيل التلقائي من الخادم غير مفعّل بعد، فتُنشأ الحملات المستحقة عند فتح المنصة. لتفعيله: Supabase ← Database ← Extensions ← فعّل <b>pg_cron</b>، ثم شغّل ملف supabase_setup.sql مرة أخرى.'}</div>
+   <div class="fm122-tw" style="max-height:60vh"><table class="fm147-t"><thead><tr><th>الحملة</th><th>التكرار</th><th>المدارس</th><th>المهلة</th><th>التشغيل القادم</th><th>آخر تشغيل</th><th>الحالة</th><th></th></tr></thead><tbody>
+   ${L.map(s=>{const r=s.last_result||{},mineS=s.created_by===meId||isAdmin,sk=(r.skipped||[]).length;return `<tr data-s="${esc(s.id)}"><td><b>${esc(s.name)}</b><small>${esc(s.created_by_name||'')} • ${fmt(s.runs)} مرة</small></td>
+    <td>${esc(fqLabel(s))}</td><td>${fmt((s.items||[]).length)}</td><td>${fmt(s.due_days)} يوم</td><td>${s.active?X.dts(s.next_run_at):'—'}</td>
+    <td>${s.last_run_at?`${X.dts(s.last_run_at)}<small>${r.error?'⚠️ صاحب الحملة غير نشط':`${fmt(r.count)} أمر${sk?` • تُخطّيت ${fmt(sk)}: ${esc(r.skipped.slice(0,4).join('، '))}${sk>4?'…':''}`:''}`}</small>`:'لم تُشغَّل بعد'}</td>
+    <td><span class="fm147-st ${s.active?'':'off'}">${s.active?'نشطة':'موقوفة'}</span></td>
+    <td><div class="acts">${mineS?`<button data-a="run">▶️ تشغيل الآن</button><button data-a="${s.active?'pause':'resume'}">${s.active?'⏸️ إيقاف':'🔁 تفعيل'}</button>`:''}${s.last_batch?'<button data-a="open">📂 آخر حملة</button>':''}${mineS?'<button data-a="delete">🗑️</button>':''}</div></td></tr>`}).join('')
+    ||'<tr><td colspan="8" class="fm125-src" style="text-align:center;padding:18px">لا توجد حملات متكررة. أنشئها من «🏘️ أمر لمجموعة مدارس» ← «4) التكرار».</td></tr>'}</tbody></table></div>
+   <div class="row"><button class="p" data-new>🏘️ حملة جديدة</button><button data-x>إغلاق</button></div>`;
+  d.querySelector('[data-x]').onclick=d.close;d.querySelector('[data-new]').onclick=()=>{d.close();window.fmV146GroupDlg?.()};
+  d.querySelectorAll('tr[data-s] [data-a]').forEach(b=>b.onclick=async()=>{const id=b.closest('tr').dataset.s,s=L.find(x=>x.id===id),a=b.dataset.a;
+   if(a==='open'){d.close();X.F.k='all';X.F.batch=s.last_batch;X.render();return}
+   if(a==='delete'&&!confirm(`حذف الحملة المتكررة «${s.name}»؟ الأوامر التي أُنشئت سابقاً لا تتأثر.`))return;
+   if(a==='run'&&!confirm(`إنشاء حملة «${s.name}» الآن لـ ${(s.items||[]).length} مدرسة؟ (الموعد القادم لا يتغير)`))return;
+   b.disabled=true;try{const r=await C.api.woScheduleAct(id,a);
+    toast(a==='run'?`تم إنشاء ${fmt(r&&r.count)} أمر${r&&r.skipped&&r.skipped.length?` وتخطي ${fmt(r.skipped.length)} مدرسة`:''}`:{pause:'تم إيقاف الحملة',resume:'تم تفعيل الحملة',delete:'تم حذف الحملة'}[a]);
+    if(a==='run'){await X.load();X.render()}draw()}catch(e){toast(msg(e),'error');b.disabled=false}})};
+ draw()};
+
+/* due campaigns also run when the platform opens (when pg_cron is not set up on the server) */
+let ran=false;
+const runDue=()=>{if(ran||!C.state?.on||!['admin','engineer','supervisor'].includes(X.me().role))return;ran=true;
+ C.api.woRunDue().then(n=>{if(n>0)X.load().then(()=>{if(document.getElementById('fm145-page')?.classList.contains('open')&&!document.querySelector('.fm122-dlg-wrap'))X.render()})}).catch(()=>{})};
+setTimeout(runDue,8000);setTimeout(runDue,20000);
 })();
 </script>
 </body>
