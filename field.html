@@ -136,7 +136,8 @@ textarea.in{min-height:90px;line-height:1.8}
 .cb{position:relative}.cb .in{width:100%;box-sizing:border-box;padding-left:30px}.cbok{position:absolute;left:10px;top:9px;color:var(--ok);font-weight:900}.cbok.o{color:var(--warn)}
 .cbl{position:absolute;z-index:30;top:100%;right:0;left:0;max-height:260px;overflow:auto;background:#fff;border:1px solid #94a3b8;border-radius:10px;box-shadow:0 10px 24px rgba(15,23,42,.18);margin-top:2px}
 .cbl button{display:block;width:100%;text-align:right;border:0;border-bottom:1px solid #f1f5f9;background:#fff;padding:9px 10px;font:700 14px Cairo,Tahoma,sans-serif;color:var(--ink)}
-.cbl button b{background:#fef08a;font-weight:900}.cbl button small{display:block;color:var(--mut);font-size:11.5px}.cbl button:active{background:#eff6ff}.cbl .oth{color:var(--warn)}.cbn{padding:8px 10px;color:var(--mut);font-size:12.5px}.mr .u{align-self:center;font-weight:800;font-size:12.5px;color:#0e7490}.mr .in{margin:0;padding:7px 6px;font-size:13px}.mr .del{border:0;background:none;font-size:16px}
+.cbl button b{background:#fef08a;font-weight:900}.cbl button small{display:block;color:var(--mut);font-size:11.5px}.cbl button:active{background:#eff6ff}.cbl .oth{color:var(--warn)}.cbh{position:sticky;top:0;background:#f8fafc;border-bottom:1px solid var(--line);padding:6px 10px;font-size:12px;font-weight:800;color:#334155;display:flex;justify-content:space-between;align-items:center;gap:6px}
+.cbh.o{position:static;background:#fff7ed;color:#9a3412}.cbh button{border:1px solid #cbd5e1!important;background:#fff!important;border-radius:8px;padding:2px 8px!important;font:800 11.5px Cairo,sans-serif!important;width:auto!important;display:inline!important;color:var(--pri)!important}.cbn{padding:8px 10px;color:var(--mut);font-size:12.5px}.mr .u{align-self:center;font-weight:800;font-size:12.5px;color:#0e7490}.mr .in{margin:0;padding:7px 6px;font-size:13px}.mr .del{border:0;background:none;font-size:16px}
 .mat .madd,.ci .shph{border:1px dashed #64748b;background:#fff;border-radius:8px;padding:5px 10px;font:800 12.5px Cairo,sans-serif;margin-top:4px}.mrv{font-size:13px;padding:2px 0}
 .arr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.arr .as{border:1px dashed #94a3b8;border-radius:12px;padding:6px;text-align:center;font-size:12.5px}.arr .as.done{border:1px solid #16a34a;background:#f0fdf4}
 .arr img{width:100%;height:70px;object-fit:cover;border-radius:8px;display:block}.arr .ph0{height:70px;display:grid;place-items:center;font-size:30px;background:#f8fafc;border-radius:8px}
@@ -858,7 +859,7 @@ async function woDetail(id,keep){
  const sc=w.school?D.db.find(x=>S(x.school)===S(w.school)):null,nav=sc&&hasXY(sc)?`https://www.google.com/maps/dir/?api=1&destination=${+sc.lat},${+sc.lng}`:w.school?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(w.school)}`:'';
  const cl=Array.isArray(w.checklist)?w.checklist:[],clDone=cl.filter(x=>ciRes(x)).length;
  /* F9: arrival documentation (3 photos) for a school order; checklist items carry their own before / after photos */
- D.curPh=ph;D.curOff=off;const isSchool=!!S(w.school),arr=WO_ARR.map(([tag])=>ph.find(p=>p.kind==='arrival'&&p.tag===tag)),arrDone=!isSchool||arr.every(Boolean),itemsOn=working&&arrDone,openPh=new Set();
+ D.curPh=ph;D.curOff=off;D.curW=w;const isSchool=!!S(w.school),arr=WO_ARR.map(([tag])=>ph.find(p=>p.kind==='arrival'&&p.tag===tag)),arrDone=!isSchool||arr.every(Boolean),itemsOn=working&&arrDone,openPh=new Set();
  const tick=k=>D.tickets.find(x=>S(x.ticket_id)===S(k));
  const lastRet=ev.slice().reverse().find(e=>e.type==='return'||e.type==='reject');
  const btn=(a,l,cls)=>`<button class="big ${cls||''}" data-act="${a}">${l}</button>`;
@@ -900,8 +901,9 @@ async function woDetail(id,keep){
  const card=$('#ci-card'),redraw=i=>{const row=card.querySelector(`[data-row="${i}"]`);if(row)row.outerHTML=ciRow(cl[i],i,itemsOn,openPh);
   const n=$('#ci-n');if(n)n.textContent=`(${fmt(cl.filter(ciRes).length)} من ${fmt(cl.length)})`;const sm=card.querySelector('.cisum');if(sm)sm.outerHTML=ciSum(cl)};
  if(card&&itemsOn){
-  card.addEventListener('focusin',e=>{const t=e.target;if(t.dataset&&t.dataset.mf==='find'){card.querySelectorAll('.cbl').forEach(x=>{if(x!==t.parentNode.querySelector('.cbl'))x.hidden=true});ciList(t.parentNode.querySelector('.cbl'),t.value)}});
+  card.addEventListener('focusin',e=>{const t=e.target;if(t.dataset&&t.dataset.mf==='find'){card.querySelectorAll('.cbl').forEach(x=>{if(x!==t.parentNode.querySelector('.cbl'))x.hidden=true});ciList(t.parentNode.querySelector('.cbl'),t.value,+t.dataset.mi,t.dataset.all==='1')}});
   card.addEventListener('click',e=>{if(!e.target.closest('.cb'))card.querySelectorAll('.cbl').forEach(x=>x.hidden=true);const b=e.target.closest('button');if(!b)return;
+   if(b.dataset.allm!=null){const inp=b.closest('.cb').querySelector('[data-mf=find]');inp.dataset.all=b.dataset.off?'':'1';ciList(b.closest('.cbl'),inp.value,+inp.dataset.mi,!b.dataset.off);return}
    if(b.dataset.pick!=null){const inp=b.closest('.cb').querySelector('[data-mf=find]'),i=+inp.dataset.mi,m=cl[i].materials[+inp.dataset.mj],c=(D.mats||[]).find(x=>x.id===b.dataset.pick);
     if(c){m.id=c.id;m.n=c.name;m.u=c.unit||'';if(m.src!=='buy')m.price=c.price!=null?String(c.price):''}else{m.id='__other';m.n=S(inp.value);if(m.src!=='buy')m.price=''}
     redraw(i);clSave();const q=card.querySelector(`[data-row="${i}"] [data-mi="${i}"][data-mj="${inp.dataset.mj}"][data-mf=q]`);if(q&&!S(q.value))q.focus();return}
@@ -913,7 +915,7 @@ async function woDetail(id,keep){
    else if(b.dataset.shph!=null){openPh.add(+b.dataset.shph);redraw(+b.dataset.shph)}});
   card.addEventListener('input',e=>{const t=e.target;
    if(t.dataset.cn!=null){cl[+t.dataset.cn].note=S(t.value);clSave()}
-   else if(t.dataset.mf==='find'){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m.n=S(t.value);if(m.id){m.id='';t.parentNode.querySelector('.cbok')?.remove()}ciList(t.parentNode.querySelector('.cbl'),t.value);clSave()}
+   else if(t.dataset.mf==='find'){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m.n=S(t.value);if(m.id){m.id='';t.parentNode.querySelector('.cbok')?.remove()}ciList(t.parentNode.querySelector('.cbl'),t.value,+t.dataset.mi,t.dataset.all==='1');clSave()}
    else if(t.dataset.mf&&!['id','src'].includes(t.dataset.mf)){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m[t.dataset.mf]=['q','price'].includes(t.dataset.mf)?t.value.replace(/[^\d.٫٠-٩]/g,''):t.value;clSave()}});
   card.addEventListener('change',async e=>{const t=e.target;
    /* a material picked from the list brings its name, unit and (from the warehouse) its unit price */
@@ -957,11 +959,27 @@ const MAT_SRC={store:'مستودع',buy:'شراء'};
 /* Arabic-tolerant matching: أ/إ/آ = ا, ة = ه, ى = ي, no diacritics, every typed word must appear */
 const ciN=v=>S(v).normalize('NFKC').replace(/[\u064B-\u065F\u0640]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').toLowerCase();
 function ciFind(q){const M=D.mats||[],w=ciN(q).split(/\s+/).filter(Boolean);return w.length?M.filter(x=>{const h=ciN(x.name+' '+(x.category||'')+' '+(x.code||''));return w.every(t=>h.includes(t))}):M}
-function ciList(box,q){const L=ciFind(q),w=ciN(q).split(/\s+/).filter(Boolean)[0]||'',e=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* material groups: a material category belongs to a group when it contains one of the group's words;
+   a checklist item gets its groups from its own text, plus the system of its order (title / «النظام:» line) */
+const MG={elec:{l:'كهرباء',cat:['كهرب'],txt:['كهرب','فيش','افياش','مفتاح','مفاتيح','اضاء','انار','لمب','لوح','قاطع','قواطع','جهد','تاريض','كابل','توصيلات','كونتاكت','سماعات','جرس','بروجيكتور','شاشات']},
+ plumb:{l:'سباكة',cat:['سباك','صحي','مياه','صرف'],txt:['مياه','ميه','صرف','خلاط','محبس','محابس','شطاف','سباك','مواسير','ماسور','سخان','كراسي','كرسي','مغسل','خزان','مضخ','براد','بالوع','تسريب','صنابير','عوام']},
+ fire:{l:'حريق',cat:['حريق','اطفاء','انذار','سلامه'],txt:['حريق','اطفاء','انذار','كواشف','كاشف','طفاي','رشاش','الجوكي','الديزل']},
+ hvac:{l:'تكييف',cat:['تكييف','تبريد','مكيف'],txt:['تكييف','مكيف','فريون','ضاغط','مكثف','مبخر','تبريد']},
+ civil:{l:'مدني',cat:['مدني','معماري','دهان','عزل','بلاط','نجار','المنيوم','ابواب','تشطيب'],txt:['خرسان','حوائط','حائط','جدران','اسقف','سقف','ارضيات','بلاط','رخام','دهان','عزل','ابواب','نوافذ','زجاج','سور','درابزين','مظلات','تشقق','سلالم','درج','قيشاني','مزاريب','ارصفه','منحدرات','تشطيب','فواصل']},
+ lift:{l:'مصاعد',cat:['مصاعد','مصعد'],txt:['مصعد','مصاعد','كابينه','الحبال','البكرات']}};
+const MG_GEN=['عام','متنوع','عامه'];
+function ciGroupsOf(t){const n=ciN(t);return Object.keys(MG).filter(k=>MG[k].txt.some(w=>n.includes(w)))}
+function ciGroups(i){const w=D.curW||{},x=(w.checklist||[])[i]||{},sys=(S(w.description).match(/النظام:\s*([^\n]+)/)||[])[1]||'';
+ return [...new Set([...ciGroupsOf(x.t||''),...ciGroupsOf(sys||w.title||'')])]}
+const ciCatIn=(c,G)=>{const n=ciN(c);return MG_GEN.some(g=>n.includes(ciN(g)))||G.some(k=>MG[k].cat.some(w=>n.includes(w)))};
+function ciList(box,q,i,all){const A=ciFind(q),G=i==null?[]:ciGroups(i),scoped=G.length&&!all,L=scoped?A.filter(x=>ciCatIn(x.category||'',G)):A,O=scoped&&S(q)?A.filter(x=>!L.includes(x)):[],w=ciN(q).split(/\s+/).filter(Boolean)[0]||'',e=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  /* highlight the first typed word (same length in the normalised text, so the indexes line up) */
  const hl=t=>{const k=w?ciN(t).indexOf(w):-1;return k<0||ciN(t).length!==t.length?e(t):e(t.slice(0,k))+'<b>'+e(t.slice(k,k+w.length))+'</b>'+e(t.slice(k+w.length))};
- box.innerHTML=(L.slice(0,40).map(x=>`<button type="button" data-pick="${esc(x.id)}">${hl(x.name)}<small>${esc([x.unit,x.category].filter(Boolean).join(' • '))}</small></button>`).join('')||'<div class="cbn">لا يوجد صنف بهذا الاسم</div>')
+ const it=x=>`<button type="button" data-pick="${esc(x.id)}">${hl(x.name)}<small>${esc([x.unit,x.category].filter(Boolean).join(' • '))}</small></button>`;
+ box.innerHTML=(scoped?`<div class="cbh">🔎 مواد ${esc(G.map(k=>MG[k].l).join(' و'))} والمواد العامة <button type="button" data-allm="${i}">عرض كل الأصناف (${fmt((D.mats||[]).length)})</button></div>`:G.length&&all?`<div class="cbh">كل الأصناف <button type="button" data-allm="${i}" data-off="1">مواد البند فقط</button></div>`:'')
+  +(L.slice(0,40).map(it).join('')||`<div class="cbn">${O.length?'لا يوجد في مواد هذا البند':'لا يوجد صنف بهذا الاسم'}</div>`)
   +(L.length>40?`<div class="cbn">${fmt(L.length-40)} صنف آخر — اكتب أكثر لتضييق البحث</div>`:'')
+  +(O.length?`<div class="cbh o">من فئات أخرى (${fmt(O.length)})</div>${O.slice(0,15).map(it).join('')}`:'')
   +(S(q)?`<button type="button" data-pick="__other" class="oth">✏️ «${esc(S(q))}» — صنف غير موجود في القائمة</button>`:'');box.hidden=false}
 const ciNum=v=>+String(v??'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace('٫','.').replace(/[^\d.]/g,'')||0;
 function ciPhotos(i,on,need){const P=(D.curPh||[]).filter(p=>p.item===i),row=(k,l,req)=>{const L=P.filter(p=>p.kind===k);if(k==='invoice'&&!req&&!L.length)return '';

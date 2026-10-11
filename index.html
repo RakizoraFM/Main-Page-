@@ -30843,18 +30843,19 @@ const STARTER={'كهرباء':[['فيش مفرد','حبة'],['فيش دبل','ح
  'سباكة':[['خلاط مغسلة','حبة'],['محبس زاوية','حبة'],['شطاف','حبة'],['سيفون','حبة'],['كرسي إفرنجي','حبة'],['كرسي عربي','حبة'],['مرآة','حبة'],['حاقن صابون','حبة'],['ماسورة PVC','متر'],['كوع PVC','حبة'],['شريط تيفلون','لفة'],['سخان كهربائي','حبة']],
  'تكييف':[['فلتر مكيف','حبة'],['غاز فريون','كجم'],['مكثف تشغيل (كباستور)','حبة'],['مروحة مكيف','حبة'],['عزل مواسير فريون','متر']],
  'حريق':[['طفاية بودرة 6 كجم','حبة'],['طفاية CO2','حبة'],['كاشف دخان','حبة'],['جرس إنذار','حبة']],
- 'مدني':[['دهان','جالون'],['معجون','كجم'],['بلاط','م²'],['سيليكون','أنبوب'],['مادة عزل مائي','لتر']],'عام':[['براغي ومسامير','علبة'],['فيشر','علبة']]};
+ 'مدني':[['دهان','جالون'],['معجون','كجم'],['بلاط','م²'],['سيليكون','أنبوب'],['مادة عزل مائي','لتر']],'مصاعد':[['زيت تشحيم مصاعد','لتر'],['زر استدعاء مصعد','حبة']],'عام':[['براغي ومسامير','علبة'],['فيشر','علبة']]};
 window.fmV149Extra=()=>canCatalog()?'<button class="fm103-btn" type="button" data-a="mat">🧰 أصناف المواد</button>':'';
 window.fmV149BindExtra=ex=>{const b=ex.querySelector('[data-a=mat]');if(b)b.onclick=materialsDlg};
 async function materialsDlg(){let L=[];try{L=await C.api.woMaterials()}catch(e){toast(msg(e),'error');return}
  const d=X.dlg('',1000);const dirty=new Map(),del=new Set();let rows=L.map(x=>Object.assign({},x));
  const draw=()=>{d.querySelector('.fm122-dlg').innerHTML=`<h3>🧰 أصناف المواد</h3>
-  <div class="fm125-hint">القائمة التي يختار منها المشرف والمقاول عند «تم الإصلاح». السعر هنا هو سعر الوحدة لصرف المستودع، ويُحفظ مع كل استخدام. أما المشتريات فيُدخل سعرها مع الفاتورة.</div>
+  <div class="fm125-hint">القائمة التي يختار منها المشرف والمقاول عند «تم الإصلاح». السعر هنا هو سعر الوحدة لصرف المستودع، ويُحفظ مع كل استخدام. أما المشتريات فيُدخل سعرها مع الفاتورة.<br>
+   <b>الفئة تحدد أين يظهر الصنف:</b> في تطبيق الميدان يرى المشرف أولاً مواد نظام البند الذي يعمل عليه. اجعل اسم الفئة يحتوي إحدى الكلمات: <b>كهرباء، سباكة، حريق، تكييف، مدني، مصاعد</b>، أو <b>عام</b> لما يظهر مع كل البنود (مثل «كهرباء — إنارة» أو «سباكة — صرف»).</div>
   <div class="fm146-sel"><button type="button" data-m="add">➕ صنف</button><button type="button" data-m="starter">📦 قائمة مبدئية</button><label class="fm103-btn" style="margin:0;cursor:pointer">📥 استيراد Excel<input type="file" accept=".xlsx,.xls,.csv" hidden data-m="imp"></label><button type="button" data-m="exp">⬇️ تصدير / نموذج</button><b>${fmt(rows.length)} صنف</b></div>
   <div class="fm122-tw" style="max-height:55vh"><table class="fm149-mt"><thead><tr><th>الكود</th><th>الصنف *</th><th>الوحدة</th><th>سعر الوحدة</th><th>الفئة</th><th>فعّال</th><th></th></tr></thead><tbody>
   ${rows.map((r,i)=>`<tr data-r="${i}" class="${dirty.has(r)?'dirty':''}"><td><input data-f="code" value="${esc(r.code||'')}" style="max-width:90px"></td><td><input data-f="name" value="${esc(r.name||'')}"></td><td><input data-f="unit" value="${esc(r.unit||'')}" style="max-width:90px"></td>
    <td><input data-f="price" inputmode="decimal" value="${r.price??''}" style="max-width:100px"></td><td><input data-f="category" value="${esc(r.category||'')}" list="m-cats" style="max-width:130px"></td><td><input type="checkbox" data-f="active" ${r.active!==false?'checked':''}></td><td><button type="button" data-del="${i}" title="حذف">🗑️</button></td></tr>`).join('')||'<tr><td colspan="7" class="fm125-src" style="text-align:center;padding:16px">لا توجد أصناف بعد — ابدأ بـ«📦 قائمة مبدئية» أو استورد ملفاً</td></tr>'}</tbody></table>
-  <datalist id="m-cats">${[...new Set(rows.map(r=>r.category).filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
+  <datalist id="m-cats">${[...new Set(['كهرباء','سباكة','حريق','تكييف','مدني','مصاعد','عام',...rows.map(r=>r.category).filter(Boolean)])].map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
   <div class="row"><button class="p" data-m="save">💾 حفظ (${fmt(dirty.size+del.size)})</button><button data-m="x">إغلاق</button></div>`;
   const q=s=>d.querySelector(s);
   d.querySelectorAll('tr[data-r] [data-f]').forEach(inp=>inp.oninput=inp.onchange=()=>{const r=rows[+inp.closest('tr').dataset.r],f=inp.dataset.f;r[f]=f==='active'?inp.checked:f==='price'?(S(inp.value)===''?null:num(inp.value)):S(inp.value);dirty.set(r,1);inp.closest('tr').classList.add('dirty');q('[data-m=save]').textContent=`💾 حفظ (${fmt(dirty.size+del.size)})`});
