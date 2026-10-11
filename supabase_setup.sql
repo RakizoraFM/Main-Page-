@@ -1,5 +1,5 @@
 -- =====================================================================
---  FM Platform — Supabase setup (V136, user management V141, profile V142, work orders V145–V147)
+--  FM Platform — Supabase setup (V136, user management V141, profile V142, work orders V145–V148)
 --  Paste this whole file in Supabase → SQL Editor → New query → Run.
 --  Safe to run again: it only creates what is missing and refreshes policies.
 -- =====================================================================
@@ -413,6 +413,12 @@ create table if not exists public.wo_photos (
   geo     jsonb
 );
 create index if not exists wo_photos_wo_idx on public.wo_photos (wo_id);
+-- V148: a photo may belong to one checklist item (its index) and arrival photos carry a tag
+-- (sign = the school sign, entrance = the entrance, fence = the fence)
+alter table public.wo_photos add column if not exists item int;
+alter table public.wo_photos add column if not exists tag  text;
+alter table public.wo_photos drop constraint if exists wo_photos_kind_check;
+alter table public.wo_photos add constraint wo_photos_kind_check check (kind in ('before','after','attach','arrival'));
 
 -- who sees an order: its creator, its assignee, the admin, and the managers above either of them
 create or replace function public.fm_wo_can_see(p_wo uuid) returns boolean
@@ -504,7 +510,7 @@ end $$;
 -- every step of the order; the allowed step depends on who you are (assignee / creator) and the current status
 create or replace function public.fm_wo_act(p_id uuid, p_action text, p_note text default null, p_geo jsonb default null, p_data jsonb default null)
 returns text language plpgsql security definer set search_path = public as $$
-declare w public.work_orders; me public.profiles; t public.profiles; nm text; isA boolean; isC boolean; ns text; msg text;
+declare w public.work_orders; me public.profiles; t public.profiles; nm text; isA boolean; isC boolean; ns text; msg text; it jsonb; i int;
   note text := nullif(trim(coalesce(p_note,'')),'');
 begin
   select * into me from public.profiles where id = auth.uid();
@@ -525,6 +531,19 @@ begin
     return w.status;
   elsif p_action = 'done' and isA and w.status in ('accepted','in_progress','returned') then
     if not exists (select 1 from public.wo_photos where wo_id = w.id and kind = 'after') then raise exception 'after photo required'; end if;
+    -- V148: a school order needs the three arrival photos; a repaired item needs materials and before / after photos,
+    -- an item that still needs repair needs a before photo
+    if w.school is not null and (select count(distinct tag) from public.wo_photos
+        where wo_id = w.id and kind = 'arrival' and tag in ('sign','entrance','fence')) < 3 then
+      raise exception 'arrival photos required'; end if;
+    for it, i in select e, (o - 1)::int from jsonb_array_elements(case when jsonb_typeof(p_data) = 'array' then p_data else w.checklist end) with ordinality as t(e, o) loop
+      if it->>'res' = 'fixed' and (jsonb_typeof(it->'materials') is distinct from 'array' or jsonb_array_length(it->'materials') = 0
+          or not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'before')
+          or not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'after')) then
+        raise exception 'item documentation required: %', i + 1; end if;
+      if it->>'res' = 'fix' and not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'before') then
+        raise exception 'item documentation required: %', i + 1; end if;
+    end loop;
     if jsonb_typeof(p_data) = 'array' then update public.work_orders set checklist = p_data where id = w.id; end if;
     ns := 'done'; msg := '📨 أبلغ: تم الإجراء — بانتظار الاعتماد';
   elsif p_action = 'close' and isC and w.status = 'done' then ns := 'closed'; msg := '🔒 اعتمد الإنجاز وأغلق الأمر';

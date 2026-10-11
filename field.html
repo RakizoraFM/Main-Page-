@@ -126,7 +126,18 @@ textarea.in{min-height:90px;line-height:1.8}
 .sw{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:800;font-size:13.5px}.sw input{width:22px;height:22px}
 .plan-btn{width:100%;margin-bottom:10px;background:#0f172a!important;color:#fff!important}
 .bnav button{position:relative}.bnav em{position:absolute;top:2px;left:calc(50% - 22px);min-width:17px;height:17px;border-radius:99px;background:#dc2626;color:#fff;font:900 10.5px/17px Cairo,sans-serif;font-style:normal;padding:0 4px}
-/* F9: inspection result per checklist item */
+/* F9: inspection result per checklist item, materials, item photos, arrival photos */
+.ci .t .no{display:inline-block;min-width:22px;text-align:center;background:#eef2ff;color:#3730a3;border-radius:6px;font-size:12px;margin-left:4px}
+.ci.rep{background:linear-gradient(90deg,transparent,#ecfeff)}.ci .seg .on.fixed{background:#cffafe;border-color:#0891b2;color:#164e63}
+.cph{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}.cph>span{font-weight:800;font-size:12.5px;min-width:52px}.cph>span.req{color:var(--bad)}
+.cph img{width:54px;height:54px;object-fit:cover;border-radius:8px;display:block}.cph .plus{width:54px;height:54px;border:2px dashed #94a3b8;border-radius:8px;display:grid;place-items:center;font:900 24px Cairo,sans-serif;color:#475569;cursor:pointer}
+.mat{margin-top:6px;border:1px solid #a5f3fc;background:#f0fdff;border-radius:10px;padding:6px 8px}.mat .mh{font-weight:900;font-size:13px;margin-bottom:4px}
+.mr{display:grid;grid-template-columns:2fr 1fr 1fr 1.2fr auto;gap:4px;margin-bottom:4px}.mr .in{margin:0;padding:7px 6px;font-size:13px}.mr .del{border:0;background:none;font-size:16px}
+.mat .madd,.ci .shph{border:1px dashed #64748b;background:#fff;border-radius:8px;padding:5px 10px;font:800 12.5px Cairo,sans-serif;margin-top:4px}.mrv{font-size:13px;padding:2px 0}
+.arr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.arr .as{border:1px dashed #94a3b8;border-radius:12px;padding:6px;text-align:center;font-size:12.5px}.arr .as.done{border:1px solid #16a34a;background:#f0fdf4}
+.arr img{width:100%;height:70px;object-fit:cover;border-radius:8px;display:block}.arr .ph0{height:70px;display:grid;place-items:center;font-size:30px;background:#f8fafc;border-radius:8px}
+.arr b{display:block;margin:4px 0}.arr .mini{display:block;border:1px solid var(--line);border-radius:8px;padding:4px;font-weight:800;cursor:pointer;background:#fff}.okc{color:var(--ok);font-size:13px}
+.ci .seg{grid-template-columns:repeat(2,1fr)!important}
 .ci{padding:9px 0;border-bottom:1px solid var(--line)}.ci:last-child{border-bottom:0}.ci .t{font-weight:800;font-size:14px;line-height:1.7}.ci .t small{display:block;color:var(--mut);font-weight:700;font-size:12px}
 .ci .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}.ci .seg button{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 2px;font:800 12.5px Cairo,Tahoma,sans-serif;color:var(--ink)}
 .ci .seg button:disabled{opacity:.55}.ci .seg .on.ok{background:#dcfce7;border-color:#16a34a;color:#14532d}.ci .seg .on.fix{background:#fef3c7;border-color:#d97706;color:#78350f}.ci .seg .on.na{background:#e2e8f0;border-color:#64748b}
@@ -194,12 +205,12 @@ const real={
  async woAssignable(){const c=await sb();return chk(await c.rpc('fm_wo_assignable'))},
  async woCreate(o){const c=await sb();return chk(await c.rpc('fm_wo_create',{p:o}))},
  async woAct(id,action,note,geo,data){const c=await sb();return chk(await c.rpc('fm_wo_act',{p_id:id,p_action:action,p_note:note||null,p_geo:geo||null,p_data:data===undefined?null:data}))},
- async woUpload(id,kind,dataUrl,byName,geo){const c=await sb();const pid=uuid();const path=`${id}/${pid}.jpg`;
+ async woUpload(id,kind,dataUrl,byName,geo,item,tag){const c=await sb();const pid=uuid();const path=`${id}/${pid}.jpg`;
   chk(await c.storage.from('wo-photos').upload(path,b64ToBlob(dataUrl),{contentType:'image/jpeg',upsert:false}));
-  chk(await c.from('wo_photos').insert({id:pid,wo_id:id,kind,path,by_name:byName,geo:geo||null}));return {id:pid,path}},
+  chk(await c.from('wo_photos').insert(Object.assign({id:pid,wo_id:id,kind,path,by_name:byName,geo:geo||null},item!=null?{item}:{},tag?{tag}:{})));return {id:pid,path}},
  async woPhotos(id){const c=await sb();const rows=chk(await c.from('wo_photos').select('*').eq('wo_id',id).order('at'));if(!rows.length)return [];
   const signed=chk(await c.storage.from('wo-photos').createSignedUrls(rows.map(r=>r.path),3600));const m=new Map(signed.map(s=>[s.path,s.signedUrl]));
-  return rows.map(r=>({id:r.id,kind:r.kind,d:m.get(r.path)||'',by:r.by_name,at:r.at}))},
+  return rows.map(r=>({id:r.id,kind:r.kind,d:m.get(r.path)||'',by:r.by_name,at:r.at,item:r.item??null,tag:r.tag||null}))},
  async listPhotos(region,tid){const c=await sb();const rows=chk(await c.from('ticket_photos').select('*').eq('region',region).eq('ticket_id',tid).order('at'));if(!rows.length)return [];
   const signed=chk(await c.storage.from('ticket-photos').createSignedUrls(rows.map(r=>r.path),3600));const m=new Map(signed.map(s=>[s.path,s.signedUrl]));
   return rows.map(r=>({id:r.id,kind:r.kind,d:m.get(r.path)||'',by:r.by_name,at:new Date(r.at).getTime(),path:r.path,geo:r.geo}))},
@@ -772,6 +783,7 @@ const woMine=w=>w.assignee===D.me?.id,woSent=w=>w.created_by===D.me?.id;
 /* needs me: accept / continue what was assigned to me, or approve what I assigned */
 const woNeedsMe=w=>(woMine(w)&&['assigned','returned'].includes(w.status))||(woSent(w)&&!woMine(w)&&w.status==='done');
 const woBadge=()=>(D.wo||[]).filter(woNeedsMe).length;
+const WO_ARR=[['sign','🏫','لوحة المدرسة'],['entrance','🚪','مدخل المدرسة'],['fence','🧱','سور المدرسة']];
 const woSql=e=>/does not exist|schema cache|Could not find/i.test(String(e))?'أوامر العمل تحتاج تشغيل ملف supabase_setup.sql المحدَّث — أبلغ مدير النظام':C.msg(String(e));
 function woDue(w){if(!w.due_at||WO_FINAL(w.status)||w.status==='done')return '';const h=(new Date(w.due_at)-Date.now())/36e5;
  return h<0?`<span class="chip c-bad">⏰ متأخر ${hrsTxt(-h)}</span>`:`<span class="chip ${h<=24?'c-warn':''}">⏳ متبقي ${hrsTxt(h)}</span>`}
@@ -820,13 +832,15 @@ async function woDetail(id,keep){
  const t=WO_T[w.type]||WO_T.task,isA=woMine(w),isC=woSent(w)||D.me?.role==='admin',act=!WO_FINAL(w.status)&&w.status!=='done'&&w.status!=='rejected',working=isA&&['accepted','in_progress','returned'].includes(w.status);
  const sc=w.school?D.db.find(x=>S(x.school)===S(w.school)):null,nav=sc&&hasXY(sc)?`https://www.google.com/maps/dir/?api=1&destination=${+sc.lat},${+sc.lng}`:w.school?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(w.school)}`:'';
  const cl=Array.isArray(w.checklist)?w.checklist:[],clDone=cl.filter(x=>ciRes(x)).length;
+ /* F9: arrival documentation (3 photos) for a school order; checklist items carry their own before / after photos */
+ D.curPh=ph;const isSchool=!!S(w.school),arr=WO_ARR.map(([tag])=>ph.find(p=>p.kind==='arrival'&&p.tag===tag)),arrDone=!isSchool||arr.every(Boolean),itemsOn=working&&arrDone,openPh=new Set();
  const tick=k=>D.tickets.find(x=>S(x.ticket_id)===S(k));
  const lastRet=ev.slice().reverse().find(e=>e.type==='return'||e.type==='reject');
  const btn=(a,l,cls)=>`<button class="big ${cls||''}" data-act="${a}">${l}</button>`;
  let bar='';
  if(isA&&w.status==='assigned')bar=btn('accept','✅ قبول','g')+btn('reject','⛔ رفض','');
- else if(isA&&['accepted','returned'].includes(w.status))bar=btn('start','🛠️ بدء التنفيذ','p')+btn('arrive','📍 وصلت','d');
- else if(isA&&w.status==='in_progress')bar=btn('arrive','📍 وصلت','d')+btn('done','📨 تم الإجراء','g');
+ else if(isA&&['accepted','returned'].includes(w.status))bar=btn('start','🛠️ بدء التنفيذ','p')+(isSchool?'':btn('arrive','📍 وصلت','d'));
+ else if(isA&&w.status==='in_progress')bar=(isSchool?'':btn('arrive','📍 وصلت','d'))+btn('done','📨 تم الإجراء','g');
  else if(isC&&!isA&&w.status==='done')bar=btn('close','✔️ اعتماد وإغلاق','g')+btn('return','↩️ إعادة للتصحيح','');
  const cmore=isC&&!isA&&!WO_FINAL(w.status)?`<div class="btns" style="margin-top:8px">${w.status!=='done'?btn('reassign','🔁 إعادة إسناد',''):''}${btn('cancel','🚫 إلغاء الأمر','')}</div>`:'';
  $('#app').innerHTML=shell(`
@@ -838,45 +852,87 @@ async function woDetail(id,keep){
    ${lastRet&&['returned','rejected'].includes(w.status)?`<div class="note" style="margin-top:8px;border-color:#fecaca;background:#fef2f2">${esc(lastRet.text)}</div>`:''}
    ${(w.ticket_refs||[]).length?`<div class="chips" style="margin-top:8px">${w.ticket_refs.map(k=>{const x=tick(k);return `<button class="chip c-pri" ${x?`data-tk="${esc(key(x))}"`:'disabled'}>🎫 ${esc(k)}</button>`}).join('')}</div>`:''}
    ${nav?`<a class="big" href="${nav}" target="_blank" rel="noopener" style="margin-top:10px">🗺️ الاتجاهات</a>`:''}</div>
-  ${cl.length?`<div class="card"><h3>☑️ بنود الفحص <span class="muted">(${fmt(clDone)} من ${fmt(cl.length)})</span></h3>${ciSum(cl)}${cl.map((x,i)=>ciRow(x,i,working)).join('')}</div>`:''}
+  ${isSchool&&(isA||arr.some(Boolean))?`<div class="card" id="arr-card"><h3>📍 توثيق الوصول للمدرسة ${arrDone?'<span class="okc">✅ مكتمل</span>':`<span class="muted">(${fmt(arr.filter(Boolean).length)} من ٣)</span>`}</h3>
+   ${working&&!arrDone?'<div class="muted" style="margin-bottom:6px">التقط صورة بانوراما (أو صورة عريضة) لكل من لوحة المدرسة والمدخل والسور. تُسجَّل كل صورة مع موقعك ووقتها، والصورة الأقدم من ساعتين لا تُقبل.</div>':''}
+   <div class="arr">${WO_ARR.map(([tag,ic,l],k)=>{const p=arr[k];return `<div class="as ${p?'done':''}">${p?`<a href="${esc(p.d)}" target="_blank" rel="noopener"><img src="${esc(p.d)}" alt=""></a>`:`<div class="ph0">${ic}</div>`}<b>${l}</b>${working?`<label class="mini">${p?'🔄 إعادة':'📷 التقاط'}<input type="file" accept="image/*" data-arr="${tag}" hidden></label>`:''}</div>`}).join('')}</div></div>`:''}
+  ${cl.length?`<div class="card" id="ci-card"><h3>☑️ بنود الفحص <span class="muted" id="ci-n">(${fmt(clDone)} من ${fmt(cl.length)})</span></h3>${working&&!arrDone?'<div class="note">🔒 وثّق الوصول للمدرسة أولاً (3 صور)، ثم سجّل نتائج البنود.</div>':''}${ciSum(cl)}${cl.map((x,i)=>ciRow(x,i,itemsOn,openPh)).join('')}</div>`:''}
   <div class="card"><h3>📷 الصور</h3>
    ${working?`<div class="cam"><label>📷 قبل<input type="file" accept="image/*" capture="environment" multiple data-wk="before"></label><label>✅ بعد<input type="file" accept="image/*" capture="environment" multiple data-wk="after"></label></div>`:''}
    ${isC&&!isA&&act?`<div class="cam"><label>📎 مرفق توضيحي<input type="file" accept="image/*" multiple data-wk="attach"></label></div>`:''}
-   <div class="ph">${ph.map(p=>`<figure><a href="${esc(p.d)}" target="_blank" rel="noopener"><img src="${esc(p.d)}" alt=""></a><figcaption>${p.kind==='before'?'قبل':p.kind==='after'?'بعد':'مرفق'}</figcaption></figure>`).join('')||'<div class="muted">لا توجد صور</div>'}</div>
+   <div class="ph">${ph.filter(p=>p.item==null&&p.kind!=='arrival').map(p=>`<figure><a href="${esc(p.d)}" target="_blank" rel="noopener"><img src="${esc(p.d)}" alt=""></a><figcaption>${p.kind==='before'?'قبل':p.kind==='after'?'بعد':'مرفق'}</figcaption></figure>`).join('')||'<div class="muted">لا توجد صور</div>'}</div>
    ${isA&&w.status==='in_progress'?'<div class="muted" style="margin-top:6px">«تم الإجراء» يتطلب صورة واحدة على الأقل «بعد».</div>':''}</div>
   <div class="card"><h3>✍️ ملاحظة</h3><div style="display:flex;gap:8px"><input class="in" id="wo-n" placeholder="اكتب ملاحظة أو تحديثاً"><button class="big" id="wo-na" style="flex:none;padding:10px 14px">إضافة</button></div>${cmore}</div>
   <div class="card"><h3>🕓 السجل</h3><ul class="tl">${ev.slice().reverse().map(e=>`<li><small>${esc(e.by_name||'')} • ${dts(e.at)}</small>${esc(e.text||'')}${e.geo&&e.geo.lat?` <a class="link" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${e.geo.lat},${e.geo.lng}">📍</a>`:''}</li>`).join('')||'<li>—</li>'}</ul></div>
   ${bar?`<div class="bar">${bar}</div>`:''}`,esc(w.code||''),esc(w.title),true);
  $('#bk').onclick=()=>woView();
  document.querySelectorAll('[data-tk]').forEach(b=>b.onclick=()=>{D.curWo=null;ticketView(b.dataset.tk)});
- /* F9: each item gets a result (ok / fix / na) and, when it needs repair, a short note; saved after a short pause */
+ /* F9: each item gets a result — ok / fix (needs repair) / fixed (repaired on the spot) / na — with a note, the materials used
+    (when fixed) and its own before / after photos; saved after a short pause. One delegated handler for the whole card. */
  let clT=null;const clSave=()=>{clearTimeout(clT);clT=setTimeout(async()=>{try{await C.api.woAct(id,'checklist',null,null,cl);w.checklist=cl}catch(e){toast(woSql(e.message),'e')}},600)};
- const ciBind=()=>{document.querySelectorAll('[data-ci]').forEach(b=>b.onclick=()=>{const i=+b.dataset.ci,x=cl[i],r=b.dataset.r;x.res=ciRes(x)===r?'':r;x.done=!!x.res;if(x.res!=='fix')delete x.note;
-  b.closest('.ci').outerHTML=ciRow(x,i,true);const h=b.closest?document.querySelector('.ci')?.closest('.card')?.querySelector('h3 .muted'):null;if(h)h.textContent=`(${fmt(cl.filter(ciRes).length)} من ${fmt(cl.length)})`;
-  const sm=document.querySelector('.cisum');if(sm)sm.outerHTML=ciSum(cl);ciBind();if(x.res==='fix')document.querySelector(`[data-cn="${i}"]`)?.focus();clSave()});
-  woBindCi(cl,clSave)};
- ciBind();
+ const card=$('#ci-card'),redraw=i=>{const row=card.querySelector(`[data-row="${i}"]`);if(row)row.outerHTML=ciRow(cl[i],i,itemsOn,openPh);
+  const n=$('#ci-n');if(n)n.textContent=`(${fmt(cl.filter(ciRes).length)} من ${fmt(cl.length)})`;const sm=card.querySelector('.cisum');if(sm)sm.outerHTML=ciSum(cl)};
+ if(card&&itemsOn){
+  card.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+   if(b.dataset.ci!=null){const i=+b.dataset.ci,x=cl[i],r=b.dataset.r;x.res=ciRes(x)===r?'':r;x.done=!!x.res;
+    if(x.res!=='fixed')delete x.materials;else if(!(x.materials||[]).length)x.materials=[{n:'',q:'',u:'',src:'store'}];
+    if(!['fix','fixed'].includes(x.res))delete x.note;redraw(i);if(['fix','fixed'].includes(x.res))card.querySelector(`[data-cn="${i}"]`)?.focus();clSave()}
+   else if(b.dataset.madd!=null){const i=+b.dataset.madd;(cl[i].materials=cl[i].materials||[]).push({n:'',q:'',u:'',src:'store'});redraw(i);clSave()}
+   else if(b.dataset.mdel!=null){const i=+b.dataset.mi;cl[i].materials.splice(+b.dataset.mdel,1);redraw(i);clSave()}
+   else if(b.dataset.shph!=null){openPh.add(+b.dataset.shph);redraw(+b.dataset.shph)}});
+  card.addEventListener('input',e=>{const t=e.target;
+   if(t.dataset.cn!=null){cl[+t.dataset.cn].note=S(t.value);clSave()}
+   else if(t.dataset.mf){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m[t.dataset.mf]=t.dataset.mf==='q'?t.value.replace(/[^\d.٫٠-٩]/g,''):t.value;clSave()}});
+  card.addEventListener('change',async e=>{const t=e.target;if(t.dataset.mf==='src'){cl[+t.dataset.mi].materials[+t.dataset.mj].src=t.value;clSave();return}
+   if(t.dataset.ip==null)return;const i=+t.dataset.ip,files=[...t.files].slice(0,10);if(!files.length)return;toast('جارٍ رفع الصور…');
+   try{let gp=null;try{const g=await geo();gp={lat:g.lat,lng:g.lng,acc:g.acc}}catch(_){}
+    for(const f of files){const d=await compress(f);await C.api.woUpload(id,t.dataset.k,d,myName(),gp,i)}
+    D.curPh=await C.api.woPhotos(id);openPh.add(i);redraw(i);toast('تم رفع الصور')}catch(er){toast(woSql(er.message),'e')}});
+ }
+ /* arrival photos: fresh pictures only; the third one also records «وصل للموقع» with the location */
+ document.querySelectorAll('[data-arr]').forEach(inp=>inp.onchange=async()=>{const f=inp.files[0];if(!f)return;
+  if(f.lastModified&&Date.now()-f.lastModified>2*36e5){toast('هذه الصورة قديمة — التقط صورة جديدة الآن','w');inp.value='';return}
+  toast('جارٍ رفع الصورة…');let gp=null;try{const g=await geo();gp={lat:g.lat,lng:g.lng,acc:g.acc}}catch(_){}
+  try{const d=await compress(f,2600,.8);await C.api.woUpload(id,'arrival',d,myName(),gp,null,inp.dataset.arr);
+   const P=await C.api.woPhotos(id),all=WO_ARR.every(([t])=>P.some(p=>p.kind==='arrival'&&p.tag===t));
+   if(all&&!ev.some(e=>e.type==='arrive'))try{await C.api.woAct(id,'arrive',null,gp)}catch(_){}
+   toast(all?'✅ اكتمل توثيق الوصول':'تم رفع الصورة');const y=scrollY;await woRefresh(id);scrollTo(0,y)}catch(er){toast(woSql(er.message),'e')}});
  document.querySelectorAll('[data-wk]').forEach(i=>i.onchange=async()=>{const files=[...i.files].slice(0,8);if(!files.length)return;toast('جارٍ رفع الصور…');
   try{for(const f of files){const d=await compress(f);await C.api.woUpload(id,i.dataset.wk,d,myName(),null)}toast('تم رفع الصور');woDetail(id,true)}catch(e){toast(woSql(e.message),'e')}});
  $('#wo-na').onclick=async()=>{const n=S($('#wo-n').value);if(!n){toast('اكتب الملاحظة','w');return}try{await C.api.woAct(id,'note',n);await woRefresh(id)}catch(e){toast(woSql(e.message),'e')}};
  document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>woDo(w,b.dataset.act,cl));
 }
 function ciRes(x){return x.res||(x.done?'ok':'')}
-function ciRow(x,i,on){const r=ciRes(x),b=(k,l)=>`<button type="button" class="${k} ${r===k?'on':''}" data-ci="${i}" data-r="${k}" ${on?'':'disabled'}>${l}</button>`;
- return `<div class="ci ${r==='fix'?'fixed':''}" data-row="${i}"><div class="t">${esc(x.t)}${x.tool?`<small>🔧 ${esc(x.tool)}</small>`:''}</div>
-  <div class="seg">${b('ok','✅ سليم')}${b('fix','⚠️ يحتاج إصلاح')}${b('na','➖ لا ينطبق')}</div>
-  ${r==='fix'?(on?`<input class="in" data-cn="${i}" placeholder="صف المشكلة (مثال: فيش مكسور في فصل 3)" value="${esc(x.note||'')}">`:x.note?`<div class="muted" style="margin-top:4px">📝 ${esc(x.note)}</div>`:''):''}</div>`}
-function ciSum(cl){const c={ok:0,fix:0,na:0};cl.forEach(x=>{const r=ciRes(x);if(r)c[r]++});return `<div class="cisum"><span>✅ ${fmt(c.ok)}</span><span>⚠️ ${fmt(c.fix)}</span><span>➖ ${fmt(c.na)}</span></div>`}
-function woBindCi(cl,save){document.querySelectorAll('[data-cn]').forEach(n=>n.oninput=()=>{cl[+n.dataset.cn].note=S(n.value);save()})}
+const CI_R=[['ok','✅ سليم'],['fix','⚠️ يحتاج إصلاح'],['fixed','🔧 تم الإصلاح'],['na','➖ لا ينطبق']];
+const MAT_SRC={store:'مستودع',buy:'شراء'};
+function ciPhotos(i,on,need){const P=(D.curPh||[]).filter(p=>p.item===i),row=(k,l,req)=>{const L=P.filter(p=>p.kind===k);
+  return `<div class="cph"><span class="${req&&!L.length?'req':''}">${l}${req?' *':''}</span>${L.map(p=>`<a href="${esc(p.d)}" target="_blank" rel="noopener"><img src="${esc(p.d)}" alt=""></a>`).join('')}${on?`<label class="plus">+<input type="file" accept="image/*" capture="environment" multiple data-ip="${i}" data-k="${k}" hidden></label>`:''}${!on&&!L.length?'<i class="muted">—</i>':''}</div>`};
+ return row('before','📷 قبل',need.b)+row('after','✅ بعد',need.a)}
+function ciRow(x,i,on,open){const r=ciRes(x),b=([k,l])=>`<button type="button" class="${k} ${r===k?'on':''}" data-ci="${i}" data-r="${k}" ${on?'':'disabled'}>${l}</button>`;
+ const P=(D.curPh||[]).filter(p=>p.item===i),need={b:r==='fix'||r==='fixed',a:r==='fixed'},showPh=need.b||P.length||(open&&open.has(i));
+ const mats=r==='fixed'?`<div class="mat"><div class="mh">🧰 المواد المستخدمة *</div>${(x.materials||[]).map((m,j)=>on?`<div class="mr"><input class="in" data-mi="${i}" data-mj="${j}" data-mf="n" placeholder="المادة" value="${esc(m.n||'')}"><input class="in" data-mi="${i}" data-mj="${j}" data-mf="q" inputmode="decimal" placeholder="الكمية" value="${esc(m.q||'')}"><input class="in" data-mi="${i}" data-mj="${j}" data-mf="u" placeholder="الوحدة" value="${esc(m.u||'')}"><select class="in" data-mi="${i}" data-mj="${j}" data-mf="src">${Object.entries(MAT_SRC).map(([k,l])=>`<option value="${k}" ${m.src===k?'selected':''}>${l}</option>`).join('')}</select><button type="button" class="del" data-mi="${i}" data-mdel="${j}">🗑</button></div>`
+   :`<div class="mrv">• ${esc(m.n)} — ${esc(m.q)} ${esc(m.u||'')} <span class="muted">(${MAT_SRC[m.src]||'—'})</span></div>`).join('')}${on?`<button type="button" class="madd" data-madd="${i}">➕ إضافة مادة</button>`:''}</div>`:'';
+ const note=['fix','fixed'].includes(r)?(on?`<input class="in" data-cn="${i}" placeholder="${r==='fix'?'صف المشكلة (مثال: فيش مكسور في فصل 3)':'ما الذي تم إصلاحه؟'}" value="${esc(x.note||'')}">`:x.note?`<div class="muted" style="margin-top:4px">📝 ${esc(x.note)}</div>`:''):'';
+ return `<div class="ci ${r==='fix'?'fixed':r==='fixed'?'rep':''}" data-row="${i}"><div class="t"><span class="no">${i+1}</span> ${esc(x.t)}${x.tool?`<small>🔧 ${esc(x.tool)}</small>`:''}</div>
+  <div class="seg">${CI_R.map(b).join('')}</div>${note}${mats}
+  ${showPh?ciPhotos(i,on,need):on?`<button type="button" class="shph" data-shph="${i}">📷 إضافة صور للبند</button>`:''}</div>`}
+function ciSum(cl){const c={ok:0,fix:0,fixed:0,na:0};cl.forEach(x=>{const r=ciRes(x);if(r)c[r]++});return `<div class="cisum"><span>✅ ${fmt(c.ok)}</span><span>⚠️ ${fmt(c.fix)}</span><span>🔧 ${fmt(c.fixed)}</span><span>➖ ${fmt(c.na)}</span></div>`}
+/* what is still missing before «تم الإجراء» (the server checks the same) */
+function woMissing(w,cl){const out=[],P=D.curPh||[];
+ if(S(w.school)&&!WO_ARR.every(([t])=>P.some(p=>p.kind==='arrival'&&p.tag===t)))out.push('صور الوصول الثلاث (لوحة المدرسة، المدخل، السور)');
+ cl.forEach((x,i)=>{const r=ciRes(x),has=k=>P.some(p=>p.item===i&&p.kind===k),miss=[];
+  if(r==='fixed'){if(!(x.materials||[]).some(m=>S(m.n)&&+String(m.q).replace('٫','.')>0))miss.push('المواد وكمياتها');if(!has('before'))miss.push('صورة قبل');if(!has('after'))miss.push('صورة بعد')}
+  if(r==='fix'){if(!has('before'))miss.push('صورة قبل');if(!S(x.note))miss.push('وصف المشكلة')}
+  if(miss.length)out.push(`البند ${i+1}: ${miss.join('، ')}`)});
+ return out}
 async function woRefresh(id){try{D.wo=await C.api.woList()}catch(e){}if(id&&(D.wo||[]).some(x=>x.id===id))woDetail(id,true);else woView()}
 async function woDo(w,a,cl){let note=null,gp=null,data=undefined;
  if(a==='reject'||a==='return'){note=prompt(a==='reject'?'سبب الرفض (مطلوب)':'ما المطلوب تصحيحه؟ (مطلوب)');if(note===null)return;if(!S(note)){toast('السبب مطلوب','w');return}}
  if(a==='cancel'&&!confirm('إلغاء أمر العمل نهائياً؟'))return;
  if(a==='close'&&!confirm('اعتماد الإنجاز وإغلاق الأمر؟'))return;
- if(a==='done'){const open=cl.filter(x=>!ciRes(x)).length,fix=cl.filter(x=>ciRes(x)==='fix'),noNote=fix.filter(x=>!S(x.note)).length;
+ if(a==='done'){const miss=woMissing(w,cl);if(miss.length){alert('لا يمكن الإرسال قبل استكمال التوثيق:\n\n• '+miss.slice(0,8).join('\n• ')+(miss.length>8?`\n… و${fmt(miss.length-8)} أخرى`:''));return}
+  const open=cl.filter(x=>!ciRes(x)).length,fix=cl.filter(x=>ciRes(x)==='fix').length,fixed=cl.filter(x=>ciRes(x)==='fixed').length;
   if(open&&!confirm(`${fmt(open)} من بنود الفحص بدون نتيجة. إرسال «تم الإجراء» على أي حال؟`))return;
-  if(noNote&&!confirm(`${fmt(noNote)} بند «يحتاج إصلاح» بدون وصف للمشكلة. إرسال على أي حال؟`))return;
-  data=cl;note=prompt(fix.length?`ملاحظة الإنجاز (اختياري) — ${fmt(fix.length)} بند يحتاج إصلاح`:'ملاحظة الإنجاز (اختياري)')||null;if(fix.length)note=[note,`⚠️ ${fmt(fix.length)} بند يحتاج إصلاح`].filter(Boolean).join(' — ')}
+  data=cl;note=prompt('ملاحظة الإنجاز (اختياري)')||null;note=[note,fixed?`🔧 ${fmt(fixed)} بند تم إصلاحه`:'',fix?`⚠️ ${fmt(fix)} بند يحتاج إصلاح`:''].filter(Boolean).join(' — ')||null}
  if(a==='arrive'){try{const g=await geo();gp={lat:g.lat,lng:g.lng,acc:g.acc}}catch(e){if(!confirm((e.message||'تعذر تحديد الموقع')+' — تسجيل الوصول بدون موقع؟'))return}}
  if(a==='reassign'){let L=[];try{L=await C.api.woAssignable()}catch(e){toast(woSql(e.message),'e');return}
   const opts=L.filter(p=>p.id!==w.assignee);if(!opts.length){toast('لا يوجد موظفون آخرون يمكن الإسناد لهم','w');return}
@@ -885,7 +941,7 @@ async function woDo(w,a,cl){let note=null,gp=null,data=undefined;
  const ok={accept:'تم قبول الأمر',reject:'تم رفض الأمر',start:'بدأ التنفيذ',arrive:'تم تسجيل الوصول',done:'تم الإرسال — بانتظار الاعتماد',close:'تم اعتماد الأمر وإغلاقه',return:'أُعيد الأمر للتصحيح',cancel:'تم إلغاء الأمر',reassign:'تمت إعادة الإسناد'};
  document.querySelectorAll('[data-act]').forEach(b=>b.disabled=true);
  try{await C.api.woAct(w.id,a,note,gp,data);toast(ok[a]||'تم');await woRefresh(w.id);woPull()}
- catch(e){const m=String(e.message);toast(/after photo/.test(m)?'أضف صورة «بعد» أولاً':/reason required/.test(m)?'السبب مطلوب':/not allowed/.test(m)?'هذا الإجراء غير متاح لك الآن':woSql(m),'e');document.querySelectorAll('[data-act]').forEach(b=>b.disabled=false)}}
+ catch(e){const m=String(e.message);toast(/after photo/.test(m)?'أضف صورة «بعد» أولاً':/arrival photos/.test(m)?'التقط صور الوصول الثلاث أولاً':/item documentation required/.test(m)?`البند ${m.match(/(\d+)/)?.[1]||''} ينقصه توثيق (صور أو مواد)`:/reason required/.test(m)?'السبب مطلوب':/not allowed/.test(m)?'هذا الإجراء غير متاح لك الآن':woSql(m),'e');document.querySelectorAll('[data-act]').forEach(b=>b.disabled=false)}}
 
 /* new order — standalone, or prefilled from a ticket */
 async function woNew(pre){pre=pre||{};let L=[];try{L=await C.api.woAssignable()}catch(e){toast(woSql(e.message),'e');return}
