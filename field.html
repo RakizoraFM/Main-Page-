@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F10">
+<meta name="fm-version" content="F12">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -127,6 +127,11 @@ textarea.in{min-height:90px;line-height:1.8}
 .plan-btn{width:100%;margin-bottom:10px;background:#0f172a!important;color:#fff!important}
 .bnav button{position:relative}.bnav em{position:absolute;top:2px;left:calc(50% - 22px);min-width:17px;height:17px;border-radius:99px;background:#dc2626;color:#fff;font:900 10.5px/17px Cairo,sans-serif;font-style:normal;padding:0 4px}
 /* F9: inspection result per checklist item, materials, item photos, arrival photos */
+.ci.g .lv{display:flex;flex-direction:column;gap:5px;margin-top:6px}.ci.g .lv button{display:flex;gap:8px;align-items:center;text-align:right;border:1px solid var(--line);border-right:5px solid var(--c);background:#fff;border-radius:10px;padding:8px 10px;font:700 13px Cairo,Tahoma,sans-serif;color:var(--ink)}
+.ci.g .lv button i{font-style:normal;font-weight:900;color:var(--c);min-width:14px}.ci.g .lv button.on{background:color-mix(in srgb,var(--c) 14%,#fff);border-color:var(--c);font-weight:900}.ci.g .lv button:disabled{opacity:.6}
+.ci.q{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center}.ci.q .qr{display:flex;gap:6px;align-items:center}.ci.q .qr span{font-size:11.5px;color:var(--mut)}.ci.q .qr .in{width:74px;margin:0;padding:7px}.ci.q .qr .in.u{width:64px}.ci.q .t{font-size:13px}
+.ci.tx .seg{grid-template-columns:repeat(auto-fit,minmax(80px,1fr))!important}
+.cisec{margin:12px 0 2px;background:#eef2ff;color:#3730a3;border-radius:10px;padding:7px 10px;font-weight:900;font-size:13.5px;display:flex;justify-content:space-between;gap:6px}.cisec span{color:#64748b;font-size:12px}
 .ci .t .no{display:inline-block;min-width:22px;text-align:center;background:#eef2ff;color:#3730a3;border-radius:6px;font-size:12px;margin-left:4px}
 .ci.rep{background:linear-gradient(90deg,transparent,#ecfeff)}.ci .seg .on.fixed{background:#cffafe;border-color:#0891b2;color:#164e63}
 .cph{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}.cph>span{font-weight:800;font-size:12.5px;min-width:52px}.cph>span.req{color:var(--bad)}
@@ -797,7 +802,7 @@ function planHtml(){const {route,noXY}=planData();const km=route.reduce((s,r)=>s
    <a class="big p" href="${gmaps}" target="_blank" rel="noopener" style="display:block">🧭 افتح المسار كاملاً في خرائط Google</a>`:'<div class="empty">لا توجد مدارس بها بلاغات مفتوحة وإحداثيات</div>'}
   ${noXY.length?`<div class="muted" style="margin-top:10px">مدارس عاجلة بدون إحداثيات: ${noXY.map(r=>esc(r.name)+' ('+fmt(r.open)+')').join('، ')}</div>`:''}</div>`}
 /* ---------- F8: work orders (assigned down the hierarchy, done by the assignee, approved by the assigner) ---------- */
-const WO_T={repair:['🔧','إصلاح'],preventive:['🛡️','صيانة وقائية'],inspection:['🔍','معاينة'],visit:['🏫','زيارة'],data:['📋','تجميع معلومات'],task:['📌','مهمة']};
+const WO_T={repair:['🔧','إصلاح'],preventive:['🛡️','صيانة وقائية'],inspection:['🔍','معاينة'],handover:['🔑','استلام موقع'],visit:['🏫','زيارة'],data:['📋','تجميع معلومات'],task:['📌','مهمة']};
 const WO_S={assigned:['📥','بانتظار القبول','c-warn'],accepted:['👍','مقبول','c-pri'],rejected:['⛔','مرفوض','c-bad'],in_progress:['🛠️','قيد التنفيذ','c-pri'],done:['📨','بانتظار الاعتماد','c-warn'],returned:['↩️','مُعاد للتصحيح','c-bad'],closed:['🔒','مغلق','c-ok'],cancelled:['🚫','ملغى','']};
 const WO_FINAL=s=>s==='closed'||s==='cancelled';
 const WO_PH={'طارئ':24,'عالي':48,'متوسط':72};
@@ -857,7 +862,7 @@ async function woDetail(id,keep){
  if(D.curWo!==id)return;
  const t=WO_T[w.type]||WO_T.task,isA=woMine(w),isC=woSent(w)||D.me?.role==='admin',act=!WO_FINAL(w.status)&&w.status!=='done'&&w.status!=='rejected',working=isA&&['accepted','in_progress','returned'].includes(w.status);
  const sc=w.school?D.db.find(x=>S(x.school)===S(w.school)):null,nav=sc&&hasXY(sc)?`https://www.google.com/maps/dir/?api=1&destination=${+sc.lat},${+sc.lng}`:w.school?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(w.school)}`:'';
- const cl=Array.isArray(w.checklist)?w.checklist:[],clDone=cl.filter(x=>ciRes(x)).length;
+ const cl=Array.isArray(w.checklist)?w.checklist:[],clDone=cl.filter(x=>ciNeed(x)&&ciRes(x)).length;
  /* F9: arrival documentation (3 photos) for a school order; checklist items carry their own before / after photos */
  D.curPh=ph;D.curOff=off;D.curW=w;const isSchool=!!S(w.school),arr=WO_ARR.map(([tag])=>ph.find(p=>p.kind==='arrival'&&p.tag===tag)),arrDone=!isSchool||arr.every(Boolean),itemsOn=working&&arrDone,openPh=new Set();
  const tick=k=>D.tickets.find(x=>S(x.ticket_id)===S(k));
@@ -884,7 +889,7 @@ async function woDetail(id,keep){
   ${isSchool&&(isA||arr.some(Boolean))?`<div class="card" id="arr-card"><h3>📍 توثيق الوصول للمدرسة ${arrDone?'<span class="okc">✅ مكتمل</span>':`<span class="muted">(${fmt(arr.filter(Boolean).length)} من ٣)</span>`}</h3>
    ${working&&!arrDone?'<div class="muted" style="margin-bottom:6px">التقط صورة بانوراما (أو صورة عريضة) لكل من لوحة المدرسة والمدخل والسور. تُسجَّل كل صورة مع موقعك ووقتها، والصورة الأقدم من ساعتين لا تُقبل.</div>':''}
    <div class="arr">${WO_ARR.map(([tag,ic,l],k)=>{const p=arr[k];return `<div class="as ${p?'done':''}">${p?`<a href="${esc(p.d)}" target="_blank" rel="noopener"><img src="${esc(p.d)}" alt=""></a>`:`<div class="ph0">${ic}</div>`}<b>${l}</b>${working?`<label class="mini">${p?'🔄 إعادة':'📷 التقاط'}<input type="file" accept="image/*" data-arr="${tag}" hidden></label>`:''}</div>`}).join('')}</div></div>`:''}
-  ${cl.length?`<div class="card" id="ci-card"><h3>☑️ بنود الفحص <span class="muted" id="ci-n">(${fmt(clDone)} من ${fmt(cl.length)})</span></h3>${working&&!arrDone?'<div class="note">🔒 وثّق الوصول للمدرسة أولاً (3 صور)، ثم سجّل نتائج البنود.</div>':''}${ciSum(cl)}${cl.map((x,i)=>ciRow(x,i,itemsOn,openPh)).join('')}</div>`:''}
+  ${cl.length?`<div class="card" id="ci-card"><h3>☑️ بنود الفحص <span class="muted" id="ci-n">(${fmt(clDone)} من ${fmt(cl.filter(ciNeed).length)})</span></h3>${working&&!arrDone?'<div class="note">🔒 وثّق الوصول للمدرسة أولاً (3 صور)، ثم سجّل نتائج البنود.</div>':''}${ciSum(cl)}${cl.map((x,i)=>(x.g&&x.g!==(cl[i-1]||{}).g?`<div class="cisec" data-g="${esc(x.g)}">📂 ${esc(x.g)} <span>${fmt(cl.filter(y=>y.g===x.g&&ciNeed(y)&&ciRes(y)).length)} / ${fmt(cl.filter(y=>y.g===x.g&&ciNeed(y)).length)}</span></div>`:'')+ciRow(x,i,itemsOn,openPh)).join('')}</div>`:''}
   <div class="card"><h3>📷 الصور</h3>
    ${working?`<div class="cam"><label>📷 قبل<input type="file" accept="image/*" capture="environment" multiple data-wk="before"></label><label>✅ بعد<input type="file" accept="image/*" capture="environment" multiple data-wk="after"></label></div>`:''}
    ${isC&&!isA&&act?`<div class="cam"><label>📎 مرفق توضيحي<input type="file" accept="image/*" multiple data-wk="attach"></label></div>`:''}
@@ -899,10 +904,14 @@ async function woDetail(id,keep){
     (when fixed) and its own before / after photos; saved after a short pause. One delegated handler for the whole card. */
  let clT=null;const clSave=()=>{clearTimeout(clT);clT=setTimeout(async()=>{try{await woSend({k:'woact',id,a:'checklist',data:JSON.parse(JSON.stringify(cl))});w.checklist=cl}catch(e){toast(woSql(e.message),'e')}},600)};
  const card=$('#ci-card'),redraw=i=>{const row=card.querySelector(`[data-row="${i}"]`);if(row)row.outerHTML=ciRow(cl[i],i,itemsOn,openPh);
-  const n=$('#ci-n');if(n)n.textContent=`(${fmt(cl.filter(ciRes).length)} من ${fmt(cl.length)})`;const sm=card.querySelector('.cisum');if(sm)sm.outerHTML=ciSum(cl)};
+  const n=$('#ci-n');if(n)n.textContent=`(${fmt(cl.filter(x=>ciNeed(x)&&ciRes(x)).length)} من ${fmt(cl.filter(ciNeed).length)})`;const sm=card.querySelector('.cisum');if(sm)sm.outerHTML=ciSum(cl);
+  card.querySelectorAll('.cisec[data-g]').forEach(h=>{const L=cl.filter(y=>y.g===h.dataset.g&&ciNeed(y));h.querySelector('span').textContent=`${fmt(L.filter(ciRes).length)} / ${fmt(L.length)}`})};
  if(card&&itemsOn){
   card.addEventListener('focusin',e=>{const t=e.target;if(t.dataset&&t.dataset.mf==='find'){card.querySelectorAll('.cbl').forEach(x=>{if(x!==t.parentNode.querySelector('.cbl'))x.hidden=true});ciList(t.parentNode.querySelector('.cbl'),t.value,+t.dataset.mi,t.dataset.all==='1')}});
   card.addEventListener('click',e=>{if(!e.target.closest('.cb'))card.querySelectorAll('.cbl').forEach(x=>x.hidden=true);const b=e.target.closest('button');if(!b)return;
+   if(b.dataset.lv!=null){const i=+b.dataset.li,x=cl[i],lv=+b.dataset.lv;if(x.lv===lv){delete x.lv;delete x.opt;x.res='';x.done=false}else{x.lv=lv;x.opt=lv?(x.opts||[])[lv-1]:'لا ينطبق';x.res=lv===0?'na':lv===1?'ok':'fix';x.done=true}
+    if(x.res!=='fix')delete x.note;redraw(i);const f=cl.findIndex(y=>y.k==='text'&&y.sug);if(f>=0)redraw(f);clSave();return}
+   if(b.dataset.tv!=null){const i=+b.dataset.tv;cl[i].v=cl[i].v===b.dataset.val&&!b.classList.contains('shph')?'':b.dataset.val;redraw(i);clSave();return}
    if(b.dataset.allm!=null){const inp=b.closest('.cb').querySelector('[data-mf=find]');inp.dataset.all=b.dataset.off?'':'1';ciList(b.closest('.cbl'),inp.value,+inp.dataset.mi,!b.dataset.off);return}
    if(b.dataset.pick!=null){const inp=b.closest('.cb').querySelector('[data-mf=find]'),i=+inp.dataset.mi,m=cl[i].materials[+inp.dataset.mj],c=(D.mats||[]).find(x=>x.id===b.dataset.pick);
     if(c){m.id=c.id;m.n=c.name;m.u=c.unit||'';if(m.src!=='buy')m.price=c.price!=null?String(c.price):''}else{m.id='__other';m.n=S(inp.value);if(m.src!=='buy')m.price=''}
@@ -914,6 +923,9 @@ async function woDetail(id,keep){
    else if(b.dataset.mdel!=null){const i=+b.dataset.mi;cl[i].materials.splice(+b.dataset.mdel,1);redraw(i);clSave()}
    else if(b.dataset.shph!=null){openPh.add(+b.dataset.shph);redraw(+b.dataset.shph)}});
   card.addEventListener('input',e=>{const t=e.target;
+   if(t.dataset.qv!=null){cl[+t.dataset.qv].q=t.value.replace(/[^\d.٫٠-٩]/g,'');const n=$('#ci-n');clSave();return}
+   if(t.dataset.qu!=null){cl[+t.dataset.qu].qu=S(t.value);clSave();return}
+   if(t.dataset.tx!=null){cl[+t.dataset.tx].v=t.value;clSave();return}
    if(t.dataset.cn!=null){cl[+t.dataset.cn].note=S(t.value);clSave()}
    else if(t.dataset.mf==='find'){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m.n=S(t.value);if(m.id){m.id='';t.parentNode.querySelector('.cbok')?.remove()}ciList(t.parentNode.querySelector('.cbl'),t.value,+t.dataset.mi,t.dataset.all==='1');clSave()}
    else if(t.dataset.mf&&!['id','src'].includes(t.dataset.mf)){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m[t.dataset.mf]=['q','price'].includes(t.dataset.mf)?t.value.replace(/[^\d.٫٠-٩]/g,''):t.value;clSave()}});
@@ -944,7 +956,24 @@ async function woDetail(id,keep){
  $('#wo-na').onclick=async()=>{const n=S($('#wo-n').value);if(!n){toast('اكتب الملاحظة','w');return}try{await C.api.woAct(id,'note',n);await woRefresh(id)}catch(e){toast(woSql(e.message),'e')}};
  document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>woDo(w,b.dataset.act,cl));
 }
-function ciRes(x){return x.res||(x.done?'ok':'')}
+function ciRes(x){if(x.k==='qty')return S(x.q)!==''?'val':'';if(x.k==='text')return S(x.v)!==''?'val':'';return x.res||(x.done?'ok':'')}
+function ciNeed(x){return x.k==='qty'?false:x.k==='text'?!!x.req:true}
+const LV_C=['#16a34a','#ca8a04','#ea580c','#dc2626'];
+/* the building's final condition suggested from the graded elements (average level, any «critical» element pulls it down) */
+function ciSuggest(cl){const L=cl.filter(x=>x.k==='grade'&&x.lv>0);if(!L.length)return '';const a=L.reduce((s,x)=>s+x.lv,0)/L.length,c4=L.filter(x=>x.lv===4).length;
+ let k=a<=1.3?0:a<=2?1:a<=2.7?2:3;if(c4>=3&&k<2)k=2;return ['جيد','مناسب','ضعيف','حرج'][k]}
+function ciRich(x,i,on,open){const r=ciRes(x),no=`<span class="no">${esc(x.no||String(i+1))}</span>`,dis=on?'':'disabled';
+ if(x.k==='grade'){const P=(D.curPh||[]).filter(p=>p.item===i),need={b:r==='fix',a:false},showPh=need.b||P.length||(open&&open.has(i));
+  return `<div class="ci g ${r==='fix'?'fixed':''}" data-row="${i}"><div class="t">${no} ${esc(x.t)}</div>
+   <div class="lv">${(x.opts||[]).map((o,j)=>`<button type="button" ${dis} data-lv="${j+1}" data-li="${i}" class="${x.lv===j+1?'on':''}" style="--c:${LV_C[j]||'#64748b'}"><i>${j+1}</i>${esc(o)}</button>`).join('')}<button type="button" ${dis} data-lv="0" data-li="${i}" class="${x.lv===0?'on':''}" style="--c:#64748b"><i>—</i>لا ينطبق</button></div>
+   ${r==='fix'?(on?`<input class="in" data-cn="${i}" placeholder="ملاحظة / الإجراء المطلوب (اختياري)" value="${esc(x.note||'')}">`:x.note?`<div class="muted">📝 ${esc(x.note)}</div>`:''):''}
+   ${showPh?ciPhotos(i,on,need):on?`<button type="button" class="shph" data-shph="${i}">📷 إضافة صور للعنصر</button>`:''}</div>`}
+ if(x.k==='qty')return `<div class="ci q" data-row="${i}"><div class="t">${esc(x.t)}</div><div class="qr"><span>الكمية المطلوبة</span><input class="in" inputmode="decimal" data-qv="${i}" ${dis} value="${esc(x.q??'')}" placeholder="0">${x.u?`<b>${esc(x.u)}</b>`:`<input class="in u" data-qu="${i}" ${dis} value="${esc(x.qu||'')}" placeholder="الوحدة">`}</div></div>`;
+ const sug=x.sug?ciSuggest((D.curW&&D.curW.checklist)||[]):'';
+ return `<div class="ci tx" data-row="${i}"><div class="t">${esc(x.t)}${x.req?' <span style="color:var(--bad)">*</span>':''}</div>
+  ${x.opts?`<div class="seg">${x.opts.map(o=>`<button type="button" ${dis} data-tv="${i}" data-val="${esc(o)}" class="${S(x.v)===o?'on ok':''}">${esc(o)}</button>`).join('')}</div>`
+   :`<input class="in" data-tx="${i}" ${dis} value="${esc(x.v||'')}" placeholder="${esc(x.ph||'')}" ${x.num?'inputmode="numeric"':''}>`}
+  ${sug?`<div class="muted" style="margin-top:4px">المقترح حسب تقييم العناصر: <b>${sug}</b>${on&&S(x.v)!==sug?` <button type="button" class="shph" data-tv="${i}" data-val="${sug}">اعتماد المقترح</button>`:''}</div>`:''}</div>`}
 async function woPhotosNow(id){let P=[];try{P=await C.api.woPhotos(id);const c=D.woC.get(id);if(c)c.ph=P}catch(e){P=(D.woC.get(id)||{}).ph||[]}return P.concat(await woPending(id))}
 async function woMats(){D.mats=lsGet('fmf_mats',null)||[];try{D.mats=await C.api.woMaterials();try{localStorage.setItem('fmf_mats',JSON.stringify(D.mats))}catch(_){}}catch(e){}return D.mats}
 async function woRepair(w,F){if(!navigator.onLine){toast('إنشاء أمر الإصلاح يحتاج اتصالاً بالإنترنت','w');return}
@@ -970,7 +999,7 @@ const MG={elec:{l:'كهرباء',cat:['كهرب'],txt:['كهرب','فيش','اف
 const MG_GEN=['عام','متنوع','عامه'];
 function ciGroupsOf(t){const n=ciN(t);return Object.keys(MG).filter(k=>MG[k].txt.some(w=>n.includes(w)))}
 function ciGroups(i){const w=D.curW||{},x=(w.checklist||[])[i]||{},sys=(S(w.description).match(/النظام:\s*([^\n]+)/)||[])[1]||'';
- return [...new Set([...ciGroupsOf(x.t||''),...ciGroupsOf(sys||w.title||'')])]}
+ return [...new Set([...ciGroupsOf(x.t||''),...(x.g?ciGroupsOf(x.g):ciGroupsOf(sys||w.title||''))])]}
 const ciCatIn=(c,G)=>{const n=ciN(c);return MG_GEN.some(g=>n.includes(ciN(g)))||G.some(k=>MG[k].cat.some(w=>n.includes(w)))};
 function ciList(box,q,i,all){const A=ciFind(q),G=i==null?[]:ciGroups(i),scoped=G.length&&!all,L=scoped?A.filter(x=>ciCatIn(x.category||'',G)):A,O=scoped&&S(q)?A.filter(x=>!L.includes(x)):[],w=ciN(q).split(/\s+/).filter(Boolean)[0]||'',e=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  /* highlight the first typed word (same length in the normalised text, so the indexes line up) */
@@ -985,7 +1014,7 @@ const ciNum=v=>+String(v??'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.index
 function ciPhotos(i,on,need){const P=(D.curPh||[]).filter(p=>p.item===i),row=(k,l,req)=>{const L=P.filter(p=>p.kind===k);if(k==='invoice'&&!req&&!L.length)return '';
   return `<div class="cph"><span class="${req&&!L.length?'req':''}">${l}${req?' *':''}</span>${L.map(p=>`<a href="${esc(p.d)}" target="_blank" rel="noopener"><img src="${esc(p.d)}" alt=""></a>`).join('')}${on?`<label class="plus">+<input type="file" accept="image/*" capture="environment" multiple data-ip="${i}" data-k="${k}" hidden></label>`:''}${!on&&!L.length?'<i class="muted">—</i>':''}</div>`};
  return row('before','📷 قبل',need.b)+row('after','✅ بعد',need.a)+row('invoice','🧾 فاتورة',need.inv)}
-function ciRow(x,i,on,open){const r=ciRes(x),b=([k,l])=>`<button type="button" class="${k} ${r===k?'on':''}" data-ci="${i}" data-r="${k}" ${on?'':'disabled'}>${l}</button>`;
+function ciRow(x,i,on,open){if(x.k)return ciRich(x,i,on,open);const r=ciRes(x),b=([k,l])=>`<button type="button" class="${k} ${r===k?'on':''}" data-ci="${i}" data-r="${k}" ${on?'':'disabled'}>${l}</button>`;
  const P=(D.curPh||[]).filter(p=>p.item===i),buy=r==='fixed'&&(x.materials||[]).some(m=>m.src==='buy'),need={b:r==='fix'||r==='fixed',a:r==='fixed',inv:buy},showPh=need.b||P.length||(open&&open.has(i));
  const M=D.mats||[],cats=[...new Set(M.map(c=>c.category||'أخرى'))],dat=(m,j,f)=>`data-mi="${i}" data-mj="${j}" data-mf="${f}"`;
  /* searchable list: type part of a name, every item containing it shows below (like a drop-down) */
@@ -1006,8 +1035,9 @@ function woMissing(w,cl){const out=[],P=D.curPh||[];
   if(r==='fixed'){const M=x.materials||[];if(!M.some(m=>S(m.n)&&ciNum(m.q)>0)||M.some(m=>!S(m.n)||!(ciNum(m.q)>0)))miss.push('المواد وكمياتها');
    if((D.mats||[]).length&&M.some(m=>S(m.n)&&!m.id))miss.push('اختيار المادة من نتائج البحث');if(!has('before'))miss.push('صورة قبل');if(!has('after'))miss.push('صورة بعد');
    if(M.some(m=>m.src==='buy')){if(M.some(m=>m.src==='buy'&&!(ciNum(m.price)>0)))miss.push('سعر المادة المشتراة');if(!has('invoice'))miss.push('صورة الفاتورة')}}
-  if(r==='fix'){if(!has('before'))miss.push('صورة قبل');if(!S(x.note))miss.push('وصف المشكلة')}
-  if(miss.length)out.push(`البند ${i+1}: ${miss.join('، ')}`)});
+  if(r==='fix'){if(!has('before'))miss.push('صورة قبل');if(!x.k&&!S(x.note))miss.push('وصف المشكلة')}
+  if(x.k==='text'&&x.req&&!S(x.v))miss.push('القيمة مطلوبة');
+  if(miss.length)out.push(`${x.no?'البند '+x.no+' ('+x.t+')':x.k?x.t:'البند '+(i+1)}: ${miss.join('، ')}`)});
  return out}
 async function woRefresh(id){try{D.wo=await C.api.woList()}catch(e){}if(!D.wo)D.wo=[];if(id&&(D.wo||[]).some(x=>x.id===id))woDetail(id,true);else woView()}
 async function woDo(w,a,cl){let note=null,gp=null,data=undefined;
@@ -1015,7 +1045,7 @@ async function woDo(w,a,cl){let note=null,gp=null,data=undefined;
  if(a==='cancel'&&!confirm('إلغاء أمر العمل نهائياً؟'))return;
  if(a==='close'&&!confirm('اعتماد الإنجاز وإغلاق الأمر؟'))return;
  if(a==='done'){const miss=woMissing(w,cl);if(miss.length){alert('لا يمكن الإرسال قبل استكمال التوثيق:\n\n• '+miss.slice(0,8).join('\n• ')+(miss.length>8?`\n… و${fmt(miss.length-8)} أخرى`:''));return}
-  const open=cl.filter(x=>!ciRes(x)).length,fix=cl.filter(x=>ciRes(x)==='fix').length,fixed=cl.filter(x=>ciRes(x)==='fixed').length;
+  const open=cl.filter(x=>ciNeed(x)&&!ciRes(x)).length,fix=cl.filter(x=>ciRes(x)==='fix').length,fixed=cl.filter(x=>ciRes(x)==='fixed').length;
   if(open&&!confirm(`${fmt(open)} من بنود الفحص بدون نتيجة. إرسال «تم الإجراء» على أي حال؟`))return;
   data=cl;note=prompt('ملاحظة الإنجاز (اختياري)')||null;note=[note,fixed?`🔧 ${fmt(fixed)} بند تم إصلاحه`:'',fix?`⚠️ ${fmt(fix)} بند يحتاج إصلاح`:''].filter(Boolean).join(' — ')||null}
  if(a==='arrive'){try{const g=await geo();gp={lat:g.lat,lng:g.lng,acc:g.acc}}catch(e){if(!confirm((e.message||'تعذر تحديد الموقع')+' — تسجيل الوصول بدون موقع؟'))return}}
@@ -1052,7 +1082,7 @@ async function woNew(pre){pre=pre||{};let L=[];try{L=await C.api.woAssignable()}
  $('#f-pr').onchange=e=>{$('#f-du').value=dueFor(e.target.value)};
  $('#f-go').onclick=async()=>{const o={title:S($('#f-ti').value),type:$('#f-ty').value,assignee:$('#f-as').value,school:S($('#f-sc').value),priority:$('#f-pr').value,
    due_at:$('#f-du').value?new Date($('#f-du').value).toISOString():'',description:S($('#f-de').value),
-   checklist:$('#f-cl').value.split('\n').map(S).filter(Boolean).map(l=>{const i=l.lastIndexOf('|');return i>0?{t:S(l.slice(0,i)),tool:S(l.slice(i+1)),done:false}:{t:l,done:false}}),ticket_refs:$('#f-tk').value.split(/[,،\s]+/).map(S).filter(Boolean),
+   checklist:(()=>{let g='';const out=[];$('#f-cl').value.split('\n').map(S).filter(Boolean).forEach(l=>{if(/^##/.test(l)){g=S(l.replace(/^#+/,''));return}const i=l.lastIndexOf('|');out.push(Object.assign(i>0?{t:S(l.slice(0,i)),tool:S(l.slice(i+1)),done:false}:{t:l,done:false},g?{g}:{}))});return out})(),ticket_refs:$('#f-tk').value.split(/[,،\s]+/).map(S).filter(Boolean),
    region:(D.tickets.find(t=>S(t.school)===S($('#f-sc').value))||{}).region||(D.me?.regions||[])[0]||''};
   if(!o.title){toast('اكتب عنوان الأمر','w');return}
   const b=$('#f-go');b.disabled=true;b.textContent='…';
