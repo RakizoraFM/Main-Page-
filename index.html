@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V156">
+<meta name="fm-version" content="V157">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25530,9 +25530,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V156',date:'2026-10-12',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V157',date:'2026-10-12',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+{v:'V157',d:'2026-10-12',t:'المسميات الوظيفية والبورتال',i:['عشرة مسميات: مدير النظام، مدير الإدارة، مدير المشروع، مدير العمليات، مدير المنطقة، مهندس المنطقة، المشرف، المقاول، مدير الأمن والسلامة، مدير الجودة والتخطيط','الصلاحيات في قاعدة البيانات حسب المسمى: النطاق (الكل / المنطقة / الفريق)، والإسناد لمن تحته، والاعتماد','«بورتالي»: صفحة لكل مستخدم بمسماه ونطاقه وأرقامه واختصاراته وصلاحياته، وإخفاء الصفحات غير اللازمة له','إدارة المستخدمين: المسمى الوظيفي بدل الدور (والاستيراد من Excel يقبله)']},
 {v:'V156',d:'2026-10-12',t:'إسناد التواصل من قاعدة المدارس',i:['«مراجعة الإسناد من قاعدة المدارس»: كل مشرف ومهندس في القاعدة مع عدد مدارسه وحسابه في المنصة (مطابقة بالبريد ثم بالاسم)','إنشاء حسابات الناقصين من القاعدة بكلمة مرور مؤقتة تُغيَّر عند أول دخول','إسناد كل المدارس لأصحابها بضغطة، وربط كل مشرف بمهندسه، وإيقاف الإسنادات التي خرجت من القاعدة']},
 {v:'V155',d:'2026-10-12',t:'المهندس يرى تواصل فريقه',i:['المهندس (والمشرف) يرى في «التواصل مع المدارس» مدارس وسجلات وملاحظات من يتبعونه في التسلسل الإداري، وأداءهم الشهري','يستطيع متابعة ملاحظات فريقه وإغلاقها بإجراء (تُسجَّل في سجل التعديلات)، وتسجيل التواصل يبقى لصاحب الإسناد فقط']},
 {v:'V154',d:'2026-10-12',t:'برنامج التواصل الاستباقي مع المدارس',i:['صفحة «التواصل مع المدارس»: خطة التواصل وتغطية الدورة (المشرف أسبوعياً والمهندس شهرياً)، وسجل التواصل (هاتف / واتساب / زيارة) مع الإثبات','الملاحظات والإجراءات بمهلة 48 ساعة (24 للعاجلة)، وسجل تعديلات، وإنشاء أمر عمل مرتبط لأحد أفراد الفريق','الأداء الشهري لكل موظف، والمستهدفات، وإسناد المدارس من قاعدة المدارس المشتركة، وتصدير CSV وطباعة','تبويب «التواصل» في تطبيق الميدان للمشرف والمهندس']},
@@ -26991,7 +26992,7 @@ const GROUPS=[
  {k:'data',icon:'🗂️',t:'البيانات والإعداد',ids:['v2-nav-school-db','v2-nav-fm125-contacts','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-quality','v2-nav-refresh']},
  {k:'system',icon:'⚙️',t:'النظام',ids:['v2-nav-fm122-settings','v2-nav-fm116']}
 ];
-const TOP=['v2-nav-solution','v2-nav-actions','v2-nav-fm145-wo'],DANGER='fm-v38-clear-all-nav';
+const TOP=['v2-nav-portal','v2-nav-solution','v2-nav-actions','v2-nav-fm145-wo'],DANGER='fm-v38-clear-all-nav';
 const KEY='fm_nav_groups_v123';
 const lsGet=()=>{try{return JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){return null}};
 const lsSet=v=>{try{localStorage.setItem(KEY,JSON.stringify(v))}catch(e){}};
@@ -29274,7 +29275,7 @@ async function bulkDialog(ids){
  await askUser(false);const R=rules();
  const w=document.createElement('div');w.className='fm122-dlg-wrap';document.body.appendChild(w);
  w.innerHTML=`<div class="fm122-dlg" style="width:min(620px,95vw)"><h3>تحديث ${fmt(ids.length)} بلاغ مرة واحدة</h3><div class="meta">نفس المرحلة والوصف تُطبَّق على كل البلاغات المحددة، ويُسجَّل باسمك في سجل كل بلاغ.</div>
-  <label>المرحلة</label><select id="b-st">${STAGES.filter(s=>s.k!=='closed'||!window.fmV136Role?.()||['admin','engineer'].includes(window.fmV136Role())).map(s=>`<option value="${s.k}">${s.ic} ${s.t}</option>`).join('')}${!window.fmV136Role?.()||['admin','engineer'].includes(window.fmV136Role())?'<option value="cancelled">⛔ ملغى</option>':''}</select>
+  <label>المرحلة</label><select id="b-st">${STAGES.filter(s=>s.k!=='closed'||!window.fmV136Role?.()||['admin','manager','engineer'].includes(window.fmV136Role())).map(s=>`<option value="${s.k}">${s.ic} ${s.t}</option>`).join('')}${!window.fmV136Role?.()||['admin','engineer'].includes(window.fmV136Role())?'<option value="cancelled">⛔ ملغى</option>':''}</select>
   <label>وصف الحل / الملاحظة</label><textarea id="b-desc" style="width:100%;min-height:80px;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:10px;padding:8px;font:600 13px Cairo"></textarea>
   <div class="two"><div><label>تاريخ ووقت الحل</label><input type="datetime-local" id="b-rat" value="${toLocalInput(Date.now())}"></div><div><label>سبب العطل</label><select id="b-cause"><option value="">—</option>${CAUSES.map(c=>`<option>${c}</option>`).join('')}</select></div></div>
   ${R.photo?'<div class="fm125-hint">شرط «صورة بعد الحل» لا يُطبَّق في التحديث الجماعي — أضف الصور من إدارة كل بلاغ.</div>':''}
@@ -29473,7 +29474,13 @@ window.FMCloud={__core:true,cfg,setCfg,api:real,msg:ARmsg,uuid,engClient:sb,
  configured:()=>{const c=cfg();return !!(c.url&&c.key)},
  /* in-app state */
  state:{on:false,profile:null},
- ROLE:{admin:'مدير النظام',engineer:'مهندس',supervisor:'مشرف',contractor:'مقاول',viewer:'مشاهد (إدارة)',pending:'بانتظار التفعيل'}};
+ ROLE:{admin:'مدير النظام',manager:'مدير (مشروع / عمليات / منطقة)',staff:'إدارة مساندة (سلامة / جودة)',engineer:'مهندس',supervisor:'مشرف',contractor:'مقاول',viewer:'مشاهد (إدارة)',pending:'بانتظار التفعيل'},
+ /* V157: the ten job titles; the technical role follows the title (set by the database) */
+ POS:{sysadmin:'مدير النظام',dept_manager:'مدير الإدارة',project_manager:'مدير المشروع',ops_manager:'مدير العمليات',area_manager:'مدير المنطقة',area_engineer:'مهندس المنطقة',supervisor:'المشرف',contractor:'المقاول',hse_manager:'مدير الأمن والسلامة',qa_manager:'مدير الجودة والتخطيط'},
+ POSROLE:{sysadmin:'admin',dept_manager:'viewer',project_manager:'manager',ops_manager:'manager',area_manager:'manager',area_engineer:'engineer',supervisor:'supervisor',contractor:'contractor',hse_manager:'staff',qa_manager:'staff'},
+ POSRANK:{sysadmin:9,dept_manager:8,project_manager:7,ops_manager:6,area_manager:5,area_engineer:4,supervisor:3,contractor:2,hse_manager:0,qa_manager:0},
+ posOf:u=>u&&(u.job_title||{admin:'sysadmin',engineer:'area_engineer',supervisor:'supervisor',contractor:'contractor'}[u.role])||'',
+ posLabel(u){const k=this.posOf(u);return k?this.POS[k]:(this.ROLE[u&&u.role]||'')}};
 })();
 
 
@@ -29496,8 +29503,8 @@ const WKEY='fm_ticket_work_v135';
 const SHARED=['fm_school_master_db_v1','fm_contractors_v1','fm_settings_v122','monthlyDensityThresholdV2','fm_work_rules_v135','fm_msg_templates_v130','fm_escalation_v130','fm_analysis_v131'];
 const role=()=>st.on&&st.profile?st.profile.role:null;
 const isAdmin=()=>!st.on||role()==='admin';
-const canClose=()=>!st.on||['admin','engineer'].includes(role());
-const canEdit=()=>!st.on||['admin','engineer','supervisor','contractor'].includes(role());
+const canClose=()=>!st.on||['admin','manager','engineer'].includes(role());
+const canEdit=()=>!st.on||['admin','manager','engineer','supervisor','contractor'].includes(role());
 window.fmV136Role=role;
 window.fmV136Me=()=>st.on&&st.profile?(S(st.profile.full_name)||S(st.profile.email)):'';
 
@@ -29542,11 +29549,11 @@ async function start(fresh){
  }catch(e){console.warn('V136 start',e);toast('السحابة: '+C.msg(e.message),'error');chip(e.message);window.fmV144Fail?.(e)}
 }
 window.fmV136Start=start;
-function applyRole(){const b=document.body;['admin','engineer','supervisor','contractor','viewer'].forEach(r=>b.classList.toggle('fm136-'+r,role()===r));b.classList.toggle('fm136-cloud',st.on);b.classList.toggle('fm136-ro',st.on&&role()==='viewer')}
+function applyRole(){const b=document.body;['admin','manager','staff','engineer','supervisor','contractor','viewer'].forEach(r=>b.classList.toggle('fm136-'+r,role()===r));b.classList.toggle('fm136-cloud',st.on);b.classList.toggle('fm136-ro',st.on&&['viewer','staff'].includes(role()))}
 function chip(err){let c=document.getElementById('fm136-chip');const nav=document.querySelector('nav.v2-nav');if(!nav)return;
  if(!c){c=document.createElement('div');c.id='fm136-chip';c.className='fm136-chip';nav.insertBefore(c,nav.firstChild)}
  if(!C.configured()){c.remove();return}
- const p=st.profile;c.innerHTML=st.on?`<div class="u"><b>👤 ${esc(window.fmV136Me())}</b><span>${esc(ROLE[p.role]||p.role)}${p.regions?.length?' • '+p.regions.map(r=>RN[r]||r).join('، '):''}</span></div><div class="a"><button type="button" data-c="sync" title="تحديث البيانات من السحابة">🔄</button><button type="button" data-c="out" title="تسجيل الخروج">⎋</button></div><div class="s" id="fm136-sync">${err?'⚠️ '+esc(C.msg(err)):'☁️ متصل'}</div>`:`<div class="u"><b>☁️ السحابة</b><span>${err?esc(C.msg(err)):'غير متصل'}</span></div><div class="a"><button type="button" data-c="in">دخول</button></div>`;
+ const p=st.profile;c.innerHTML=st.on?`<div class="u"><b>👤 ${esc(window.fmV136Me())}</b><span>${esc(C.posLabel(p)||p.role)}${p.regions?.length?' • '+p.regions.map(r=>RN[r]||r).join('، '):''}</span></div><div class="a"><button type="button" data-c="sync" title="تحديث البيانات من السحابة">🔄</button><button type="button" data-c="out" title="تسجيل الخروج">⎋</button></div><div class="s" id="fm136-sync">${err?'⚠️ '+esc(C.msg(err)):'☁️ متصل'}</div>`:`<div class="u"><b>☁️ السحابة</b><span>${err?esc(C.msg(err)):'غير متصل'}</span></div><div class="a"><button type="button" data-c="in">دخول</button></div>`;
  c.querySelector('[data-c=sync]')?.addEventListener('click',()=>pullAll(true,true));
  c.querySelector('[data-c=out]')?.addEventListener('click',async()=>{if(!confirm('تسجيل الخروج من السحابة؟'))return;await C.api.signOut().catch(()=>{});location.reload()});
  c.querySelector('[data-c=in]')?.addEventListener('click',()=>loginScreen())}
@@ -29902,7 +29909,7 @@ const esc=s=>S(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':
 const fmt=n=>Number(n||0).toLocaleString('ar-EG');
 const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
 const RN={riyadh:'الرياض',qassim:'القصيم'};
-const ROLE=C.ROLE;
+const ROLE=C.ROLE,POS=C.POS,POSROLE=C.POSROLE,posOf=u=>C.posOf(u);
 const me=()=>C.state&&C.state.profile||{};
 const loginUrl=()=>/^https?:$/.test(location.protocol)?location.origin+location.pathname.replace(/[^/]*$/,'')+'start.html':'https://rakizorafm.github.io/Main-Page-/start.html';
 const isEmail=e=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(S(e));
@@ -29913,7 +29920,9 @@ function genPw(){const A='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz',N='234
 
 /* role and region parsing for the Excel import */
 const ROLE_IN=Object.assign({},...Object.entries(ROLE).map(([k,v])=>({[k]:k,[v]:k})),{'مدير':'admin','ادمن':'admin','أدمن':'admin','مشاهد':'viewer','ادارة':'viewer','إدارة':'viewer','مشرف':'supervisor','مهندس':'engineer','مقاول':'contractor'});
-const roleOf=v=>{v=S(v);return ROLE_IN[v]||ROLE_IN[v.toLowerCase()]||''};
+const POS_IN=Object.assign({},...Object.entries(C.POS).map(([k,v])=>({[k]:k,[v]:k,[v.replace(/^ال/,'')]:k})),{'مدير الامن والسلامة':'hse_manager','مدير السلامة':'hse_manager','مدير الجودة':'qa_manager','مدير الادارة':'dept_manager','مهندس':'area_engineer','مشرف':'supervisor','مقاول':'contractor'});
+const posIn=v=>{v=S(v).replace(/\s+/g,' ');return POS_IN[v]||POS_IN[v.toLowerCase()]||''};
+const roleOf=v=>{v=S(v);const p=posIn(v);return p?POSROLE[p]:(ROLE_IN[v]||ROLE_IN[v.toLowerCase()]||'')};
 const listOf=v=>S(v).split(/[,،;\n|]+/).map(S).filter(Boolean);
 const regionsOf=v=>listOf(v).map(x=>/رياض|riyadh/i.test(x)?'riyadh':/قصيم|qassim/i.test(x)?'qassim':/الكل|all/i.test(x)?'*':'?').filter(x=>x!=='*');
 const yes=v=>{v=S(v);return v===''?null:!/^(لا|no|false|0|موقوف|غير مفعل)$/i.test(v)};
@@ -29939,10 +29948,10 @@ function tagsHtml(names,id){return `<div class="fm141-tags">${names.map((n,i)=>`
   <div class="fm141-add"><input list="fm141-dl-${esc(id)}" placeholder="أضف اسماً كما في البلاغات" data-nin><button type="button" data-nadd>＋</button></div>`}
 function datalist(id,role){return `<datalist id="fm141-dl-${esc(id)}">${namePool(role).map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`}
 
-/* «reports to»: anyone of a higher rank (work orders flow down this line) */
-const RK={admin:4,engineer:3,supervisor:2,contractor:1};
-function bossOpts(u){const r=RK[u.role]||0;const L=cache.filter(x=>x.id!==u.id&&(RK[x.role]||0)>r&&x.active!==false).sort((a,b)=>(RK[b.role]||0)-(RK[a.role]||0)||S(a.full_name).localeCompare(S(b.full_name),'ar'));
- return `<option value="">—</option>${L.map(x=>`<option value="${esc(x.id)}" ${u.reports_to===x.id?'selected':''}>${esc(x.full_name||x.email)} (${esc(ROLE[x.role]||x.role)})</option>`).join('')}`}
+/* «reports to»: anyone of a higher rank (work orders flow down this line); V157: ranked by job title */
+const RK=u=>C.POSRANK[posOf(u)]||0;
+function bossOpts(u){const r=RK(u);const L=cache.filter(x=>x.id!==u.id&&RK(x)>r&&x.active!==false).sort((a,b)=>RK(b)-RK(a)||S(a.full_name).localeCompare(S(b.full_name),'ar'));
+ return `<option value="">—</option>${L.map(x=>`<option value="${esc(x.id)}" ${u.reports_to===x.id?'selected':''}>${esc(x.full_name||x.email)} (${esc(C.posLabel(x))})</option>`).join('')}`}
 /* ---------------- the table ---------------- */
 const edits={};let cache=[],flt={q:'',role:''};
 async function usersTable(box){
@@ -29954,16 +29963,16 @@ const cur=u=>Object.assign({},u,edits[u.id]||{});
 function draw(box){
  const L=cache.map(cur),pend=L.filter(u=>u.role==='pending').length;
  const q=S(flt.q).toLowerCase();
- const V=L.filter(u=>(!flt.role||u.role===flt.role)&&(!q||(S(u.full_name)+' '+S(u.email)+' '+(u.person_names||[]).join(' ')).toLowerCase().includes(q)));
+ const V=L.filter(u=>(!flt.role||posOf(u)===flt.role||(flt.role==='pending'&&u.role==='pending'))&&(!q||(S(u.full_name)+' '+S(u.email)+' '+(u.person_names||[]).join(' ')).toLowerCase().includes(q)));
  box.innerHTML=`<h3>👥 المستخدمون والصلاحيات ${pend?`<span class="fm131-tag fm131-prev">${fmt(pend)} بانتظار التفعيل</span>`:''}</h3>
   <div class="q">عدّل الاسم والدور والأسماء التي تمثل المستخدم في البلاغات ومناطقه ثم اضغط «حفظ» في صفه. المستخدم الجديد يحصل على كلمة مرور مؤقتة ويُطلب منه تغييرها عند أول دخول.</div>
   <div class="fm141-bar"><button type="button" class="fm103-btn primary" data-t="new">➕ مستخدم جديد</button><button type="button" class="fm103-btn" data-t="imp">⬆️ استيراد Excel</button><button type="button" class="fm103-btn" data-t="exp">⬇️ تصدير Excel</button><button type="button" class="fm103-btn" data-t="tpl">📄 قالب الاستيراد</button>
-   <input type="search" placeholder="🔎 بحث بالاسم أو البريد" value="${esc(flt.q)}" data-t="q"><select data-t="role"><option value="">كل الأدوار</option>${Object.entries(ROLE).map(([k,v])=>`<option value="${k}" ${flt.role===k?'selected':''}>${v}</option>`).join('')}</select>
+   <input type="search" placeholder="🔎 بحث بالاسم أو البريد" value="${esc(flt.q)}" data-t="q"><select data-t="role"><option value="">كل المسميات</option>${Object.entries(Object.assign({},POS,{pending:'بانتظار التفعيل'})).map(([k,v])=>`<option value="${k}" ${flt.role===k?'selected':''}>${v}</option>`).join('')}</select>
    <span class="fm125-src">${fmt(V.length)} من ${fmt(L.length)}</span><input type="file" accept=".xlsx,.xls,.csv" hidden data-t="file"></div>
-  <div class="fm122-tw" style="max-height:none"><table class="fm122-t fm141-t"><thead><tr><th>المستخدم</th><th>الدور</th><th>يتبع لـ</th><th>اسمه في البلاغات</th><th>المناطق</th><th>مفعّل</th><th></th></tr></thead><tbody>
+  <div class="fm122-tw" style="max-height:none"><table class="fm122-t fm141-t"><thead><tr><th>المستخدم</th><th>المسمى الوظيفي</th><th>يتبع لـ</th><th>اسمه في البلاغات</th><th>المناطق</th><th>مفعّل</th><th></th></tr></thead><tbody>
   ${V.map(u=>`<tr data-u="${esc(u.id)}" style="${u.role==='pending'?'background:#fffbeb':''}">
    <td><div style="display:flex;gap:8px;align-items:flex-start">${u.avatar?`<img src="${esc(u.avatar)}" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex:none">`:''}<div style="flex:1"><input class="nm" data-f="full_name" value="${esc(u.full_name||'')}"><div class="fm125-src" dir="ltr" style="text-align:right">${esc(u.email||'')}${u.phone?' • '+esc(u.phone):''}</div></div></div>${u.must_change_pw?'<span class="fm141-flag">بانتظار تغيير كلمة المرور</span>':''}</td>
-   <td><select data-f="role">${Object.entries(ROLE).map(([k,v])=>`<option value="${k}" ${u.role===k?'selected':''}>${v}</option>`).join('')}</select></td>
+   <td><select data-f="pos"><option value="">${u.role==='pending'?'— بانتظار التفعيل —':'— اختر —'}</option>${Object.entries(POS).map(([k,v])=>`<option value="${k}" ${posOf(u)===k?'selected':''}>${v}</option>`).join('')}</select></td>
    <td><select data-f="reports_to">${bossOpts(u)}</select></td>
    <td data-names>${tagsHtml(u.person_names||[],u.id)}${datalist(u.id,u.role)}</td>
    <td>${['riyadh','qassim'].map(r=>`<label style="display:flex;gap:4px;align-items:center;font-weight:700;white-space:nowrap"><input type="checkbox" data-r="${r}" ${(u.regions||[]).includes(r)?'checked':''} style="width:auto">${RN[r]}</label>`).join('')}<div class="fm125-src">بدون اختيار = كل المناطق</div></td>
@@ -29977,11 +29986,12 @@ function draw(box){
  box.querySelectorAll('tr[data-u]').forEach(tr=>bindRow(tr,box));
 }
 function rowState(tr){const id=tr.dataset.u,base=cache.find(x=>x.id===id)||{},e=edits[id]||{};
- return {id,full_name:S(tr.querySelector('[data-f=full_name]').value),role:tr.querySelector('[data-f=role]').value,
+ const pos=tr.querySelector('[data-f=pos]').value;
+ return {id,full_name:S(tr.querySelector('[data-f=full_name]').value),job_title:pos||null,role:pos?POSROLE[pos]:(base.role||'pending'),
   reports_to:tr.querySelector('[data-f=reports_to]')?.value||null,person_names:e.person_names||base.person_names||[],regions:[...tr.querySelectorAll('[data-r]:checked')].map(c=>c.dataset.r),active:tr.querySelector('[data-f=active]').checked}}
 function bindRow(tr,box){
  const id=tr.dataset.u,mark=()=>{const s=rowState(tr);edits[id]=s;tr.querySelector('[data-save]').classList.add('fm141-dirty')};
- tr.querySelectorAll('[data-f],[data-r]').forEach(i=>{i.oninput=mark;i.onchange=()=>{mark();if(i.dataset.f==='role'){tr.querySelector('datalist').outerHTML=datalist(id,i.value);const b=tr.querySelector('[data-f=reports_to]');b.innerHTML=bossOpts(Object.assign({},cache.find(x=>x.id===id),{role:i.value,reports_to:b.value}))}}});
+ tr.querySelectorAll('[data-f],[data-r]').forEach(i=>{i.oninput=mark;i.onchange=()=>{mark();if(i.dataset.f==='pos'){tr.querySelector('datalist').outerHTML=datalist(id,POSROLE[i.value]||'');const b=tr.querySelector('[data-f=reports_to]');b.innerHTML=bossOpts(Object.assign({},cache.find(x=>x.id===id),{role:i.value,reports_to:b.value}))}}});
  const names=()=>[...(edits[id]?.person_names||cache.find(x=>x.id===id)?.person_names||[])];
  const redrawNames=list=>{edits[id]=Object.assign(rowState(tr),{person_names:list});const cell=tr.querySelector('[data-names]');cell.innerHTML=tagsHtml(list,id)+datalist(id,edits[id].role);bindNames();tr.querySelector('[data-save]').classList.add('fm141-dirty')};
  const bindNames=()=>{
@@ -29993,7 +30003,7 @@ function bindRow(tr,box){
   if(!s.full_name){toast('اكتب اسم المستخدم','warning');return}
   if(['supervisor','engineer','contractor'].includes(s.role)&&!s.person_names.length){toast('أضف اسمه كما يظهر في البلاغات حتى يرى بلاغاته','warning');return}
   if(id===me().id&&s.role!=='admin'&&!confirm('ستفقد صلاحية مدير النظام لحسابك. متابعة؟'))return;
-  b.disabled=true;try{await C.api.saveProfile(id,{full_name:s.full_name,role:s.role,reports_to:s.reports_to,person_names:s.person_names,regions:s.regions,active:s.active});
+  b.disabled=true;try{await C.api.saveProfile(id,{full_name:s.full_name,role:s.role,job_title:s.job_title,reports_to:s.reports_to,person_names:s.person_names,regions:s.regions,active:s.active});
    Object.assign(cache.find(x=>x.id===id),s);delete edits[id];b.classList.remove('fm141-dirty');toast('تم حفظ بيانات المستخدم')}catch(er){toast(C.msg(er.message),'error')}b.disabled=false};
  tr.querySelector('[data-pw]').onclick=async e=>{const u=cache.find(x=>x.id===id);if(!confirm(`إنشاء كلمة مرور مؤقتة جديدة لـ ${u.full_name||u.email}؟\nكلمة المرور الحالية لن تعمل بعد ذلك.`))return;
   const b=e.currentTarget,pw=genPw();b.disabled=true;
@@ -30009,13 +30019,13 @@ function newUser(box){
  let names=[];const pw0=genPw();
  const d=dlg(`<h3>➕ مستخدم جديد</h3>
   <div class="two"><div><label>الاسم الكامل *</label><input id="nu-n" autocomplete="off"></div><div><label>البريد الإلكتروني *</label><input id="nu-e" type="email" dir="ltr" autocomplete="off"></div></div>
-  <div class="two"><div><label>الدور *</label><select id="nu-r">${Object.entries(ROLE).filter(([k])=>k!=='pending').map(([k,v])=>`<option value="${k}" ${k==='supervisor'?'selected':''}>${v}</option>`).join('')}</select></div>
+  <div class="two"><div><label>المسمى الوظيفي *</label><select id="nu-r">${Object.entries(POS).map(([k,v])=>`<option value="${k}" ${k==='supervisor'?'selected':''}>${v}</option>`).join('')}</select></div>
    <div><label>المناطق</label><div style="display:flex;gap:14px;padding-top:6px">${['riyadh','qassim'].map(r=>`<label style="display:flex;gap:4px;align-items:center;font-weight:700;margin:0"><input type="checkbox" data-r="${r}" style="width:auto">${RN[r]}</label>`).join('')}</div><div class="fm125-src">بدون اختيار = كل المناطق</div></div></div>
   <label>اسمه في البلاغات</label><div id="nu-names"></div>
   <label>كلمة المرور المؤقتة</label><div class="fm141-pw"><input id="nu-p" value="${esc(pw0)}"><button type="button" class="fm122-mini" id="nu-g" style="white-space:nowrap">🔄 توليد</button></div>
   <div class="fm125-hint">سيُطلب منه تغيير كلمة المرور عند أول دخول.</div>
   <div class="row"><button class="p" id="nu-go">إنشاء المستخدم</button><button id="nu-x">إلغاء</button></div>`,640);
- const role=()=>d.querySelector('#nu-r').value;
+ const role=()=>POSROLE[d.querySelector('#nu-r').value];
  const drawNames=()=>{const c=d.querySelector('#nu-names');c.innerHTML=tagsHtml(names,'new')+datalist('new',role());
   c.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{names.splice(+b.dataset.rm,1);drawNames()});
   const inp=c.querySelector('[data-nin]'),add=()=>{const v=S(inp.value);if(v&&!names.includes(v))names.push(v);drawNames();d.querySelector('#nu-names [data-nin]').focus()};
@@ -30031,18 +30041,18 @@ function newUser(box){
   if(['supervisor','engineer','contractor'].includes(o.role)&&!o.person_names.length&&!confirm('لم تضف اسمه في البلاغات — لن يرى أي بلاغ حتى تضيفه. متابعة؟'))return;
   if(cache.some(u=>S(u.email).toLowerCase()===o.email)){toast('هذا البريد مسجل مسبقاً','warning');return}
   const b=e.currentTarget;b.disabled=true;b.textContent='…';
-  try{await C.api.createUser(o);d.close();showCred(o,o.password,'✅ تم إنشاء المستخدم');usersTable(box)}
+  try{const nid=await C.api.createUser(o);const jt=d.querySelector('#nu-r').value;if(nid&&jt)await C.api.saveProfile(nid,{job_title:jt}).catch(()=>{});d.close();showCred(o,o.password,'✅ تم إنشاء المستخدم');usersTable(box)}
   catch(er){toast(pwErr(er),'error');b.disabled=false;b.textContent='إنشاء المستخدم'}};
 }
 
 /* ---------------- Excel ---------------- */
-const HEAD=['الاسم','البريد الإلكتروني','الدور','المناطق','الاسم في البلاغات','مفعّل'];
+const HEAD=['الاسم','البريد الإلكتروني','المسمى الوظيفي','المناطق','الاسم في البلاغات','مفعّل'];
 /* optional import column: «يتبع لـ» = the manager's e-mail */
 function needX(){if(window.XLSX&&XLSX.utils)return true;toast('مكتبة Excel غير محمّلة — تحقق من الاتصال بالإنترنت','error');return false}
 function save(rows,name,widths){const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=(widths||rows[0].map(()=>22)).map(w=>({wch:w}));ws['!views']=[{RTL:true}];const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};XLSX.utils.book_append_sheet(wb,ws,'المستخدمون');XLSX.writeFile(wb,name)}
 const today=()=>new Date().toISOString().slice(0,10);
 function exportUsers(){if(!needX())return;
- save([HEAD.concat(['الجوال','يتبع لـ','بانتظار تغيير كلمة المرور','تاريخ الإنشاء']),...cache.map(cur).map(u=>[S(u.full_name),S(u.email),ROLE[u.role]||u.role,(u.regions||[]).map(r=>RN[r]||r).join('، ')||'الكل',(u.person_names||[]).join('، '),u.active!==false?'نعم':'لا',S(u.phone),S(cache.find(x=>x.id===u.reports_to)?.email),u.must_change_pw?'نعم':'',u.created_at?new Date(u.created_at).toLocaleDateString('ar-SA-u-ca-gregory'):''])],
+ save([HEAD.concat(['الجوال','يتبع لـ','بانتظار تغيير كلمة المرور','تاريخ الإنشاء']),...cache.map(cur).map(u=>[S(u.full_name),S(u.email),C.posLabel(u)||ROLE[u.role]||u.role,(u.regions||[]).map(r=>RN[r]||r).join('، ')||'الكل',(u.person_names||[]).join('، '),u.active!==false?'نعم':'لا',S(u.phone),S(cache.find(x=>x.id===u.reports_to)?.email),u.must_change_pw?'نعم':'',u.created_at?new Date(u.created_at).toLocaleDateString('ar-SA-u-ca-gregory'):''])],
   `RakizoraFM-users-${today()}.xlsx`,[24,30,14,16,34,8,14,28,14,14]);toast('تم تصدير '+fmt(cache.length)+' مستخدم')}
 function exportTemplate(){if(!needX())return;
  save([HEAD.concat(['يتبع لـ']),['أحمد محمد','ahmed@example.com','مشرف','الرياض','أحمد محمد العتيبي','نعم','engineer@example.com'],['شركة المقاول','contractor@example.com','مقاول','الرياض، القصيم','مؤسسة البناء الحديث','نعم','ahmed@example.com']],'RakizoraFM-users-template.xlsx',[24,30,14,16,34,8,28]);
@@ -30058,18 +30068,18 @@ async function importFile(f,box){if(!needX())return;
   const email=S(col(r,['البريد الإلكتروني','البريد','email','Email','E-mail'])).toLowerCase();
   const fullName=S(col(r,['الاسم','الاسم الكامل','name','Name','Full name'],true));
   const nm=S(col(r,['الاسم في البلاغات','اسمه في البلاغات','البلاغات','names','Names']));
-  const roleRaw=S(col(r,['الدور','role','Role'])),role=roleRaw?roleOf(roleRaw):'';
+  const roleRaw=S(col(r,['المسمى الوظيفي','المسمى','الدور','role','Role'])),role=roleRaw?roleOf(roleRaw):'',jt=roleRaw?posIn(roleRaw):'';
   const regRaw=S(col(r,['المناطق','المنطقة','regions','Regions'])),regs=regRaw?regionsOf(regRaw):null;
   const act=yes(col(r,['مفعّل','مفعل','active','Active']));
   const boss=S(col(r,['يتبع لـ','يتبع ل','المدير المباشر','reports_to'])).toLowerCase();
-  const o={line:i+2,email,full_name:fullName,role,regions:regs,person_names:nm?listOf(nm):null,active:act,boss};
+  const o={line:i+2,email,full_name:fullName,role,job_title:jt||null,regions:regs,person_names:nm?listOf(nm):null,active:act,boss};
   const ex=byEmail.get(email);
   if(!isEmail(email))return Object.assign(o,{st:'err',msg:'بريد غير صحيح'});
   if(seen.has(email))return Object.assign(o,{st:'err',msg:'مكرر في الملف'});seen.add(email);
   if(roleRaw&&!role)return Object.assign(o,{st:'err',msg:'دور غير معروف: '+roleRaw});
   if(regs&&regs.includes('?'))return Object.assign(o,{st:'err',msg:'منطقة غير معروفة'});
   if(!ex){if(!o.full_name)return Object.assign(o,{st:'err',msg:'الاسم مطلوب للمستخدم الجديد'});if(!role)return Object.assign(o,{st:'err',msg:'الدور مطلوب للمستخدم الجديد'});return Object.assign(o,{st:'new',msg:'مستخدم جديد'})}
-  const patch={};if(o.full_name&&o.full_name!==S(ex.full_name))patch.full_name=o.full_name;if(role&&role!==ex.role)patch.role=role;
+  const patch={};if(o.full_name&&o.full_name!==S(ex.full_name))patch.full_name=o.full_name;if(role&&role!==ex.role)patch.role=role;if(jt&&jt!==ex.job_title)patch.job_title=jt;
   if(regs&&regs.slice().sort().join()!==(ex.regions||[]).slice().sort().join())patch.regions=regs;
   if(o.person_names&&o.person_names.join('|')!==(ex.person_names||[]).join('|'))patch.person_names=o.person_names;
   if(act!=null&&act!==(ex.active!==false)&&ex.id!==me().id)patch.active=act;
@@ -30090,7 +30100,7 @@ async function importFile(f,box){if(!needX())return;
  d.querySelector('#im-go').onclick=async e=>{const b=e.currentTarget;b.disabled=true;d.dataset.lock='1';d.querySelector('#im-x').disabled=true;
   const creds=[],errs=[];let ok=0,i=0;const todo=plan.filter(p=>p.st==='new'||p.st==='upd');
   for(const p of todo){i++;b.textContent=`… ${fmt(i)} / ${fmt(todo.length)}`;
-   try{if(p.st==='new'){const pw=genPw();await C.api.createUser({email:p.email,password:pw,full_name:p.full_name,role:p.role,regions:p.regions||[],person_names:p.person_names||[],active:p.active!==false});creds.push([p.full_name,p.email,pw,ROLE[p.role]||p.role,loginUrl()])}
+   try{if(p.st==='new'){const pw=genPw();const nid=await C.api.createUser({email:p.email,password:pw,full_name:p.full_name,role:p.role,regions:p.regions||[],person_names:p.person_names||[],active:p.active!==false});if(nid&&p.job_title)await C.api.saveProfile(nid,{job_title:p.job_title}).catch(()=>{});creds.push([p.full_name,p.email,pw,ROLE[p.role]||p.role,loginUrl()])}
     else{const pt=Object.assign({},p.patch);delete pt.__boss;if(Object.keys(pt).length)await C.api.saveProfile(p.id,pt)}ok++}
    catch(er){errs.push(`سطر ${p.line} (${p.email}): ${pwErr(er)}`)}}
   /* second pass: «يتبع لـ» */
@@ -30158,7 +30168,7 @@ function show(html){if(!gate){gate=document.createElement('div');gate.id='fm144-
  gate.querySelectorAll('[data-a=out]').forEach(b=>b.onclick=async()=>{try{await C.api.signOut()}catch(e){}location.replace('start.html')});
  gate.querySelectorAll('[data-a=re]').forEach(b=>b.onclick=()=>location.reload());return gate}
 window.fmV144Unlock=()=>{document.documentElement.classList.remove('fm144-lock');gate?.remove();gate=null};
-window.fmV144Allowed=async p=>p.role==='admin'||(p.active!==false&&(await roles()).includes(p.role));
+window.fmV144Allowed=async p=>['admin','manager','staff'].includes(p.role)||(p.active!==false&&(await roles()).includes(p.role));
 window.fmV144Block=p=>{if(!locked())return;
  show(`<h2>🔒 ليس لديك صلاحية دخول المنصة</h2><p><b>${esc(p.full_name||p.email)}</b> — ${esc(ROLE[p.role]||p.role)}</p>
   <p>المنصة متاحة فقط للأدوار التي يحددها مدير النظام. ${['supervisor','contractor'].includes(p.role)?'تابع بلاغاتك من تطبيق الميدان.':''}</p>
@@ -30216,9 +30226,9 @@ const ST={assigned:['📥','بانتظار القبول','warn'],accepted:['👍
 const PH={'طارئ':24,'عالي':48,'متوسط':72};
 const FINAL=s=>s==='closed'||s==='cancelled';
 const me=()=>C.state&&C.state.profile||{};
-const canAssign=()=>['admin','engineer','supervisor'].includes(me().role);
+const canAssign=()=>['admin','manager','staff','engineer','supervisor'].includes(me().role);
 const late=w=>w.due_at&&!FINAL(w.status)&&w.status!=='done'&&new Date(w.due_at)<new Date();
-const needsMe=w=>(w.assignee===me().id&&['assigned','returned'].includes(w.status))||((w.created_by===me().id||me().role==='admin')&&w.assignee!==me().id&&w.status==='done');
+const needsMe=w=>(w.assignee===me().id&&['assigned','returned'].includes(w.status))||((w.created_by===me().id||['admin','manager'].includes(me().role))&&w.assignee!==me().id&&w.status==='done');
 const sqlMsg=e=>/does not exist|schema cache|Could not find/i.test(String(e))?'أوامر العمل تحتاج تشغيل ملف supabase_setup.sql المحدَّث (القسم 10) مرة واحدة في Supabase':C.msg(String(e));
 const chip=w=>{const s=ST[w.status]||['','—',''];return `<span class="fm145-st ${s[2]}">${s[0]} ${s[1]}</span>`};
 let L=[],err='',F={k:'open',q:'',type:'',who:'',scope:'all'};
@@ -30272,7 +30282,7 @@ function dlg(html,w){const d=document.createElement('div');d.className='fm122-dl
 /* ---------- detail + the assigner's actions ---------- */
 async function detail(id){const w=L.find(x=>x.id===id);if(!w)return;
  const d=dlg('<div class="fm125-src">جارٍ التحميل…</div>');let ev=[],ph=[];try{[ev,ph]=await Promise.all([C.api.woEvents(id),C.api.woPhotos(id)])}catch(e){toast(sqlMsg(e.message),'error')}
- const t=T[w.type]||T.task,isC=w.created_by===me().id||me().role==='admin',isA=w.assignee===me().id,cl=Array.isArray(w.checklist)?w.checklist:[];
+ const t=T[w.type]||T.task,isC=w.created_by===me().id||['admin','manager'].includes(me().role),isA=w.assignee===me().id,cl=Array.isArray(w.checklist)?w.checklist:[];
  const act=(a,l,cls)=>`<button type="button" ${cls?`class="${cls}"`:''} data-act="${a}">${l}</button>`;
  let acts='';
  if(isC&&!isA&&w.status==='done')acts+=act('close','✔️ اعتماد وإغلاق','p')+act('return','↩️ إعادة للتصحيح');
@@ -30542,7 +30552,7 @@ const pct=b=>Math.round(b.closed/((b.n-b.cancelled)||1)*100);
 window.fmV146Panel=function(base,F){const B=batches(base);if(!B.length)return '';
  if(F.batch){const b=B.find(x=>x.id===F.batch);if(!b)return '';
   return `<div class="fm146-cur"><h4>🏘️ ${esc(b.title)}</h4><span>${fmt(b.n)} أمر • ${fmt(b.schools.size)} مدرسة • ${fmt(b.people.size)} موظف</span><span>✅ ${fmt(b.closed)} مغلق (${fmt(pct(b))}٪)</span><span>📨 ${fmt(b.done)} بانتظار الاعتماد</span>${b.late?`<span style="color:#b91c1c">⏰ ${fmt(b.late)} متأخر</span>`:''}${b.rej?`<span style="color:#b91c1c">⛔ ${fmt(b.rej)} مرفوض</span>`:''}
-   <div style="flex:1;min-width:120px">${bar(b)}</div>${(b.byId===X.me().id||X.me().role==='admin')?'<button type="button" data-b146="cancel">🚫 إلغاء المتبقي</button>':''}<button type="button" data-b146="all">✕ كل الأوامر</button></div>`}
+   <div style="flex:1;min-width:120px">${bar(b)}</div>${(b.byId===X.me().id||['admin','manager'].includes(X.me().role))?'<button type="button" data-b146="cancel">🚫 إلغاء المتبقي</button>':''}<button type="button" data-b146="all">✕ كل الأوامر</button></div>`}
  return `<details class="fm146-bp" ${B.length<=5?'open':''}><summary>🏘️ الحملات (${fmt(B.length)})</summary><table><thead><tr><th>الحملة</th><th>من</th><th>الأوامر</th><th>الإنجاز</th><th>مغلق</th><th>بانتظار الاعتماد</th><th>متأخر</th><th></th></tr></thead><tbody>
   ${B.map(b=>`<tr><td><b>${esc(b.title)}</b><br><small class="fm125-src">${X.dts(b.at)}</small></td><td>${esc(b.by||'')}</td><td>${fmt(b.n)}</td><td>${bar(b)}<small>${fmt(pct(b))}٪</small></td><td>${fmt(b.closed)}</td><td>${fmt(b.done)}</td><td>${b.late?`<b style="color:#b91c1c">${fmt(b.late)}</b>`:fmt(0)}</td><td><button type="button" data-b146-open="${esc(b.id)}">عرض</button></td></tr>`).join('')}</tbody></table></details>`};
 window.fmV146Bind=function(box,F){
@@ -30603,7 +30613,7 @@ window.fmV147TplBar=async function(d,pre,ctx){const h=d.querySelector('.fm122-dl
    ${[...new Set(READY_ALL().map(t=>t.g||'قوالب عامة'))].map(g=>`<optgroup label="${esc(g)}">${READY_ALL().filter(t=>(t.g||'قوالب عامة')===g).map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</optgroup>`).join('')}
    ${own.length?`<optgroup label="قوالبي">${own.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}${t.data?.schools?.length?` (${fmt(t.data.schools.length)} مدرسة)`:''}${t.shared?'':' 🔒'}</option>`).join('')}</optgroup>`:''}
    ${team.length?`<optgroup label="قوالب الفريق">${team.map(t=>`<option value="${esc(t.id)}">${esc(t.name)} — ${esc(t.created_by_name||'')}${t.data?.schools?.length?` (${fmt(t.data.schools.length)} مدرسة)`:''}</option>`).join('')}</optgroup>`:''}</select>
-   <button type="button" data-s>💾 حفظ كقالب</button><button type="button" data-del hidden>🗑️ حذف القالب</button>${window.fmV148Import&&['admin','engineer'].includes(X.me().role)?'<button type="button" data-imp>📥 استيراد من Excel</button>':''}`;
+   <button type="button" data-s>💾 حفظ كقالب</button><button type="button" data-del hidden>🗑️ حذف القالب</button>${window.fmV148Import&&['admin','manager','staff','engineer'].includes(X.me().role)?'<button type="button" data-imp>📥 استيراد من Excel</button>':''}`;
   bar.querySelector('[data-imp]')&&(bar.querySelector('[data-imp]').onclick=()=>window.fmV148Import(async()=>{mine=null;await templates(true);draw('')}));
   const se=bar.querySelector('[data-t]'),del=bar.querySelector('[data-del]');if(sel)se.value=sel;
   const find=()=>READY_ALL().find(t=>t.id===se.value)||T.find(t=>t.id===se.value);
@@ -30689,7 +30699,7 @@ window.fmV147Schedules=async function(){const d=X.dlg('<div class="fm125-src">ج
 
 /* due campaigns also run when the platform opens (when pg_cron is not set up on the server) */
 let ran=false;
-const runDue=()=>{if(ran||!C.state?.on||!['admin','engineer','supervisor'].includes(X.me().role))return;ran=true;
+const runDue=()=>{if(ran||!C.state?.on||!['admin','manager','staff','engineer','supervisor'].includes(X.me().role))return;ran=true;
  C.api.woRunDue().then(n=>{if(n>0)X.load().then(()=>{if(document.getElementById('fm145-page')?.classList.contains('open')&&!document.querySelector('.fm122-dlg-wrap'))X.render()})}).catch(()=>{})};
 setTimeout(runDue,8000);setTimeout(runDue,20000);
 })();
@@ -30799,8 +30809,8 @@ const sar=v=>Number(v||0).toLocaleString('ar-EG',{maximumFractionDigits:2})+' ر
 const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
 const num=v=>+String(v??'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace('٫','.').replace(/[^\d.]/g,'')||0;
 const res=x=>x.res||(x.done?'ok':'');
-const canAssign=()=>['admin','engineer','supervisor'].includes(X.me().role);
-const canCatalog=()=>['admin','engineer'].includes(X.me().role);
+const canAssign=()=>['admin','manager','staff','engineer','supervisor'].includes(X.me().role);
+const canCatalog=()=>['admin','manager','engineer'].includes(X.me().role);
 const msg=e=>{const m=String(e&&e.message||e);return /fm_wo_repair|wo_materials/.test(m)&&/does not exist|schema cache|Could not find/i.test(m)?'هذه الميزة تحتاج تشغيل ملف supabase_setup.sql المحدَّث (القسم 12) مرة واحدة في Supabase'
  :/nothing to repair/.test(m)?'لا توجد بنود «يحتاج إصلاح» بدون أمر إصلاح':/cannot assign/.test(m)?'لا يمكنك الإسناد لهذا الشخص':X.sqlMsg(m)};
 const fixOpen=w=>(Array.isArray(w.checklist)?w.checklist:[]).map((x,i)=>[x,i]).filter(([x])=>res(x)==='fix'&&!x.rwo);
@@ -30967,7 +30977,7 @@ window.fmV147TplBar=async function(d,pre,ctx){const h=d.querySelector('.fm122-dl
  async function draw(){T=await saved();const A=all(),one=sel.length===1?byId(sel[0]):null;
   bar.innerHTML=`<b>📑 القوالب</b><button type="button" class="pick" data-open><span>${sel.length?sel.map(id=>esc((byId(id)||{}).name||'')).join('، '):'— اختر قالباً أو أكثر —'}</span><span>▾</span></button>
    <button type="button" data-s>💾 حفظ كقالب</button>${one&&T.some(t=>t.id===one.id)&&(one.created_by===meId||isAdmin)?'<button type="button" data-del>🗑️ حذف القالب</button>':''}
-   ${window.fmV148Import&&['admin','engineer'].includes(X.me().role)?'<button type="button" data-imp>📥 استيراد من Excel</button>':''}`;
+   ${window.fmV148Import&&['admin','manager','staff','engineer'].includes(X.me().role)?'<button type="button" data-imp>📥 استيراد من Excel</button>':''}`;
   bar.querySelector('[data-open]').onclick=()=>panel();
   bar.querySelector('[data-s]').onclick=save;
   bar.querySelector('[data-imp]')&&(bar.querySelector('[data-imp]').onclick=()=>window.fmV148Import(async()=>{await saved(true);draw()}));
@@ -31224,10 +31234,10 @@ function name(id){return P.find(p=>p.id===id)?.full_name||(id===me.id?me.full_na
 function visible(){return A.filter(a=>a.active&&(!q||[a.school_name,a.school_code,name(a.user_id)].join(' ').toLowerCase().includes(q.toLowerCase())))}
 function root(){let r=document.getElementById('eng-page');if(!r){r=document.createElement('section');r.id='eng-page';r.dir='rtl';r.className='eng';document.body.append(r)}return r}
 async function open(){const r=root();r.hidden=false;r.innerHTML='<div class="eg-wrap">جارٍ تحميل بيانات التواصل…</div>';const g=++generation;
-try{db=await C.engClient();me=await C.api.me();if(!me?.id||me.active===false||!['admin','engineer','supervisor'].includes(me.role))throw Error('هذا القسم متاح لمدير النظام والمهندس والمشرف بعد تسجيل الدخول.');
-[A,L,O,T]=await Promise.all(['fm_eng_assignments','fm_eng_logs','fm_eng_observations','fm_eng_targets'].map(all));P=me.role==='admin'?await C.api.listProfiles():[me,...(await C.api.woAssignable().catch(()=>[])).filter(p=>p.id!==me.id)];error='';if(g===generation)render();}catch(e){if(g!==generation)return;error=e.message;r.innerHTML=`<div class="eg-wrap"><button id="eg-close">إغلاق</button><h2>التواصل مع المدارس</h2><p class="eg-error">${esc(error)}</p><p>إذا كانت جداول fm_eng غير موجودة، شغّل ملف school_engagement_setup.sql في Supabase أولًا. لا توجد بيانات تجريبية أو حفظ محلي بديل.</p><button id="eg-retry">إعادة المحاولة</button></div>`;r.querySelector('#eg-close').onclick=()=>r.hidden=true;r.querySelector('#eg-retry').onclick=open}}
+try{db=await C.engClient();me=await C.api.me();if(!me?.id||me.active===false||!['admin','manager','staff','viewer','engineer','supervisor'].includes(me.role))throw Error('هذا القسم متاح لمدير النظام والمهندس والمشرف بعد تسجيل الدخول.');
+[A,L,O,T]=await Promise.all(['fm_eng_assignments','fm_eng_logs','fm_eng_observations','fm_eng_targets'].map(all));P=me.role==='admin'?await C.api.listProfiles():[me,...(await db.rpc('fm_eng_people').then(x=>x.error?Promise.reject(x.error):(Array.isArray(x.data)?x.data:[])).catch(()=>C.api.woAssignable().catch(()=>[]))).filter(p=>p.id!==me.id)];error='';if(g===generation)render();}catch(e){if(g!==generation)return;error=e.message;r.innerHTML=`<div class="eg-wrap"><button id="eg-close">إغلاق</button><h2>التواصل مع المدارس</h2><p class="eg-error">${esc(error)}</p><p>إذا كانت جداول fm_eng غير موجودة، شغّل ملف school_engagement_setup.sql في Supabase أولًا. لا توجد بيانات تجريبية أو حفظ محلي بديل.</p><button id="eg-retry">إعادة المحاولة</button></div>`;r.querySelector('#eg-close').onclick=()=>r.hidden=true;r.querySelector('#eg-retry').onclick=open}}
 function render(){const r=root(),rows=visible(),done=rows.filter(covered).length,ml=L.filter(l=>day(l.at).startsWith(month)),openObs=O.filter(o=>o.status!=='closed'),late=openObs.filter(o=>Date.parse(o.due_at)<Date.now());
-r.innerHTML=`<div class="eg-wrap"><header><div><small>RakizoraFM · برنامج التواصل الاستباقي</small><h2>${me.role==='admin'?'إدارة التواصل مع المدارس':A.some(a=>a.user_id!==me.id)?'التواصل مع المدارس — أنا وفريقي':'تواصلي مع المدارس'}</h2><p>الهاتف · واتساب · الزيارات الميدانية</p></div><div><button id="eg-refresh">تحديث</button><button id="eg-close">إغلاق ×</button></div></header>
+r.innerHTML=`<div class="eg-wrap"><header><div><small>RakizoraFM · برنامج التواصل الاستباقي</small><h2>${me.role==='admin'?'إدارة التواصل مع المدارس':['manager','staff','viewer'].includes(me.role)?'متابعة التواصل مع المدارس':A.some(a=>a.user_id!==me.id)?'التواصل مع المدارس — أنا وفريقي':'تواصلي مع المدارس'}</h2><p>الهاتف · واتساب · الزيارات الميدانية</p></div><div><button id="eg-refresh">تحديث</button><button id="eg-close">إغلاق ×</button></div></header>
 <div class="eg-kpis"><article><b>${rows.length}</b>المدارس المسندة (حسب الموظف)</article><article><b>${done} / ${rows.length}</b>تغطية الدورة الحالية</article><article><b>${ml.filter(completed).length}</b>تواصل مكتمل في الشهر المختار</article><article><b>${late.length}</b>ملاحظات متأخرة</article></div>
 <nav>${[['plan','خطة التواصل'],['logs','سجل التواصل'],['observations','الملاحظات والإجراءات'],['performance','الأداء الشهري'],...(me.role==='admin'?[['settings','الإعدادات والإسناد']]:[])].map(([k,t])=>`<button data-tab="${k}" class="${tab===k?'on':''}">${t}</button>`).join('')}</nav>
 <div class="eg-tools"><input id="eg-search" placeholder="بحث بالمدرسة أو الرقم أو الموظف" value="${esc(q)}"><input id="eg-month" type="month" value="${month}"><button id="eg-export">تصدير CSV</button><button id="eg-print">طباعة / PDF</button></div><div id="eg-content"></div><p id="eg-message" role="status"></p><footer>الزيارة تُحتسب ضمن التغطية. عدم الرد لا يُحتسب. المؤشرات مبنية على السجلات المسجلة؛ انخفاض البلاغات وحده لا يثبت أثر البرنامج.</footer></div>`;
@@ -31247,7 +31257,7 @@ async function safe(fn){try{await fn()}catch(e){msg(e.message,true)}}
 function dialog(html){const d=document.createElement('dialog');d.className='eng eg-dialog';d.dir='rtl';d.innerHTML=html+'<button class="eg-cancel">إغلاق</button><p class="eg-error" role="status"></p>';document.body.append(d);d.querySelector('.eg-cancel').onclick=()=>d.close();d.onclose=()=>d.remove();d.showModal();return d;}
 function contact(id){const a=A.find(a=>a.id===id);const d=dialog(`<h3>بيانات مدير المدرسة</h3><label>الاسم<input id="principal" value="${esc(a.principal)}"></label><label>الهاتف<input id="phone" dir="ltr" value="${esc(a.phone)}"></label><button id="save">حفظ</button>`);d.querySelector('#save').onclick=async()=>{try{check(await db.from('fm_eng_assignments').update({principal:d.querySelector('#principal').value,phone:d.querySelector('#phone').value}).eq('school_code',a.school_code));d.close();await open()}catch(e){d.querySelector('p').textContent=e.message}}}
 function logForm(id){const a=A.find(a=>a.id===id),phone=a.phone.replace(/[^\d+]/g,'');const d=dialog(`<h3>تسجيل تواصل · ${esc(a.school_name)}</h3>${phone?`<p><a href="tel:${esc(phone)}">اتصال</a> · <a target="_blank" rel="noopener" href="https://wa.me/${phone.replace(/^\+/, '').replace(/^0/,'966')}">واتساب</a></p>`:'<p>بيانات هاتف المدير غير مكتملة؛ يُحدّثها مدير النظام.</p>'}<label>القناة<select id="channel"><option value="phone">هاتف</option><option value="whatsapp">واتساب</option><option value="visit">زيارة ميدانية</option></select></label><label>النتيجة<select id="outcome"><option value="clear">لا توجد ملاحظات</option><option value="observation">ملاحظات تحتاج متابعة</option><option value="urgent">ملاحظة عاجلة</option><option value="no_reply">لم يتم الرد</option></select></label><label><input type="checkbox" id="confirmed"> تمت المكالمة / ورد تأكيد واتساب / تمت الزيارة</label><label>ملخص التواصل والملاحظات<textarea id="summary" required></textarea></label><label>إثبات (صورة أو PDF، حتى 5 MB)<input type="file" id="proof" accept="image/jpeg,image/png,image/webp,application/pdf"></label><button id="geo">توثيق موقع الزيارة</button><small id="geo-state"></small><p>ملاحظات المتابعة تُفتح تلقائيًا بمهلة 48 ساعة؛ العاجلة 24 ساعة.</p><button id="save">حفظ التواصل</button>`);let geo=null;d.querySelector('#geo').onclick=()=>{if(!navigator.geolocation){d.querySelector('#geo-state').textContent='الموقع غير متاح';return}navigator.geolocation.getCurrentPosition(p=>{geo={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy};d.querySelector('#geo-state').textContent='تم تسجيل الموقع'},()=>{d.querySelector('#geo-state').textContent='تعذر الحصول على الموقع'}, {timeout:10000})};d.querySelector('#save').onclick=async e=>{const b=e.currentTarget;b.disabled=true;try{const channel=d.querySelector('#channel').value,outcome=d.querySelector('#outcome').value,summary=d.querySelector('#summary').value.trim(),confirmed=outcome!=='no_reply'&&d.querySelector('#confirmed').checked,file=d.querySelector('#proof').files[0];if(!summary)throw Error('اكتب ملخص التواصل');if(channel==='whatsapp'&&confirmed&&!file)throw Error('أرفق إثبات تأكيد الواتساب');if(channel==='visit'&&confirmed&&!file&&!geo)throw Error('وثّق الزيارة بالموقع أو محضر / صورة');let evidence_path=null;if(file){if(file.size>5242880||!['image/jpeg','image/png','image/webp','application/pdf'].includes(file.type))throw Error('نوع أو حجم المرفق غير مناسب');evidence_path=me.id+'/'+crypto.randomUUID();check(await db.storage.from('school-engagement').upload(evidence_path,file,{contentType:file.type}))}check(await db.rpc('fm_eng_submit',{p:{assignment_id:id,channel,outcome,summary,confirmed,evidence_path,geo}}));d.close();await open()}catch(e){d.querySelector('p.eg-error').textContent=e.message;b.disabled=false}};}
-function obForm(id){const o=O.find(o=>o.id===id),l=L.find(l=>l.id===o.log_id),a=A.find(a=>a.id===l.assignment_id);const d=dialog(`<h3>متابعة ملاحظة · ${esc(a.school_name)}</h3><p>${esc(l.summary)}</p><label>الحالة<select id="status">${['open','in_progress','closed'].map(s=>`<option value="${s}" ${o.status===s?'selected':''}>${{open:'مفتوح',in_progress:'قيد التنفيذ',closed:'مغلق'}[s]}</option>`).join('')}</select></label><label>الإجراء المتخذ<textarea id="action">${esc(o.action)}</textarea></label><label>رقم البلاغ الرسمي إن وُجد<input id="ticket" value="${esc(o.ticket_ref)}"></label><button id="save">حفظ المتابعة</button>${!o.wo_ref?'<button id="wo">إنشاء أمر عمل مرتبط</button><div id="wo-box"></div>':`<p>أمر مرتبط: ${esc(o.wo_ref)}</p>`}`);d.querySelector('#save').onclick=async()=>{try{const action=d.querySelector('#action').value.trim(),status=d.querySelector('#status').value;if(status==='closed'&&!action)throw Error('سجّل إجراء المعالجة قبل الإغلاق');check(await db.from('fm_eng_observations').update({status,action,ticket_ref:d.querySelector('#ticket').value.trim()}).eq('id',id));d.close();await open()}catch(e){d.querySelector('p.eg-error').textContent=e.message}};d.querySelector('#wo')&&(d.querySelector('#wo').onclick=async e=>{const b=e.currentTarget,box=d.querySelector('#wo-box'),err=d.querySelector('p.eg-error');b.disabled=true;
+function obForm(id){const o=O.find(o=>o.id===id),l=L.find(l=>l.id===o.log_id),a=A.find(a=>a.id===l.assignment_id);const d=dialog(`<h3>متابعة ملاحظة · ${esc(a.school_name)}</h3><p>${esc(l.summary)}</p><label>الحالة<select id="status">${['open','in_progress','closed'].map(s=>`<option value="${s}" ${o.status===s?'selected':''}>${{open:'مفتوح',in_progress:'قيد التنفيذ',closed:'مغلق'}[s]}</option>`).join('')}</select></label><label>الإجراء المتخذ<textarea id="action">${esc(o.action)}</textarea></label><label>رقم البلاغ الرسمي إن وُجد<input id="ticket" value="${esc(o.ticket_ref)}"></label><button id="save">حفظ المتابعة</button>${!o.wo_ref?'<button id="wo">إنشاء أمر عمل مرتبط</button><div id="wo-box"></div>':`<p>أمر مرتبط: ${esc(o.wo_ref)}</p>`}`);d.querySelector('#save').onclick=async()=>{try{const action=d.querySelector('#action').value.trim(),status=d.querySelector('#status').value;if(status==='closed'&&!action)throw Error('سجّل إجراء المعالجة قبل الإغلاق');const upd=check(await db.from('fm_eng_observations').update({status,action,ticket_ref:d.querySelector('#ticket').value.trim()}).eq('id',id).select('id'));if(Array.isArray(upd)&&!upd.length)throw Error('لا تملك صلاحية متابعة هذه الملاحظة');d.close();await open()}catch(e){d.querySelector('p.eg-error').textContent=e.message}};d.querySelector('#wo')&&(d.querySelector('#wo').onclick=async e=>{const b=e.currentTarget,box=d.querySelector('#wo-box'),err=d.querySelector('p.eg-error');b.disabled=true;
  try{const team=(await C.api.woAssignable()).filter(p=>p.id!==me.id);if(!team.length)throw Error('لا يوجد في فريقك من يمكن إسناد أمر عمل إليه');
   box.innerHTML=`<label>المُسند إليه<select id="wo-as">${team.map(p=>`<option value="${esc(p.id)}">${esc(p.full_name||p.email||p.id)}</option>`).join('')}</select></label><button id="wo-go">إنشاء الأمر</button>`;b.hidden=true;
   box.querySelector('#wo-go').onclick=async ev=>{ev.currentTarget.disabled=true;try{const x=await C.api.woCreate({title:'متابعة تواصل — '+a.school_name,type:'task',assignee:box.querySelector('#wo-as').value,school:a.school_name,region:a.region,building_id:a.school_code,priority:l.outcome==='urgent'?'طارئ':'متوسط',description:l.summary+'\nمرجع ملاحظة التواصل: '+id,due_at:o.due_at,checklist:[],ticket_refs:[]});
@@ -31286,7 +31296,7 @@ async function sync(){await safe(async()=>{const S=await schoolDb(),pl=plan(S),L
  const cr=box.querySelector('#eg-create');if(cr)cr.onclick=()=>safe(async()=>{const pw=box.querySelector('#eg-tmp').value;if(pw.length<8)throw Error('كلمة المرور المؤقتة 8 أحرف على الأقل');
   const sel=[...box.querySelectorAll('[data-new]:checked')].map(c=>L[+c.dataset.new]);if(!sel.length)throw Error('حدد شخصاً واحداً على الأقل');
   if(!confirm(`إنشاء ${sel.length} حساب بكلمة المرور المؤقتة؟ أعطها لهم ليدخلوا ويغيّروها.`))return;cr.disabled=true;let n=0;const fail=[];
-  for(const x of sel){try{await C.api.createUser({email:x.email,password:pw,full_name:x.name,role:x.role,regions:[...x.regions],person_names:[x.name]});n++}catch(er){fail.push(x.name+': '+(C.msg?C.msg(er.message):er.message))}cr.textContent=`… ${n} / ${sel.length}`}
+  for(const x of sel){try{const nid=await C.api.createUser({email:x.email,password:pw,full_name:x.name,role:x.role,regions:[...x.regions],person_names:[x.name]});if(nid)await C.api.saveProfile(nid,{job_title:x.role==='engineer'?'area_engineer':'supervisor'}).catch(()=>{});n++}catch(er){fail.push(x.name+': '+(C.msg?C.msg(er.message):er.message))}cr.textContent=`… ${n} / ${sel.length}`}
   P=await C.api.listProfiles();await sync();msg(`أُنشئ ${n} حساب${fail.length?' • تعذّر: '+fail.join('، '):''}`,!!fail.length)});
  box.querySelector('#eg-apply').onclick=e=>safe(async()=>{const b=e.currentTarget;b.disabled=true;const seen=new Map();
   ok.forEach(x=>x.schools.forEach(s=>seen.set(s.school_code+'|'+x.acc.id,{school_code:s.school_code,school_name:s.school_name,region:s.region,user_id:x.acc.id,active:true})));
@@ -31304,5 +31314,78 @@ window.fmEngOpen=open;
 if(!field){const mount=()=>{const nav=document.querySelector('nav.v2-nav');if(!nav||document.getElementById('v2-nav-eng'))return;const b=document.createElement('button');b.id='v2-nav-eng';b.type='button';b.className='v2-nav-btn';b.title='التواصل مع المدارس';b.innerHTML='<i class="fas fa-comments"></i><span class="v2-nav-label">التواصل مع المدارس</span>';b.onclick=open;nav.append(b)};
  if(document.querySelector('nav.v2-nav'))mount();else addEventListener('load',mount);}
 })();
-</script></body>
+</script><style id="fm-v157-portal-css">
+/* V157 — a portal per job title: who I am, what I may do, my numbers, my shortcuts */
+#fm157-portal{position:fixed;inset:0;z-index:99990;background:#f4f7fb;overflow:auto;direction:rtl;font-family:Cairo,Tahoma,sans-serif;color:#0f172a}
+#fm157-portal[hidden]{display:none!important}
+#fm157-portal .w{max-width:1180px;margin:auto;padding:24px 18px 40px}
+#fm157-portal .hd{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;background:linear-gradient(135deg,#1e3a8a,#4338ca);color:#fff;border-radius:20px;padding:20px 22px}
+#fm157-portal .hd h2{margin:2px 0 4px;font:900 24px Cairo,sans-serif}#fm157-portal .hd .t{font:800 15px Cairo,sans-serif;opacity:.95}#fm157-portal .hd .d{opacity:.85;font-size:13.5px;margin-top:6px;line-height:1.8}
+#fm157-portal .hd button{border:0;border-radius:12px;padding:9px 14px;font:800 13px Cairo,sans-serif;background:rgba(255,255,255,.16);color:#fff;cursor:pointer}
+#fm157-portal h3{font:900 16px Cairo,sans-serif;margin:22px 0 10px}
+#fm157-portal .k{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+#fm157-portal .k article{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px}
+#fm157-portal .k b{display:block;font:900 28px Cairo,sans-serif;color:#1d4ed8}#fm157-portal .k article.bad b{color:#dc2626}#fm157-portal .k span{color:#475569;font-size:13px;font-weight:700}
+#fm157-portal .l{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+#fm157-portal .l button{display:flex;gap:10px;align-items:center;text-align:right;background:#fff;border:1px solid #dbe3ee;border-radius:14px;padding:13px 14px;font:800 14px Cairo,sans-serif;color:#1e293b;cursor:pointer}
+#fm157-portal .l button:hover{border-color:#6366f1;background:#eef2ff}#fm157-portal .l i{font-style:normal;font-size:18px}
+#fm157-portal ul.can{margin:0;padding:0 18px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:12px 30px 12px 14px;line-height:2;font-size:13.5px}
+#fm157-portal .muted{color:#64748b;font-size:12.5px}
+@media(max-width:700px){#fm157-portal .hd{flex-direction:column}}
+</style>
+<script id="fm-v157-portal">
+(function(){
+'use strict';
+const C=window.FMCloud;if(!C)return;
+const S=v=>String(v??'').trim();
+const esc=s=>S(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n||0).toLocaleString('ar-EG');
+const RN={riyadh:'الرياض',qassim:'القصيم'};
+/* what each job title is for, what it may do, its shortcuts (nav ids) and the pages it does not need */
+const RO=['v2-nav-refresh','fm-v38-clear-all-nav','v2-nav-bulk-assignment','v2-nav-workforce'];
+const P={
+ sysadmin:{d:'يدير المستخدمين والصلاحيات والإعدادات، ويرى كل البيانات في كل المناطق.',can:['إدارة المستخدمين والمسميات والصلاحيات','رفع ملفات البلاغات وقاعدة المدارس','كل صلاحيات الإسناد والاعتماد'],go:['v2-nav-fm122-settings','v2-nav-fm145-wo','v2-nav-eng','v2-nav-fm116','v2-nav-school-db'],hide:[]},
+ dept_manager:{d:'متابعة تنفيذية لكل المشروع: المؤشرات والتكاليف والمقارنة بين المناطق والمخاطر — قراءة فقط.',can:['يرى كل البلاغات وأوامر العمل والتواصل في كل المناطق','قراءة فقط: لا ينشئ ولا يعتمد'],go:['v2-nav-report','v2-nav-fm118-weekly','v2-nav-compare','v2-nav-fm122-score','v2-nav-fm145-wo'],hide:RO.concat(['v2-nav-fm116','v2-nav-quality'])},
+ project_manager:{d:'مسؤول عن المشروع كاملاً: الالتزام بالـ SLA والحملات والأداء والتقارير.',can:['يرى كل المناطق','يُسند أوامر العمل لكل من تحته (حتى مدير العمليات)','يعتمد الإغلاق ويعيد للتصحيح','يتابع ملاحظات التواصل'],go:['v2-nav-fm145-wo','v2-nav-sla','v2-nav-fm118-weekly','v2-nav-staff-performance','v2-nav-eng'],hide:['v2-nav-refresh','fm-v38-clear-all-nav','v2-nav-fm116']},
+ ops_manager:{d:'التشغيل اليومي: البلاغات المفتوحة والمتأخرة وتوزيع العمل وأوامر اليوم.',can:['يرى كل المناطق','يُسند لمديري المناطق والمهندسين والمشرفين والمقاولين','يعتمد الإغلاق','يتابع ملاحظات التواصل'],go:['v2-nav-fm103-alerts','v2-nav-fm122-follow','v2-nav-fm145-wo','v2-nav-sla','v2-nav-fm127-today'],hide:['v2-nav-refresh','fm-v38-clear-all-nav','v2-nav-fm116']},
+ area_manager:{d:'مسؤول عن منطقته: الـ SLA والمدارس الحرجة والفريق.',can:['يرى منطقته فقط','يُسند لمهندسي ومشرفي ومقاولي منطقته','يعتمد الإغلاق في منطقته','يتابع ملاحظات التواصل في منطقته'],go:['v2-nav-fm103-alerts','v2-nav-fm145-wo','v2-nav-fm118-school','v2-nav-staff-performance','v2-nav-eng'],hide:RO.concat(['v2-nav-fm116'])},
+ area_engineer:{d:'يتابع مدارسه وفريقه من المشرفين والمقاولين.',can:['يرى مدارسه وأوامر فريقه','يُسند للمشرفين والمقاولين تحته ويعتمد أوامرهم','يرى تواصل فريقه ويتابع ملاحظاتهم'],go:['v2-nav-fm145-wo','v2-nav-fm122-follow','v2-nav-eng','v2-nav-fm118-school'],hide:RO.concat(['v2-nav-fm116'])},
+ hse_manager:{d:'السلامة في كل المدارس: أنظمة الحريق والإنذار، والعناصر الحرجة، والبلاغات الطارئة.',can:['يرى كل المناطق (قراءة)','ينشئ أوامر فحص السلامة ويُسندها لأي شخص تحت مدير العمليات'],go:['v2-nav-fm145-wo','v2-nav-fm122-risk','v2-nav-risk','v2-nav-fm103-alerts'],hide:RO.concat(['v2-nav-fm116'])},
+ qa_manager:{d:'الجودة والتخطيط: الالتزام بالـ SLA والصيانة الوقائية، وجودة التوثيق، والقوالب والحملات.',can:['يرى كل المناطق (قراءة)','ينشئ أوامر التدقيق ويُسندها لأي شخص تحت مدير العمليات','يحدّث القوالب المشتركة والحملات المتكررة'],go:['v2-nav-fm145-wo','v2-nav-quality','v2-nav-sla','v2-nav-staff-performance','v2-nav-eng'],hide:RO.concat(['v2-nav-fm116'])},
+ supervisor:{d:'العمل الميداني على مدارسه.',can:['تطبيق الميدان: الأوامر والفحص والتواصل'],go:['v2-nav-fm145-wo'],hide:RO},
+ contractor:{d:'تنفيذ الأوامر المسندة إليه.',can:['تطبيق الميدان: الأوامر المسندة فقط'],go:['v2-nav-fm145-wo'],hide:RO},
+ viewer:{d:'مشاهدة المؤشرات.',can:['قراءة فقط'],go:['v2-nav-report','v2-nav-charts'],hide:RO}};
+const prof=()=>C.state&&C.state.on&&C.state.profile;
+const pos=p=>C.posOf(p)||p.role;
+function label(id){const b=document.getElementById(id);if(!b)return null;return S(b.querySelector('.v2-nav-label')?.textContent||b.textContent)}
+function root(){let r=document.getElementById('fm157-portal');if(!r){r=document.createElement('section');r.id='fm157-portal';r.hidden=true;document.body.appendChild(r)}return r}
+async function kpis(p){const out=[];
+ try{const T=(window.state&&state.filteredTickets)||[];if(T.length&&typeof normalizeStatus==='function'){const cm=state.columnsMap||{};let open=0,late=0;
+   for(const t of T){const st=normalizeStatus(t[cm.status]);if(st==='تم حله'||st==='مغلق')continue;open++;try{if(getTicketSLAInfo(t).isBreached)late++}catch(e){}}
+   out.push(['البلاغات المفتوحة',open],['متجاوزة الـ SLA',late,late>0])}}catch(e){}
+ try{const W=await C.api.woList(),now=Date.now(),act=W.filter(w=>!['closed','cancelled','rejected'].includes(w.status));
+  const appr=W.filter(w=>w.status==='done'&&w.assignee!==p.id&&(w.created_by===p.id||['admin','manager'].includes(p.role)));
+  out.push(['أوامر عمل نشطة',act.length],['بانتظار اعتمادي',appr.length,appr.length>0],['أوامر متأخرة',act.filter(w=>w.due_at&&Date.parse(w.due_at)<now&&w.status!=='done').length,true],['مسندة إليّ',act.filter(w=>w.assignee===p.id).length])}catch(e){}
+ return out}
+async function open(){const p=prof();if(!p)return;const k=pos(p),R=P[k]||P.viewer,r=root();r.hidden=false;
+ const scope=(p.regions||[]).length?p.regions.map(x=>RN[x]||x).join('، '):'كل المناطق';
+ const links=R.go.map(id=>[id,label(id)]).filter(x=>x[1]);
+ const head=`<div class="w"><div class="hd"><div><div class="t">${esc(C.posLabel(p)||'')} • ${esc(scope)}</div><h2>مرحباً ${esc(p.full_name||p.email||'')}</h2><div class="d">${esc(R.d)}</div></div><div><button type="button" data-x>دخول المنصة ×</button></div></div>`;
+ const body=k2=>`${head}<h3>📊 أرقامي</h3><div class="k">${k2.length?k2.map(([t,n,bad])=>`<article class="${bad&&n?'bad':''}"><b>${fmt(n)}</b><span>${esc(t)}</span></article>`).join(''):'<div class="muted">جارٍ التحميل…</div>'}</div>
+  <h3>⚡ اختصاراتي</h3><div class="l">${links.map(([id,t])=>`<button type="button" data-go="${esc(id)}"><i>➜</i>${esc(t)}</button>`).join('')||'<div class="muted">—</div>'}</div>
+  <h3>🔐 صلاحياتي</h3><ul class="can">${R.can.map(c=>`<li>${esc(c)}</li>`).join('')}</ul><p class="muted">البيانات التي تظهر لك في كل صفحات المنصة محدودة بصلاحيتك ونطاقك تلقائياً.</p></div>`;
+ const bind=()=>{r.querySelector('[data-x]').onclick=()=>{r.hidden=true};r.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{r.hidden=true;document.getElementById(b.dataset.go)?.click()})};
+ r.innerHTML=body([]);bind();const K=await kpis(p);if(!r.hidden){r.innerHTML=body(K);bind()}}
+window.fmV157Portal=open;
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){const r=document.getElementById('fm157-portal');if(r&&!r.hidden)r.hidden=true}});
+/* the sidebar: a «بورتالي» button on top, and the pages a job title does not need are hidden (the data itself is protected by the database) */
+function nav(){const p=prof();const n=document.querySelector('nav.v2-nav');if(!n)return;
+ if(p&&!document.getElementById('v2-nav-portal')){const b=document.createElement('button');b.id='v2-nav-portal';b.type='button';b.className='v2-nav-btn';b.title='بورتالي';b.innerHTML='<i class="fas fa-house-user"></i><span class="v2-nav-label">بورتالي</span>';b.onclick=open;n.prepend(b)}
+ if(!p)return;const R=P[pos(p)]||P.viewer;R.hide.forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='none'})}
+let tries=0;const t=setInterval(()=>{tries++;const p=prof();if(p){try{nav()}catch(e){}if(!sessionStorage.getItem('fm157_seen')){try{sessionStorage.setItem('fm157_seen','1')}catch(e){}open()}}
+ if(p||tries>120)clearInterval(t)},1000);
+setInterval(()=>{if(prof())try{nav()}catch(e){}},5000);
+})();
+</script>
+</body>
 </html>

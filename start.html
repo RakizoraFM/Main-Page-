@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S3">
+<meta name="fm-version" content="S4">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <title>RakizoraFM | تسجيل الدخول</title>
@@ -54,8 +54,10 @@ const CKEY='fm_cloud_v136';
 const LIB='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
 const LOGO=document.querySelector('#app .logo').src;
 /* where each role goes after sign-in */
-const ROUTE={admin:'index.html',engineer:'index.html',viewer:'index.html',supervisor:'field.html',contractor:'field.html'};
-const ROLE={admin:'مدير النظام',engineer:'مهندس',supervisor:'مشرف',contractor:'مقاول',viewer:'مشاهد (إدارة)',pending:'بانتظار التفعيل'};
+const ROUTE={admin:'index.html',manager:'index.html',staff:'index.html',engineer:'index.html',viewer:'index.html',supervisor:'field.html',contractor:'field.html'};
+const ROLE={admin:'مدير النظام',manager:'مدير',staff:'إدارة مساندة',engineer:'مهندس',supervisor:'مشرف',contractor:'مقاول',viewer:'مشاهد (إدارة)',pending:'بانتظار التفعيل'};
+/* S4: the job title shown under the name (the role follows it) */
+const POS={sysadmin:'مدير النظام',dept_manager:'مدير الإدارة',project_manager:'مدير المشروع',ops_manager:'مدير العمليات',area_manager:'مدير المنطقة',area_engineer:'مهندس المنطقة',supervisor:'المشرف',contractor:'المقاول',hse_manager:'مدير الأمن والسلامة',qa_manager:'مدير الجودة والتخطيط'};
 const RN={riyadh:'الرياض',qassim:'القصيم'};
 const DEST={'index.html':'المنصة','field.html':'تطبيق الميدان'};
 const S=v=>String(v??'').trim();
@@ -161,7 +163,7 @@ let timer=null;
 function welcomeView(p,dest){
  const name=S(p.full_name)||S(p.email);const regions=(p.regions||[]).map(r=>RN[r]||r).join('، ');
  const other=p.role==='admin'?(dest==='index.html'?'field.html':'index.html'):'';
- frame(`<div class="who"><div class="av">${esc(name.charAt(0))}</div><div><b>${esc(name)}</b><span>${esc(ROLE[p.role]||p.role)}${regions?' • '+esc(regions):''}</span></div></div>
+ frame(`<div class="who"><div class="av">${esc(name.charAt(0))}</div><div><b>${esc(name)}</b><span>${esc(POS[p.job_title]||ROLE[p.role]||p.role)}${regions?' • '+esc(regions):''}</span></div></div>
   <div class="sub" style="margin:10px 0 0">${other?'اختر ما تريد فتحه':`جارٍ فتح ${DEST[dest]}…`}</div>
   <button class="go" id="w-go">فتح ${DEST[dest]}</button>
   ${other?`<button class="go sec" id="w-alt">فتح ${DEST[other]}</button>`:''}
