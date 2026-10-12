@@ -6,13 +6,13 @@ const path=require('path'),fs=require('fs');
 const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),'/usr/lib/node_modules','/usr/local/lib/node_modules']}));
 const {ROOT,C,reporter}=require('./common');const {check,skip,done}=reporter();
 const OUT=path.join(__dirname,'out');fs.mkdirSync(OUT,{recursive:true});const BLOCK=[],ERR=[];
-const RPC_OK=/\/rest\/v1\/rpc\/(fm_wo_create|fm_wo_create_many|fm_wo_act|fm_wo_repair|fm_wo_assignable|fm_eng_submit|fm_eng_lead|fm_wo_cron_on|fm_role|fm_names)$/;
+const RPC_OK=/\/rest\/v1\/rpc\/(fm_wo_create|fm_wo_create_many|fm_wo_act|fm_wo_repair|fm_wo_assignable|fm_eng_submit|fm_eng_lead|fm_eng_people|fm_eng_scores|fm_eng_rate_link|fm_eng_rate_staff|fm_eng_rate_follow|fm_wo_cron_on|fm_role|fm_names)$/;
 const W_OK=/\/rest\/v1\/(wo_photos|fm_eng_observations|wo_events)(\?|$)|\/storage\/v1\/object\/(wo-photos|school-engagement)\/|\/storage\/v1\/object\/sign\/|\/auth\/v1\/(token|logout|user)/;
 async function route(rt,who){const q=rt.request(),u=q.url(),m=q.method();
  if(/supabase\.co/.test(u)&&!['GET','HEAD','OPTIONS'].includes(m)&&!RPC_OK.test(u.split('?')[0])&&!W_OK.test(u)){BLOCK.push(who+': '+m+' '+u.replace(/^https:\/\/[^/]+/,'').split('?')[0]);return rt.fulfill({status:403,contentType:'application/json',body:'{"message":"blocked by test guard"}'})}
  try{const h=Object.assign({},q.headers());delete h.host;const r=await fetch(u,{method:m,headers:h,body:['GET','HEAD'].includes(m)?undefined:q.postDataBuffer()});
   const hd={};r.headers.forEach((v,k)=>{if(!/content-encoding|content-length|transfer-encoding/.test(k))hd[k]=v});await rt.fulfill({status:r.status,headers:hd,body:Buffer.from(await r.arrayBuffer())})}catch(e){await rt.abort().catch(()=>{})}}
-async function session(b,who,vp){const ctx=await b.newContext({viewport:vp||{width:1400,height:950},acceptDownloads:true});await ctx.route(/^https:\/\//,rt=>route(rt,who));
+async function session(b,who,vp){const ctx=await b.newContext({viewport:vp||{width:1400,height:950},acceptDownloads:true});/* the V157 portal opens once per session over the page; tests start past it */await ctx.addInitScript(()=>{try{sessionStorage.setItem('fm157_seen','1')}catch(e){}});await ctx.route(/^https:\/\//,rt=>route(rt,who));
  const p=await ctx.newPage();p.on('pageerror',e=>ERR.push(who+': '+e.message));p.on('dialog',d=>d.accept());
  await p.goto('file://'+path.join(ROOT,'start.html'));await p.waitForTimeout(2500);await p.fill('#l-e',C[who].email);await p.fill('#l-p',C[who].password);await p.click('#l-go');
  await p.waitForTimeout(4000);const pick=await p.$('text=فتح المنصة');if(pick)await pick.click();   /* admin / engineer may get a chooser */
@@ -55,7 +55,7 @@ const txt=(p,sel)=>p.evaluate(s=>document.querySelector(s)?.innerText||'',sel);
  await s.p.screenshot({path:path.join(OUT,'engineer_eng.png')});await s.ctx.close();
  /* viewer — platform */
  s=await session(b,'viewer');check('الدخول','المشاهد يُوجَّه للمنصة',/index\.html/.test(s.p.url()));
- await s.p.evaluate(()=>window.fmEngOpen&&fmEngOpen());await s.p.waitForTimeout(4000);check('التواصل','المشاهد لا يدخل صفحة التواصل',/متاح لمدير النظام/.test(await txt(s.p,'#eng-page')));await s.ctx.close();
+ await s.p.evaluate(()=>window.fmEngOpen&&fmEngOpen());await s.p.waitForTimeout(4000);{const t=await txt(s.p,'#eng-page');/* V157: the department manager (viewer) follows engagement read-only */check('التواصل','المشاهد يرى التواصل للعرض فقط',/متابعة التواصل/.test(t)&&!(await s.p.$('#eng-page [data-log]'))&&!(await s.p.$('#eng-page [data-tab="settings"]')),t.slice(0,80))}await s.ctx.close();
  /* admin — optional */
  if(!C.admin.password){skip('الدخول','المدير','لا توجد كلمة مرور')}else{s=await session(b,'admin');
   if(!/index\.html/.test(s.p.url()))skip('الدخول','المدير','حساب المدير التجريبي غير موجود أو لم يدخل');
