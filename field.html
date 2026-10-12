@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F13">
+<meta name="fm-version" content="F14">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -127,6 +127,7 @@ textarea.in{min-height:90px;line-height:1.8}
 .plan-btn{width:100%;margin-bottom:10px;background:#0f172a!important;color:#fff!important}
 .bnav button{position:relative}.bnav em{position:absolute;top:2px;left:calc(50% - 22px);min-width:17px;height:17px;border-radius:99px;background:#dc2626;color:#fff;font:900 10.5px/17px Cairo,sans-serif;font-style:normal;padding:0 4px}
 /* F9: inspection result per checklist item, materials, item photos, arrival photos */
+.ci.g .lvs{display:block;width:100%;margin-top:6px;border:1px solid var(--line);border-right:5px solid var(--c);border-radius:10px;padding:9px 10px;background:#fff;font:700 13.5px Cairo,Tahoma,sans-serif;color:var(--ink)}.ci.g .lvs.on{background:color-mix(in srgb,var(--c) 12%,#fff);border-color:var(--c);color:var(--c);font-weight:900}.ci.g .lvs:disabled{opacity:.7}
 .ci.g .lv{display:flex;flex-direction:column;gap:5px;margin-top:6px}.ci.g .lv button{display:flex;gap:8px;align-items:center;text-align:right;border:1px solid var(--line);border-right:5px solid var(--c);background:#fff;border-radius:10px;padding:8px 10px;font:700 13px Cairo,Tahoma,sans-serif;color:var(--ink)}
 .ci.g .lv button i{font-style:normal;font-weight:900;color:var(--c);min-width:14px}.ci.g .lv button.on{background:color-mix(in srgb,var(--c) 14%,#fff);border-color:var(--c);font-weight:900}.ci.g .lv button:disabled{opacity:.6}
 .nd{margin-top:6px;border:1px solid #fed7aa;background:#fff7ed;border-radius:10px;padding:6px 8px}.ndt{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px}
@@ -926,9 +927,6 @@ async function woDetail(id,keep){
    if(b.dataset.npick!=null){const inp=b.closest('.cb').querySelector('[data-nf=find]'),i=+inp.dataset.ni,d=cl[i].needs[+inp.dataset.nj],src=ndSrc(d.k).find(x=>x.ref===b.dataset.npick);
     if(src){d.ref=src.ref;d.n=src.n;d.u=src.u}else{d.ref='other';d.n=S(inp.value)}redraw(i);qRedraw();clSave();
     const q=card.querySelector(`[data-row="${i}"] [data-nf=q][data-nj="${inp.dataset.nj}"]`);if(q&&!S(q.value))q.focus();return}
-   if(b.dataset.lv!=null){const i=+b.dataset.li,x=cl[i],lv=+b.dataset.lv;if(x.lv===lv){delete x.lv;delete x.opt;x.res='';x.done=false}else{x.lv=lv;x.opt=lv?(x.opts||[])[lv-1]:'لا ينطبق';x.res=lv===0?'na':lv===1?'ok':'fix';x.done=true}
-    if(x.res!=='fix'){delete x.note;if(x.needs&&x.needs.length){delete x.needs;qRedraw()}}else if(!(x.needs||[]).length)x.needs=[];
-    redraw(i);const f=cl.findIndex(y=>y.k==='text'&&y.sug);if(f>=0)redraw(f);clSave();return}
    if(b.dataset.tv!=null){const i=+b.dataset.tv;cl[i].v=cl[i].v===b.dataset.val&&!b.classList.contains('shph')?'':b.dataset.val;redraw(i);clSave();return}
    if(b.dataset.allm!=null){const inp=b.closest('.cb').querySelector('[data-mf=find]');inp.dataset.all=b.dataset.off?'':'1';ciList(b.closest('.cbl'),inp.value,+inp.dataset.mi,!b.dataset.off);return}
    if(b.dataset.pick!=null){const inp=b.closest('.cb').querySelector('[data-mf=find]'),i=+inp.dataset.mi,m=cl[i].materials[+inp.dataset.mj],c=(D.mats||[]).find(x=>x.id===b.dataset.pick);
@@ -952,6 +950,10 @@ async function woDetail(id,keep){
    else if(t.dataset.mf==='find'){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m.n=S(t.value);if(m.id){m.id='';t.parentNode.querySelector('.cbok')?.remove()}ciList(t.parentNode.querySelector('.cbl'),t.value,+t.dataset.mi,t.dataset.all==='1');clSave()}
    else if(t.dataset.mf&&!['id','src'].includes(t.dataset.mf)){const m=cl[+t.dataset.mi].materials[+t.dataset.mj];m[t.dataset.mf]=['q','price'].includes(t.dataset.mf)?t.value.replace(/[^\d.٫٠-٩]/g,''):t.value;clSave()}});
   card.addEventListener('change',async e=>{const t=e.target;
+   /* FCI element: the condition is picked from a drop-list (empty = not recorded) */
+   if(t.dataset.lvs!=null){const i=+t.dataset.lvs,x=cl[i],v=t.value;if(v===''){delete x.lv;delete x.opt;x.res='';x.done=false}else{const lv=+v;x.lv=lv;x.opt=lv?(x.opts||[])[lv-1]:'لا ينطبق';x.res=lv===0?'na':lv===1?'ok':'fix';x.done=true}
+    if(x.res!=='fix'){delete x.note;if(x.needs&&x.needs.length){delete x.needs;qRedraw()}}else if(!(x.needs||[]).length)x.needs=[];
+    redraw(i);const f=cl.findIndex(y=>y.k==='text'&&y.sug);if(f>=0)redraw(f);clSave();return}
    /* a material picked from the list brings its name, unit and (from the warehouse) its unit price */
    if(t.dataset.mf==='id'||t.dataset.mf==='src'){const i=+t.dataset.mi,m=cl[i].materials[+t.dataset.mj];
     if(t.dataset.mf==='id'){m.id=t.value;const c=(D.mats||[]).find(x=>x.id===t.value);if(c){m.n=c.name;m.u=c.unit||''}else if(t.value==='__other'){m.n='';m.u=''}}
@@ -1003,7 +1005,7 @@ function ndList(box,q,i,k){const w=ciN(q).split(/\s+/).filter(Boolean),A=ndSrc(k
 function ciRich(x,i,on,open){const r=ciRes(x),no=`<span class="no">${esc(x.no||String(i+1))}</span>`,dis=on?'':'disabled';
  if(x.k==='grade'){const P=(D.curPh||[]).filter(p=>p.item===i),need={b:r==='fix',a:false},showPh=need.b||P.length||(open&&open.has(i));
   return `<div class="ci g ${r==='fix'?'fixed':''}" data-row="${i}"><div class="t">${no} ${esc(x.t)}</div>
-   <div class="lv">${(x.opts||[]).map((o,j)=>`<button type="button" ${dis} data-lv="${j+1}" data-li="${i}" class="${x.lv===j+1?'on':''}" style="--c:${LV_C[j]||'#64748b'}"><i>${j+1}</i>${esc(o)}</button>`).join('')}<button type="button" ${dis} data-lv="0" data-li="${i}" class="${x.lv===0?'on':''}" style="--c:#64748b"><i>—</i>لا ينطبق</button></div>
+   <select class="lvs ${x.lv!=null?'on':''}" ${dis} data-lvs="${i}" style="--c:${x.lv?LV_C[x.lv-1]:'#64748b'}"><option value="">— اختر حالة العنصر —</option>${(x.opts||[]).map((o,j)=>`<option value="${j+1}" ${x.lv===j+1?'selected':''}>${j+1} — ${esc(o)}</option>`).join('')}<option value="0" ${x.lv===0?'selected':''}>— لا ينطبق</option></select>
    ${r==='fix'?ndPanel(x,i,on):''}
    ${r==='fix'?(on?`<input class="in" data-cn="${i}" placeholder="ملاحظة / الإجراء المطلوب (اختياري)" value="${esc(x.note||'')}">`:x.note?`<div class="muted">📝 ${esc(x.note)}</div>`:''):''}
    ${showPh?ciPhotos(i,on,need):on?`<button type="button" class="shph" data-shph="${i}">📷 إضافة صور للعنصر</button>`:''}</div>`}
