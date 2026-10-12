@@ -854,4 +854,88 @@ end $$;
 revoke all on function public.fm_wo_repair(uuid, jsonb) from public, anon;
 grant execute on function public.fm_wo_repair(uuid, jsonb) to authenticated;
 
+-- ---------- 13) proactive school engagement (V154, field F15) ----------
+-- Each engineer / supervisor is assigned schools (fm_eng_assignments); every contact by phone, WhatsApp or visit is a log
+-- (fm_eng_logs, append-only); a log with observations opens a follow-up (fm_eng_observations, due in 48 h / 24 h urgent)
+-- whose every change is kept in fm_eng_audit. Logs are written only through fm_eng_submit (time and author set by the server).
+create or replace function public.fm_eng_admin() returns boolean language sql stable security definer set search_path=public as $$
+  select exists(select 1 from public.profiles where id=auth.uid() and role='admin' and coalesce(active,true)) $$;
+create table if not exists public.fm_eng_targets(role text primary key check(role in ('supervisor','engineer')), cycle text not null check(cycle in ('weekly','monthly')), visits integer not null default 8 check(visits>=0));
+insert into public.fm_eng_targets values ('supervisor','weekly',8),('engineer','monthly',8) on conflict do nothing;
+create table if not exists public.fm_eng_assignments(id uuid primary key default gen_random_uuid(), school_code text not null, school_name text not null, region text not null default '', user_id uuid not null references public.profiles(id), principal text not null default '', phone text not null default '', active boolean not null default true, unique(school_code,user_id));
+create table if not exists public.fm_eng_logs(id uuid primary key default gen_random_uuid(), assignment_id uuid not null references public.fm_eng_assignments(id), user_id uuid not null default auth.uid() references public.profiles(id), at timestamptz not null default now(), channel text not null check(channel in ('phone','whatsapp','visit')), outcome text not null check(outcome in ('clear','observation','urgent','no_reply')), confirmed boolean not null default false, summary text not null check(length(trim(summary))>0), evidence_path text, geo jsonb, created_at timestamptz not null default now());
+create table if not exists public.fm_eng_observations(id uuid primary key default gen_random_uuid(), log_id uuid not null unique references public.fm_eng_logs(id), owner_id uuid not null references public.profiles(id), due_at timestamptz not null, status text not null default 'open' check(status in ('open','in_progress','closed')), action text not null default '', ticket_ref text not null default '', wo_ref text not null default '', updated_at timestamptz not null default now());
+create table if not exists public.fm_eng_audit(id bigint generated always as identity primary key, observation_id uuid not null references public.fm_eng_observations(id), actor uuid default auth.uid(), at timestamptz default now(), old_data jsonb, new_data jsonb);
+create or replace function public.fm_eng_audit_update() returns trigger language plpgsql security definer set search_path=public as $$
+begin new.updated_at=now(); insert into public.fm_eng_audit(observation_id,old_data,new_data) values(old.id,to_jsonb(old),to_jsonb(new)); return new; end $$;
+drop trigger if exists eng_audit on public.fm_eng_observations;
+create trigger eng_audit before update on public.fm_eng_observations for each row execute function public.fm_eng_audit_update();
+-- the only way to write a log: the caller must own the active assignment; the server sets the author and the time
+create or replace function public.fm_eng_submit(p jsonb) returns uuid language plpgsql security definer set search_path=public as $$
+declare lid uuid; v_me uuid := auth.uid(); v_out text := p->>'outcome';
+begin
+  if not exists (select 1 from public.fm_eng_assignments a join public.profiles u on u.id=a.user_id
+                 where a.id=(p->>'assignment_id')::uuid and a.user_id=v_me and a.active and u.active and u.role in ('supervisor','engineer')) then
+    raise exception 'not allowed';
+  end if;
+  insert into public.fm_eng_logs(assignment_id,user_id,channel,outcome,confirmed,summary,evidence_path,geo)
+  values((p->>'assignment_id')::uuid, v_me, p->>'channel', v_out, coalesce((p->>'confirmed')::boolean,false), p->>'summary', nullif(p->>'evidence_path',''),
+         case when jsonb_typeof(p->'geo')='object' then p->'geo' end)
+  returning id into lid;
+  if v_out in ('observation','urgent') then
+    insert into public.fm_eng_observations(log_id,owner_id,due_at)
+    values(lid, v_me, now() + case when v_out='urgent' then interval '24 hours' else interval '48 hours' end);
+  end if;
+  return lid;
+end $$;
+-- completed-contact evidence rules, enforced on the server as well as in the UI
+alter table public.fm_eng_logs drop constraint if exists eng_completed_evidence;
+alter table public.fm_eng_logs add constraint eng_completed_evidence check (
+  (outcome<>'no_reply' or not confirmed) and
+  (not confirmed or channel<>'whatsapp' or evidence_path is not null) and
+  (not confirmed or channel<>'visit' or evidence_path is not null or (geo->>'lat' is not null and geo->>'lng' is not null)) and
+  (evidence_path is null or split_part(evidence_path,'/',1)=user_id::text));
+alter table public.fm_eng_observations drop constraint if exists eng_closed_action;
+alter table public.fm_eng_observations add constraint eng_closed_action check(status<>'closed' or length(trim(action))>0);
+create index if not exists fm_eng_logs_assignment_at on public.fm_eng_logs(assignment_id,at);
+create index if not exists fm_eng_assignments_user on public.fm_eng_assignments(user_id);
+alter table public.fm_eng_targets enable row level security;
+alter table public.fm_eng_assignments enable row level security;
+alter table public.fm_eng_logs enable row level security;
+alter table public.fm_eng_observations enable row level security;
+alter table public.fm_eng_audit enable row level security;
+drop policy if exists eng_targets_read on public.fm_eng_targets;
+create policy eng_targets_read on public.fm_eng_targets for select to authenticated using(exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('admin','supervisor','engineer','viewer')));
+drop policy if exists eng_targets_admin on public.fm_eng_targets;
+create policy eng_targets_admin on public.fm_eng_targets for all to authenticated using(public.fm_eng_admin()) with check(public.fm_eng_admin());
+drop policy if exists eng_assign_read on public.fm_eng_assignments;
+create policy eng_assign_read on public.fm_eng_assignments for select to authenticated using(public.fm_eng_admin() or (user_id=auth.uid() and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('engineer','supervisor'))));
+drop policy if exists eng_assign_admin on public.fm_eng_assignments;
+create policy eng_assign_admin on public.fm_eng_assignments for all to authenticated using(public.fm_eng_admin()) with check(public.fm_eng_admin());
+drop policy if exists eng_logs_read on public.fm_eng_logs;
+create policy eng_logs_read on public.fm_eng_logs for select to authenticated using(public.fm_eng_admin() or exists(select 1 from public.fm_eng_assignments a where a.id=assignment_id and a.user_id=auth.uid()));
+drop policy if exists eng_logs_insert on public.fm_eng_logs;
+drop policy if exists eng_obs_read on public.fm_eng_observations;
+create policy eng_obs_read on public.fm_eng_observations for select to authenticated using(public.fm_eng_admin() or owner_id=auth.uid());
+drop policy if exists eng_obs_insert on public.fm_eng_observations;
+drop policy if exists eng_obs_update on public.fm_eng_observations;
+create policy eng_obs_update on public.fm_eng_observations for update to authenticated using(public.fm_eng_admin() or (owner_id=auth.uid() and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('engineer','supervisor')))) with check(public.fm_eng_admin() or owner_id=auth.uid());
+drop policy if exists eng_audit_read on public.fm_eng_audit;
+create policy eng_audit_read on public.fm_eng_audit for select to authenticated using(public.fm_eng_admin() or exists(select 1 from public.fm_eng_observations o where o.id=observation_id and o.owner_id=auth.uid()));
+-- logs and observations are created only by fm_eng_submit; a follow-up may change only its status, action and references
+-- (not its owner, log or due time)
+revoke all on public.fm_eng_targets, public.fm_eng_assignments, public.fm_eng_logs, public.fm_eng_observations, public.fm_eng_audit from anon, authenticated;
+grant select, insert, update on public.fm_eng_targets, public.fm_eng_assignments to authenticated;
+grant select on public.fm_eng_logs, public.fm_eng_observations, public.fm_eng_audit to authenticated;
+grant update (status, action, ticket_ref, wo_ref) on public.fm_eng_observations to authenticated;
+revoke all on function public.fm_eng_submit(jsonb) from public, anon;
+grant execute on function public.fm_eng_submit(jsonb) to authenticated;
+revoke all on function public.fm_eng_audit_update() from public, anon, authenticated;
+-- evidence files: private bucket, one folder per user
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values('school-engagement','school-engagement',false,5242880,array['image/jpeg','image/png','image/webp','application/pdf']) on conflict(id) do nothing;
+drop policy if exists eng_evidence_insert on storage.objects;
+create policy eng_evidence_insert on storage.objects for insert to authenticated with check(bucket_id='school-engagement' and (storage.foldername(name))[1]=auth.uid()::text and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('supervisor','engineer')));
+drop policy if exists eng_evidence_read on storage.objects;
+create policy eng_evidence_read on storage.objects for select to authenticated using(bucket_id='school-engagement' and (public.fm_eng_admin() or (storage.foldername(name))[1]=auth.uid()::text));
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
