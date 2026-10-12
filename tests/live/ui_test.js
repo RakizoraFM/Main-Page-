@@ -60,7 +60,9 @@ let b;(async()=>{b=await chromium.launch();let s;
  await s.p.screenshot({path:path.join(OUT,'engineer_eng.png')});await s.ctx.close();
  /* viewer — platform */
  s=await session(b,'viewer');check('الدخول','المشاهد يُوجَّه للمنصة',/index\.html/.test(s.p.url()));
- await s.p.evaluate(()=>window.fmEngOpen&&fmEngOpen());await s.p.waitForTimeout(4000);check('التواصل','المشاهد لا يدخل صفحة التواصل',/متاح لمدير النظام/.test(await txt(s.p,'#eng-page')));await s.ctx.close();
+ await s.p.evaluate(()=>window.fmEngOpen&&fmEngOpen());await s.p.waitForTimeout(4000);/* since V157 a read-only title opens «متابعة التواصل» (read only; RLS decides what it sees), older builds refuse it */
+ const ve=await txt(s.p,'#eng-page'),vw=await s.p.$$('#eng-page [data-log],#eng-page #eg-targets,#eng-page #eg-assign,#eng-page #eg-sync');
+ check('التواصل','المشاهد: قراءة فقط بلا تسجيل أو إسناد',/متاح لمدير النظام/.test(ve)||(/متابعة التواصل مع المدارس/.test(ve)&&!vw.length),vw.length?vw.length+' زر كتابة':'');await s.ctx.close();
  /* admin — optional */
  if(!C.admin.password){skip('الدخول','المدير','لا توجد كلمة مرور')}else{s=await session(b,'admin');
   if(!/index\.html/.test(s.p.url()))skip('الدخول','المدير','حساب المدير التجريبي غير موجود أو لم يدخل');
