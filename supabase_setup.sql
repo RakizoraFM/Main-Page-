@@ -1481,4 +1481,42 @@ end $$;
 revoke all on function public.fm_eng_rate_follow(uuid,text,text) from public, anon;
 grant execute on function public.fm_eng_rate_follow(uuid,text,text) to authenticated;
 
+-- V160: contact with the schools counts in the supervisor / engineer score. fm_settings.score_weights = the share (%) of
+-- contact coverage (cov) and school satisfaction (sat); the ticket score (35/35/15/15) keeps the rest. A part with no data
+-- (no active assignment / no rating) gives its share back to the tickets.
+insert into public.fm_settings(key, value) values ('score_weights', '{"cov": 10, "sat": 10}') on conflict (key) do nothing;
+-- per active supervisor / engineer the caller may see: coverage of the last 4 weekly cycles (or the last 30 days for a
+-- monthly cycle) = assignment-cycles with a completed contact ÷ assignment-cycles, and satisfaction = his own item
+-- (q_supervisor / q_engineer) of the ratings of the last 90 days × 20 (0–100)
+create or replace function public.fm_eng_scores() returns table(user_id uuid, full_name text, person_names text[], role text, cov numeric, cov_hit int, cov_total int, sat numeric, sat_n int)
+language sql stable security definer set search_path=public as $$
+  with ppl as (
+    select p.id, coalesce(p.full_name, p.email) fname, coalesce(p.person_names, '{}') pn, p.role,
+           coalesce((select t.cycle from public.fm_eng_targets t where t.role = p.role), case when p.role = 'engineer' then 'monthly' else 'weekly' end) cyc
+      from public.profiles p
+     where p.active and p.role in ('supervisor','engineer')
+       and (public.fm_eng_admin() or p.id = auth.uid() or public.fm_scope_all()
+            or exists(select 1 from public.fm_eng_assignments a where a.user_id = p.id and a.active and public.fm_eng_sees(a.user_id, a.region)))),
+  blk as (
+    select p.id uid, now() - case when p.cyc = 'weekly' then (b + 1) * interval '7 days' else interval '30 days' end f,
+           now() - b * interval '7 days' t
+      from ppl p cross join lateral generate_series(0, case when p.cyc = 'weekly' then 3 else 0 end) b),
+  cv as (
+    select b.uid, count(*)::int tot,
+           count(*) filter (where exists(select 1 from public.fm_eng_logs l where l.assignment_id = a.id and l.outcome <> 'no_reply' and l.confirmed
+                                         and l.at > b.f and l.at <= b.t))::int hit
+      from blk b join public.fm_eng_assignments a on a.user_id = b.uid and a.active group by b.uid),
+  st as (
+    select x.uid, avg(x.v) av, count(*)::int n from (
+      select r.supervisor_id uid, r.q_supervisor v from public.fm_eng_ratings r where r.q_supervisor is not null and r.created_at > now() - interval '90 days'
+      union all
+      select r.engineer_id, r.q_engineer from public.fm_eng_ratings r where r.q_engineer is not null and r.created_at > now() - interval '90 days') x
+     group by x.uid)
+  select p.id, p.fname, p.pn, p.role,
+         case when coalesce(cv.tot,0) > 0 then round(cv.hit * 100.0 / cv.tot, 1) end, coalesce(cv.hit,0), coalesce(cv.tot,0),
+         case when st.n > 0 then round(st.av * 20, 1) end, coalesce(st.n,0)
+    from ppl p left join cv on cv.uid = p.id left join st on st.uid = p.id $$;
+revoke all on function public.fm_eng_scores() from public, anon;
+grant execute on function public.fm_eng_scores() to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.

@@ -357,7 +357,7 @@ async function pull(silent){
  D.syncAt=Date.now();
  if(silent&&D.cur)ticketView(D.cur,true);else main();
  woPull();
- loadMyRank().then(()=>{if(D.view==='me'&&!D.cur&&D.myRank){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});checkAlerts(false);
+ loadMyRank().then(()=>{if(D.view==='me'&&!D.cur&&D.myRank){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});loadMyEng().then(()=>{if(D.eng&&['me','home'].includes(D.view)&&!D.cur){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});checkAlerts(false);
 }
 function fromCache(){try{const o=JSON.parse(localStorage.getItem('fmf_cache_v1')||'null');if(!o)return false;D.me=D.me||o.me;D.syncAt=o.at||null;D.ref=o.ref||{};D.rank=o.rank||{};D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
 
@@ -467,7 +467,7 @@ function reason(x){const t=x.t,s=x.s;if(s.late)return '⛔ متأخر — أغل
  if(s.rem!=null&&s.rem<=SOON_H)return `⏳ تبقّى ${fmt(s.rem,0)} ساعة — خطط لزيارته اليوم`;
  if(t.priority==='طارئ')return '🚨 أولوية طارئة';return ''}
 function homeView(){
- const B=buckets(),m=period(monthStart(),monthStart(1)),name=myName(),regions=(D.me?.regions||[]).map(r=>RN[r]||r).join('، '),R=rating(D.tickets);
+ const B=buckets(),m=period(monthStart(),monthStart(1)),name=myName(),regions=(D.me?.regions||[]).map(r=>RN[r]||r).join('، '),R=myRating();
  const tile=(k,ic,label,n,cls)=>`<button class="kpi ${cls||''}" data-go="${k}"><i>${ic}</i><b>${n}</b><span>${label}</span></button>`;
  const urgent=B.open.slice().sort(guideSort).slice(0,5);
  const tip=B.h3.length?`⏰ لديك <b>${fmt(B.h3.length)}</b> بلاغ تنتهي مهلته خلال 3 ساعات — ابدأ بها قبل أي شيء`:B.late.length?`⛔ لديك <b>${fmt(B.late.length)}</b> بلاغ متأخر — أغلق الأقدم أولاً لرفع تقييمك`:B.soon.length?`⏳ <b>${fmt(B.soon.length)}</b> بلاغ تنتهي مهلته خلال 24 ساعة — خطط لزياراتها اليوم`:'👏 لا توجد بلاغات حرجة الآن';
@@ -644,8 +644,8 @@ const needSql=e=>/function .*does not exist|Could not find the function|schema c
 
 function profileView(){
  const me=D.me||{},name=myName(),regions=(me.regions||[]).map(r=>RN[r]||r).join('، '),p=D.p;
- const R=rating(D.tickets),[a,b]=range(p.k,p.from,p.to),[ca,cb]=cmpRange(a,b),cur=pstats(a,b),prv=p.cmp==='none'?null:pstats(ca,cb);
- const weakest=[['comp','نسبة الإنجاز','أغلق البلاغات المحلولة وحدّث مراحلها أولاً بأول'],['sla','الالتزام بالمهلة','ابدأ بالبلاغات التي تقترب من الاختراق (تبويب «خلال 3 س»)'],['crit','البلاغات الحرجة','أعطِ الطارئ والعالي الأولوية في زياراتك'],['pend','العوالق قيد المعالجة','تابع البلاغات المُسندة وقيد التنفيذ حتى إغلاقها']].sort((x,y)=>R[x[0]]-R[y[0]])[0];
+ const R=myRating(),[a,b]=range(p.k,p.from,p.to),[ca,cb]=cmpRange(a,b),cur=pstats(a,b),prv=p.cmp==='none'?null:pstats(ca,cb);
+ const weakest=[['comp','نسبة الإنجاز','أغلق البلاغات المحلولة وحدّث مراحلها أولاً بأول'],['sla','الالتزام بالمهلة','ابدأ بالبلاغات التي تقترب من الاختراق (تبويب «خلال 3 س»)'],['crit','البلاغات الحرجة','أعطِ الطارئ والعالي الأولوية في زياراتك'],['pend','العوالق قيد المعالجة','تابع البلاغات المُسندة وقيد التنفيذ حتى إغلاقها'],...(R.cov!=null?[['cov','التواصل مع المدارس','أكمل تواصل كل مدارسك في كل دورة من تبويب «التواصل»']]:[]),...(R.sat!=null?[['sat','رضا المدارس','اطلب تقييم مدير المدرسة بعد كل زيارة وعالج ملاحظاته']]:[])].sort((x,y)=>R[x[0]]-R[y[0]])[0];
  const bar=(l,v,w)=>`<div class="sb"><span>${l} <small>(${w})</small></span><div><i style="width:${v}%" class="${v>=90?'ok':v>=75?'warn':'bad'}"></i></div><b>${fmt(v,v%1?1:0)}%</b></div>`;
  const kpi=(k,l,v,dl,click)=>`<button class="pk ${click?'cl':''}" ${click?`data-set="${k}"`:'disabled'}><span>${l}</span><b>${v}</b>${prv?dl:''}</button>`;
  const top=(()=>{const m=new Map();cur.rec.forEach(t=>{const s=S(t.school)||'—';const r=m.get(s)||{n:0,open:0,br:0};r.n++;if(!isClosedP(t)&&platStatus(t)!=='ملغى')r.open++;if(slaP(t).breached)r.br++;m.set(s,r)});return [...m.entries()].sort((x,y)=>y[1].n-x[1].n).slice(0,8)})();
@@ -653,8 +653,8 @@ function profileView(){
  const sR=S1.R.reduce((x,y)=>x+y,0),sZ=S1.Z.reduce((x,y)=>x+y,0);
  $('#app').innerHTML=shell(`
   <div class="card hello"><label class="avw" title="تغيير الصورة">${avatarHtml(me)}<span class="cam">📷</span><input type="file" accept="image/*" id="p-av" hidden></label><div><b>${esc(name)}</b><span>${esc(C.ROLE[me.role]||me.role||'')}${regions?' • '+esc(regions):''}</span><small dir="ltr" style="text-align:right">${esc(me.email||'')}${me.phone?' • '+esc(me.phone):''}</small></div></div>
-  <div class="card"><h3>⭐ تقييمي الحالي</h3><div class="rate"><div class="rv r-${R.cls}"><b>${fmt(R.score,R.score%1?1:0)}</b><span>${R.label}</span></div><div class="rbars">${bar('نسبة الإنجاز',R.comp,'35%')}${bar('الالتزام بالمهلة',R.sla,'35%')}${bar('البلاغات الحرجة',R.crit,'15%')}${bar('تصفية العوالق',R.pend,'15%')}</div></div>
-   <div class="muted" style="margin-top:6px">نفس معادلة تقييم المشرفين في المنصة، على كل بلاغاتك (${fmt(R.total)} بلاغ).</div>
+  <div class="card"><h3>⭐ تقييمي الحالي</h3><div class="rate"><div class="rv r-${R.cls}"><b>${fmt(R.score,R.score%1?1:0)}</b><span>${R.label}</span></div><div class="rbars">${bar('نسبة الإنجاز',R.comp,fmt(35*R.f,1)+'%')}${bar('الالتزام بالمهلة',R.sla,fmt(35*R.f,1)+'%')}${bar('البلاغات الحرجة',R.crit,fmt(15*R.f,1)+'%')}${bar('تصفية العوالق',R.pend,fmt(15*R.f,1)+'%')}${R.cov!=null?bar('التواصل مع المدارس',R.cov,fmt(R.wc)+'%'):''}${R.sat!=null?bar('رضا المدارس',R.sat,fmt(R.ws)+'%'):''}</div></div>
+   <div class="muted" style="margin-top:6px">نفس معادلة تقييم المشرفين في المنصة، على كل بلاغاتك (${fmt(R.total)} بلاغ)${R.f<1?`، مع التواصل مع المدارس (${D.eng.tot?fmt(D.eng.hit)+' من '+fmt(D.eng.tot)+' دورة مدرسة':'—'}${D.eng.n?' · '+fmt(D.eng.n)+' تقييم':''})`:''}.</div>
    ${rankHtml()}
    ${R.total?`<div class="guide" style="margin-top:8px">💡 لرفع تقييمك: ركّز على <b>${weakest[1]}</b> — ${weakest[2]}.</div>`:''}</div>
   <div class="card"><h3>📅 مراجعة فترة</h3>
@@ -733,6 +733,17 @@ function bindGoal(){const b=$('#g-ed');if(!b)return;b.onclick=()=>{const g=goalI
 
 /* ranking published by the platform at the last upload: find my rank through the hash of my name */
 async function sha(t){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+/* V160 (F20): contact with the schools in my score — the platform's weights (fm_settings.score_weights), my coverage of the
+   last 4 weekly cycles / 30 days and my satisfaction from the ratings of the last 90 days (fm_eng_scores). A part without
+   data gives its share back to the tickets. */
+async function loadMyEng(){if(!D.me||!['supervisor','engineer'].includes(D.me.role)||!C.engClient)return;const db=await C.engClient();
+ const [sc,w]=await Promise.all([db.rpc('fm_eng_scores'),db.from('fm_settings').select('value').eq('key','score_weights').maybeSingle()]);if(sc.error||!Array.isArray(sc.data))return;
+ const x=sc.data.find(r=>r.user_id===D.me.id);if(!x)return;const v=(w&&w.data&&w.data.value)||{},W=v.cov==null&&v.sat==null?{cov:10,sat:10}:{cov:Math.max(0,Math.min(50,+v.cov||0)),sat:Math.max(0,Math.min(50,+v.sat||0))};
+ D.eng={cov:x.cov==null?null:+x.cov,sat:x.sat==null?null:+x.sat,hit:x.cov_hit,tot:x.cov_total,n:x.sat_n,W}}
+function myRating(){const R=rating(D.tickets),x=D.eng;R.f=1;if(!x)return R;const wc=x.cov!=null?x.W.cov:0,ws=x.sat!=null?x.W.sat:0;if(!wc&&!ws)return R;
+ const f=(100-wc-ws)/100,score=Math.round(Math.max(0,Math.min(100,R.score*f+(wc?x.cov*wc/100:0)+(ws?x.sat*ws/100:0)))*10)/10;
+ const lab=score>=90?['ممتاز','ok']:score>=80?['جيد جداً','pri']:score>=70?['مقبول','warn']:['ضعيف','bad'];
+ return Object.assign(R,{score,label:lab[0],cls:lab[1],f,cov:wc?x.cov:undefined,sat:ws?x.sat:undefined,wc,ws,ticketScore:R.score})}
 async function loadMyRank(){D.myRank=null;if(!(window.crypto&&crypto.subtle))return;const names=(D.me?.person_names||[]).map(S).filter(Boolean);if(!names.length)return;
  const hs=await Promise.all(names.map(sha));let best=null;
  Object.entries(D.rank||{}).forEach(([reg,o])=>{if(!o||!o.ranks)return;hs.forEach(h=>{const x=o.ranks[h];if(x&&(!best||x.r<best.r))best={reg,r:x.r,s:x.s,n:o.n,at:o.at,scores:o.scores||[]}})});D.myRank=best}
@@ -759,7 +770,7 @@ function alertBar(title,body){document.getElementById('fmf-alert')?.remove();con
 setInterval(()=>checkAlerts(false),5*6e4);
 
 /* printable report of the selected period (the browser saves it as PDF) */
-function reportPdf(){const p=D.p,[a,b]=range(p.k,p.from,p.to),[ca,cb]=cmpRange(a,b),cur=pstats(a,b),prv=p.cmp==='none'?null:pstats(ca,cb),R=rating(D.tickets),S1=series(a,b),me=D.me||{};
+function reportPdf(){const p=D.p,[a,b]=range(p.k,p.from,p.to),[ca,cb]=cmpRange(a,b),cur=pstats(a,b),prv=p.cmp==='none'?null:pstats(ca,cb),R=myRating(),S1=series(a,b),me=D.me||{};
  const row=(l,v,pv)=>`<tr><td>${l}</td><td><b>${v}</b></td>${prv?`<td>${pv}</td>`:''}</tr>`;
  const top=(()=>{const m=new Map();cur.rec.forEach(t=>{const s=S(t.school)||'—';m.set(s,(m.get(s)||0)+1)});return [...m.entries()].sort((x,y)=>y[1]-x[1]).slice(0,10)})();
  const br=cur.rec.filter(t=>slaP(t).breached).slice(0,40);
