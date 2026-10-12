@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V158">
+<meta name="fm-version" content="V159">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25530,9 +25530,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V158',date:'2026-10-12',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V159',date:'2026-10-12',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+{v:'V159',d:'2026-10-12',t:'إصلاح تنبيه «سلامة الملف»',i:['فحص التشغيل كان ينبّه خطأً على قالب تقرير PDF لأوامر العمل (fm-v149-wo-repair)؛ عُدِّل سطر القالب دون أي تغيير في التقرير']},
 {v:'V158',d:'2026-10-12',t:'الحوكمة: التصعيد وسقف الاعتماد والجودة والسلامة والنائب والسجل',i:['تصعيد تلقائي للأوامر المتأخرة لمستوى أعلى في الخط (ساعات كل مستوى من الإعدادات)، ويظهر «مصعّدة إليك» في البورتال','سقف الاعتماد المالي للمشتريات (مدير المنطقة / مدير العمليات) يُضبط من الإعدادات ويُفرض عند الإغلاق','زر «إيقاف العمل» لمدير الأمن والسلامة مع السبب، و«السماح بالاستئناف»؛ لوحة سلامة لعناصر الحريق والإنذار الحرجة','تدقيق الجودة بعينة عشوائية، وتقارير عدم المطابقة NCR مع أمر تصحيحي تلقائي','النائب أثناء الغياب بفترة محددة','سجل العمليات الحساسة لمدير النظام']},
 {v:'V157',d:'2026-10-12',t:'المسميات الوظيفية والبورتال',i:['عشرة مسميات: مدير النظام، مدير الإدارة، مدير المشروع، مدير العمليات، مدير المنطقة، مهندس المنطقة، المشرف، المقاول، مدير الأمن والسلامة، مدير الجودة والتخطيط','الصلاحيات في قاعدة البيانات حسب المسمى: النطاق (الكل / المنطقة / الفريق)، والإسناد لمن تحته، والاعتماد','«بورتالي»: صفحة لكل مستخدم بمسماه ونطاقه وأرقامه واختصاراته وصلاحياته، وإخفاء الصفحات غير اللازمة له','إدارة المستخدمين: المسمى الوظيفي بدل الدور (والاستيراد من Excel يقبله)']},
 {v:'V156',d:'2026-10-12',t:'إسناد التواصل من قاعدة المدارس',i:['«مراجعة الإسناد من قاعدة المدارس»: كل مشرف ومهندس في القاعدة مع عدد مدارسه وحسابه في المنصة (مطابقة بالبريد ثم بالاسم)','إنشاء حسابات الناقصين من القاعدة بكلمة مرور مؤقتة تُغيَّر عند أول دخول','إسناد كل المدارس لأصحابها بضغطة، وربط كل مشرف بمهندسه، وإيقاف الإسنادات التي خرجت من القاعدة']},
@@ -30931,9 +30932,7 @@ async function fmV149Pdf(list){if(!list.length)return;const win=window.open('','
   figure img{width:100%;height:120px;object-fit:cover;display:block}.g3 figure img{height:140px}figcaption{font-size:11px;text-align:center;background:#f8fafc;padding:2px}.miss div{height:120px;display:grid;place-items:center;color:#94a3b8;font-size:30px}
   .it{margin:6px 0;break-inside:avoid}.sig{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px;text-align:center;font-weight:800}.sig div{border-top:1px solid #0f172a;padding-top:6px;min-height:46px}.sig span{font-weight:600;color:#475569}
   footer{margin-top:10px;color:#94a3b8;font-size:10px;text-align:center}@media screen{body{background:#e2e8f0}.pg{background:#fff;max-width:800px;margin:12px auto;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1)}}`;
- const html=`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(list.length>1?'تقرير الحملة — '+(list[0].batch_title||''):'تقرير '+(list[0].code||''))}</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap"><style>${css}${window.fmV151Css||''}</style></head><body>${D.map(o=>(window.fmV151Page&&fmV151Page(o,{esc,dt,img,logo}))||page(o)).join('')}${window.fmV152Agg?fmV152Agg(D,{esc,logo}):''}
-  <script>(function(){var im=[].slice.call(document.images),n=0,once=0,go=function(){if(once++)return;setTimeout(function(){window.print()},400)};if(!im.length)return go();im.forEach(function(i){if(i.complete)n++;else i.onload=i.onerror=function(){if(++n>=im.length)go()}});if(n>=im.length)go();setTimeout(go,20000)})();<\/script></body></html>`;
+ const html=`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(list.length>1?'تقرير الحملة — '+(list[0].batch_title||''):'تقرير '+(list[0].code||''))}</title> <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap"><style>${css}${window.fmV151Css||''}</style></head><body>${D.map(o=>(window.fmV151Page&&fmV151Page(o,{esc,dt,img,logo}))||page(o)).join('')}${window.fmV152Agg?fmV152Agg(D,{esc,logo}):''} <script>(function(){var im=[].slice.call(document.images),n=0,once=0,go=function(){if(once++)return;setTimeout(function(){window.print()},400)};if(!im.length)return go();im.forEach(function(i){if(i.complete)n++;else i.onload=i.onerror=function(){if(++n>=im.length)go()}});if(n>=im.length)go();setTimeout(go,20000)})();<\/script></body></html>`;
  win.document.open();win.document.write(html);win.document.close()}
 window.fmV149Pdf=fmV149Pdf;
 })();
