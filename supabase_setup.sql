@@ -826,8 +826,9 @@ begin
     if it->>'res' = 'fix' and it->>'rwo' is null
        and (jsonb_typeof(p->'items') is distinct from 'array' or (p->'items') @> to_jsonb(i)) then
       idx := idx || i;
-      items := items || jsonb_strip_nulls(jsonb_build_object('t', it->>'t', 'tool', it->>'tool', 'src_item', i + 1, 'done', false));
-      probs := probs || E'\n• ' || (it->>'t') || coalesce(' — ' || nullif(it->>'note',''), '');
+      -- V151: a graded (FCI) element describes its defect in the chosen option («opt»)
+      items := items || jsonb_strip_nulls(jsonb_build_object('t', (it->>'t') || coalesce(' — ' || nullif(it->>'opt',''), ''), 'tool', it->>'tool', 'src_item', coalesce(it->>'no', (i + 1)::text), 'done', false));
+      probs := probs || E'\n• ' || coalesce((it->>'no') || ' ', '') || (it->>'t') || coalesce(' — ' || nullif(it->>'opt',''), '') || coalesce(' — ' || nullif(it->>'note',''), '');
     end if;
   end loop;
   if cardinality(idx) = 0 then raise exception 'nothing to repair'; end if;
