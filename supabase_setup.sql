@@ -378,20 +378,50 @@ create trigger fm_on_auth_user_email after update of email on auth.users
 -- Hierarchy: admin > engineer > supervisor > contractor. An order goes from a person to someone below him
 -- in his own line (profiles.reports_to); the admin may assign to anyone below him.
 -- All writes go through the functions below, which check the hierarchy and the allowed status changes.
+-- V158: system settings (escalation hours, spending limits, QA sample) — read by everyone signed in, written by the system admin
+create table if not exists public.fm_settings (key text primary key, value jsonb not null, updated_at timestamptz not null default now(), updated_by uuid default auth.uid());
+insert into public.fm_settings(key, value) values
+  ('escalation', '{"enabled": true, "hours": [0, 24, 72]}'),
+  ('spend_limits', '{"area_manager": 1000, "ops_manager": 5000}'),
+  ('qa', '{"sample_pct": 5, "days": 30}')
+on conflict (key) do nothing;
+alter table public.fm_settings enable row level security;
+drop policy if exists p_set_read on public.fm_settings;
+drop policy if exists p_set_write on public.fm_settings;
+create policy p_set_read  on public.fm_settings for select using (public.fm_role() <> 'pending');
+create policy p_set_write on public.fm_settings for all using (public.fm_role() = 'admin') with check (public.fm_role() = 'admin');
+grant select, insert, update on public.fm_settings to authenticated;
+create or replace function public.fm_setting(k text) returns jsonb language sql stable security definer set search_path = public as $$
+  select value from public.fm_settings where key = k $$;
+-- V158: a deputy acts for a manager over his team while the period is running
+create table if not exists public.fm_deputies (
+  id uuid primary key default gen_random_uuid(),
+  principal uuid not null references public.profiles(id) on delete cascade,
+  deputy uuid not null references public.profiles(id) on delete cascade,
+  from_at timestamptz not null, to_at timestamptz not null, note text,
+  active boolean not null default true, created_by uuid default auth.uid(), created_at timestamptz not null default now(),
+  check (principal <> deputy), check (to_at > from_at));
+create index if not exists fm_deputies_dep_idx on public.fm_deputies (deputy, active);
 create or replace function public.fm_rank(r text) returns int language sql immutable as $$
   select case r when 'admin' then 4 when 'engineer' then 3 when 'supervisor' then 2 when 'contractor' then 1 else 0 end $$;
 
 -- true when p_user reports to p_boss, directly or through other managers
-create or replace function public.fm_is_under(p_user uuid, p_boss uuid) returns boolean
+create or replace function public.fm_is_under_base(p_user uuid, p_boss uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   with recursive up(id, boss, depth) as (
     select id, reports_to, 1 from public.profiles where id = p_user
     union all
     select p.id, p.reports_to, u.depth + 1 from public.profiles p join up u on p.id = u.boss where u.depth < 8)
   select p_boss is not null and exists (select 1 from up where boss = p_boss) $$;
+-- V158: an active deputy counts as the boss of his principal and of the principal's team
+create or replace function public.fm_is_under(p_user uuid, p_boss uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.fm_is_under_base(p_user, p_boss) or exists (select 1 from public.fm_deputies d
+    where d.deputy = p_boss and d.active and now() between d.from_at and d.to_at
+      and (d.principal = p_user or public.fm_is_under_base(p_user, d.principal))) $$;
 
 -- may p_me assign work to p_user? (V147: the scheduled campaigns check it for the schedule's owner)
-create or replace function public.fm_can_assign_as(p_me uuid, p_user uuid) returns boolean
+create or replace function public.fm_can_assign_base(p_me uuid, p_user uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.profiles t, public.profiles me
     where t.id = p_user and me.id = p_me and me.active and t.active and t.id <> me.id
@@ -406,6 +436,12 @@ language sql stable security definer set search_path = public as $$
         or (public.fm_posx(me.role, me.job_title) in ('area_engineer','supervisor')
             and public.fm_prank(public.fm_posx(t.role, t.job_title)) < public.fm_prank(public.fm_posx(me.role, me.job_title))
             and public.fm_is_under(t.id, me.id)))) $$;
+-- V158: plus, while a deputy period runs, what the principal may
+create or replace function public.fm_can_assign_as(p_me uuid, p_user uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.fm_can_assign_base(p_me, p_user) or exists (select 1 from public.fm_deputies d
+    where d.deputy = p_me and d.active and now() between d.from_at and d.to_at and d.principal <> p_user
+      and public.fm_can_assign_base(d.principal, p_user)) $$;
 -- may the signed-in user assign work to p_user?
 create or replace function public.fm_can_assign_to(p_user uuid) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -590,7 +626,13 @@ begin
   isA := w.assignee = me.id;
   -- V157: also the project / operations managers, and the area manager in his regions
   isC := w.created_by = me.id or me.role = 'admin' or public.fm_posx(me.role, me.job_title) in ('project_manager','ops_manager')
-         or (public.fm_posx(me.role, me.job_title) = 'area_manager' and public.fm_region_ok(coalesce(w.region,'')));
+         or (public.fm_posx(me.role, me.job_title) = 'area_manager' and public.fm_region_ok(coalesce(w.region,'')))
+         -- V158: a deputy approves what his principal may
+         or exists (select 1 from public.fm_deputies d join public.profiles pr on pr.id = d.principal
+                     where d.deputy = me.id and d.active and now() between d.from_at and d.to_at
+                       and (pr.id = w.created_by or public.fm_posx(pr.role, pr.job_title) in ('project_manager','ops_manager')
+                            or (public.fm_posx(pr.role, pr.job_title) = 'area_manager'
+                                and (cardinality(pr.regions) = 0 or coalesce(w.region,'') = any(pr.regions)))));
   ns := w.status;
   if p_action = 'accept' and isA and w.status = 'assigned' then ns := 'accepted'; msg := '✅ قبل الأمر';
   elsif p_action = 'reject' and isA and w.status = 'assigned' then
@@ -623,10 +665,24 @@ begin
     end loop;
     if jsonb_typeof(p_data) = 'array' then update public.work_orders set checklist = p_data where id = w.id; end if;
     ns := 'done'; msg := '📨 أبلغ: تم الإجراء — بانتظار الاعتماد';
-  elsif p_action = 'close' and isC and w.status = 'done' then ns := 'closed'; msg := '🔒 اعتمد الإنجاز وأغلق الأمر';
+  elsif p_action = 'close' and isC and w.status = 'done' then
+    -- V158: purchases above the limits set in the system need the area / operations manager (or a higher title)
+    if public.fm_wo_spend_rank(w.checklist) > greatest(public.fm_prank(public.fm_posx(me.role, me.job_title)),
+         coalesce((select max(public.fm_prank(public.fm_posx(pr.role, pr.job_title))) from public.fm_deputies d join public.profiles pr on pr.id = d.principal
+                    where d.deputy = me.id and d.active and now() between d.from_at and d.to_at), 0)) then
+      raise exception 'spend approval required: %', case public.fm_wo_spend_rank(w.checklist) when 6 then 'ops_manager' else 'area_manager' end;
+    end if;
+    ns := 'closed'; msg := '🔒 اعتمد الإنجاز وأغلق الأمر';
+  -- V158: the safety manager stops unsafe work (reason required) and lets it resume
+  elsif p_action = 'stop' and public.fm_posx(me.role, me.job_title) in ('hse_manager','sysadmin') and w.status not in ('closed','cancelled','stopped') then
+    if note is null then raise exception 'reason required'; end if;
+    update public.work_orders set stop_prev = w.status where id = w.id;
+    ns := 'stopped'; msg := '⛔ أوقف العمل لأسباب تتعلق بالسلامة';
+  elsif p_action = 'resume' and public.fm_posx(me.role, me.job_title) in ('hse_manager','sysadmin') and w.status = 'stopped' then
+    ns := coalesce(nullif(w.stop_prev,''), 'accepted'); msg := '▶️ سمح باستئناف العمل';
   elsif p_action = 'return' and isC and w.status = 'done' then
     if note is null then raise exception 'reason required'; end if; ns := 'returned'; msg := '↩️ أعاد الأمر للتصحيح';
-  elsif p_action = 'cancel' and isC and w.status not in ('closed','cancelled') then ns := 'cancelled'; msg := '🚫 ألغى الأمر';
+  elsif p_action = 'cancel' and isC and w.status not in ('closed','cancelled','stopped') then ns := 'cancelled'; msg := '🚫 ألغى الأمر';
   elsif p_action = 'reassign' and isC and w.status in ('assigned','rejected','accepted','in_progress','returned') then
     select * into t from public.profiles where id = public.fm_uuid_or_null(p_data->>'assignee');
     if t.id is null or not public.fm_can_assign_to(t.id) then raise exception 'cannot assign to this user'; end if;
@@ -775,6 +831,7 @@ language plpgsql security definer set search_path = public as $$
 declare r record; n int := 0;
 begin
   if auth.uid() is not null and public.fm_role() not in ('admin','manager','staff','engineer','supervisor') then return 0; end if;
+  perform public.fm_wo_escalate();   -- V158
   for r in select id from public.wo_schedules where active and next_run_at <= now() order by next_run_at limit 25 loop
     perform public.fm_wo_run_schedule(r.id, false); n := n + 1;
   end loop;
@@ -1043,5 +1100,234 @@ exception when insufficient_privilege then
 end $do$;
 revoke all on function public.fm_eng_lead(uuid) from public, anon;
 grant execute on function public.fm_eng_lead(uuid) to authenticated;
+
+-- ---------- 14) escalation, spending limit, stop work, quality audits, deputies, audit log (V158) ----------
+-- work orders: «stopped» (safety) and the escalation state
+do $$ declare c text; begin
+  for c in select conname from pg_constraint where conrelid = 'public.work_orders'::regclass and contype = 'c' and pg_get_constraintdef(oid) ilike '%status%' loop
+    execute format('alter table public.work_orders drop constraint %I', c); end loop;
+  alter table public.work_orders add constraint work_orders_status_check
+    check (status in ('assigned','accepted','rejected','in_progress','done','returned','closed','cancelled','stopped'));
+end $$;
+alter table public.work_orders add column if not exists stop_prev text;
+alter table public.work_orders add column if not exists esc_level int not null default 0;
+alter table public.work_orders add column if not exists esc_to uuid references public.profiles(id) on delete set null;
+alter table public.work_orders add column if not exists esc_at timestamptz;
+
+-- the title needed to approve an order's purchases: 6 = operations manager, 5 = area manager, 0 = anyone allowed
+create or replace function public.fm_wo_spend(cl jsonb) returns numeric language sql immutable as $$
+  select coalesce(sum(coalesce(nullif(regexp_replace(m->>'q', '[^0-9.]', '', 'g'), '')::numeric, 0)
+                    * coalesce(nullif(regexp_replace(m->>'price', '[^0-9.]', '', 'g'), '')::numeric, 0)), 0)
+    from jsonb_array_elements(case when jsonb_typeof(cl) = 'array' then cl else '[]'::jsonb end) e,
+         jsonb_array_elements(case when jsonb_typeof(e->'materials') = 'array' then e->'materials' else '[]'::jsonb end) m
+   where m->>'src' = 'buy' $$;
+create or replace function public.fm_wo_spend_rank(cl jsonb) returns int language sql stable security definer set search_path = public as $$
+  select case when (public.fm_setting('spend_limits')->>'ops_manager') is not null and public.fm_wo_spend(cl) > (public.fm_setting('spend_limits')->>'ops_manager')::numeric then 6
+              when (public.fm_setting('spend_limits')->>'area_manager') is not null and public.fm_wo_spend(cl) > (public.fm_setting('spend_limits')->>'area_manager')::numeric then 5
+              else 0 end $$;
+
+-- escalation: an open order past its due time climbs one manager up the assignee's line at each threshold (hours late)
+create or replace function public.fm_wo_escalate() returns int
+language plpgsql security definer set search_path = public as $$
+declare cfg jsonb := public.fm_setting('escalation'); w record; lv int; tgt uuid; cur uuid; k int; n int := 0; h numeric; nm text;
+begin
+  if cfg is null or coalesce((cfg->>'enabled')::boolean, true) = false then return 0; end if;
+  for w in select * from public.work_orders where due_at < now() and status in ('assigned','accepted','in_progress','returned') and assignee is not null loop
+    h := extract(epoch from now() - w.due_at) / 3600;
+    select count(*) into lv from jsonb_array_elements_text(cfg->'hours') x where x::numeric <= h;
+    if lv <= w.esc_level then continue; end if;
+    cur := w.assignee; tgt := null; k := 0;
+    while k < lv loop
+      select reports_to into cur from public.profiles where id = cur;
+      exit when cur is null; tgt := cur; k := k + 1;
+    end loop;
+    if tgt is null then continue; end if;
+    select coalesce(full_name, email) into nm from public.profiles where id = tgt;
+    update public.work_orders set esc_level = lv, esc_to = tgt, esc_at = now() where id = w.id;
+    insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+    values (w.id, null, 'النظام', 'escalate', w.status, '⏫ تصعيد (المستوى ' || lv || ') إلى ' || coalesce(nm,'') || ' — متأخر ' || round(h) || ' ساعة');
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_wo_escalate() from public, anon, authenticated;
+-- the orders escalated to the signed-in user
+create or replace function public.fm_wo_my_escalations() returns setof public.work_orders language sql stable security definer set search_path = public as $$
+  select * from public.work_orders where esc_to = auth.uid() and status in ('assigned','accepted','in_progress','returned') order by esc_level desc, due_at $$;
+revoke all on function public.fm_wo_my_escalations() from public, anon;
+grant execute on function public.fm_wo_my_escalations() to authenticated;
+revoke all on function public.fm_wo_spend_rank(jsonb) from public, anon;
+grant execute on function public.fm_wo_spend_rank(jsonb) to authenticated;
+
+-- quality audits: a random sample of closed orders; a failed audit opens a non-conformance report (NCR) and can open a corrective order
+create sequence if not exists public.ncr_seq;
+create table if not exists public.wo_audits (
+  id uuid primary key default gen_random_uuid(),
+  wo_id uuid not null unique references public.work_orders(id) on delete cascade,
+  sampled_at timestamptz not null default now(), sampled_by uuid,
+  status text not null default 'pending' check (status in ('pending','pass','fail')),
+  score int check (score between 0 and 100), notes text, reviewed_by uuid, reviewed_at timestamptz,
+  ncr_code text unique, ncr_status text check (ncr_status in ('open','closed')), ncr_action text, ncr_due timestamptz, ncr_wo uuid, ncr_closed_at timestamptz);
+alter table public.wo_audits enable row level security;
+drop policy if exists p_aud_read on public.wo_audits;
+create policy p_aud_read on public.wo_audits for select using (public.fm_scope_all() or public.fm_wo_can_see(wo_id));
+revoke all on public.wo_audits from anon, authenticated;
+grant select on public.wo_audits to authenticated;
+create or replace function public.fm_qa_ok() returns boolean language sql stable as $$
+  select coalesce(public.fm_my_pos() in ('qa_manager','sysadmin'), false) $$;
+create or replace function public.fm_qa_sample(p_pct numeric default null, p_days int default null) returns int
+language plpgsql security definer set search_path = public as $$
+declare cfg jsonb := public.fm_setting('qa'); pct numeric := coalesce(p_pct, (cfg->>'sample_pct')::numeric, 5); dd int := coalesce(p_days, (cfg->>'days')::int, 30); tot int; n int;
+begin
+  if not public.fm_qa_ok() then raise exception 'not allowed' using errcode = '42501'; end if;
+  select count(*) into tot from public.work_orders w where w.status = 'closed' and w.closed_at > now() - make_interval(days => dd)
+     and not exists (select 1 from public.wo_audits a where a.wo_id = w.id);
+  n := ceil(tot * least(greatest(pct, 0), 100) / 100.0);
+  insert into public.wo_audits (wo_id, sampled_by)
+  select w.id, auth.uid() from public.work_orders w where w.status = 'closed' and w.closed_at > now() - make_interval(days => dd)
+     and not exists (select 1 from public.wo_audits a where a.wo_id = w.id) order by random() limit n;
+  return n;
+end $$;
+create or replace function public.fm_qa_review(p_id uuid, p_result text, p_score int default null, p_notes text default null, p_corrective boolean default false) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare a public.wo_audits; w public.work_orders; me public.profiles; v_ncr text; cw uuid;
+begin
+  if not public.fm_qa_ok() then raise exception 'not allowed' using errcode = '42501'; end if;
+  select * into me from public.profiles where id = auth.uid();
+  select * into a from public.wo_audits where id = p_id for update;
+  if a.id is null then raise exception 'audit not found'; end if;
+  if p_result not in ('pass','fail') then raise exception 'invalid result'; end if;
+  if p_result = 'fail' and nullif(trim(coalesce(p_notes,'')),'') is null then raise exception 'reason required'; end if;
+  select * into w from public.work_orders where id = a.wo_id;
+  if p_result = 'fail' and a.ncr_code is null then
+    v_ncr := 'NCR-' || to_char(now(),'YYYY') || '-' || lpad(nextval('public.ncr_seq')::text, 4, '0');
+    if p_corrective and w.assignee is not null and public.fm_can_assign_as(me.id, w.assignee) then
+      cw := public.fm_wo_create_as(me.id, jsonb_build_object('title', 'تصحيح عدم مطابقة ' || v_ncr || ' — ' || w.title, 'type', 'repair',
+              'assignee', w.assignee, 'school', w.school, 'region', w.region, 'building_id', w.building_id, 'priority', 'عالي',
+              'due_at', now() + interval '7 days', 'description', 'تقرير عدم مطابقة على الأمر ' || w.code || E'\n' || p_notes));
+      update public.work_orders set source_wo = w.id where id = cw;
+    end if;
+  end if;
+  update public.wo_audits set status = p_result, score = p_score, notes = nullif(trim(coalesce(p_notes,'')),''), reviewed_by = me.id, reviewed_at = now(),
+     ncr_code = coalesce(ncr_code, v_ncr), ncr_status = case when coalesce(ncr_code, v_ncr) is not null then coalesce(ncr_status,'open') end,
+     ncr_due = coalesce(ncr_due, case when v_ncr is not null then now() + interval '7 days' end), ncr_wo = coalesce(ncr_wo, cw)
+   where id = a.id;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (w.id, me.id, coalesce(me.full_name, me.email), 'audit', w.status,
+          case when p_result = 'pass' then '✅ تدقيق الجودة: مطابق' else '❌ تدقيق الجودة: غير مطابق — ' || coalesce(v_ncr, a.ncr_code, '') || ' — ' || p_notes end
+          || coalesce(' (' || p_score || '%)', ''));
+  return jsonb_build_object('ncr', coalesce(v_ncr, a.ncr_code), 'corrective', (select x.code from public.work_orders x where x.id = cw));
+end $$;
+create or replace function public.fm_qa_ncr_close(p_id uuid, p_action text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_qa_ok() then raise exception 'not allowed' using errcode = '42501'; end if;
+  if nullif(trim(coalesce(p_action,'')),'') is null then raise exception 'action required'; end if;
+  update public.wo_audits set ncr_status = 'closed', ncr_action = trim(p_action), ncr_closed_at = now() where id = p_id and ncr_status = 'open';
+  if not found then raise exception 'ncr not open'; end if;
+end $$;
+revoke all on function public.fm_qa_sample(numeric,int) from public, anon;
+revoke all on function public.fm_qa_review(uuid,text,int,text,boolean) from public, anon;
+revoke all on function public.fm_qa_ncr_close(uuid,text) from public, anon;
+grant execute on function public.fm_qa_sample(numeric,int) to authenticated;
+grant execute on function public.fm_qa_review(uuid,text,int,text,boolean) to authenticated;
+grant execute on function public.fm_qa_ncr_close(uuid,text) to authenticated;
+
+-- deputies: set by the principal himself (or the system admin for anyone), ended by either of them
+alter table public.fm_deputies enable row level security;
+drop policy if exists p_dep_read on public.fm_deputies;
+create policy p_dep_read on public.fm_deputies for select using (principal = auth.uid() or deputy = auth.uid() or public.fm_scope_all());
+revoke all on public.fm_deputies from anon, authenticated;
+grant select on public.fm_deputies to authenticated;
+create or replace function public.fm_deputy_set(p_deputy uuid, p_from timestamptz, p_to timestamptz, p_note text default null, p_principal uuid default null) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare me public.profiles; pr uuid; dp public.profiles; v uuid;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not me.active then raise exception 'not allowed' using errcode = '42501'; end if;
+  pr := coalesce(p_principal, me.id);
+  if pr <> me.id and me.role <> 'admin' then raise exception 'not allowed' using errcode = '42501'; end if;
+  if public.fm_prank(public.fm_posx((select role from public.profiles where id = pr), (select job_title from public.profiles where id = pr))) < 3
+     and public.fm_posx((select role from public.profiles where id = pr), (select job_title from public.profiles where id = pr)) not in ('hse_manager','qa_manager') then
+    raise exception 'not allowed' using errcode = '42501'; end if;
+  select * into dp from public.profiles where id = p_deputy;
+  if dp.id is null or not dp.active or dp.id = pr or dp.role in ('pending','contractor') then raise exception 'invalid deputy'; end if;
+  if p_to <= p_from or p_to > p_from + interval '120 days' then raise exception 'invalid period'; end if;
+  update public.fm_deputies set active = false where principal = pr and active and to_at > p_from;
+  insert into public.fm_deputies (principal, deputy, from_at, to_at, note) values (pr, p_deputy, p_from, p_to, nullif(trim(coalesce(p_note,'')),'')) returning id into v;
+  return v;
+end $$;
+create or replace function public.fm_deputy_end(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  update public.fm_deputies set active = false where id = p_id and active
+     and (principal = auth.uid() or deputy = auth.uid() or public.fm_role() = 'admin');
+  if not found then raise exception 'not allowed' using errcode = '42501'; end if;
+end $$;
+-- who can be chosen as a deputy (names and titles only; profiles stay private)
+create or replace function public.fm_deputy_candidates() returns table(id uuid, full_name text, job_title text, regions text[])
+language sql stable security definer set search_path = public as $$
+  select p.id, coalesce(p.full_name, p.email), public.fm_posx(p.role, p.job_title), p.regions from public.profiles p
+   where p.active and p.id <> auth.uid() and p.role not in ('pending','contractor') and public.fm_role() <> 'pending'
+   order by public.fm_prank(public.fm_posx(p.role, p.job_title)) desc, p.full_name $$;
+revoke all on function public.fm_deputy_set(uuid,timestamptz,timestamptz,text,uuid) from public, anon;
+revoke all on function public.fm_deputy_end(uuid) from public, anon;
+revoke all on function public.fm_deputy_candidates() from public, anon;
+grant execute on function public.fm_deputy_set(uuid,timestamptz,timestamptz,text,uuid) to authenticated;
+grant execute on function public.fm_deputy_end(uuid) to authenticated;
+grant execute on function public.fm_deputy_candidates() to authenticated;
+
+-- audit log of sensitive operations (written by triggers, read by the system admin only)
+create table if not exists public.fm_audit_log (
+  id bigint generated always as identity primary key, at timestamptz not null default now(),
+  actor uuid default auth.uid(), actor_name text, action text not null, target text, details jsonb);
+create index if not exists fm_audit_log_at_idx on public.fm_audit_log (at desc);
+alter table public.fm_audit_log enable row level security;
+drop policy if exists p_alog_read on public.fm_audit_log;
+create policy p_alog_read on public.fm_audit_log for select using (public.fm_role() = 'admin');
+revoke all on public.fm_audit_log from anon, authenticated;
+grant select on public.fm_audit_log to authenticated;
+create or replace function public.fm_audit(p_action text, p_target text, p_details jsonb) returns void
+language sql security definer set search_path = public as $$
+  insert into public.fm_audit_log (actor, actor_name, action, target, details)
+  values (auth.uid(), (select coalesce(full_name, email) from public.profiles where id = auth.uid()), p_action, p_target, p_details) $$;
+revoke all on function public.fm_audit(text,text,jsonb) from public, anon, authenticated;
+create or replace function public.fm_audit_trg() returns trigger language plpgsql security definer set search_path = public as $$
+declare o jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) end; n jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) end; d jsonb := '{}'; k text;
+begin
+  if tg_table_name = 'profiles' then
+    foreach k in array array['role','job_title','active','regions','reports_to','person_names'] loop
+      if o is null or n is null or (o->k) is distinct from (n->k) then d := d || jsonb_build_object(k, jsonb_build_object('from', o->k, 'to', n->k)); end if;
+    end loop;
+    if tg_op = 'UPDATE' and d = '{}' then return null; end if;
+    perform public.fm_audit('profile.' || lower(tg_op), coalesce(n->>'email', o->>'email'), d);
+  elsif tg_table_name = 'work_orders' then
+    if tg_op = 'DELETE' then perform public.fm_audit('wo.delete', o->>'code', jsonb_build_object('title', o->>'title'));
+    elsif (o->>'status') is distinct from (n->>'status') and (n->>'status' in ('closed','cancelled','stopped') or o->>'status' = 'stopped') then
+      perform public.fm_audit('wo.' || case when o->>'status' = 'stopped' and n->>'status' <> 'cancelled' then 'resumed' else n->>'status' end, n->>'code', jsonb_build_object('from', o->>'status', 'title', n->>'title', 'spend', public.fm_wo_spend(new.checklist)));
+    end if;
+  elsif tg_table_name = 'fm_settings' then
+    perform public.fm_audit('settings.' || lower(tg_op), n->>'key', jsonb_build_object('from', o->'value', 'to', n->'value'));
+  elsif tg_table_name = 'fm_deputies' then
+    perform public.fm_audit(case when tg_op = 'INSERT' then 'deputy.set' else 'deputy.update' end, n->>'principal',
+      jsonb_build_object('deputy', n->>'deputy', 'from', n->>'from_at', 'to', n->>'to_at', 'active', n->'active'));
+  elsif tg_table_name = 'wo_audits' then
+    if (o->>'status') is distinct from (n->>'status') or (o->>'ncr_status') is distinct from (n->>'ncr_status') then
+      perform public.fm_audit(case when (o->>'ncr_status') is distinct from (n->>'ncr_status') and n->>'ncr_status' = 'closed' then 'qa.ncr_closed' else 'qa.' || coalesce(n->>'status','') end, (select code from public.work_orders where id = new.wo_id),
+        jsonb_build_object('score', n->'score', 'ncr', n->>'ncr_code', 'ncr_status', n->>'ncr_status'));
+    end if;
+  end if;
+  return null;
+end $$;
+drop trigger if exists fm_audit_profiles on public.profiles;
+create trigger fm_audit_profiles after insert or update or delete on public.profiles for each row execute function public.fm_audit_trg();
+drop trigger if exists fm_audit_wo on public.work_orders;
+create trigger fm_audit_wo after update of status or delete on public.work_orders for each row execute function public.fm_audit_trg();
+drop trigger if exists fm_audit_settings on public.fm_settings;
+create trigger fm_audit_settings after insert or update on public.fm_settings for each row execute function public.fm_audit_trg();
+drop trigger if exists fm_audit_dep on public.fm_deputies;
+create trigger fm_audit_dep after insert or update on public.fm_deputies for each row execute function public.fm_audit_trg();
+drop trigger if exists fm_audit_qa on public.wo_audits;
+create trigger fm_audit_qa after update on public.wo_audits for each row execute function public.fm_audit_trg();
 
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.

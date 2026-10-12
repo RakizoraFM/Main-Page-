@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F18">
+<meta name="fm-version" content="F19">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -185,7 +185,7 @@ function ensureLib(){if(window.supabase&&window.supabase.createClient)return Pro
 async function sb(){const c=cfg();if(!c.url||!c.key)throw new Error('لم يتم إعداد الاتصال بالسحابة');if(client)return client;await ensureLib();
  client=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'fm-cloud-auth'}});return client}
 const chk=({data,error})=>{if(error)throw new Error(error.message||String(error));return data};
-const ARmsg=m=>{m=String(m||'');if(/Invalid login/i.test(m))return 'البريد أو كلمة المرور غير صحيحة';if(/Email not confirmed/i.test(m))return 'لم يتم تأكيد البريد بعد — افتح رسالة التأكيد في بريدك';if(/already registered/i.test(m))return 'هذا البريد مسجل مسبقاً';if(/row-level security/i.test(m))return 'ليست لديك صلاحية لهذا الإجراء';if(/Failed to fetch|NetworkError|network/i.test(m))return 'تعذر الاتصال بالخادم — تحقق من الإنترنت';if(/Password should/i.test(m))return 'كلمة المرور قصيرة — 6 أحرف على الأقل';return m};
+const ARmsg=m=>{m=String(m||'');if(/spend approval required/i.test(m))return 'المشتريات فوق سقف الاعتماد — يعتمدها مدير أعلى';if(/reason required/i.test(m))return 'اكتب السبب';if(/Invalid login/i.test(m))return 'البريد أو كلمة المرور غير صحيحة';if(/Email not confirmed/i.test(m))return 'لم يتم تأكيد البريد بعد — افتح رسالة التأكيد في بريدك';if(/already registered/i.test(m))return 'هذا البريد مسجل مسبقاً';if(/row-level security/i.test(m))return 'ليست لديك صلاحية لهذا الإجراء';if(/Failed to fetch|NetworkError|network/i.test(m))return 'تعذر الاتصال بالخادم — تحقق من الإنترنت';if(/Password should/i.test(m))return 'كلمة المرور قصيرة — 6 أحرف على الأقل';return m};
 function b64ToBlob(d){const [h,b]=d.split(',');const mime=(h.match(/data:([^;]+)/)||[])[1]||'image/jpeg';const bin=atob(b);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:mime})}
 const uuid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16)});
 
@@ -809,7 +809,7 @@ function planHtml(){const {route,noXY}=planData();const km=route.reduce((s,r)=>s
   ${noXY.length?`<div class="muted" style="margin-top:10px">مدارس عاجلة بدون إحداثيات: ${noXY.map(r=>esc(r.name)+' ('+fmt(r.open)+')').join('، ')}</div>`:''}</div>`}
 /* ---------- F8: work orders (assigned down the hierarchy, done by the assignee, approved by the assigner) ---------- */
 const WO_T={repair:['🔧','إصلاح'],preventive:['🛡️','صيانة وقائية'],inspection:['🔍','معاينة'],handover:['🔑','استلام موقع'],visit:['🏫','زيارة'],data:['📋','تجميع معلومات'],task:['📌','مهمة']};
-const WO_S={assigned:['📥','بانتظار القبول','c-warn'],accepted:['👍','مقبول','c-pri'],rejected:['⛔','مرفوض','c-bad'],in_progress:['🛠️','قيد التنفيذ','c-pri'],done:['📨','بانتظار الاعتماد','c-warn'],returned:['↩️','مُعاد للتصحيح','c-bad'],closed:['🔒','مغلق','c-ok'],cancelled:['🚫','ملغى','']};
+const WO_S={assigned:['📥','بانتظار القبول','c-warn'],accepted:['👍','مقبول','c-pri'],rejected:['⛔','مرفوض','c-bad'],in_progress:['🛠️','قيد التنفيذ','c-pri'],done:['📨','بانتظار الاعتماد','c-warn'],returned:['↩️','مُعاد للتصحيح','c-bad'],closed:['🔒','مغلق','c-ok'],cancelled:['🚫','ملغى',''],stopped:['⛔','موقوف (سلامة)','c-bad']};
 const WO_FINAL=s=>s==='closed'||s==='cancelled';
 const WO_PH={'طارئ':24,'عالي':48,'متوسط':72};
 const canAssign=()=>['admin','engineer','supervisor'].includes(D.me?.role);
