@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V151">
+<meta name="fm-version" content="V152">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25530,9 +25530,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V151',date:'2026-10-12',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V152',date:'2026-10-12',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+{v:'V152',d:'2026-10-12',t:'احتياجات كل عنصر في تقرير FCI',i:['عند اختيار حالة تحتاج إصلاحاً يُفتح لوح بتبويبين: قطع غيار ومواد / أعمال إصلاح، مع الكميات','الاختيار بالبحث من قوائم نموذج الاستلام وأصناف المستودع، أو «غير موجود في القائمة»','جداول قطع الغيار وأعمال الإصلاح تُجمع تلقائياً من احتياجات العناصر مع كمية إضافية يدوية','الاحتياجات تظهر تحت كل عنصر في تفاصيل الأمر وتقرير PDF وExcel','إضافة قطع غيار أو بنود إصلاح أخرى في جداول الإجمالي','المخرج النهائي: صفحتان منفصلتان (قطع الغيار والمواد / أعمال الإصلاحات) بالكميات والعناصر، في PDF وExcel، مع إجمالي الحملة لعدة مدارس']},
 {v:'V151',d:'2026-10-12',t:'استلام المواقع — تقرير مؤشر مستوى التشغيل (FCI)',i:['قالب «استلام موقع» من النموذج المعتمد: 58 عنصراً في 8 أنظمة، لكل عنصر 4 مستويات من حالته كما في الملف','قطع الغيار (28) وأعمال الإصلاحات (16) بوحداتها: يسجّل المشرف الكمية المطلوبة','بيانات المبنى وحالة المبنى التشغيلية النهائية مع اقتراح تلقائي من تقييم العناصر','العنصر الذي يحتاج إصلاحاً يتطلب صورة، ويمكن إنشاء أمر إصلاح منه مباشرة','تقرير PDF بشكل تقرير FCI المعتمد، وعمود النتيجة في Excel']},
 {v:'V150',d:'2026-10-11',t:'القوالب حسب النظام واختيار أكثر من قالب',i:['القوالب المعتمدة مجمّعة تحت نظامها (الكهرباء، دورات المياه، الحريق، المصاعد، المدني، التكييف، شبكة المياه)','اختيار أكثر من قالب (أو نظام كامل) في نفس أمر العمل، مع بحث في القوالب','القوالب المختارة تُدمج في أمر واحد مقسّم بأقسام تظهر في تطبيق الميدان وتفاصيل الأمر وتقرير PDF وExcel','نوع أمر عمل جديد: «استلام موقع»']},
 {v:'V149',d:'2026-10-11',t:'أوامر الإصلاح والمواد والتكلفة وتقرير PDF',i:['أمر إصلاح بضغطة من بنود «يحتاج إصلاح» (لأمر واحد أو لكل مدارس الحملة) ينقل الوصف وصور «قبل» ويرتبط بأمر الفحص','قائمة أصناف المواد (المستودع) يديرها المدير والمهندس: قائمة مبدئية، استيراد وتصدير Excel، سعر الوحدة','سعر الوحدة لكل مادة، والمشتريات تتطلب سعراً وصورة فاتورة؛ تكلفة المواد لكل أمر وحملة وفي Excel','تقرير PDF لكل مدرسة أو للحملة كاملة: صور الوصول، نتائج البنود، المواد والتكلفة، صور قبل وبعد، خانات التوقيع','تطبيق الميدان يعمل بدون إنترنت: تُحفظ النتائج والصور على الجوال وتُرفع تلقائياً عند عودة الاتصال']},
@@ -30333,7 +30334,7 @@ function exportXl(){if(!(window.XLSX&&XLSX.utils)){toast('مكتبة Excel غي�
   ...L.filter(w=>!F.batch||w.batch_id===F.batch).map(w=>[w.code,w.title,(T[w.type]||T.task)[1],w.batch_title||'',w.school||'',w.building_id||'',RN[w.region]||w.region||'',w.assignee_name||'',w.created_by_name||'',w.priority||'',w.due_at?dts(w.due_at):'',(ST[w.status]||['',''])[1],late(w)?'نعم':'',
    Array.isArray(w.checklist)&&w.checklist.length?`${w.checklist.filter(x=>x.done).length}/${w.checklist.length}`:'',dts(w.created_at),w.done_at?dts(w.done_at):'',w.closed_at?dts(w.closed_at):''])];
  const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=rows[0].map((_,i)=>({wch:[14,34,14,26,26,16,10,22,22,10,18,16,8,10,18,18,18][i]}));ws['!views']=[{RTL:true}];
- const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};XLSX.utils.book_append_sheet(wb,ws,'أوامر العمل');window.fmV148XlSheet?.(wb,L.filter(w=>!F.batch||w.batch_id===F.batch));XLSX.writeFile(wb,`RakizoraFM-work-orders-${new Date().toISOString().slice(0,10)}.xlsx`)}
+ const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};XLSX.utils.book_append_sheet(wb,ws,'أوامر العمل');window.fmV148XlSheet?.(wb,L.filter(w=>!F.batch||w.batch_id===F.batch));window.fmV152XlSheets?.(wb,L.filter(w=>!F.batch||w.batch_id===F.batch));XLSX.writeFile(wb,`RakizoraFM-work-orders-${new Date().toISOString().slice(0,10)}.xlsx`)}
 
 window.fmV145OpenWorkOrders=()=>openPage(document.getElementById('v2-nav-fm145-wo'));
 /* V146 reaches the page through this */
@@ -30916,7 +30917,7 @@ async function fmV149Pdf(list){if(!list.length)return;const win=window.open('','
   .it{margin:6px 0;break-inside:avoid}.sig{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px;text-align:center;font-weight:800}.sig div{border-top:1px solid #0f172a;padding-top:6px;min-height:46px}.sig span{font-weight:600;color:#475569}
   footer{margin-top:10px;color:#94a3b8;font-size:10px;text-align:center}@media screen{body{background:#e2e8f0}.pg{background:#fff;max-width:800px;margin:12px auto;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1)}}`;
  const html=`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(list.length>1?'تقرير الحملة — '+(list[0].batch_title||''):'تقرير '+(list[0].code||''))}</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap"><style>${css}${window.fmV151Css||''}</style></head><body>${D.map(o=>(window.fmV151Page&&fmV151Page(o,{esc,dt,img,logo}))||page(o)).join('')}
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap"><style>${css}${window.fmV151Css||''}</style></head><body>${D.map(o=>(window.fmV151Page&&fmV151Page(o,{esc,dt,img,logo}))||page(o)).join('')}${window.fmV152Agg?fmV152Agg(D,{esc,logo}):''}
   <script>(function(){var im=[].slice.call(document.images),n=0,once=0,go=function(){if(once++)return;setTimeout(function(){window.print()},400)};if(!im.length)return go();im.forEach(function(i){if(i.complete)n++;else i.onload=i.onerror=function(){if(++n>=im.length)go()}});if(n>=im.length)go();setTimeout(go,20000)})();<\/script></body></html>`;
  win.document.open();win.document.write(html);win.document.close()}
 window.fmV149Pdf=fmV149Pdf;
@@ -31053,8 +31054,18 @@ const P0=window.fmWoParseCl;
 window.fmWoParseCl=txt=>{const L=P0?P0(txt):[],R=window.__fmRich;if(!R)return L;return L.map(x=>{const r=R.get((x.g||'')+'\u0001'+x.t);return r?Object.assign({},r,{done:false},x.tool?{tool:x.tool}:{}):x})};
 
 const res=x=>x.res||(x.done?'ok':'');
+/* V152: what each damaged element needs (spare parts / materials and repair works with quantities),
+   and the totals per form item = the elements' needs + the extra quantity typed in the totals section */
+const num=v=>+String(v??'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace('٫','.').replace(/[^\d.]/g,'')||0;
+const needTxt=x=>(x.needs||[]).filter(d=>S(d.n)&&num(d.q)>0).map(d=>`${d.k==='rw'?'🧱':'📦'} ${S(d.n)} × ${S(d.q)}${d.u?' '+S(d.u):''}`).join('، ');
+function totals(cl){const T={sp:[],rw:[],oth:[]},by=new Map();
+ cl.filter(x=>x.k==='qty'&&S(x.t)).forEach(x=>{const k=x.g===SEC_SP?'sp':'rw',o={t:x.t,u:x.u||x.qu||'',q:num(x.q),auto:0,els:num(x.q)?['إضافي '+num(x.q)]:[]};if(x.custom)o.key='c';T[k].push(o);by.set(k+':'+x.t,o)});
+ cl.forEach(x=>(x.needs||[]).forEach(d=>{const q=num(d.q);if(!q||!S(d.n))return;const o=by.get(d.ref),el=(x.no||'')+(q!==1?' ('+q+')':'');if(o){o.q+=q;o.auto+=q;o.els.push(el);return}
+  const key=d.k+'|'+S(d.n)+'|'+S(d.u);let r=T.oth.find(z=>z.key===key);if(!r)T.oth.push(r={key,k:d.k,t:S(d.n),u:S(d.u),q:0,els:[]});r.q+=q;r.els.push(el)}));
+ return T}
+window.fmV152Totals=totals;window.fmV152NeedTxt=needTxt;
 /* result text of one item for Excel / reports */
-window.fmV151Res=x=>x.k==='grade'?(x.lv===0?'لا ينطبق':x.lv?`${x.lv} — ${x.opt||''}`:'لم يُسجَّل'):x.k==='qty'?(S(x.q)!==''?`${x.q} ${x.u||x.qu||''}`.trim():''):x.k==='text'?S(x.v):null;
+window.fmV151Res=x=>x.k==='grade'?(x.lv===0?'لا ينطبق':x.lv?`${x.lv} — ${x.opt||''}${needTxt(x)?' | '+needTxt(x):''}`:'لم يُسجَّل'):x.k==='qty'?(S(x.q)!==''?`${x.q} ${x.u||x.qu||''}`.trim():''):x.k==='text'?S(x.v):null;
 window.fmV151Is=cl=>(cl||[]).some(x=>x.k==='grade');
 
 /* order detail: the FCI form instead of the plain checklist */
@@ -31066,13 +31077,15 @@ window.fmV148ClHtml=function(cl,ph){if(!window.fmV151Is(cl))return H0.apply(this
  let h=`<h4 style="margin:10px 0 2px">🏗️ تقرير مؤشر مستوى التشغيل (FCI) — ${fmt(done.length)} من ${fmt(G.length)} عنصر</h4>
   ${arr.length?`<div class="fm148-sum"><span class="${new Set(arr.map(p=>p.tag)).size>=3?'ok':'no'}">📍 توثيق الوصول ${fmt(new Set(arr.map(p=>p.tag)).size)} من ٣</span>${th(arr)}</div>`:''}
   <div class="fm148-sum">${cnt.map((n,i)=>`<span style="border-color:${LVC[i]};color:${LVC[i]}">${i+1} • ${fmt(n)}</span>`).join('')}<span class="na">لا ينطبق ${fmt(G.filter(x=>x.lv===0).length)}</span>${fin&&S(fin.v)?`<span class="ok">حالة المبنى: ${esc(fin.v)}</span>`:''}</div><ul class="fm148-cl">`;
+ const TT=totals(cl),tq=x=>(TT[x.g===SEC_SP?'sp':'rw'].find(o=>o.t===x.t)||{q:0,auto:0});
  cl.forEach((x,i)=>{if(x.g&&x.g!==(cl[i-1]||{}).g)h+=`<li class="sec">📂 ${esc(x.g)}</li>`;
-  if(x.k==='qty'&&S(x.q)===''||x.k==='qty'&&+x.q===0)return;
+  if(x.k==='qty'&&!tq(x).q)return;
   const I=P.filter(p=>p.item===i);
-  h+=x.k==='grade'?`<li><span>${x.lv?`<span class="fm151-lv" style="background:${LVC[x.lv-1]}">${x.lv}</span>`:x.lv===0?'➖':'⬜'}</span><span><b>${esc(x.no||'')}</b> ${esc(x.t)}${x.lv?` — ${esc(x.opt||'')}`:''}</span>${x.note?`<span class="n">📝 ${esc(x.note)}</span>`:''}${x.rwo?`<span class="n" style="color:#1d4ed8">🔧 أمر إصلاح: <a href="#" data-wo-code="${esc(x.rwo)}">${esc(x.rwo)}</a></span>`:''}${I.length?`<span class="n">${th(I)}</span>`:''}</li>`
-   :x.k==='qty'?`<li><span>📦</span><span>${esc(x.t)} — <span class="fm151-q">${esc(x.q)} ${esc(x.u||x.qu||'')}</span></span></li>`
+  h+=x.k==='grade'?`<li><span>${x.lv?`<span class="fm151-lv" style="background:${LVC[x.lv-1]}">${x.lv}</span>`:x.lv===0?'➖':'⬜'}</span><span><b>${esc(x.no||'')}</b> ${esc(x.t)}${x.lv?` — ${esc(x.opt||'')}`:''}</span>${needTxt(x)?`<span class="n" style="color:#9a3412">${esc(needTxt(x))}</span>`:''}${x.note?`<span class="n">📝 ${esc(x.note)}</span>`:''}${x.rwo?`<span class="n" style="color:#1d4ed8">🔧 أمر إصلاح: <a href="#" data-wo-code="${esc(x.rwo)}">${esc(x.rwo)}</a></span>`:''}${I.length?`<span class="n">${th(I)}</span>`:''}</li>`
+   :x.k==='qty'?`<li><span>📦</span><span>${esc(x.t)} — <span class="fm151-q">${fmt(tq(x).q)} ${esc(x.u||x.qu||'')}</span>${tq(x).auto?` <small>(من العناصر ${fmt(tq(x).auto)})</small>`:''}</span></li>`
    :`<li><span>✍️</span><span>${esc(x.t)}: <b>${esc(x.v||'—')}</b></span></li>`});
- const nsp=cl.filter(x=>x.g===SEC_SP&&+x.q>0).length,nrw=cl.filter(x=>x.g===SEC_RW&&+x.q>0).length;
+ TT.oth.forEach(o=>{h+=`<li><span>${o.k==='rw'?'🧱':'📦'}</span><span>${esc(o.t)} — <span class="fm151-q">${fmt(o.q)} ${esc(o.u)}</span> <small>(خارج قوائم النموذج)</small></span></li>`});
+ const nsp=TT.sp.filter(o=>o.q).length+TT.oth.filter(o=>o.k==='sp').length,nrw=TT.rw.filter(o=>o.q).length+TT.oth.filter(o=>o.k==='rw').length;
  if(!nsp)h+=`<li class="sec" style="background:#f8fafc;color:#64748b">📦 لم تُسجَّل قطع غيار مطلوبة</li>`;if(!nrw)h+=`<li class="sec" style="background:#f8fafc;color:#64748b">🧱 لم تُسجَّل أعمال إصلاح مطلوبة</li>`;
  return h+'</ul>'};
 
@@ -31083,11 +31096,11 @@ window.fmV151Page=function(o,h){const {w,ph,ev}=o,cl=Array.isArray(w.checklist)?
  const {esc:e,dt,img,logo}=h,val=t=>S((cl.find(x=>x.k==='text'&&x.t===t)||{}).v)||'',fin=val('حالة المبنى التشغيلية النهائية');
  const FC={'جيد':'#16a34a','مناسب':'#ca8a04','ضعيف':'#ea580c','حرج':'#dc2626'};
  const arrive=ev.filter(x=>x.type==='arrive').pop(),done=ev.filter(x=>x.type==='done').pop();
- const sp=cl.filter(x=>x.g===SEC_SP&&+x.q>0),rw=cl.filter(x=>x.g===SEC_RW&&+x.q>0);
+ const TT=totals(cl),sp=TT.sp.filter(o=>o.q).concat(TT.oth.filter(o=>o.k==='sp')),rw=TT.rw.filter(o=>o.q).concat(TT.oth.filter(o=>o.k==='rw'));
  const items=cl.map((x,k)=>({x,k,P:ph.filter(p=>p.item===k)})).filter(o=>o.P.length);
  let rows='';cl.forEach((x,k)=>{if(x.k!=='grade')return;if(x.g!==(cl.filter((y,j)=>j<k&&y.k==='grade').pop()||{}).g)rows+=`<tr class="sec"><td colspan="4">${e(x.g)}</td></tr>`;
-  rows+=`<tr><td>${e(x.no||'')}</td><td>${e(x.t)}</td><td class="lv" style="background:${x.lv?LVC[x.lv-1]:'#94a3b8'}">${x.lv||(x.lv===0?'—':'')}</td><td>${x.lv===0?'لا ينطبق':e(x.opt||'')}${x.note?` — ${e(x.note)}`:''}${x.rwo?` <b>(أمر إصلاح ${e(x.rwo)})</b>`:''}</td></tr>`});
- const qtab=(L,title)=>`<h2>${title}</h2>${L.length?`<table class="t"><thead><tr><th>م</th><th>البند</th><th>الوحدة</th><th>الكمية المطلوبة</th></tr></thead><tbody>${L.map((x,k)=>`<tr><td>${k+1}</td><td>${e(x.t)}</td><td>${e(x.u||x.qu||'')}</td><td>${e(x.q)}</td></tr>`).join('')}</tbody></table>`:'<div style="color:#64748b">لا يوجد</div>'}`;
+  rows+=`<tr><td>${e(x.no||'')}</td><td>${e(x.t)}</td><td class="lv" style="background:${x.lv?LVC[x.lv-1]:'#94a3b8'}">${x.lv||(x.lv===0?'—':'')}</td><td>${x.lv===0?'لا ينطبق':e(x.opt||'')}${x.note?` — ${e(x.note)}`:''}${x.rwo?` <b>(أمر إصلاح ${e(x.rwo)})</b>`:''}${needTxt(x)?`<div style="color:#9a3412;font-size:11px">${e(needTxt(x))}</div>`:''}</td></tr>`});
+ const qtab=(L,title)=>`<h2>${title}</h2>${L.length?`<table class="t"><thead><tr><th>م</th><th>البند</th><th>الوحدة</th><th>الكمية المطلوبة</th></tr></thead><tbody>${L.map((x,k)=>`<tr><td>${k+1}</td><td>${e(x.t)}${x.key?' <small>(خارج قوائم النموذج)</small>':''}</td><td>${e(x.u||'')}</td><td>${fmt(x.q)}</td></tr>`).join('')}</tbody></table>`:'<div style="color:#64748b">لا يوجد</div>'}`;
  return `<section class="pg fci"><header><div><h1>تقرير مؤشر مستوى التشغيل لمبنى مدرسي</h1><div class="sub">Operational Level Indicator Report for a School Building (FCI) • ${e(w.code||'')}</div></div>${logo?`<img class="lg" src="${e(logo)}" alt="">`:''}</header>
   <table class="kv"><tr><th>اسم المدرسة</th><td>${e(w.school||'')}</td><th>الرقم الوزاري</th><td>${e(w.building_id||'')}</td></tr>
    <tr><th>العنوان الوطني</th><td>${e(val('العنوان الوطني للمبنى'))}</td><th>المنطقة</th><td>${e({riyadh:'الرياض',qassim:'القصيم'}[w.region]||w.region||'')}</td></tr>
@@ -31096,11 +31109,43 @@ window.fmV151Page=function(o,h){const {w,ph,ev}=o,cl=Array.isArray(w.checklist)?
    <tr><th>تاريخ تعبئة التقرير</th><td>${dt(done&&done.at||w.done_at||arrive&&arrive.at)}</td><th>حالة المبنى التشغيلية النهائية</th><td>${fin?`<span class="fin" style="background:${FC[fin]||'#64748b'}">${e(fin)}</span>`:'—'}</td></tr></table>
   ${ph.some(p=>p.kind==='arrival')?`<h2>📍 توثيق الوصول ${arrive?'— '+dt(arrive.at):''}</h2><div class="g3">${[['sign','لوحة المدرسة'],['entrance','مدخل المدرسة'],['fence','سور المدرسة']].map(([t,l])=>{const p=ph.filter(p=>p.kind==='arrival'&&p.tag===t).pop();return p?img(p,l):''}).join('')}</div>`:''}
   <h2>حالة عناصر المبنى</h2><table class="t"><thead><tr><th>رقم العنصر</th><th>وصف البند</th><th>المستوى</th><th>حالة البند / الملاحظات</th></tr></thead><tbody>${rows}</tbody></table>
-  ${qtab(sp,'📦 قطع الغيار المطلوبة')}${qtab(rw,'🧱 أعمال الإصلاحات المطلوبة')}
+  <div style="color:#475569;margin-top:6px">ملخص قطع الغيار والمواد، وملخص أعمال الإصلاحات المطلوبة: في الصفحتين التاليتين.</div>
   ${val('ملاحظات وتعليقات أخرى')?`<h2>ملاحظات وتعليقات أخرى</h2><div style="white-space:pre-wrap">${e(val('ملاحظات وتعليقات أخرى'))}</div>`:''}
   ${items.length?`<h2>📷 الصور الملحقة (رقم العنصر)</h2>${items.map(({x,k,P})=>`<div class="it"><b>${e(x.no||String(k+1))} — ${e(x.t)}</b><div class="g4">${P.map(p=>img(p,p.kind==='before'?'قبل':p.kind==='after'?'بعد':'مرفق')).join('')}</div></div>`).join('')}`:''}
   <div class="sig"><div>المشرف<br><span>${e(w.assignee_name||'')}</span></div><div>مدير المدرسة / المستلم</div><div>الاستشاري / ممثل الجهة المالكة</div></div>
-  <footer>RakizoraFM • ${e(w.code||'')} • طُبع ${dt(new Date())}</footer></section>`};
+  <footer>RakizoraFM • ${e(w.code||'')} • طُبع ${dt(new Date())}</footer></section>
+  ${sumPage(w,sp,'sp',h)}${sumPage(w,rw,'rw',h)}`};
+/* V152: one page per list — every needed item with its unit, total quantity and the elements that need it */
+const SUM_T={sp:'ملخص قطع الغيار والمواد المطلوبة',rw:'ملخص أعمال الإصلاحات المطلوبة'};
+function sumPage(w,L,k,h){const e=h.esc;
+ return `<section class="pg fci"><header><div><h1>${SUM_T[k]}</h1><div class="sub">${e(w.school||'')}${w.building_id?' • '+e(w.building_id):''} • ${e(w.code||'')}</div></div>${h.logo?`<img class="lg" src="${e(h.logo)}" alt="">`:''}</header>
+  ${L.length?`<table class="t"><thead><tr><th>م</th><th>${k==='sp'?'قطعة الغيار / المادة':'بند الإصلاح'}</th><th>الوحدة</th><th>الكمية المطلوبة</th><th>العناصر</th></tr></thead><tbody>
+   ${L.map((o,j)=>`<tr><td>${j+1}</td><td>${e(o.t)}${o.key&&o.key!=='c'?' <small>(خارج قوائم النموذج)</small>':''}${o.key==='c'?' <small>(مضاف)</small>':''}</td><td>${e(o.u)}</td><td style="font-weight:900">${fmt(o.q)}</td><td style="font-size:11px">${e((o.els||[]).join('، '))}</td></tr>`).join('')}</tbody></table>`:'<div style="color:#64748b;padding:20px 0">لا يوجد</div>'}
+  <div class="sig"><div>المشرف<br><span>${e(w.assignee_name||'')}</span></div><div>مدير المدرسة / المستلم</div><div>الاستشاري / ممثل الجهة المالكة</div></div>
+  <footer>RakizoraFM • ${e(w.code||'')} • ${SUM_T[k]}</footer></section>`}
+/* across several schools (campaign PDF / Excel): one total per item */
+function agg(list){const A={sp:new Map(),rw:new Map()};list.forEach(w=>{const cl=Array.isArray(w.checklist)?w.checklist:[];if(!window.fmV151Is(cl))return;const T=totals(cl);
+ [['sp',T.sp.concat(T.oth.filter(o=>o.k==='sp'))],['rw',T.rw.concat(T.oth.filter(o=>o.k==='rw'))]].forEach(([k,L])=>L.filter(o=>o.q).forEach(o=>{const key=o.t+'|'+o.u;let r=A[k].get(key);
+  if(!r)A[k].set(key,r={t:o.t,u:o.u,q:0,sc:[]});r.q+=o.q;r.sc.push((w.school||w.code||'')+' ('+fmt(o.q)+')')}))});return {sp:[...A.sp.values()],rw:[...A.rw.values()]}}
+window.fmV152Agg=function(D,h){const L=D.map(o=>o.w).filter(w=>window.fmV151Is(w.checklist));if(L.length<2)return '';const A=agg(L),e=h.esc;
+ return ['sp','rw'].map(k=>`<section class="pg fci"><header><div><h1>إجمالي الحملة — ${SUM_T[k]}</h1><div class="sub">${fmt(L.length)} مدرسة${L[0].batch_title?' • '+e(L[0].batch_title):''}</div></div>${h.logo?`<img class="lg" src="${e(h.logo)}" alt="">`:''}</header>
+  ${A[k].length?`<table class="t"><thead><tr><th>م</th><th>${k==='sp'?'قطعة الغيار / المادة':'بند الإصلاح'}</th><th>الوحدة</th><th>إجمالي الكمية</th><th>عدد المدارس</th><th>المدارس</th></tr></thead><tbody>
+   ${A[k].sort((a,b)=>b.q-a.q).map((o,j)=>`<tr><td>${j+1}</td><td>${e(o.t)}</td><td>${e(o.u)}</td><td style="font-weight:900">${fmt(o.q)}</td><td>${fmt(o.sc.length)}</td><td style="font-size:10.5px">${e(o.sc.join('، '))}</td></tr>`).join('')}</tbody></table>`:'<div style="color:#64748b">لا يوجد</div>'}
+  <footer>RakizoraFM • إجمالي الحملة</footer></section>`).join('')};
+/* Excel: the same two lists — totals per item and the detail per school */
+window.fmV152XlSheets=function(wb,list){const L=list.filter(w=>window.fmV151Is(w.checklist));if(!L.length)return;const A=agg(L);
+ const add=(name,rows,cols)=>{const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=cols.map(w=>({wch:w}));ws['!views']=[{RTL:true}];if(rows.length>1)ws['!autofilter']={ref:ws['!ref']};XLSX.utils.book_append_sheet(wb,ws,name)};
+ [['sp','قطع الغيار والمواد'],['rw','أعمال الإصلاحات']].forEach(([k,n])=>{
+  add('إجمالي '+n,[['م',k==='sp'?'قطعة الغيار / المادة':'بند الإصلاح','الوحدة','إجمالي الكمية','عدد المدارس'],...A[k].sort((a,b)=>b.q-a.q).map((o,j)=>[j+1,o.t,o.u,o.q,o.sc.length])],[5,60,12,14,12]);
+  const R=[['المدرسة','الرقم الوزاري / رقم المبنى','رقم الأمر',k==='sp'?'قطعة الغيار / المادة':'بند الإصلاح','الوحدة','الكمية','العناصر']];
+  L.forEach(w=>{const T=totals(w.checklist);T[k].concat(T.oth.filter(o=>o.k===k)).filter(o=>o.q).forEach(o=>R.push([w.school||'',w.building_id||'',w.code||'',o.t,o.u,o.q,(o.els||[]).join('، ')]))});
+  add(n+' حسب المدرسة',R,[30,14,14,60,12,10,30])})};
+window.fmV152Xl=function(list){if(!(window.XLSX&&XLSX.utils))return;const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};window.fmV152XlSheets(wb,list);
+ if(!wb.SheetNames.length)return;XLSX.writeFile(wb,`RakizoraFM-FCI-needs-${(list[0]&&list[0].code)||''}.xlsx`)};
+/* order detail: an Excel button for the two lists */
+const DT0=window.fmV149Detail;
+window.fmV149Detail=function(d,w){DT0&&DT0.apply(this,arguments);if(!window.fmV151Is(w.checklist))return;const row=d.querySelector('.fm122-dlg .row');if(!row)return;
+ const b=document.createElement('button');b.type='button';b.textContent='⬇️ Excel الاحتياجات';b.onclick=()=>window.fmV152Xl([w]);row.prepend(b)};
 })();
 </script>
 </body>
