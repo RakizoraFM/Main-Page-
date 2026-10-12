@@ -860,6 +860,15 @@ grant execute on function public.fm_wo_repair(uuid, jsonb) to authenticated;
 -- whose every change is kept in fm_eng_audit. Logs are written only through fm_eng_submit (time and author set by the server).
 create or replace function public.fm_eng_admin() returns boolean language sql stable security definer set search_path=public as $$
   select exists(select 1 from public.profiles where id=auth.uid() and role='admin' and coalesce(active,true)) $$;
+-- V155: a manager (engineer / supervisor) sees and follows up the engagement of the people under him (profiles.reports_to line)
+create or replace function public.fm_eng_lead(p_user uuid) returns boolean language sql stable security definer set search_path=public as $$
+  select p_user is not null and exists(select 1 from public.profiles where id=auth.uid() and active and role in ('engineer','supervisor'))
+         and public.fm_is_under(p_user, auth.uid()) $$;
+-- evidence folders are named by the author's id (text): read through a definer, since profiles are private
+create or replace function public.fm_eng_lead_folder(p_folder text) returns boolean language sql stable security definer set search_path=public as $$
+  select exists(select 1 from public.profiles t where t.id::text=p_folder and public.fm_eng_lead(t.id)) $$;
+revoke all on function public.fm_eng_lead_folder(text) from public, anon;
+grant execute on function public.fm_eng_lead_folder(text) to authenticated;
 create table if not exists public.fm_eng_targets(role text primary key check(role in ('supervisor','engineer')), cycle text not null check(cycle in ('weekly','monthly')), visits integer not null default 8 check(visits>=0));
 insert into public.fm_eng_targets values ('supervisor','weekly',8),('engineer','monthly',8) on conflict do nothing;
 create table if not exists public.fm_eng_assignments(id uuid primary key default gen_random_uuid(), school_code text not null, school_name text not null, region text not null default '', user_id uuid not null references public.profiles(id), principal text not null default '', phone text not null default '', active boolean not null default true, unique(school_code,user_id));
@@ -909,19 +918,19 @@ create policy eng_targets_read on public.fm_eng_targets for select to authentica
 drop policy if exists eng_targets_admin on public.fm_eng_targets;
 create policy eng_targets_admin on public.fm_eng_targets for all to authenticated using(public.fm_eng_admin()) with check(public.fm_eng_admin());
 drop policy if exists eng_assign_read on public.fm_eng_assignments;
-create policy eng_assign_read on public.fm_eng_assignments for select to authenticated using(public.fm_eng_admin() or (user_id=auth.uid() and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('engineer','supervisor'))));
+create policy eng_assign_read on public.fm_eng_assignments for select to authenticated using(public.fm_eng_admin() or (user_id=auth.uid() and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('engineer','supervisor'))) or public.fm_eng_lead(user_id));
 drop policy if exists eng_assign_admin on public.fm_eng_assignments;
 create policy eng_assign_admin on public.fm_eng_assignments for all to authenticated using(public.fm_eng_admin()) with check(public.fm_eng_admin());
 drop policy if exists eng_logs_read on public.fm_eng_logs;
-create policy eng_logs_read on public.fm_eng_logs for select to authenticated using(public.fm_eng_admin() or exists(select 1 from public.fm_eng_assignments a where a.id=assignment_id and a.user_id=auth.uid()));
+create policy eng_logs_read on public.fm_eng_logs for select to authenticated using(public.fm_eng_admin() or exists(select 1 from public.fm_eng_assignments a where a.id=assignment_id and (a.user_id=auth.uid() or public.fm_eng_lead(a.user_id))));
 drop policy if exists eng_logs_insert on public.fm_eng_logs;
 drop policy if exists eng_obs_read on public.fm_eng_observations;
-create policy eng_obs_read on public.fm_eng_observations for select to authenticated using(public.fm_eng_admin() or owner_id=auth.uid());
+create policy eng_obs_read on public.fm_eng_observations for select to authenticated using(public.fm_eng_admin() or owner_id=auth.uid() or public.fm_eng_lead(owner_id));
 drop policy if exists eng_obs_insert on public.fm_eng_observations;
 drop policy if exists eng_obs_update on public.fm_eng_observations;
-create policy eng_obs_update on public.fm_eng_observations for update to authenticated using(public.fm_eng_admin() or (owner_id=auth.uid() and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('engineer','supervisor')))) with check(public.fm_eng_admin() or owner_id=auth.uid());
+create policy eng_obs_update on public.fm_eng_observations for update to authenticated using(public.fm_eng_admin() or (owner_id=auth.uid() and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('engineer','supervisor'))) or public.fm_eng_lead(owner_id)) with check(public.fm_eng_admin() or owner_id=auth.uid() or public.fm_eng_lead(owner_id));
 drop policy if exists eng_audit_read on public.fm_eng_audit;
-create policy eng_audit_read on public.fm_eng_audit for select to authenticated using(public.fm_eng_admin() or exists(select 1 from public.fm_eng_observations o where o.id=observation_id and o.owner_id=auth.uid()));
+create policy eng_audit_read on public.fm_eng_audit for select to authenticated using(public.fm_eng_admin() or exists(select 1 from public.fm_eng_observations o where o.id=observation_id and (o.owner_id=auth.uid() or public.fm_eng_lead(o.owner_id))));
 -- logs and observations are created only by fm_eng_submit; a follow-up may change only its status, action and references
 -- (not its owner, log or due time)
 revoke all on public.fm_eng_targets, public.fm_eng_assignments, public.fm_eng_logs, public.fm_eng_observations, public.fm_eng_audit from anon, authenticated;
@@ -936,6 +945,9 @@ insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) v
 drop policy if exists eng_evidence_insert on storage.objects;
 create policy eng_evidence_insert on storage.objects for insert to authenticated with check(bucket_id='school-engagement' and (storage.foldername(name))[1]=auth.uid()::text and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('supervisor','engineer')));
 drop policy if exists eng_evidence_read on storage.objects;
-create policy eng_evidence_read on storage.objects for select to authenticated using(bucket_id='school-engagement' and (public.fm_eng_admin() or (storage.foldername(name))[1]=auth.uid()::text));
+create policy eng_evidence_read on storage.objects for select to authenticated using(bucket_id='school-engagement' and (public.fm_eng_admin() or (storage.foldername(name))[1]=auth.uid()::text
+  or public.fm_eng_lead_folder((storage.foldername(name))[1])));
+revoke all on function public.fm_eng_lead(uuid) from public, anon;
+grant execute on function public.fm_eng_lead(uuid) to authenticated;
 
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.

@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F15">
+<meta name="fm-version" content="F16">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1280,13 +1280,13 @@ const day=v=>new Date(Date.parse(v)+10800000).toISOString().slice(0,10);
 const completed=l=>l.outcome!=='no_reply'&&l.confirmed;
 function covered(a){const role=P.find(p=>p.id===a.user_id)?.role||me.role;const [from,to]=bounds(role);return L.some(l=>l.assignment_id===a.id&&completed(l)&&day(l.at)>=from&&day(l.at)<=to)}
 function name(id){return P.find(p=>p.id===id)?.full_name||(id===me.id?me.full_name:id)}
-function visible(){return A.filter(a=>a.active&&(!field||a.user_id===me.id)&&(!q||[a.school_name,a.school_code,name(a.user_id)].join(' ').toLowerCase().includes(q.toLowerCase())))}
+function visible(){return A.filter(a=>a.active&&(!q||[a.school_name,a.school_code,name(a.user_id)].join(' ').toLowerCase().includes(q.toLowerCase())))}
 function root(){let r=document.getElementById('eng-page');if(!r){r=document.createElement('section');r.id='eng-page';r.dir='rtl';r.className='eng';document.body.append(r)}return r}
 async function open(){const r=root();r.hidden=false;r.innerHTML='<div class="eg-wrap">جارٍ تحميل بيانات التواصل…</div>';const g=++generation;
 try{db=await C.engClient();me=await C.api.me();if(!me?.id||me.active===false||!['admin','engineer','supervisor'].includes(me.role))throw Error('هذا القسم متاح لمدير النظام والمهندس والمشرف بعد تسجيل الدخول.');
-[A,L,O,T]=await Promise.all(['fm_eng_assignments','fm_eng_logs','fm_eng_observations','fm_eng_targets'].map(all));P=me.role==='admin'?await C.api.listProfiles():[me];error='';if(g===generation)render();}catch(e){if(g!==generation)return;error=e.message;r.innerHTML=`<div class="eg-wrap"><button id="eg-close">إغلاق</button><h2>التواصل مع المدارس</h2><p class="eg-error">${esc(error)}</p><p>إذا كانت جداول fm_eng غير موجودة، شغّل ملف school_engagement_setup.sql في Supabase أولًا. لا توجد بيانات تجريبية أو حفظ محلي بديل.</p><button id="eg-retry">إعادة المحاولة</button></div>`;r.querySelector('#eg-close').onclick=()=>r.hidden=true;r.querySelector('#eg-retry').onclick=open}}
+[A,L,O,T]=await Promise.all(['fm_eng_assignments','fm_eng_logs','fm_eng_observations','fm_eng_targets'].map(all));P=me.role==='admin'?await C.api.listProfiles():[me,...(await C.api.woAssignable().catch(()=>[])).filter(p=>p.id!==me.id)];error='';if(g===generation)render();}catch(e){if(g!==generation)return;error=e.message;r.innerHTML=`<div class="eg-wrap"><button id="eg-close">إغلاق</button><h2>التواصل مع المدارس</h2><p class="eg-error">${esc(error)}</p><p>إذا كانت جداول fm_eng غير موجودة، شغّل ملف school_engagement_setup.sql في Supabase أولًا. لا توجد بيانات تجريبية أو حفظ محلي بديل.</p><button id="eg-retry">إعادة المحاولة</button></div>`;r.querySelector('#eg-close').onclick=()=>r.hidden=true;r.querySelector('#eg-retry').onclick=open}}
 function render(){const r=root(),rows=visible(),done=rows.filter(covered).length,ml=L.filter(l=>day(l.at).startsWith(month)),openObs=O.filter(o=>o.status!=='closed'),late=openObs.filter(o=>Date.parse(o.due_at)<Date.now());
-r.innerHTML=`<div class="eg-wrap"><header><div><small>RakizoraFM · برنامج التواصل الاستباقي</small><h2>${field?'تواصلي مع المدارس':'إدارة التواصل مع المدارس'}</h2><p>الهاتف · واتساب · الزيارات الميدانية</p></div><div><button id="eg-refresh">تحديث</button><button id="eg-close">إغلاق ×</button></div></header>
+r.innerHTML=`<div class="eg-wrap"><header><div><small>RakizoraFM · برنامج التواصل الاستباقي</small><h2>${me.role==='admin'?'إدارة التواصل مع المدارس':A.some(a=>a.user_id!==me.id)?'التواصل مع المدارس — أنا وفريقي':'تواصلي مع المدارس'}</h2><p>الهاتف · واتساب · الزيارات الميدانية</p></div><div><button id="eg-refresh">تحديث</button><button id="eg-close">إغلاق ×</button></div></header>
 <div class="eg-kpis"><article><b>${rows.length}</b>المدارس المسندة (حسب الموظف)</article><article><b>${done} / ${rows.length}</b>تغطية الدورة الحالية</article><article><b>${ml.filter(completed).length}</b>تواصل مكتمل في الشهر المختار</article><article><b>${late.length}</b>ملاحظات متأخرة</article></div>
 <nav>${[['plan','خطة التواصل'],['logs','سجل التواصل'],['observations','الملاحظات والإجراءات'],['performance','الأداء الشهري'],...(me.role==='admin'?[['settings','الإعدادات والإسناد']]:[])].map(([k,t])=>`<button data-tab="${k}" class="${tab===k?'on':''}">${t}</button>`).join('')}</nav>
 <div class="eg-tools"><input id="eg-search" placeholder="بحث بالمدرسة أو الرقم أو الموظف" value="${esc(q)}"><input id="eg-month" type="month" value="${month}"><button id="eg-export">تصدير CSV</button><button id="eg-print">طباعة / PDF</button></div><div id="eg-content"></div><p id="eg-message" role="status"></p><footer>الزيارة تُحتسب ضمن التغطية. عدم الرد لا يُحتسب. المؤشرات مبنية على السجلات المسجلة؛ انخفاض البلاغات وحده لا يثبت أثر البرنامج.</footer></div>`;
