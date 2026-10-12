@@ -185,15 +185,21 @@ create policy p_ph_delete on public.ticket_photos for delete using (public.fm_ro
 -- ---------- 6) photo storage (private bucket; path = region/ticket_id/file.jpg) ----------
 insert into storage.buckets (id, name, public) values ('ticket-photos','ticket-photos', false)
   on conflict (id) do nothing;
-drop policy if exists p_obj_read   on storage.objects;
-drop policy if exists p_obj_insert on storage.objects;
-drop policy if exists p_obj_delete on storage.objects;
-create policy p_obj_read   on storage.objects for select using (bucket_id = 'ticket-photos'
-  and public.fm_can_see(split_part(name,'/',1), split_part(name,'/',2)));
-create policy p_obj_insert on storage.objects for insert with check (bucket_id = 'ticket-photos'
-  and public.fm_can_edit(split_part(name,'/',1), split_part(name,'/',2)));
-create policy p_obj_delete on storage.objects for delete using (bucket_id = 'ticket-photos'
-  and (public.fm_role() in ('admin','engineer') or owner = auth.uid()));
+-- storage policies: newer Supabase projects may refuse changes to storage.objects from the SQL editor
+-- ("must be owner of relation objects"); then the existing policies stay and the rest of this file still runs
+do $do$ begin
+  execute $q$drop policy if exists p_obj_read   on storage.objects$q$;
+  execute $q$drop policy if exists p_obj_insert on storage.objects$q$;
+  execute $q$drop policy if exists p_obj_delete on storage.objects$q$;
+  execute $q$create policy p_obj_read   on storage.objects for select using (bucket_id = 'ticket-photos'
+  and public.fm_can_see(split_part(name,'/',1), split_part(name,'/',2)))$q$;
+  execute $q$create policy p_obj_insert on storage.objects for insert with check (bucket_id = 'ticket-photos'
+  and public.fm_can_edit(split_part(name,'/',1), split_part(name,'/',2)))$q$;
+  execute $q$create policy p_obj_delete on storage.objects for delete using (bucket_id = 'ticket-photos'
+  and (public.fm_role() in ('admin','engineer') or owner = auth.uid()))$q$;
+exception when insufficient_privilege then
+  raise notice 'ticket-photos: لم تُحدَّث سياسات التخزين (لا صلاحية على storage.objects) — أضفها من Storage ← Policies إن لزم';
+end $do$;
 
 -- ---------- 7) live updates ----------
 do $$ begin
@@ -447,14 +453,20 @@ create policy p_woph_read  on public.wo_photos   for select using (public.fm_wo_
 create policy p_woph_insert on public.wo_photos  for insert with check (by_id = auth.uid() and public.fm_wo_party(wo_id));
 
 insert into storage.buckets (id, name, public) values ('wo-photos','wo-photos', false) on conflict (id) do nothing;
-drop policy if exists p_woobj_read   on storage.objects;
-drop policy if exists p_woobj_insert on storage.objects;
-create policy p_woobj_read   on storage.objects for select using (bucket_id = 'wo-photos'
+-- storage policies: newer Supabase projects may refuse changes to storage.objects from the SQL editor
+-- ("must be owner of relation objects"); then the existing policies stay and the rest of this file still runs
+do $do$ begin
+  execute $q$drop policy if exists p_woobj_read   on storage.objects$q$;
+  execute $q$drop policy if exists p_woobj_insert on storage.objects$q$;
+  execute $q$create policy p_woobj_read   on storage.objects for select using (bucket_id = 'wo-photos'
   and (public.fm_wo_can_see(public.fm_uuid_or_null(split_part(name,'/',1)))
        -- V149: a repair order shows the photos it copied from the inspection order
-       or exists (select 1 from public.wo_photos ph where ph.path = storage.objects.name and public.fm_wo_can_see(ph.wo_id))));
-create policy p_woobj_insert on storage.objects for insert with check (bucket_id = 'wo-photos'
-  and public.fm_wo_party(public.fm_uuid_or_null(split_part(name,'/',1))));
+       or exists (select 1 from public.wo_photos ph where ph.path = storage.objects.name and public.fm_wo_can_see(ph.wo_id))))$q$;
+  execute $q$create policy p_woobj_insert on storage.objects for insert with check (bucket_id = 'wo-photos'
+  and public.fm_wo_party(public.fm_uuid_or_null(split_part(name,'/',1))))$q$;
+exception when insufficient_privilege then
+  raise notice 'wo-photos: لم تُحدَّث سياسات التخزين (لا صلاحية على storage.objects) — أضفها من Storage ← Policies إن لزم';
+end $do$;
 
 -- create an order (admin / engineer / supervisor) for someone below in the line.
 -- fm_wo_create_as is internal (also used by the scheduled campaigns for the schedule's owner).
@@ -942,11 +954,17 @@ grant execute on function public.fm_eng_submit(jsonb) to authenticated;
 revoke all on function public.fm_eng_audit_update() from public, anon, authenticated;
 -- evidence files: private bucket, one folder per user
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values('school-engagement','school-engagement',false,5242880,array['image/jpeg','image/png','image/webp','application/pdf']) on conflict(id) do nothing;
-drop policy if exists eng_evidence_insert on storage.objects;
-create policy eng_evidence_insert on storage.objects for insert to authenticated with check(bucket_id='school-engagement' and (storage.foldername(name))[1]=auth.uid()::text and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('supervisor','engineer')));
-drop policy if exists eng_evidence_read on storage.objects;
-create policy eng_evidence_read on storage.objects for select to authenticated using(bucket_id='school-engagement' and (public.fm_eng_admin() or (storage.foldername(name))[1]=auth.uid()::text
-  or public.fm_eng_lead_folder((storage.foldername(name))[1])));
+-- storage policies: newer Supabase projects may refuse changes to storage.objects from the SQL editor
+-- ("must be owner of relation objects"); then the existing policies stay and the rest of this file still runs
+do $do$ begin
+  execute $q$drop policy if exists eng_evidence_insert on storage.objects$q$;
+  execute $q$create policy eng_evidence_insert on storage.objects for insert to authenticated with check(bucket_id='school-engagement' and (storage.foldername(name))[1]=auth.uid()::text and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('supervisor','engineer')))$q$;
+  execute $q$drop policy if exists eng_evidence_read on storage.objects$q$;
+  execute $q$create policy eng_evidence_read on storage.objects for select to authenticated using(bucket_id='school-engagement' and (public.fm_eng_admin() or (storage.foldername(name))[1]=auth.uid()::text
+  or public.fm_eng_lead_folder((storage.foldername(name))[1])))$q$;
+exception when insufficient_privilege then
+  raise notice 'school-engagement: لم تُحدَّث سياسات التخزين (لا صلاحية على storage.objects) — أضفها من Storage ← Policies إن لزم';
+end $do$;
 revoke all on function public.fm_eng_lead(uuid) from public, anon;
 grant execute on function public.fm_eng_lead(uuid) to authenticated;
 
