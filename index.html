@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V152">
+<meta name="fm-version" content="V153">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25530,9 +25530,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V152',date:'2026-10-12',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V153',date:'2026-10-12',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+{v:'V153',d:'2026-10-12',t:'ملف Excel واحد لكل تصدير',i:['زر «⬇️ Excel» في تفاصيل أي أمر يُخرج ملفاً واحداً فيه كل جزء في ورقة: أوامر العمل، ملخص FCI، تقرير FCI، بنود الفحص، المواد المستخدمة، وإجمالي وتفصيل قطع الغيار وأعمال الإصلاحات','زر «⬇️ Excel للحملة» في رأس الحملة بنفس الأوراق لكل مدارس الحملة','تصدير صفحة أوامر العمل يضيف ورقتي ملخص FCI وتقرير FCI']},
 {v:'V152',d:'2026-10-12',t:'احتياجات كل عنصر في تقرير FCI',i:['عند اختيار حالة تحتاج إصلاحاً يُفتح لوح بتبويبين: قطع غيار ومواد / أعمال إصلاح، مع الكميات','الاختيار بالبحث من قوائم نموذج الاستلام وأصناف المستودع، أو «غير موجود في القائمة»','جداول قطع الغيار وأعمال الإصلاح تُجمع تلقائياً من احتياجات العناصر مع كمية إضافية يدوية','الاحتياجات تظهر تحت كل عنصر في تفاصيل الأمر وتقرير PDF وExcel','إضافة قطع غيار أو بنود إصلاح أخرى في جداول الإجمالي','المخرج النهائي: صفحتان منفصلتان (قطع الغيار والمواد / أعمال الإصلاحات) بالكميات والعناصر، في PDF وExcel، مع إجمالي الحملة لعدة مدارس']},
 {v:'V151',d:'2026-10-12',t:'استلام المواقع — تقرير مؤشر مستوى التشغيل (FCI)',i:['قالب «استلام موقع» من النموذج المعتمد: 58 عنصراً في 8 أنظمة، لكل عنصر 4 مستويات من حالته كما في الملف','قطع الغيار (28) وأعمال الإصلاحات (16) بوحداتها: يسجّل المشرف الكمية المطلوبة','بيانات المبنى وحالة المبنى التشغيلية النهائية مع اقتراح تلقائي من تقييم العناصر','العنصر الذي يحتاج إصلاحاً يتطلب صورة، ويمكن إنشاء أمر إصلاح منه مباشرة','تقرير PDF بشكل تقرير FCI المعتمد، وعمود النتيجة في Excel']},
 {v:'V150',d:'2026-10-11',t:'القوالب حسب النظام واختيار أكثر من قالب',i:['القوالب المعتمدة مجمّعة تحت نظامها (الكهرباء، دورات المياه، الحريق، المصاعد، المدني، التكييف، شبكة المياه)','اختيار أكثر من قالب (أو نظام كامل) في نفس أمر العمل، مع بحث في القوالب','القوالب المختارة تُدمج في أمر واحد مقسّم بأقسام تظهر في تطبيق الميدان وتفاصيل الأمر وتقرير PDF وExcel','نوع أمر عمل جديد: «استلام موقع»']},
@@ -31146,6 +31147,55 @@ window.fmV152Xl=function(list){if(!(window.XLSX&&XLSX.utils))return;const wb=XLS
 const DT0=window.fmV149Detail;
 window.fmV149Detail=function(d,w){DT0&&DT0.apply(this,arguments);if(!window.fmV151Is(w.checklist))return;const row=d.querySelector('.fm122-dlg .row');if(!row)return;
  const b=document.createElement('button');b.type='button';b.textContent='⬇️ Excel الاحتياجات';b.onclick=()=>window.fmV152Xl([w]);row.prepend(b)};
+})();
+</script>
+<script id="fm-v153-xl-one">
+/* V153 — one Excel workbook per export: every part of the report on its own sheet
+   (orders, FCI summary per school, FCI elements, checklist items, used materials, spare parts / repair works totals and detail) */
+(function(){
+'use strict';
+const S=v=>String(v??'').trim();
+const ST={assigned:'بانتظار القبول',accepted:'مقبول',rejected:'مرفوض',in_progress:'قيد التنفيذ',done:'بانتظار الاعتماد',returned:'مُعاد للتصحيح',closed:'مغلق',cancelled:'ملغى'};
+const dts=v=>{const X=window.fmV145X;return v?(X&&X.dts?X.dts(v):S(v)):''};
+const sheet=(wb,name,rows,cols)=>{const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=cols.map(w=>({wch:w}));ws['!views']=[{RTL:true}];if(rows.length>1)ws['!autofilter']={ref:ws['!ref']};XLSX.utils.book_append_sheet(wb,ws,name)};
+/* FCI: one row per school, then one row per element */
+function fciSheets(wb,list){const L=list.filter(w=>window.fmV151Is&&fmV151Is(w.checklist));if(!L.length)return 0;
+ const val=(cl,t)=>S((cl.find(x=>x.k==='text'&&x.t===t)||{}).v);
+ const sum=[['المدرسة','الرقم الوزاري / رقم المبنى','رقم الأمر','الحملة','المُسند إليه','حالة الأمر','العناصر المسجّلة','عدد العناصر','1 جيد','2','3','4','لا ينطبق','حالة المبنى التشغيلية النهائية','العنوان الوطني','رقم العقد','عدد الطلاب','النوع','ملاحظات وتعليقات أخرى','أُبلغ بالإنجاز']];
+ const el=[['المدرسة','الرقم الوزاري / رقم المبنى','رقم الأمر','النظام','رقم العنصر','العنصر','المستوى','حالة البند','ملاحظة','الاحتياجات','أمر الإصلاح']];
+ L.forEach(w=>{const cl=w.checklist,G=cl.filter(x=>x.k==='grade');
+  sum.push([w.school||'',w.building_id||'',w.code||'',w.batch_title||'',w.assignee_name||'',ST[w.status]||w.status||'',G.filter(x=>x.lv!=null).length,G.length,...[1,2,3,4].map(l=>G.filter(x=>x.lv===l).length),G.filter(x=>x.lv===0).length,
+   val(cl,'حالة المبنى التشغيلية النهائية'),val(cl,'العنوان الوطني للمبنى'),val(cl,'رقم العقد'),val(cl,'عدد الطلاب'),val(cl,'النوع'),val(cl,'ملاحظات وتعليقات أخرى'),dts(w.done_at)]);
+  G.forEach(x=>el.push([w.school||'',w.building_id||'',w.code||'',x.g||'',x.no||'',x.t,x.lv||(x.lv===0?'—':''),x.lv===0?'لا ينطبق':x.lv?S(x.opt):'لم يُسجَّل',S(x.note),window.fmV152NeedTxt?fmV152NeedTxt(x).replace(/[🧱📦] /gu,''):'',x.rwo||'']))});
+ sheet(wb,'ملخص FCI',sum,[30,14,14,24,20,14,10,10,7,7,7,7,9,16,22,16,10,8,40,18]);
+ sheet(wb,'تقرير FCI',el,[30,14,14,30,9,46,8,46,30,50,14]);return 2}
+/* the page export and the order / campaign export share this: FCI sheets go right after the first sheet */
+const X0=window.fmV152XlSheets;
+window.fmV152XlSheets=function(wb,list){const n0=wb.SheetNames.length,n=fciSheets(wb,list);
+ if(n&&n0>1){const add=wb.SheetNames.splice(n0,n);wb.SheetNames.splice(1,0,...add)}
+ return X0&&X0.apply(this,arguments)};
+/* one workbook for one order or a whole campaign */
+window.fmV153Xl=function(list,name){if(!(window.XLSX&&XLSX.utils)){window.toast&&toast('مكتبة Excel غير محمّلة','error');return}
+ const T=(window.fmV145X&&fmV145X.T)||{},RN={riyadh:'الرياض',qassim:'القصيم'};
+ const rows=[['رقم الأمر','العنوان','النوع','الحملة','المدرسة','الرقم الوزاري / رقم المبنى','المنطقة','المُسند إليه','من','الأولوية','موعد الإنجاز','الحالة','قائمة المهام','أُنشئ','أُبلغ بالإنجاز','أُغلق','الوصف'],
+  ...list.map(w=>[w.code||'',w.title||'',(T[w.type]||T.task||['',''])[1],w.batch_title||'',w.school||'',w.building_id||'',RN[w.region]||w.region||'',w.assignee_name||'',w.created_by_name||'',w.priority||'',dts(w.due_at),ST[w.status]||w.status||'',
+   Array.isArray(w.checklist)&&w.checklist.length?`${w.checklist.filter(x=>x.done||x.lv!=null).length}/${w.checklist.length}`:'',dts(w.created_at),dts(w.done_at),dts(w.closed_at),w.description||''])];
+ const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};sheet(wb,'أوامر العمل',rows,[14,34,14,26,30,16,10,22,22,10,18,16,10,18,18,18,50]);
+ window.fmV148XlSheet&&fmV148XlSheet(wb,list);window.fmV152XlSheets(wb,list);
+ XLSX.writeFile(wb,`RakizoraFM-${name||(list[0]&&list[0].code)||'work-orders'}.xlsx`)};
+/* order detail: one «⬇️ Excel» button for every order (replaces «Excel الاحتياجات») */
+const DT0=window.fmV149Detail;
+window.fmV149Detail=function(d,w){DT0&&DT0.apply(this,arguments);const row=d.querySelector('.fm122-dlg .row');if(!row)return;
+ [...row.querySelectorAll('button')].filter(b=>/Excel الاحتياجات/.test(b.textContent)).forEach(b=>b.remove());
+ const b=document.createElement('button');b.type='button';b.textContent='⬇️ Excel';b.title='ملف Excel واحد: كل جزء من التقرير في ورقة';b.onclick=()=>window.fmV153Xl([w]);row.prepend(b)};
+/* campaign header: one Excel for the whole campaign next to the campaign PDF */
+const P0=window.fmV146Panel;
+if(P0)window.fmV146Panel=function(base,F){const h=P0.apply(this,arguments);if(!F.batch||!h)return h;
+ return h.replace('<button type="button" data-b149="pdf">','<button type="button" data-b153="xl">⬇️ Excel للحملة</button><button type="button" data-b149="pdf">')};
+const B0=window.fmV146Bind;
+window.fmV146Bind=function(box,F){B0&&B0.apply(this,arguments);const b=box.querySelector('[data-b153=xl]');if(!b)return;
+ b.onclick=()=>{const X=window.fmV145X,l=(X?X.list():[]).filter(w=>w.batch_id===F.batch&&w.status!=='cancelled');if(!l.length)return;
+  window.fmV153Xl(l,`campaign-${new Date().toISOString().slice(0,10)}-${l.length}`)}};
 })();
 </script>
 </body>
