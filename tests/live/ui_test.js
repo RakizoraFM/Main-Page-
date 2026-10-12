@@ -6,7 +6,7 @@ const path=require('path'),fs=require('fs');
 const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),'/usr/lib/node_modules','/usr/local/lib/node_modules']}));
 const {ROOT,C,reporter}=require('./common');const {check,skip,done}=reporter();
 const OUT=path.join(__dirname,'out');fs.mkdirSync(OUT,{recursive:true});const BLOCK=[],ERR=[];
-const RPC_OK=/\/rest\/v1\/rpc\/(fm_wo_create|fm_wo_create_many|fm_wo_act|fm_wo_repair|fm_wo_assignable|fm_eng_submit|fm_eng_lead|fm_wo_cron_on|fm_role|fm_names)$/;
+const RPC_OK=/\/rest\/v1\/rpc\/(fm_wo_create|fm_wo_create_many|fm_wo_act|fm_wo_repair|fm_wo_assignable|fm_eng_submit|fm_eng_lead|fm_wo_cron_on|fm_role|fm_names|fm_eng_people|fm_wo_my_escalations|fm_deputy_candidates)$/;
 const W_OK=/\/rest\/v1\/(wo_photos|fm_eng_observations|wo_events)(\?|$)|\/storage\/v1\/object\/(wo-photos|school-engagement)\/|\/storage\/v1\/object\/sign\/|\/auth\/v1\/(token|logout|user)/;
 async function route(rt,who){const q=rt.request(),u=q.url(),m=q.method();
  if(/supabase\.co/.test(u)&&!['GET','HEAD','OPTIONS'].includes(m)&&!RPC_OK.test(u.split('?')[0])&&!W_OK.test(u)){BLOCK.push(who+': '+m+' '+u.replace(/^https:\/\/[^/]+/,'').split('?')[0]);return rt.fulfill({status:403,contentType:'application/json',body:'{"message":"blocked by test guard"}'})}
