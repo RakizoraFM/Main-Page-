@@ -9,7 +9,7 @@ The owner is Mohamed (Facility Program Manager). Reply to him in **Arabic**, con
 | `index.html` | The whole desktop platform. It is a single offline-capable HTML file (~1.8 MB) with all CSS and JS inline. |
 | `field.html` | The mobile field app (FM Field): a small standalone page for supervisors and contractors. |
 | `start.html` | The start page: one sign-in for every role, then admin/engineer/viewer go to `index.html` and supervisor/contractor go to `field.html`. Shares the cloud config and session with both. `DEFAULT_CFG` holds the site's Supabase URL and anon key (never a service_role key). |
-| `supabase_setup.sql` | Supabase schema and Row Level Security. The owner runs it in the Supabase SQL editor; it is idempotent. |
+| `supabase_setup.sql` | Supabase schema and Row Level Security. The owner runs it in the Supabase SQL editor; it is idempotent. Policies on `storage.objects` sit in `do $do$ … exception when insufficient_privilege` blocks: newer projects refuse them from the SQL editor ("must be owner of relation objects"), and the rest of the file must still run. |
 
 GitHub Pages publishes the `main` branch. Every merge to `main` goes live within about a minute.
 
