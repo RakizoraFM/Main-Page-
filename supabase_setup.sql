@@ -1330,4 +1330,155 @@ create trigger fm_audit_dep after insert or update on public.fm_deputies for eac
 drop trigger if exists fm_audit_qa on public.wo_audits;
 create trigger fm_audit_qa after update on public.wo_audits for each row execute function public.fm_audit_trg();
 
+-- ---------- 15) school satisfaction ratings (V160, field F20) ----------
+-- After a completed contact the school rates the service, the supervisor and the engineer (1–5) plus overall and a comment.
+-- Two sources: 'school' = the principal through a one-time public link (rate.html?t=…, no account, 7 days), and
+-- 'staff' = the supervisor / engineer records what the principal said. One rating per contact and source.
+-- A score of 2 or less opens a follow-up (fu_status) that the managers of that person close with an action.
+create table if not exists public.fm_eng_rate_links(token text primary key, log_id uuid not null unique references public.fm_eng_logs(id) on delete cascade,
+  school_code text not null, school_name text not null, region text not null default '', supervisor_id uuid references public.profiles(id), engineer_id uuid references public.profiles(id),
+  created_by uuid not null references public.profiles(id), created_at timestamptz not null default now(), expires_at timestamptz not null, used_at timestamptz);
+create table if not exists public.fm_eng_ratings(id uuid primary key default gen_random_uuid(), log_id uuid not null references public.fm_eng_logs(id) on delete cascade,
+  source text not null check(source in ('school','staff')), school_code text not null, school_name text not null, region text not null default '',
+  supervisor_id uuid references public.profiles(id), engineer_id uuid references public.profiles(id), entered_by uuid references public.profiles(id),
+  rater_name text not null default '', rater_title text not null default '',
+  q_service int not null check(q_service between 1 and 5), q_supervisor int check(q_supervisor between 1 and 5), q_engineer int check(q_engineer between 1 and 5),
+  q_overall int not null check(q_overall between 1 and 5), comment text not null default '' check(length(comment)<=1000),
+  fu_status text not null default 'none' check(fu_status in ('none','open','closed')), fu_action text not null default '', fu_by uuid references public.profiles(id), fu_at timestamptz,
+  created_at timestamptz not null default now(), unique(log_id, source), constraint rate_closed_action check(fu_status<>'closed' or length(trim(fu_action))>0));
+create index if not exists fm_eng_ratings_created on public.fm_eng_ratings(created_at);
+alter table public.fm_eng_rate_links enable row level security;
+alter table public.fm_eng_ratings enable row level security;
+-- the supervisor and the engineer of one contact: its author, and the other role among the active assignments of that school
+-- (an engineer prefers the supervisor who reports to him; a supervisor falls back to his own engineer)
+create or replace function public.fm_eng_rate_people(p_log uuid, out o_sup uuid, out o_eng uuid, out o_code text, out o_name text, out o_region text)
+language plpgsql stable security definer set search_path=public as $$
+declare v_user uuid; v_role text; v_boss uuid;
+begin
+  select l.user_id, u.role, u.reports_to, a.school_code, a.school_name, a.region into v_user, v_role, v_boss, o_code, o_name, o_region
+    from public.fm_eng_logs l join public.fm_eng_assignments a on a.id = l.assignment_id join public.profiles u on u.id = l.user_id where l.id = p_log;
+  if v_user is null then return; end if;
+  if v_role = 'engineer' then
+    o_eng := v_user;
+    select a.user_id into o_sup from public.fm_eng_assignments a join public.profiles p on p.id = a.user_id
+     where a.school_code = o_code and a.active and p.active and p.role = 'supervisor' order by coalesce(p.reports_to = v_user, false) desc, a.id limit 1;
+  else
+    o_sup := v_user;
+    select a.user_id into o_eng from public.fm_eng_assignments a join public.profiles p on p.id = a.user_id
+     where a.school_code = o_code and a.active and p.active and p.role = 'engineer' order by coalesce(p.id = v_boss, false) desc, a.id limit 1;
+    if o_eng is null and exists(select 1 from public.profiles where id = v_boss and role = 'engineer' and active) then o_eng := v_boss; end if;
+  end if;
+end $$;
+revoke all on function public.fm_eng_rate_people(uuid) from public, anon, authenticated;
+-- who may see one rating / link: the rated people, their managers and the scopes of fm_eng_sees
+create or replace function public.fm_eng_rate_sees(p_sup uuid, p_eng uuid, p_region text) returns boolean language sql stable security definer set search_path=public as $$
+  select public.fm_eng_admin() or auth.uid() in (p_sup, p_eng) or (p_sup is not null and public.fm_eng_sees(p_sup, p_region))
+      or (p_eng is not null and public.fm_eng_sees(p_eng, p_region)) $$;
+revoke all on function public.fm_eng_rate_sees(uuid,uuid,text) from public, anon;
+grant execute on function public.fm_eng_rate_sees(uuid,uuid,text) to authenticated;
+drop policy if exists eng_rate_links_read on public.fm_eng_rate_links;
+create policy eng_rate_links_read on public.fm_eng_rate_links for select to authenticated using(created_by = auth.uid() or public.fm_eng_rate_sees(supervisor_id, engineer_id, region));
+drop policy if exists eng_ratings_read on public.fm_eng_ratings;
+create policy eng_ratings_read on public.fm_eng_ratings for select to authenticated using(public.fm_eng_rate_sees(supervisor_id, engineer_id, region));
+revoke all on public.fm_eng_rate_links, public.fm_eng_ratings from anon, authenticated;
+grant select on public.fm_eng_rate_links, public.fm_eng_ratings to authenticated;
+-- names: fm_eng_people (section 13) also returns the people of the ratings the caller sees
+create or replace function public.fm_eng_people() returns table(id uuid, full_name text, role text, job_title text, regions text[])
+language sql stable security definer set search_path=public as $$
+  select p.id, coalesce(p.full_name, p.email), p.role, public.fm_posx(p.role, p.job_title), p.regions from public.profiles p
+   where exists(select 1 from public.fm_eng_assignments a where a.user_id = p.id and public.fm_eng_sees(a.user_id, a.region))
+      or exists(select 1 from public.fm_eng_ratings r where p.id in (r.supervisor_id, r.engineer_id) and public.fm_eng_rate_sees(r.supervisor_id, r.engineer_id, r.region)) $$;
+-- the author of a completed contact (not «no reply») asks for a rating: returns the link token (the same one while it is valid)
+create or replace function public.fm_eng_rate_link(p_log uuid) returns text language plpgsql security definer set search_path=public as $$
+declare l record; x record; v_tok text;
+begin
+  select * into l from public.fm_eng_logs where id = p_log;
+  if l.id is null or l.user_id <> auth.uid() or not exists(select 1 from public.profiles where id = auth.uid() and active) then raise exception 'not allowed'; end if;
+  if l.outcome = 'no_reply' then raise exception 'rating needs a completed contact'; end if;
+  if exists(select 1 from public.fm_eng_ratings where log_id = p_log and source = 'school') then raise exception 'already rated'; end if;
+  select token into v_tok from public.fm_eng_rate_links where log_id = p_log and used_at is null and expires_at > now();
+  if v_tok is not null then return v_tok; end if;
+  select * into x from public.fm_eng_rate_people(p_log);
+  v_tok := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+  delete from public.fm_eng_rate_links where log_id = p_log;
+  insert into public.fm_eng_rate_links(token, log_id, school_code, school_name, region, supervisor_id, engineer_id, created_by, expires_at)
+  values (v_tok, p_log, x.o_code, x.o_name, coalesce(x.o_region,''), x.o_sup, x.o_eng, auth.uid(), now() + interval '7 days');
+  return v_tok;
+end $$;
+revoke all on function public.fm_eng_rate_link(uuid) from public, anon;
+grant execute on function public.fm_eng_rate_link(uuid) to authenticated;
+-- shared checks of one rating payload; returns the row values
+create or replace function public.fm_eng_rate_vals(p jsonb, out s int, out sv int, out en int, out ov int, out cm text, out rn text, out rt text)
+language plpgsql immutable as $$
+begin
+  s := nullif(p->>'q_service','')::int; sv := nullif(p->>'q_supervisor','')::int; en := nullif(p->>'q_engineer','')::int; ov := nullif(p->>'q_overall','')::int;
+  if s is null or ov is null or s not between 1 and 5 or ov not between 1 and 5 or coalesce(sv,1) not between 1 and 5 or coalesce(en,1) not between 1 and 5 then
+    raise exception 'invalid rating'; end if;
+  cm := left(trim(coalesce(p->>'comment','')), 1000); rn := left(trim(coalesce(p->>'rater_name','')), 100); rt := left(trim(coalesce(p->>'rater_title','')), 100);
+end $$;
+revoke all on function public.fm_eng_rate_vals(jsonb) from public, anon, authenticated;
+-- public (anon): what the rating page shows for one token. Only names, never ids or contact data.
+create or replace function public.fm_eng_rate_info(p_token text) returns jsonb language sql stable security definer set search_path=public as $$
+  select coalesce((select jsonb_build_object('state', case when k.used_at is not null then 'used' when k.expires_at <= now() then 'expired' else 'ok' end,
+      'school', k.school_name, 'at', l.at, 'channel', l.channel,
+      'supervisor', (select full_name from public.profiles where id = k.supervisor_id), 'engineer', (select full_name from public.profiles where id = k.engineer_id))
+    from public.fm_eng_rate_links k join public.fm_eng_logs l on l.id = k.log_id where k.token = p_token and length(p_token) = 64),
+    jsonb_build_object('state', 'invalid')) $$;
+-- public (anon): the principal submits once
+create or replace function public.fm_eng_rate_submit(p_token text, p jsonb) returns text language plpgsql security definer set search_path=public as $$
+declare k record; v record;
+begin
+  select * into k from public.fm_eng_rate_links where token = p_token and length(p_token) = 64 for update;
+  if k.token is null then raise exception 'invalid link'; end if;
+  if k.used_at is not null then raise exception 'already rated'; end if;
+  if k.expires_at <= now() then raise exception 'link expired'; end if;
+  select * into v from public.fm_eng_rate_vals(p);
+  insert into public.fm_eng_ratings(log_id, source, school_code, school_name, region, supervisor_id, engineer_id, rater_name, rater_title,
+    q_service, q_supervisor, q_engineer, q_overall, comment, fu_status)
+  values (k.log_id, 'school', k.school_code, k.school_name, k.region, k.supervisor_id, k.engineer_id, v.rn, v.rt,
+    v.s, case when k.supervisor_id is not null then v.sv end, case when k.engineer_id is not null then v.en end, v.ov, v.cm,
+    case when least(v.s, coalesce(v.sv,5), coalesce(v.en,5), v.ov) <= 2 then 'open' else 'none' end);
+  update public.fm_eng_rate_links set used_at = now() where token = p_token;
+  return 'ok';
+end $$;
+revoke all on function public.fm_eng_rate_info(text), public.fm_eng_rate_submit(text,jsonb) from public;
+grant execute on function public.fm_eng_rate_info(text), public.fm_eng_rate_submit(text,jsonb) to anon, authenticated;
+-- the author of the contact records what the principal said (within 7 days of the contact)
+create or replace function public.fm_eng_rate_staff(p_log uuid, p jsonb) returns uuid language plpgsql security definer set search_path=public as $$
+declare l record; x record; v record; rid uuid;
+begin
+  select * into l from public.fm_eng_logs where id = p_log;
+  if l.id is null or l.user_id <> auth.uid() or not exists(select 1 from public.profiles where id = auth.uid() and active) then raise exception 'not allowed'; end if;
+  if l.outcome = 'no_reply' then raise exception 'rating needs a completed contact'; end if;
+  if l.at < now() - interval '7 days' then raise exception 'rating period ended'; end if;
+  select * into x from public.fm_eng_rate_people(p_log); select * into v from public.fm_eng_rate_vals(p);
+  insert into public.fm_eng_ratings(log_id, source, school_code, school_name, region, supervisor_id, engineer_id, entered_by, rater_name, rater_title,
+    q_service, q_supervisor, q_engineer, q_overall, comment, fu_status)
+  values (p_log, 'staff', x.o_code, x.o_name, coalesce(x.o_region,''), x.o_sup, x.o_eng, auth.uid(), v.rn, v.rt,
+    v.s, case when x.o_sup is not null then v.sv end, case when x.o_eng is not null then v.en end, v.ov, v.cm,
+    case when least(v.s, coalesce(v.sv,5), coalesce(v.en,5), v.ov) <= 2 then 'open' else 'none' end)
+  returning id into rid;
+  return rid;
+exception when unique_violation then raise exception 'already rated';
+end $$;
+revoke all on function public.fm_eng_rate_staff(uuid,jsonb) from public, anon;
+grant execute on function public.fm_eng_rate_staff(uuid,jsonb) to authenticated;
+-- follow-up of a low rating: the managers of the rated people (not the rated people themselves)
+create or replace function public.fm_eng_rate_follow(p_id uuid, p_status text, p_action text) returns void language plpgsql security definer set search_path=public as $$
+declare r record;
+begin
+  select * into r from public.fm_eng_ratings where id = p_id for update;
+  if r.id is null or r.fu_status = 'none' or p_status not in ('open','closed') then raise exception 'not allowed'; end if;
+  if not (public.fm_eng_admin() or (r.supervisor_id is not null and public.fm_eng_manages(r.supervisor_id, r.region))
+          or (r.engineer_id is not null and public.fm_eng_manages(r.engineer_id, r.region))) then
+    raise exception 'not allowed'; end if;
+  -- a rated person never closes a follow-up of his own low score
+  if (auth.uid() = r.supervisor_id and coalesce(r.q_supervisor,5) <= 2) or (auth.uid() = r.engineer_id and coalesce(r.q_engineer,5) <= 2) then
+    raise exception 'not allowed'; end if;
+  if p_status = 'closed' and length(trim(coalesce(p_action,''))) = 0 then raise exception 'action required'; end if;
+  update public.fm_eng_ratings set fu_status = p_status, fu_action = trim(coalesce(p_action,'')), fu_by = auth.uid(), fu_at = now() where id = p_id;
+end $$;
+revoke all on function public.fm_eng_rate_follow(uuid,text,text) from public, anon;
+grant execute on function public.fm_eng_rate_follow(uuid,text,text) to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
