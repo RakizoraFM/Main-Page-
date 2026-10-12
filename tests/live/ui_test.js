@@ -16,9 +16,14 @@ async function session(b,who,vp){const ctx=await b.newContext({viewport:vp||{wid
  const p=await ctx.newPage();p.on('pageerror',e=>ERR.push(who+': '+e.message));p.on('dialog',d=>d.accept());
  await p.goto('file://'+path.join(ROOT,'start.html'));await p.waitForTimeout(2500);await p.fill('#l-e',C[who].email);await p.fill('#l-p',C[who].password);await p.click('#l-go');
  await p.waitForTimeout(4000);const pick=await p.$('text=فتح المنصة');if(pick)await pick.click();   /* admin / engineer may get a chooser */
- await p.waitForURL(/index\.html|field\.html/,{timeout:30000}).catch(()=>{});await p.waitForTimeout(/field/.test(p.url())?6000:12000);return {ctx,p}}
+ await p.waitForURL(/index\.html|field\.html/,{timeout:30000}).catch(()=>{});await p.waitForTimeout(/field/.test(p.url())?6000:12000);
+ /* V157: the platform shows «بورتالي» once per session as a full-screen overlay; check it, then close it so the clicks below reach the page */
+ if(/index\.html/.test(p.url())){const pt=await p.evaluate(()=>{const r=document.getElementById('fm157-portal');return r&&!r.hidden?r.innerText:''});
+  check('البورتال','«بورتالي» يظهر عند الدخول ('+who+')',/بورتالي|صلاحيات|نطاق/.test(pt));
+  if(pt)await p.click('#fm157-portal [data-x]',{timeout:5000}).catch(()=>p.evaluate(()=>{document.getElementById('fm157-portal').hidden=true}));await p.waitForTimeout(300)}
+ return {ctx,p}}
 const txt=(p,sel)=>p.evaluate(s=>document.querySelector(s)?.innerText||'',sel);
-(async()=>{const b=await chromium.launch();let s;
+let b;(async()=>{b=await chromium.launch();let s;
  /* supervisor — field app */
  s=await session(b,'supervisor',{width:390,height:820});check('الدخول','المشرف يُوجَّه لتطبيق الميدان',/field\.html/.test(s.p.url()));
  check('الميدان','تبويب «التواصل» ظاهر للمشرف',!!await s.p.$('.bnav button[data-v=eng]'));
@@ -65,4 +70,4 @@ const txt=(p,sel)=>p.evaluate(s=>document.querySelector(s)?.innerText||'',sel);
  await b.close();
  const bad=BLOCK.filter(x=>!/rpc\/fm_wo_run_due$/.test(x));   /* the platform runs due campaigns on open: blocked on purpose */
  check('الأمان','المنصة لم تحاول كتابة بيانات مشتركة أو بلاغات',!bad.length,bad.join(' | '));check('الجودة','لا أخطاء في الصفحات',!ERR.length,ERR.slice(0,5).join(' | '));
- done('ui_results.json')})().catch(e=>{console.log('FATAL',e.stack);process.exitCode=2});
+ done('ui_results.json')})().catch(async e=>{console.log('FATAL',e.stack);process.exitCode=2;await b?.close().catch(()=>{});process.exit(2)});
