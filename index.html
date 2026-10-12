@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V160">
+<meta name="fm-version" content="V161">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25538,9 +25538,10 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V160',date:'2026-10-12',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V161',date:'2026-10-12',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 const CHANGELOG=[
+{v:'V161',d:'2026-10-12',t:'أشرطة تمرير أنظف',i:['أشرطة التمرير في القائمة الجانبية وكل الصفحات الفرعية والجداول والنوافذ رفيعة ومخفية، وتظهر فقط عند المرور عليها','إزالة الخط الرمادي بجانب عناصر المجموعة المفتوحة']},
 {v:'V160',d:'2026-10-12',t:'تقييم المدارس، والتواصل في تقييم المشرفين والمهندسين',i:['بعد كل تواصل مكتمل: رابط تقييم لمدير المدرسة (واتساب / نسخ / رمز QR) يعمل بدون حساب مرة واحدة خلال 7 أيام، أو يسجّل المشرف تقييم المدير بنفسه (يظهر منفصلاً)','بنود من 1 إلى 5: جودة الخدمة وسرعة الاستجابة، تواصل المشرف، تواصل المهندس، الرضا العام، مع ملاحظة','تبويب «⭐ رضا المدارس»: متوسطات الشهر، حسب الموظف وحسب المدرسة، نسبة استجابة الروابط، وتصدير CSV','أي درجة 2 أو أقل تفتح متابعة يغلقها المسؤول بإجراء، ولا يغلقها الموظف المقيَّم بنفسه','عمود «رضا المدارس» في الأداء الشهري وعمود التقييم في سجل التواصل','التواصل مع المدارس يدخل في تقييم المشرف والمهندس وترتيبه: تغطية التواصل ورضا المدارس بحصص يحددها مدير النظام (افتراضياً 10% + 10%)، ومن لا يملك بيانات تواصل يُحسب بالبلاغات فقط','جدول «الصلاحيات حسب المسمى الوظيفي» يعرض المسميات العشرة، و«من يدخل المنصة» بالمسميات']},
 {v:'V159',d:'2026-10-12',t:'إصلاح تنبيه «سلامة الملف»',i:['فحص التشغيل كان ينبّه خطأً على قالب تقرير PDF لأوامر العمل (fm-v149-wo-repair)؛ عُدِّل سطر القالب دون أي تغيير في التقرير']},
 {v:'V158',d:'2026-10-12',t:'الحوكمة: التصعيد وسقف الاعتماد والجودة والسلامة والنائب والسجل',i:['تصعيد تلقائي للأوامر المتأخرة لمستوى أعلى في الخط (ساعات كل مستوى من الإعدادات)، ويظهر «مصعّدة إليك» في البورتال','سقف الاعتماد المالي للمشتريات (مدير المنطقة / مدير العمليات) يُضبط من الإعدادات ويُفرض عند الإغلاق','زر «إيقاف العمل» لمدير الأمن والسلامة مع السبب، و«السماح بالاستئناف»؛ لوحة سلامة لعناصر الحريق والإنذار الحرجة','تدقيق الجودة بعينة عشوائية، وتقارير عدم المطابقة NCR مع أمر تصحيحي تلقائي','النائب أثناء الغياب بفترة محددة','سجل العمليات الحساسة لمدير النظام']},
@@ -31665,5 +31666,16 @@ let tries=0;const t=setInterval(()=>{if(C&&C.state?.on&&C.state.profile){clearIn
    (window.toast||alert)('تم حفظ الأوزان — تُطبَّق على التقييمات والترتيب');await load()}catch(e){(window.toast||alert)(/does not exist|schema cache/i.test(String(e.message))?'شغّل supabase_setup.sql المحدَّث أولاً':e.message,'error')}b.disabled=false}});
 })();
 </script>
+<style id="fm-v161-nav-clean">
+/* V161: cleaner scrollbars everywhere — the sidebar, every sub-page, table boxes, dialogs and panels. A scrollbar is thin
+   and transparent, and shows (subtle) only while the pointer is over its box. The grey guide line beside the items of an
+   open sidebar group is gone; the collapsed flyout keeps its frame. */
+*{scrollbar-width:thin;scrollbar-color:transparent transparent}
+*:hover{scrollbar-color:rgba(100,116,139,.4) transparent}
+html{scrollbar-color:rgba(100,116,139,.4) transparent}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{background:transparent;border-radius:7px}:hover::-webkit-scrollbar-thumb{background:rgba(100,116,139,.4)}
+body:not(.v2-nav-collapsed) .fm123-grp>.fm123-gi{border-inline-start-color:transparent}
+</style>
 </body>
 </html>
