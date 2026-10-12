@@ -19,6 +19,34 @@ create table if not exists public.profiles (
 );
 -- V145: the direct manager (work orders flow down this line)
 alter table public.profiles add column if not exists reports_to uuid references public.profiles(id) on delete set null;
+-- V157: the job title (المسمى الوظيفي). It decides the technical role (role follows it), the rank in the line and the scope.
+--   sysadmin=مدير النظام, dept_manager=مدير الإدارة (read only), project_manager=مدير المشروع, ops_manager=مدير العمليات,
+--   area_manager=مدير المنطقة (his regions), area_engineer=مهندس المنطقة, supervisor=المشرف, contractor=المقاول,
+--   hse_manager=مدير الأمن والسلامة, qa_manager=مدير الجودة والتخطيط (both see everything, may open orders for anyone below the ops manager)
+alter table public.profiles add column if not exists job_title text;
+do $$ declare c text; begin
+  for c in select conname from pg_constraint where conrelid = 'public.profiles'::regclass and contype = 'c'
+            and pg_get_constraintdef(oid) ilike '%role%' and pg_get_constraintdef(oid) not ilike '%job_title%' loop
+    execute format('alter table public.profiles drop constraint %I', c); end loop;
+  alter table public.profiles add constraint profiles_role_check
+    check (role in ('pending','admin','manager','staff','engineer','supervisor','contractor','viewer'));
+end $$;
+alter table public.profiles drop constraint if exists profiles_position_check;
+alter table public.profiles add constraint profiles_position_check check (job_title is null or job_title in
+  ('sysadmin','dept_manager','project_manager','ops_manager','area_manager','area_engineer','supervisor','contractor','hse_manager','qa_manager'));
+create or replace function public.fm_pos_role(p text) returns text language sql immutable as $$
+  select case p when 'sysadmin' then 'admin' when 'dept_manager' then 'viewer'
+    when 'project_manager' then 'manager' when 'ops_manager' then 'manager' when 'area_manager' then 'manager'
+    when 'area_engineer' then 'engineer' when 'supervisor' then 'supervisor' when 'contractor' then 'contractor'
+    when 'hse_manager' then 'staff' when 'qa_manager' then 'staff' end $$;
+create or replace function public.fm_profile_pos_trg() returns trigger language plpgsql as $$
+begin
+  if new.job_title is not null then new.role := public.fm_pos_role(new.job_title); end if;
+  return new;
+end $$;
+drop trigger if exists fm_profile_pos on public.profiles;
+create trigger fm_profile_pos before insert or update of job_title, role on public.profiles
+  for each row execute function public.fm_profile_pos_trg();
 
 -- the first account becomes admin, everyone after that waits for the admin to assign a role
 create or replace function public.fm_handle_new_user() returns trigger
@@ -43,6 +71,21 @@ create or replace function public.fm_regions() returns text[] language sql stabl
   select coalesce(p.regions,'{}') from public.profiles p where p.id = auth.uid() $$;
 create or replace function public.fm_region_ok(r text) returns boolean language sql stable as $$
   select cardinality(public.fm_regions()) = 0 or r = any(public.fm_regions()) $$;
+-- V157: the effective job title (older accounts get one from their role) and its rank in the line
+create or replace function public.fm_posx(p_role text, p_pos text) returns text language sql immutable as $$
+  select coalesce(p_pos, case p_role when 'admin' then 'sysadmin' when 'engineer' then 'area_engineer'
+    when 'supervisor' then 'supervisor' when 'contractor' then 'contractor' when 'viewer' then 'viewer' end) $$;
+create or replace function public.fm_prank(p_pos text) returns int language sql immutable as $$
+  select case p_pos when 'sysadmin' then 9 when 'dept_manager' then 8 when 'project_manager' then 7 when 'ops_manager' then 6
+    when 'area_manager' then 5 when 'area_engineer' then 4 when 'supervisor' then 3 when 'contractor' then 2 else 0 end $$;
+create or replace function public.fm_my_pos() returns text language sql stable security definer set search_path = public as $$
+  select case when p.active then public.fm_posx(p.role, p.job_title) end from public.profiles p where p.id = auth.uid() $$;
+-- sees every region and every order (read): system admin, department / project / operations managers, safety, quality
+create or replace function public.fm_scope_all() returns boolean language sql stable as $$
+  select coalesce(public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','hse_manager','qa_manager'), false) $$;
+-- the area manager sees his regions (no region set = all)
+create or replace function public.fm_scope_region(r text) returns boolean language sql stable as $$
+  select public.fm_scope_all() or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(r,''))) $$;
 
 -- ---------- 2) tickets (uploaded by the admin from the Excel file) ----------
 create table if not exists public.tickets (
@@ -72,12 +115,14 @@ language sql stable security definer set search_path = public as $$
   select case public.fm_role()
     when 'admin'  then true
     when 'viewer' then public.fm_region_ok(r)
+    when 'manager' then public.fm_region_ok(r)
+    when 'staff'   then public.fm_region_ok(r)
     when 'engineer'   then exists(select 1 from public.tickets k where k.region=r and k.ticket_id=t and public.fm_region_ok(r) and (k.engineer   = any(public.fm_names()) or k.supervisor = any(public.fm_names())))
     when 'supervisor' then exists(select 1 from public.tickets k where k.region=r and k.ticket_id=t and public.fm_region_ok(r) and  k.supervisor = any(public.fm_names()))
     when 'contractor' then exists(select 1 from public.tickets k where k.region=r and k.ticket_id=t and public.fm_region_ok(r) and  k.contractor = any(public.fm_names()))
     else false end $$;
 create or replace function public.fm_can_edit(r text, t text) returns boolean language sql stable as $$
-  select public.fm_role() in ('admin','engineer','supervisor','contractor') and public.fm_can_see(r,t) $$;
+  select public.fm_role() in ('admin','manager','engineer','supervisor','contractor') and public.fm_can_see(r,t) $$;
 
 -- ---------- 3) shared settings (school DB, SLA hours, closing rules …) ----------
 create table if not exists public.app_kv (
@@ -141,6 +186,7 @@ create policy p_profiles_admin on public.profiles for update using (public.fm_ro
 -- a user may only change their own display name (role, names and regions stay as the admin set them)
 create policy p_profiles_self  on public.profiles for update using (id = auth.uid())
   with check (id = auth.uid() and role = (select role from public.profiles where id = auth.uid())
+              and job_title is not distinct from (select job_title from public.profiles where id = auth.uid())
               and person_names = (select person_names from public.profiles where id = auth.uid())
               and regions = (select regions from public.profiles where id = auth.uid())
               and active = (select active from public.profiles where id = auth.uid())
@@ -153,7 +199,7 @@ create policy p_tickets_write on public.tickets for all using (public.fm_role() 
 
 drop policy if exists p_kv_read  on public.app_kv;
 drop policy if exists p_kv_write on public.app_kv;
-create policy p_kv_read  on public.app_kv for select using (public.fm_role() in ('admin','engineer','supervisor','contractor','viewer'));
+create policy p_kv_read  on public.app_kv for select using (public.fm_role() in ('admin','manager','staff','engineer','supervisor','contractor','viewer'));
 create policy p_kv_write on public.app_kv for all using (public.fm_role() = 'admin') with check (public.fm_role() = 'admin');
 
 -- only admin / engineer may verify-and-close or cancel
@@ -163,9 +209,9 @@ drop policy if exists p_work_update on public.ticket_work;
 drop policy if exists p_work_delete on public.ticket_work;
 create policy p_work_read   on public.ticket_work for select using (public.fm_can_see(region, ticket_id));
 create policy p_work_insert on public.ticket_work for insert with check (public.fm_can_edit(region, ticket_id)
-  and (public.fm_role() in ('admin','engineer') or stage not in ('closed','cancelled')));
+  and (public.fm_role() in ('admin','manager','engineer') or stage not in ('closed','cancelled')));
 create policy p_work_update on public.ticket_work for update using (public.fm_can_edit(region, ticket_id))
-  with check (public.fm_can_edit(region, ticket_id) and (public.fm_role() in ('admin','engineer') or stage not in ('closed','cancelled')));
+  with check (public.fm_can_edit(region, ticket_id) and (public.fm_role() in ('admin','manager','engineer') or stage not in ('closed','cancelled')));
 create policy p_work_delete on public.ticket_work for delete using (public.fm_role() = 'admin');
 
 drop policy if exists p_ev_read   on public.ticket_events;
@@ -180,7 +226,7 @@ drop policy if exists p_ph_insert on public.ticket_photos;
 drop policy if exists p_ph_delete on public.ticket_photos;
 create policy p_ph_read   on public.ticket_photos for select using (public.fm_can_see(region, ticket_id));
 create policy p_ph_insert on public.ticket_photos for insert with check (public.fm_can_edit(region, ticket_id) and by_id = auth.uid());
-create policy p_ph_delete on public.ticket_photos for delete using (public.fm_role() in ('admin','engineer') or by_id = auth.uid());
+create policy p_ph_delete on public.ticket_photos for delete using (public.fm_role() in ('admin','manager','engineer') or by_id = auth.uid());
 
 -- ---------- 6) photo storage (private bucket; path = region/ticket_id/file.jpg) ----------
 insert into storage.buckets (id, name, public) values ('ticket-photos','ticket-photos', false)
@@ -221,7 +267,7 @@ begin
   if public.fm_role() is distinct from 'admin' then raise exception 'not allowed' using errcode = '42501'; end if;
   if v_email !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then raise exception 'invalid email'; end if;
   if length(coalesce(p_password,'')) < 8 then raise exception 'password too short'; end if;
-  if p_role not in ('admin','engineer','supervisor','contractor','viewer','pending') then raise exception 'invalid role'; end if;
+  if p_role not in ('admin','manager','staff','engineer','supervisor','contractor','viewer','pending') then raise exception 'invalid role'; end if;
   if exists (select 1 from auth.users where lower(email) = v_email) then raise exception 'User already registered'; end if;
   insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
                           raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
@@ -349,8 +395,17 @@ create or replace function public.fm_can_assign_as(p_me uuid, p_user uuid) retur
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.profiles t, public.profiles me
     where t.id = p_user and me.id = p_me and me.active and t.active and t.id <> me.id
-      and public.fm_rank(t.role) between 1 and public.fm_rank(me.role) - 1
-      and (me.role = 'admin' or public.fm_is_under(t.id, me.id))) $$;
+      -- V157: by job title. Orders go to people from the contractor up to the operations manager.
+      and public.fm_prank(public.fm_posx(t.role, t.job_title)) between 2 and 6
+      and (me.role = 'admin'
+        or (public.fm_posx(me.role, me.job_title) in ('project_manager','ops_manager')
+            and public.fm_prank(public.fm_posx(t.role, t.job_title)) < public.fm_prank(public.fm_posx(me.role, me.job_title)))
+        or (public.fm_posx(me.role, me.job_title) = 'area_manager' and public.fm_prank(public.fm_posx(t.role, t.job_title)) < 5
+            and (public.fm_is_under(t.id, me.id) or (cardinality(me.regions) = 0 or t.regions && me.regions)))
+        or (public.fm_posx(me.role, me.job_title) in ('hse_manager','qa_manager') and public.fm_prank(public.fm_posx(t.role, t.job_title)) < 6)
+        or (public.fm_posx(me.role, me.job_title) in ('area_engineer','supervisor')
+            and public.fm_prank(public.fm_posx(t.role, t.job_title)) < public.fm_prank(public.fm_posx(me.role, me.job_title))
+            and public.fm_is_under(t.id, me.id)))) $$;
 -- may the signed-in user assign work to p_user?
 create or replace function public.fm_can_assign_to(p_user uuid) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -359,10 +414,10 @@ language sql stable security definer set search_path = public as $$
 -- the people the signed-in user may assign to (for the assignee list; V146 adds email and
 -- person_names so a group of schools can be matched to each school's own supervisor)
 drop function if exists public.fm_wo_assignable();
-create or replace function public.fm_wo_assignable() returns table(id uuid, full_name text, role text, regions text[], phone text, email text, person_names text[])
+create or replace function public.fm_wo_assignable() returns table(id uuid, full_name text, role text, regions text[], phone text, email text, person_names text[], job_title text)
 language sql stable security definer set search_path = public as $$
-  select p.id, coalesce(p.full_name, p.email), p.role, p.regions, p.phone, p.email, p.person_names from public.profiles p
-   where public.fm_can_assign_to(p.id) order by public.fm_rank(p.role) desc, p.full_name $$;
+  select p.id, coalesce(p.full_name, p.email), p.role, p.regions, p.phone, p.email, p.person_names, public.fm_posx(p.role, p.job_title) from public.profiles p
+   where public.fm_can_assign_to(p.id) order by public.fm_prank(public.fm_posx(p.role, p.job_title)) desc, p.full_name $$;
 
 create sequence if not exists public.wo_seq;
 create table if not exists public.work_orders (
@@ -430,7 +485,7 @@ alter table public.wo_photos add constraint wo_photos_kind_check check (kind in 
 create or replace function public.fm_wo_can_see(p_wo uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select public.fm_role() <> 'pending' and exists (select 1 from public.work_orders w where w.id = p_wo
-    and (w.created_by = auth.uid() or w.assignee = auth.uid() or public.fm_role() = 'admin'
+    and (w.created_by = auth.uid() or w.assignee = auth.uid() or public.fm_role() = 'admin' or public.fm_scope_region(w.region)
          or public.fm_is_under(w.assignee, auth.uid()) or public.fm_is_under(w.created_by, auth.uid()))) $$;
 -- who may add photos: its creator and its assignee (while the order is not finished)
 create or replace function public.fm_wo_party(p_wo uuid) returns boolean
@@ -475,7 +530,7 @@ language plpgsql security definer set search_path = public as $$
 declare me public.profiles; t public.profiles; v_id uuid := gen_random_uuid(); v_code text;
 begin
   select * into me from public.profiles where id = p_me;
-  if me.id is null or not me.active or me.role not in ('admin','engineer','supervisor') then
+  if me.id is null or not me.active or me.role not in ('admin','manager','staff','engineer','supervisor') then
     raise exception 'not allowed' using errcode = '42501'; end if;
   if coalesce(trim(p->>'title'),'') = '' then raise exception 'title required'; end if;
   select * into t from public.profiles where id = public.fm_uuid_or_null(p->>'assignee');
@@ -533,7 +588,9 @@ begin
   if w.id is null or not public.fm_wo_can_see(w.id) then raise exception 'work order not found'; end if;
   nm := coalesce(me.full_name, me.email);
   isA := w.assignee = me.id;
-  isC := w.created_by = me.id or me.role = 'admin';
+  -- V157: also the project / operations managers, and the area manager in his regions
+  isC := w.created_by = me.id or me.role = 'admin' or public.fm_posx(me.role, me.job_title) in ('project_manager','ops_manager')
+         or (public.fm_posx(me.role, me.job_title) = 'area_manager' and public.fm_region_ok(coalesce(w.region,'')));
   ns := w.status;
   if p_action = 'accept' and isA and w.status = 'assigned' then ns := 'accepted'; msg := '✅ قبل الأمر';
   elsif p_action = 'reject' and isA and w.status = 'assigned' then
@@ -623,9 +680,11 @@ drop policy if exists p_wot_read on public.wo_templates;
 drop policy if exists p_wot_ins  on public.wo_templates;
 drop policy if exists p_wot_upd  on public.wo_templates;
 drop policy if exists p_wot_del  on public.wo_templates;
-create policy p_wot_read on public.wo_templates for select using (public.fm_role() in ('admin','engineer','supervisor') and (shared or created_by = auth.uid()));
-create policy p_wot_ins  on public.wo_templates for insert with check (created_by = auth.uid() and public.fm_role() in ('admin','engineer','supervisor'));
-create policy p_wot_upd  on public.wo_templates for update using (created_by = auth.uid() or public.fm_role() = 'admin') with check (created_by = auth.uid() or public.fm_role() = 'admin');
+create policy p_wot_read on public.wo_templates for select using (public.fm_role() in ('admin','manager','staff','engineer','supervisor') and (shared or created_by = auth.uid()));
+create policy p_wot_ins  on public.wo_templates for insert with check (created_by = auth.uid() and public.fm_role() in ('admin','manager','staff','engineer','supervisor'));
+-- V157: the quality & planning manager also maintains the shared templates
+create policy p_wot_upd  on public.wo_templates for update using (created_by = auth.uid() or public.fm_role() = 'admin' or (shared and public.fm_my_pos() = 'qa_manager'))
+  with check (created_by = auth.uid() or public.fm_role() = 'admin' or (shared and public.fm_my_pos() = 'qa_manager'));
 create policy p_wot_del  on public.wo_templates for delete using (created_by = auth.uid() or public.fm_role() = 'admin');
 
 -- Recurring campaigns: the same group of schools gets a new batch of orders every week / month / quarter / N days.
@@ -655,7 +714,7 @@ create index if not exists wo_schedules_due_idx on public.wo_schedules (active, 
 alter table public.wo_schedules enable row level security;
 drop policy if exists p_wos_read on public.wo_schedules;
 create policy p_wos_read on public.wo_schedules for select using (public.fm_role() <> 'pending'
-  and (created_by = auth.uid() or public.fm_role() = 'admin' or public.fm_is_under(created_by, auth.uid())));
+  and (created_by = auth.uid() or public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_is_under(created_by, auth.uid())));
 
 -- the first run time after p_after: start_at + k × the interval (counted from the start, so the 31st stays the end of the month)
 create or replace function public.fm_wo_next_run(s public.wo_schedules, p_after timestamptz) returns timestamptz
@@ -687,7 +746,7 @@ begin
   if s.id is null then return null; end if;
   select * into me from public.profiles where id = s.created_by;
   bt := s.name || ' — ' || to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM-DD');
-  if me.id is null or not me.active or me.role not in ('admin','engineer','supervisor') then
+  if me.id is null or not me.active or me.role not in ('admin','manager','staff','engineer','supervisor') then
     res := jsonb_build_object('count', 0, 'error', 'owner not active');
   else
     for it in select * from jsonb_array_elements(s.items) loop
@@ -715,7 +774,7 @@ create or replace function public.fm_wo_run_due() returns int
 language plpgsql security definer set search_path = public as $$
 declare r record; n int := 0;
 begin
-  if auth.uid() is not null and public.fm_role() not in ('admin','engineer','supervisor') then return 0; end if;
+  if auth.uid() is not null and public.fm_role() not in ('admin','manager','staff','engineer','supervisor') then return 0; end if;
   for r in select id from public.wo_schedules where active and next_run_at <= now() order by next_run_at limit 25 loop
     perform public.fm_wo_run_schedule(r.id, false); n := n + 1;
   end loop;
@@ -728,7 +787,7 @@ language plpgsql security definer set search_path = public as $$
 declare me public.profiles; s public.wo_schedules; it jsonb; v_id uuid := public.fm_uuid_or_null(p->>'id');
 begin
   select * into me from public.profiles where id = auth.uid();
-  if me.id is null or not me.active or me.role not in ('admin','engineer','supervisor') then
+  if me.id is null or not me.active or me.role not in ('admin','manager','staff','engineer','supervisor') then
     raise exception 'not allowed' using errcode = '42501'; end if;
   if coalesce(trim(p->>'name'),'') = '' or coalesce(trim(p->'data'->>'title'),'') = '' then raise exception 'title required'; end if;
   if jsonb_typeof(p->'items') <> 'array' or jsonb_array_length(p->'items') = 0 then raise exception 'items required'; end if;
@@ -821,8 +880,8 @@ create unique index if not exists wo_materials_name_uq on public.wo_materials (l
 alter table public.wo_materials enable row level security;
 drop policy if exists p_wom_read  on public.wo_materials;
 drop policy if exists p_wom_write on public.wo_materials;
-create policy p_wom_read  on public.wo_materials for select using (public.fm_role() in ('admin','engineer','supervisor','contractor'));
-create policy p_wom_write on public.wo_materials for all using (public.fm_role() in ('admin','engineer')) with check (public.fm_role() in ('admin','engineer'));
+create policy p_wom_read  on public.wo_materials for select using (public.fm_role() in ('admin','manager','staff','engineer','supervisor','contractor'));
+create policy p_wom_write on public.wo_materials for all using (public.fm_role() in ('admin','manager','engineer')) with check (public.fm_role() in ('admin','manager','engineer'));
 grant select, insert, update, delete on public.wo_materials to authenticated;
 
 -- create a repair order from the «يحتاج إصلاح» items of p_src (all of them, or the indexes in p->items)
@@ -874,11 +933,18 @@ create or replace function public.fm_eng_admin() returns boolean language sql st
   select exists(select 1 from public.profiles where id=auth.uid() and role='admin' and coalesce(active,true)) $$;
 -- V155: a manager (engineer / supervisor) sees and follows up the engagement of the people under him (profiles.reports_to line)
 create or replace function public.fm_eng_lead(p_user uuid) returns boolean language sql stable security definer set search_path=public as $$
-  select p_user is not null and exists(select 1 from public.profiles where id=auth.uid() and active and role in ('engineer','supervisor'))
+  select p_user is not null and exists(select 1 from public.profiles where id=auth.uid() and active and role in ('manager','engineer','supervisor'))
          and public.fm_is_under(p_user, auth.uid()) $$;
+-- V157: who sees one person's engagement (assignment region known) / who may follow up his observations
+create or replace function public.fm_eng_sees(p_user uuid, p_region text) returns boolean language sql stable security definer set search_path=public as $$
+  select public.fm_eng_admin() or public.fm_scope_region(p_region) or public.fm_eng_lead(p_user) $$;
+create or replace function public.fm_eng_manages(p_user uuid, p_region text) returns boolean language sql stable security definer set search_path=public as $$
+  select public.fm_eng_admin() or public.fm_eng_lead(p_user) or coalesce(public.fm_my_pos() in ('project_manager','ops_manager'), false)
+      or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,''))) $$;
 -- evidence folders are named by the author's id (text): read through a definer, since profiles are private
 create or replace function public.fm_eng_lead_folder(p_folder text) returns boolean language sql stable security definer set search_path=public as $$
-  select exists(select 1 from public.profiles t where t.id::text=p_folder and public.fm_eng_lead(t.id)) $$;
+  select public.fm_scope_all() or exists(select 1 from public.profiles t where t.id::text=p_folder
+    and (public.fm_eng_lead(t.id) or (public.fm_my_pos() = 'area_manager' and (cardinality(public.fm_regions()) = 0 or t.regions && public.fm_regions())))) $$;
 revoke all on function public.fm_eng_lead_folder(text) from public, anon;
 grant execute on function public.fm_eng_lead_folder(text) to authenticated;
 create table if not exists public.fm_eng_targets(role text primary key check(role in ('supervisor','engineer')), cycle text not null check(cycle in ('weekly','monthly')), visits integer not null default 8 check(visits>=0));
@@ -925,24 +991,34 @@ alter table public.fm_eng_assignments enable row level security;
 alter table public.fm_eng_logs enable row level security;
 alter table public.fm_eng_observations enable row level security;
 alter table public.fm_eng_audit enable row level security;
+-- the region of an observation (through its log and assignment)
+create or replace function public.fm_eng_obs_region(p_log uuid) returns text language sql stable security definer set search_path=public as $$
+  select a.region from public.fm_eng_logs l join public.fm_eng_assignments a on a.id = l.assignment_id where l.id = p_log $$;
+-- V157: names and titles of the people whose engagement the caller may see (profiles themselves stay private)
+create or replace function public.fm_eng_people() returns table(id uuid, full_name text, role text, job_title text, regions text[])
+language sql stable security definer set search_path=public as $$
+  select p.id, coalesce(p.full_name, p.email), p.role, public.fm_posx(p.role, p.job_title), p.regions from public.profiles p
+   where exists(select 1 from public.fm_eng_assignments a where a.user_id = p.id and public.fm_eng_sees(a.user_id, a.region)) $$;
+revoke all on function public.fm_eng_people() from public, anon;
+grant execute on function public.fm_eng_people() to authenticated;
 drop policy if exists eng_targets_read on public.fm_eng_targets;
-create policy eng_targets_read on public.fm_eng_targets for select to authenticated using(exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('admin','supervisor','engineer','viewer')));
+create policy eng_targets_read on public.fm_eng_targets for select to authenticated using(exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('admin','manager','staff','supervisor','engineer','viewer')));
 drop policy if exists eng_targets_admin on public.fm_eng_targets;
 create policy eng_targets_admin on public.fm_eng_targets for all to authenticated using(public.fm_eng_admin()) with check(public.fm_eng_admin());
 drop policy if exists eng_assign_read on public.fm_eng_assignments;
-create policy eng_assign_read on public.fm_eng_assignments for select to authenticated using(public.fm_eng_admin() or (user_id=auth.uid() and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('engineer','supervisor'))) or public.fm_eng_lead(user_id));
+create policy eng_assign_read on public.fm_eng_assignments for select to authenticated using(public.fm_eng_admin() or (user_id=auth.uid() and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('engineer','supervisor'))) or public.fm_eng_sees(user_id, region));
 drop policy if exists eng_assign_admin on public.fm_eng_assignments;
 create policy eng_assign_admin on public.fm_eng_assignments for all to authenticated using(public.fm_eng_admin()) with check(public.fm_eng_admin());
 drop policy if exists eng_logs_read on public.fm_eng_logs;
-create policy eng_logs_read on public.fm_eng_logs for select to authenticated using(public.fm_eng_admin() or exists(select 1 from public.fm_eng_assignments a where a.id=assignment_id and (a.user_id=auth.uid() or public.fm_eng_lead(a.user_id))));
+create policy eng_logs_read on public.fm_eng_logs for select to authenticated using(public.fm_eng_admin() or exists(select 1 from public.fm_eng_assignments a where a.id=assignment_id and (a.user_id=auth.uid() or public.fm_eng_sees(a.user_id, a.region))));
 drop policy if exists eng_logs_insert on public.fm_eng_logs;
 drop policy if exists eng_obs_read on public.fm_eng_observations;
-create policy eng_obs_read on public.fm_eng_observations for select to authenticated using(public.fm_eng_admin() or owner_id=auth.uid() or public.fm_eng_lead(owner_id));
+create policy eng_obs_read on public.fm_eng_observations for select to authenticated using(public.fm_eng_admin() or owner_id=auth.uid() or public.fm_eng_sees(owner_id, public.fm_eng_obs_region(log_id)));
 drop policy if exists eng_obs_insert on public.fm_eng_observations;
 drop policy if exists eng_obs_update on public.fm_eng_observations;
-create policy eng_obs_update on public.fm_eng_observations for update to authenticated using(public.fm_eng_admin() or (owner_id=auth.uid() and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('engineer','supervisor'))) or public.fm_eng_lead(owner_id)) with check(public.fm_eng_admin() or owner_id=auth.uid() or public.fm_eng_lead(owner_id));
+create policy eng_obs_update on public.fm_eng_observations for update to authenticated using(public.fm_eng_admin() or (owner_id=auth.uid() and exists(select 1 from public.profiles where id=auth.uid() and coalesce(active,true) and role in ('engineer','supervisor'))) or public.fm_eng_manages(owner_id, public.fm_eng_obs_region(log_id))) with check(public.fm_eng_admin() or owner_id=auth.uid() or public.fm_eng_manages(owner_id, public.fm_eng_obs_region(log_id)));
 drop policy if exists eng_audit_read on public.fm_eng_audit;
-create policy eng_audit_read on public.fm_eng_audit for select to authenticated using(public.fm_eng_admin() or exists(select 1 from public.fm_eng_observations o where o.id=observation_id and (o.owner_id=auth.uid() or public.fm_eng_lead(o.owner_id))));
+create policy eng_audit_read on public.fm_eng_audit for select to authenticated using(public.fm_eng_admin() or exists(select 1 from public.fm_eng_observations o where o.id=observation_id and (o.owner_id=auth.uid() or public.fm_eng_sees(o.owner_id, public.fm_eng_obs_region(o.log_id)))));
 -- logs and observations are created only by fm_eng_submit; a follow-up may change only its status, action and references
 -- (not its owner, log or due time)
 revoke all on public.fm_eng_targets, public.fm_eng_assignments, public.fm_eng_logs, public.fm_eng_observations, public.fm_eng_audit from anon, authenticated;
