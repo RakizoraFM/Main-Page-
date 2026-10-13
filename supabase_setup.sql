@@ -1561,4 +1561,50 @@ end $$;
 revoke all on function public.fm_usage_report(date,date) from public, anon;
 grant execute on function public.fm_usage_report(date,date) to authenticated;
 
+-- ---------- 17) data scope per title (V165, field F22) ----------
+-- Uploading the tickets file: the system admin, the project and operations managers (every region) and the area manager
+-- (his regions). The same people write the region's reference date and ranking (app_kv fm_ref_date_<r> / fm_rank_<r>).
+create or replace function public.fm_can_upload(r text) returns boolean language sql stable security definer set search_path = public as $$
+  select public.fm_role() = 'admin' or coalesce(public.fm_my_pos() in ('project_manager','ops_manager'), false)
+      or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(r,''))) $$;
+revoke all on function public.fm_can_upload(text) from public, anon;
+grant execute on function public.fm_can_upload(text) to authenticated;
+drop policy if exists p_tickets_write on public.tickets;
+create policy p_tickets_write on public.tickets for all using (public.fm_can_upload(region)) with check (public.fm_can_upload(region));
+-- the school DB: engineers, supervisors and contractors never read the whole file; they get their schools from fm_my_school_db
+drop policy if exists p_kv_read on public.app_kv;
+create policy p_kv_read on public.app_kv for select using (
+  public.fm_role() in ('admin','manager','staff','viewer')
+  or (public.fm_role() in ('engineer','supervisor','contractor') and key <> 'fm_school_master_db_v1'));
+drop policy if exists p_kv_write on public.app_kv;
+create policy p_kv_write on public.app_kv for all
+  using (public.fm_role() = 'admin' or ((key like 'fm\_ref\_date\_%' or key like 'fm\_rank\_%') and public.fm_can_upload(regexp_replace(key, '^fm_(ref_date|rank)_', ''))))
+  with check (public.fm_role() = 'admin' or ((key like 'fm\_ref\_date\_%' or key like 'fm\_rank\_%') and public.fm_can_upload(regexp_replace(key, '^fm_(ref_date|rank)_', ''))));
+-- the rows of the school DB that concern the caller: a staff name (maintenance / light services supervisor, engineer,
+-- contractor) is his or one of the people under him (reports_to line, deputies included), or the school is assigned
+-- to him or his team for engagement. Managers and read-only titles get the whole file.
+create or replace function public.fm_my_school_db() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v jsonb; me uuid := auth.uid();
+begin
+  if me is null or public.fm_role() not in ('admin','manager','staff','viewer','engineer','supervisor','contractor') then return '[]'::jsonb; end if;
+  select value into v from public.app_kv where key = 'fm_school_master_db_v1';
+  if v is null then return '[]'::jsonb; end if;
+  if jsonb_typeof(v) = 'string' then v := (v #>> '{}')::jsonb; end if;
+  if jsonb_typeof(v) <> 'array' then return '[]'::jsonb; end if;
+  if public.fm_role() in ('admin','manager','staff','viewer') then return v; end if;
+  return coalesce((
+    with nm as (
+      select distinct lower(btrim(n)) n from public.profiles p, unnest(coalesce(p.person_names,'{}') || coalesce(p.full_name,'')) n
+       where (p.id = me or public.fm_is_under(p.id, me)) and btrim(n) <> ''),
+    sc as (
+      select distinct a.school_code c from public.fm_eng_assignments a where a.active and (a.user_id = me or public.fm_is_under(a.user_id, me)))
+    select jsonb_agg(r) from jsonb_array_elements(v) r
+     where exists(select 1 from nm where nm.n in (lower(btrim(r->>'supervisor')), lower(btrim(r->>'engineer')), lower(btrim(r->>'lightSupervisor')),
+                                                 lower(btrim(r->>'lightEngineer')), lower(btrim(r->>'contractor'))))
+        or exists(select 1 from sc where sc.c = regexp_replace(regexp_replace(upper(coalesce(r->>'buildingId','')), '^S[[:space:]-]*', ''), '[^A-Z0-9]', '', 'g'))
+  ), '[]'::jsonb);
+end $$;
+revoke all on function public.fm_my_school_db() from public, anon;
+grant execute on function public.fm_my_school_db() to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.

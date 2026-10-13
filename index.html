@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V164">
+<meta name="fm-version" content="V165">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -15,6 +15,25 @@
   },true);
   window.addEventListener('unhandledrejection',function(e){var r=e.reason;add('promise',r&&r.message||r,'')});
   var ce=console.error;console.error=function(){try{add('console',[].map.call(arguments,function(a){return a&&a.message||String(a)}).join(' '),'')}catch(x){}return ce.apply(console,arguments)};
+})();
+</script>
+<script id="fm-v165-device-owner">
+/* V165: the data cached on this device belongs to one account. When another account signs in here, the previous
+   account's local data (fm* keys) is moved aside into IndexedDB fm165_stash and the cached tickets files are removed,
+   so nothing of it is shown to the new account; when the previous account signs in again its data is put back. */
+(function(){
+function stash(prev,uid,reload){const keep=new Set(['fm_cloud_v136','fm-cloud-auth','fm165_data_owner']),snap={};
+ Object.keys(localStorage).filter(k=>/^(fm|monthlyDensity|staff|smart|v\d)/i.test(k)&&!keep.has(k)).forEach(k=>{snap[k]=localStorage.getItem(k);try{localStorage.removeItem(k)}catch(e){}});
+ ['fm_v103_store','SmartTicketsAnalyticsDB'].forEach(n=>{try{indexedDB.deleteDatabase(n)}catch(e){}});window.__fm165Wiped=true;
+ const q=indexedDB.open('fm165_stash',1);q.onupgradeneeded=()=>q.result.createObjectStore('s');
+ q.onsuccess=()=>{const db=q.result,tx=db.transaction('s','readwrite'),st=tx.objectStore('s');st.put(snap,prev);const g=st.get(uid);let back=null;
+  g.onsuccess=()=>{back=g.result;if(back)st.delete(uid)};
+  tx.oncomplete=()=>{if(back)Object.entries(back).forEach(([k,v])=>{try{if(v!=null)localStorage.setItem(k,v)}catch(e){}});if(back||reload)location.reload()}};
+ q.onerror=()=>{if(reload)location.reload()}}
+window.__fm165Stash=stash;
+try{const a=JSON.parse(localStorage.getItem('fm-cloud-auth')||'null'),uid=a&&(a.user&&a.user.id||a.currentSession&&a.currentSession.user&&a.currentSession.user.id);
+ if(!uid)return;const prev=localStorage.getItem('fm165_data_owner');if(prev===uid)return;
+ localStorage.setItem('fm165_data_owner',uid);if(prev)stash(prev,uid,false)}catch(e){}
 })();
 </script>
 <style id="fm-v144-gate-css">html.fm144-lock body{visibility:hidden}html.fm144-lock #fm144-gate,html.fm144-lock .fm136-login{visibility:visible}</style>
@@ -25538,10 +25557,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V164',date:'2026-10-13',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V165',date:'2026-10-13',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V165',d:'2026-10-13',t:'نطاق بيانات كل مسمى',i:['رفع ملف البلاغات لمدير النظام ومدير المشروع ومدير العمليات ومدير المنطقة (منطقته) فقط — في الواجهة وفي قاعدة البيانات؛ ويُخفى قسم الرفع عن غيرهم','قاعدة المدارس: المهندس والمشرف والمقاول يرون مدارسهم ومدارس فريقهم فقط (لم تعد تُرسل لهم القاعدة كاملة)','بيانات كل حساب على الجهاز منفصلة: إذا دخل حساب آخر على نفس المتصفح تُنقل بيانات السابق جانباً ولا تظهر له، وتعود عند عودة صاحبها','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 17)']},
 {v:'V164',d:'2026-10-13',t:'توزيع المنصة على المهندسين',i:['«📨 رسائل الترحيب»: كلمة مرور مؤقتة جديدة لكل شخص تختاره (مثل مهندسي المشروع) ورسالة واتساب واحدة له فيها الرابط والبريد وكلمة المرور ومكان الدليل ورابط فيديو الشرح','«📘 دليل المنصة» لكل المستخدمين: كل مسمى يرى شرح ما يخصه فقط، ومدير النظام يعاين دليل أي مسمى','«📈 استخدام المنصة» لمدير النظام ومدير المشروع: آخر نشاط وأيام النشاط في المنصة والميدان، والأوامر المنشأة والإجراءات و«تم الإجراء»، والتواصل وطلبات التقييم، مع حالة نشط / خامل / متوقف / لم يدخل وتصدير CSV','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 16)']},
 {v:'V163',d:'2026-10-12',t:'إخفاء شريطي التمرير بجانب القائمة',i:['لا يظهر شريط تمرير القائمة الجانبية ولا شريط تمرير الصفحة الرئيسية؛ التمرير يبقى بعجلة الماوس واللمس وزرّي ↑ ↓','الجداول والنوافذ الداخلية كما هي: شريط رفيع يظهر عند المرور عليها']},
 {v:'V162',d:'2026-10-12',t:'دليل المنصة',i:['صفحة «📘 دليل المنصة» لمدير النظام في مجموعة النظام: كل خاصية بما هي وأين تجدها وخطوات استخدامها ومن يستخدمها، مع زر «افتح الصفحة»','بحث في الدليل وتصفية حسب المجموعة، وشارة «جديد» لما أُضيف أو تغيّر في آخر 3 إصدارات','«آخر التحديثات» تُقرأ تلقائياً من سجل الإصدارات، وتنبيه بأي صفحة في القائمة ليس لها شرح بعد','طباعة الدليل أو حفظه PDF']},
@@ -29441,7 +29461,9 @@ const real={
  async deleteTicketsNotIn(region,ids){const c=await sb();const have=[];for(let f=0;;f+=1000){const d=chk(await c.from('tickets').select('ticket_id').eq('region',region).range(f,f+999));have.push(...d.map(x=>x.ticket_id));if(d.length<1000)break}
   const keep=new Set(ids),gone=have.filter(t=>!keep.has(t));for(let i=0;i<gone.length;i+=200)chk(await c.from('tickets').delete().eq('region',region).in('ticket_id',gone.slice(i,i+200)));return gone.length},
  async pullTickets(region){const c=await sb();const out=[];for(let f=0;;f+=1000){let q=c.from('tickets').select('*').range(f,f+999);if(region)q=q.eq('region',region);const d=chk(await q);out.push(...d);if(d.length<1000)break}return out},
- async getKV(keys){const c=await sb();return chk(await c.from('app_kv').select('*').in('key',keys))},
+ async getKV(keys){const c=await sb();const r=chk(await c.from('app_kv').select('*').in('key',keys));
+ /* V165: engineers / supervisors / contractors read only their schools of the school DB (fm_my_school_db) */
+ if(keys.includes('fm_school_master_db_v1')&&!r.some(x=>x.key==='fm_school_master_db_v1')){const m=await c.rpc('fm_my_school_db');if(!m.error&&Array.isArray(m.data))r.push({key:'fm_school_master_db_v1',value:m.data})}return r},
  async setKV(key,value){const c=await sb();return chk(await c.from('app_kv').upsert({key,value,updated_at:new Date().toISOString()},{onConflict:'key'}))},
  async pullWork(region){const c=await sb();const work=[],events=[];
   for(let f=0;;f+=1000){let q=c.from('ticket_work').select('*').range(f,f+999);if(region)q=q.eq('region',region);const d=chk(await q);work.push(...d);if(d.length<1000)break}
@@ -29610,7 +29632,7 @@ async function publishRank(k,rows){if(typeof window.calculateStaffPerformanceSco
 window.fmV143PublishRank=publishRank;
 let pushing=false;
 async function pushRegion(k){
- if(!st.on||!isAdmin()||pushing)return;const rows=window.FM41?.datasets?.[k]?.rows;if(!Array.isArray(rows)||!rows.length)return;pushing=true;
+ if(!st.on||!(isAdmin()||window.fmV165CanUpload?.(k))||pushing)return;const rows=window.FM41?.datasets?.[k]?.rows;if(!Array.isArray(rows)||!rows.length)return;pushing=true;
  try{const T=rows.map(r=>ticketRow(r,k)).filter(x=>x.ticket_id);const uniq=[...new Map(T.map(x=>[x.ticket_id,x])).values()];
   syncNote('⬆ رفع البلاغات للسحابة…');await pushShared();
   await C.api.pushTickets(uniq,(a,b)=>syncNote(`⬆ رفع البلاغات ${fmt(a)} / ${fmt(b)}`));
@@ -29637,7 +29659,7 @@ async function pullAll(fresh,manual){
   const regs=(st.profile.regions&&st.profile.regions.length?st.profile.regions:['riyadh','qassim']);
   for(const k of regs){
    const local=window.FM41?.datasets?.[k]?.rows;
-   if(isAdmin()&&Array.isArray(local)&&local.length&&!manual)continue;   /* admin's uploaded file is the source */
+   if((isAdmin()||window.fmV165CanUpload?.(k))&&Array.isArray(local)&&local.length&&!manual)continue;   /* admin's uploaded file is the source */
    const T=await C.api.pullTickets(k);if(!T.length)continue;
    const rows=T.map(x=>Object.assign({},x.raw));
    if(window.FM41){FM41.upload=k}
@@ -29792,7 +29814,7 @@ async function usersTable(box){
 /* ---------------- wiring ---------------- */
 function hook(){const o=window.processData;if(typeof o!=='function'||o.__v136)return;
  const f=function(input,name,restored){const k=window.FM41?.upload||window.FM41?.active;const z=o.apply(this,arguments);
-  if(st.on&&isAdmin()&&!restored&&!pulling&&!/^السحابة/.test(S(name)))Promise.resolve(z).then(()=>setTimeout(()=>pushRegion(k),1200));return z};
+  if(st.on&&(isAdmin()||window.fmV165CanUpload?.(k))&&!restored&&!pulling&&!/^السحابة/.test(S(name)))Promise.resolve(z).then(()=>setTimeout(()=>pushRegion(k),1200));return z};
  for(const k of Object.keys(o))try{f[k]=o[k]}catch(e){}f.__v136=true;window.processData=f}
 function init(){guards();hook();if(!C.configured()){chip();return}chip();start(false)}
 if(document.readyState==='complete')setTimeout(init,1600);else window.addEventListener('load',()=>setTimeout(init,1900));
@@ -31717,7 +31739,7 @@ const MANUAL=[
  {id:'welcome',t:'رسائل الترحيب',where:'استخدام المنصة ← «📨 رسائل الترحيب»',what:'إرسال بيانات الدخول لمجموعة مستخدمين (مثل مهندسي المشروع) برسالة واتساب واحدة لكل شخص: الرابط والبريد وكلمة مرور مؤقتة جديدة ومكان الدليل ورابط فيديو الشرح.',how:['اختر المسمى (مثلاً مهندس المنطقة)، ويُعرض افتراضياً من لم يدخل بعد.','عدّل نص الرسالة إن أردت، وضع رابط فيديو الشرح (اختياري).','«🔑 إنشاء كلمات المرور وتجهيز الرسائل»، ثم «واتساب» لكل شخص بالترتيب.'],who:'مدير النظام',tips:['كلمات المرور لا تُحفظ في أي مكان؛ أرسلها قبل إغلاق النافذة.','من دخل من قبل تتغير كلمة مروره إن اخترته — يظهر تنبيه قبل التنفيذ.','رقم الجوال من حساب المستخدم؛ بدونه يفتح واتساب لتختار المحادثة.'],v:'V164'}
 ]},
 {g:'الرئيسية والعمليات',icon:'🏠',items:[
- {id:'v2-nav-solution',t:'لوحة القيادة التنفيذية',where:'أعلى القائمة ← «لوحة القيادة التنفيذية»',what:'المؤشرات الرئيسية للمنطقة المختارة: البلاغات والمفتوح والمحلول والالتزام بالـ SLA، والرسوم، وخريطة المدارس التي بها بلاغات.',how:['اختر المنطقة (الرياض / القصيم) من شريط المناطق.','ارفع ملف البلاغات (Excel أو CSV) أو الصق النص؛ آخر ملف لكل منطقة يُسترجع تلقائياً.','استخدم شريط الفلاتر (الفترة، المكتب، المقاول، المشرف…)؛ كل الصفحات تتبعه.'],who:'المديرون والمهندس',tips:['مدير النظام يرفع الملف فيصل للجميع عبر السحابة.'],v:'V134'},
+ {id:'v2-nav-solution',t:'لوحة القيادة التنفيذية',where:'أعلى القائمة ← «لوحة القيادة التنفيذية»',what:'المؤشرات الرئيسية للمنطقة المختارة: البلاغات والمفتوح والمحلول والالتزام بالـ SLA، والرسوم، وخريطة المدارس التي بها بلاغات. كل مستخدم يرى بلاغات نطاقه فقط (المهندس: مدارسه).',how:['اختر المنطقة (الرياض / القصيم) من شريط المناطق.','رفع ملف البلاغات (Excel أو CSV): لمدير النظام ومدير المشروع ومدير العمليات ومدير المنطقة (منطقته) فقط؛ يصل للفريق عبر السحابة كلٌّ حسب صلاحياته.','استخدم شريط الفلاتر (الفترة، المكتب، المقاول، المشرف…)؛ كل الصفحات تتبعه.'],who:'المديرون والمهندس',tips:['المهندس والمشرف لا يرفعان ملفاً؛ بياناتهما تصلهما من السحابة.','إذا فتح حساب آخر المنصة على نفس الجهاز تُنقل بيانات الحساب السابق جانباً ولا تظهر له، وتعود عند عودة صاحبها.'],v:'V165'},
  {id:'v2-nav-actions',t:'مركز الإجراءات',where:'أعلى القائمة ← «مركز الإجراءات»',what:'ما يحتاج تصرفاً الآن: المتأخر والقريب من الاختراق والمكرر، مع الإجراء المقترح.',how:['افتح المركز صباحاً وابدأ بالأعلى خطورة.','اضغط على البلاغ للانتقال إليه أو للإرسال.'],who:'المديرون والمهندس',v:'V123'},
  {id:'v2-nav-fm145-wo',t:'أوامر العمل',where:'أعلى القائمة ← «أوامر العمل»',what:'إنشاء أوامر عمل (إصلاح، صيانة وقائية، معاينة، زيارة، استلام موقع، مهمة) وإسنادها لمن هو أدنى، ومتابعتها حتى الاعتماد والإغلاق.',how:['«➕ أمر جديد»: المدرسة والنوع والمُسند إليه والمهلة وقائمة البنود (أو اختر قوالب جاهزة، ويمكن أكثر من قالب).','المنفّذ يستلم الأمر في تطبيق الميدان: قبول، بدء، توثيق الوصول بثلاث صور، نتيجة كل بند، صور قبل/بعد، ثم «تم الإجراء».','أنت تعتمد وتغلق أو تعيد للتصحيح من تفاصيل الأمر.'],who:'مدير النظام والمديرون ومهندس المنطقة والمشرف (لمن تحته)، ومدير الأمن والسلامة ومدير الجودة',tips:['الأمر يُسنَد فقط لمن هو أدنى في التسلسل.','المشتريات فوق سقف الاعتماد تحتاج اعتماد مدير المنطقة أو مدير العمليات.'],v:'V145'},
  {id:'wo-group',t:'أمر لمجموعة مدارس (حملة)',where:'أوامر العمل ← «أمر لمجموعة مدارس»',what:'أمر مستقل لكل مدرسة ضمن حملة واحدة، مع إسناد تلقائي لمسؤول كل مدرسة من قاعدة المدارس.',how:['اختر المدارس بالمنطقة أو المكتب أو المدينة أو المسؤول، أو يدوياً، أو من ملف Excel.','اختر الإسناد: مسؤول كل مدرسة، أو شخص واحد، مع بديل لغير المطابق.','تابع الحملة من لوحتها: نسبة الإنجاز والمتأخر وبانتظار الاعتماد، و«⬇️ Excel للحملة» و«PDF».'],who:'من يحق له الإسناد',v:'V146'},
@@ -31942,6 +31964,37 @@ window.fmV164Welcome=welcome;
 function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm164-usage');if(!n)return;if(!canReport()){b0?.remove();return}if(b0)return;
  const b=document.createElement('button');b.id='v2-nav-fm164-usage';b.type='button';b.className='v2-nav-btn';b.title='استخدام المنصة';b.innerHTML='<i class="fas fa-chart-line"></i><span class="v2-nav-label">استخدام المنصة</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
 setInterval(()=>{try{nav()}catch(e){}},3000);
+})();
+</script>
+<style id="fm-v165-scope-css">
+/* V165: the tickets file upload is hidden from titles that may not upload it */
+body.fm165-noup section.table-card:has(#tab-btn-upload){display:none!important}
+</style>
+<script id="fm-v165-scope">(function(){
+'use strict';
+/* V165: data scope per title.
+   - Uploading the tickets file belongs to the system admin, the project and operations managers and the area manager
+     (his regions); the same rule is enforced in the database (fm_can_upload). Everyone else gets the tickets from the
+     cloud, filtered by his permissions, and a local upload is refused.
+   - A tickets file uploaded on this device by someone else is never shown to an account that may not upload: it is
+     moved aside (fm-v165-device-owner) and the page reloads from the cloud. */
+const C=window.FMCloud;if(!C)return;
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const UP=['sysadmin','project_manager','ops_manager'];
+function canUpload(k){const st=C.state;if(!st||!st.on)return true;const p=st.profile;if(!p)return false;if(p.role==='admin')return true;const t=C.posOf(p);
+ if(UP.includes(t))return true;if(t==='area_manager'){const R=p.regions||[];return !R.length||!k||R.includes(k)}return false}
+window.fmV165CanUpload=canUpload;
+function wrap(){const f=window.processData;if(typeof f!=='function'||f.__v165)return;
+ const g=function(rows,name){const k=window.FM41?.upload||window.FM41?.active;
+  if(!/^السحابة/.test(String(name||''))&&C.state?.on&&C.state.profile&&!canUpload(k)){toast('رفع ملف البلاغات مسؤولية مدير المنطقة ومن فوقه — بياناتك تصلك من السحابة حسب صلاحياتك','warning');return}
+  return f.apply(this,arguments)};g.__v165=1;window.processData=g}
+wrap();addEventListener('load',wrap);
+function tick(){wrap();const st=C.state,p=st&&st.on&&st.profile;document.body.classList.toggle('fm165-noup',!!p&&!canUpload(window.FM41?.active));
+ if(!p||canUpload(null))return;
+ /* an account that may not upload must not see a file uploaded on this device (cached before V165) */
+ const D=window.FM41?.datasets||{},foreign=Object.values(D).some(d=>d&&Array.isArray(d.rows)&&d.rows.length&&!/^السحابة/.test(String(d.name||'')));
+ if(foreign&&!sessionStorage.getItem('fm165_reset')&&window.__fm165Stash){sessionStorage.setItem('fm165_reset','1');window.__fm165Stash('device-'+Date.now(),p.id,true)}}
+setInterval(tick,1500);
 })();
 </script>
 </body>
