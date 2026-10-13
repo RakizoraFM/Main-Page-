@@ -32,7 +32,8 @@ let b;(async()=>{b=await chromium.launch();let s;
  await all();check('الميدان','المشرف يرى الأمر المسند إليه',/مهندس→مشرف/.test(await txt(s.p,'body')));
  const mine=await s.p.$('button:has-text("أسندتها")');if(mine){await mine.click();await s.p.waitForTimeout(1200);await all()}
  check('الميدان','المشرف يرى الأمر الذي أسنده («أسندتها»)',/مشرف→مقاول/.test(await txt(s.p,'body')));await s.p.screenshot({path:path.join(OUT,'supervisor_wo.png')});
- await s.p.click('.bnav button[data-v=eng]').catch(()=>{});await s.p.waitForTimeout(4000);
+ await s.p.click('.bnav button[data-v=eng]').catch(()=>{});/* the page loads several tables: wait for it, not a fixed time */
+ await s.p.waitForFunction(()=>/مدرسة اختبار RakizoraFM|eg-error/.test(document.getElementById('eng-page')?.innerHTML||''),null,{timeout:25000}).catch(()=>{});
  check('التواصل','المشرف يفتح صفحة التواصل ويرى مدرسة الاختبار',/مدرسة اختبار RakizoraFM/.test(await txt(s.p,'#eng-page')));await s.p.screenshot({path:path.join(OUT,'supervisor_eng.png')});await s.ctx.close();
  /* contractor — field app */
  s=await session(b,'contractor',{width:390,height:820});check('الدخول','المقاول يُوجَّه لتطبيق الميدان',/field\.html/.test(s.p.url()));
@@ -44,9 +45,9 @@ let b;(async()=>{b=await chromium.launch();let s;
  await s.p.evaluate(()=>window.fmV145OpenWorkOrders&&fmV145OpenWorkOrders());await s.p.waitForTimeout(3000);await s.p.evaluate(()=>{fmV145X.F.k='all';fmV145X.render()});await s.p.waitForTimeout(800);
  const ew=await txt(s.p,'#fm145-page');check('أوامر العمل','المهندس يرى أوامره وأوامر فريقه',/مهندس→مشرف/.test(ew)&&/مشرف→مقاول/.test(ew));await s.p.screenshot({path:path.join(OUT,'engineer_wo.png')});
  const row=await s.p.$('#fm145-page tr[data-id]:has-text("مهندس→مشرف")');
- if(row){await row.click();await s.p.waitForTimeout(4000);const dt=await txt(s.p,'.fm122-dlg');check('أوامر العمل','تفاصيل الأمر: البنود والمواد',/فحص الإنارة/.test(dt)&&/لمبة LED/.test(dt));
+ if(row){await row.click();await s.p.waitForTimeout(4000);await s.p.waitForFunction(()=>{const i=[...document.querySelectorAll('.fm122-dlg img')];return i.length&&i.every(x=>x.complete&&x.naturalWidth>0)},null,{timeout:20000}).catch(()=>{});const dt=await txt(s.p,'.fm122-dlg');check('أوامر العمل','تفاصيل الأمر: البنود والمواد',/فحص الإنارة/.test(dt)&&/لمبة LED/.test(dt));
   check('أوامر العمل','صور الأمر تُحمَّل من التخزين',await s.p.$$eval('.fm122-dlg img',x=>x.length>0&&x.every(i=>i.naturalWidth>0)));await s.p.screenshot({path:path.join(OUT,'engineer_detail.png')});
-  const [dl]=await Promise.all([s.p.waitForEvent('download',{timeout:20000}).catch(()=>null),s.p.click('.fm122-dlg .row button:text-is("⬇️ Excel")').catch(()=>{})]);
+  const [dl]=await Promise.all([s.p.waitForEvent('download',{timeout:60000}).catch(()=>null),s.p.click('.fm122-dlg .row button:text-is("⬇️ Excel")').catch(()=>{})]);
   let sheets='';if(dl){try{const XL=require(require.resolve('xlsx',{paths:[process.cwd(),'/usr/lib/node_modules','/usr/local/lib/node_modules']}));sheets=XL.readFile(await dl.path()).SheetNames.join('، ')}catch(e){sheets='(xlsx غير مثبتة — تحقق من التنزيل فقط)'}}
   check('التصدير','Excel الأمر: ملف واحد بأوراق',!!dl&&(!sheets.includes('،')||/بنود الفحص/.test(sheets)),dl?dl.suggestedFilename()+' '+sheets:'لم يُنزَّل');
   const [pop]=await Promise.all([s.p.waitForEvent('popup',{timeout:20000}).catch(()=>null),s.p.click('.fm122-dlg .row button:has-text("PDF")').catch(()=>{})]);
