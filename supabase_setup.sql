@@ -1607,4 +1607,220 @@ end $$;
 revoke all on function public.fm_my_school_db() from public, anon;
 grant execute on function public.fm_my_school_db() to authenticated;
 
+-- ---------- 18) full deputy during leave (V166, field F23) ----------
+-- Who may set a deputy: the person himself, his managers up the reports_to line, the project / operations manager,
+-- the area manager of his region and the system admin. The person (principal) is a supervisor or above; the deputy is
+-- anyone above a supervisor (engineer, managers, HSE, QA; not read-only). While the leave runs:
+--   * the principal's open work orders move to the deputy (status «assigned», he must accept) with a note
+--     «محوَّل من … بتاريخ …»; new orders addressed to the principal go to the deputy the same way;
+--   * the deputy sees the principal's tickets, schools and regions (fm_names / fm_regions), his team and engagement,
+--     assigns and approves as him (V158), and may log contacts for the principal's schools;
+--   * the principal's engagement targets are paused (fm_eng_scores, the engagement page).
+-- When the leave ends, the transferred orders the deputy has not started go back to the principal (also with a note).
+alter table public.fm_deputies add column if not exists set_by uuid references public.profiles(id);
+alter table public.fm_deputies add column if not exists reason text;
+alter table public.fm_deputies add column if not exists applied_at timestamptz;
+alter table public.fm_deputies add column if not exists ended_at timestamptz;
+alter table public.fm_deputies add column if not exists returned_at timestamptz;
+alter table public.fm_deputies add column if not exists transferred int not null default 0;
+alter table public.work_orders add column if not exists transfer_note text;
+alter table public.work_orders add column if not exists transfer_from uuid references public.profiles(id) on delete set null;
+alter table public.work_orders add column if not exists deputy_id uuid references public.fm_deputies(id) on delete set null;
+-- the deputyship running now for one principal
+create or replace function public.fm_deputy_now(p_user uuid) returns public.fm_deputies language sql stable security definer set search_path = public as $$
+  select d.* from public.fm_deputies d where d.principal = p_user and d.active and now() >= d.from_at and now() < d.to_at
+   order by d.from_at desc limit 1 $$;
+revoke all on function public.fm_deputy_now(uuid) from public, anon, authenticated;
+-- the names / regions of the caller, plus those of the people he stands in for now
+create or replace function public.fm_names() returns text[] language sql stable security definer set search_path = public as $$
+  select coalesce(p.person_names,'{}') || coalesce((select array_agg(distinct n) from public.fm_deputies d join public.profiles pr on pr.id = d.principal,
+           unnest(coalesce(pr.person_names,'{}')) n where d.deputy = p.id and d.active and now() >= d.from_at and now() < d.to_at), '{}')
+    from public.profiles p where p.id = auth.uid() $$;
+create or replace function public.fm_regions() returns text[] language sql stable security definer set search_path = public as $$
+  select case when cardinality(coalesce(p.regions,'{}')) = 0 then '{}'::text[]
+              when exists(select 1 from public.fm_deputies d join public.profiles pr on pr.id = d.principal
+                           where d.deputy = p.id and d.active and now() >= d.from_at and now() < d.to_at and cardinality(coalesce(pr.regions,'{}')) = 0) then '{}'::text[]
+              else coalesce((select array_agg(distinct r) from (select unnest(p.regions) r union select unnest(pr.regions) from public.fm_deputies d
+                     join public.profiles pr on pr.id = d.principal where d.deputy = p.id and d.active and now() >= d.from_at and now() < d.to_at) x), p.regions) end
+    from public.profiles p where p.id = auth.uid() $$;
+-- may the caller set / end a deputy for this principal?
+create or replace function public.fm_deputy_may(p_principal uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select exists(select 1 from public.profiles me, public.profiles pr where me.id = auth.uid() and me.active and pr.id = p_principal and pr.active
+    and (public.fm_prank(public.fm_posx(pr.role, pr.job_title)) >= 3 or public.fm_posx(pr.role, pr.job_title) in ('hse_manager','qa_manager'))
+    and (pr.id = me.id or me.role = 'admin' or public.fm_is_under_base(pr.id, me.id)
+         or public.fm_posx(me.role, me.job_title) in ('project_manager','ops_manager')
+         or (public.fm_posx(me.role, me.job_title) = 'area_manager' and (cardinality(coalesce(me.regions,'{}')) = 0 or coalesce(pr.regions,'{}') && me.regions
+             or cardinality(coalesce(pr.regions,'{}')) = 0)))) $$;
+revoke all on function public.fm_deputy_may(uuid) from public, anon;
+grant execute on function public.fm_deputy_may(uuid) to authenticated;
+-- move the open orders when a leave starts, and give back the unstarted ones when it ends
+create or replace function public.fm_deputy_apply() returns int language plpgsql security definer set search_path = public as $$
+declare d record; n int; tot int := 0; dn text; pn text;
+begin
+  for d in select * from public.fm_deputies where active and applied_at is null and now() >= from_at and now() < to_at for update skip locked loop
+    select coalesce(full_name, email) into dn from public.profiles where id = d.deputy;
+    select coalesce(full_name, email) into pn from public.profiles where id = d.principal;
+    with t as (
+      update public.work_orders w set assignee = d.deputy, assignee_name = dn, status = 'assigned', accepted_at = null, transfer_from = d.principal, deputy_id = d.id,
+             transfer_note = '↪️ محوَّل من ' || pn || ' بتاريخ ' || to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM-DD') || ' (نيابة حتى ' || to_char(d.to_at at time zone 'Asia/Riyadh', 'YYYY-MM-DD') || ')',
+             updated_at = now()
+       where w.assignee = d.principal and w.status in ('assigned','accepted','in_progress','returned') returning w.id, w.transfer_note)
+    insert into public.wo_events(wo_id, by_id, by_name, type, status, text) select t.id, d.set_by, 'النظام', 'deputy', 'assigned', t.transfer_note || ' — بانتظار قبول ' || dn from t;
+    get diagnostics n = row_count;
+    update public.fm_deputies set applied_at = now(), transferred = n where id = d.id;
+    tot := tot + n;
+  end loop;
+  for d in select * from public.fm_deputies where applied_at is not null and returned_at is null and (not active or now() >= to_at) for update skip locked loop
+    select coalesce(full_name, email) into pn from public.profiles where id = d.principal;
+    with t as (
+      update public.work_orders w set assignee = d.principal, assignee_name = pn, status = 'assigned', accepted_at = null,
+             transfer_note = '↩️ أُعيد إلى ' || pn || ' بعد انتهاء النيابة بتاريخ ' || to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM-DD'), transfer_from = d.deputy, updated_at = now()
+       where w.deputy_id = d.id and w.assignee = d.deputy and w.status in ('assigned','accepted') returning w.id, w.transfer_note)
+    insert into public.wo_events(wo_id, by_id, by_name, type, status, text) select t.id, d.principal, 'النظام', 'deputy', 'assigned', t.transfer_note from t;
+    update public.fm_deputies set returned_at = now(), ended_at = coalesce(ended_at, least(now(), to_at)) where id = d.id;
+  end loop;
+  return tot;
+end $$;
+revoke all on function public.fm_deputy_apply() from public, anon;
+grant execute on function public.fm_deputy_apply() to authenticated;
+-- a new order (or a reassignment) to someone on leave goes to his deputy, with the same note
+create or replace function public.fm_wo_deputy_trg() returns trigger language plpgsql security definer set search_path = public as $$
+declare d public.fm_deputies; dn text; pn text;
+begin
+  if new.assignee is null or (tg_op = 'UPDATE' and new.assignee is not distinct from old.assignee) then return new; end if;
+  d := public.fm_deputy_now(new.assignee);
+  if d.id is null or d.deputy = new.assignee then return new; end if;
+  select coalesce(full_name, email) into dn from public.profiles where id = d.deputy;
+  select coalesce(full_name, email) into pn from public.profiles where id = d.principal;
+  new.assignee := d.deputy; new.assignee_name := dn; new.transfer_from := d.principal; new.deputy_id := d.id;
+  new.transfer_note := '↪️ محوَّل من ' || pn || ' بتاريخ ' || to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM-DD') || ' (نيابة حتى ' || to_char(d.to_at at time zone 'Asia/Riyadh', 'YYYY-MM-DD') || ')';
+  if tg_op = 'UPDATE' then new.status := 'assigned'; new.accepted_at := null; end if;
+  return new;
+end $$;
+drop trigger if exists fm_wo_deputy on public.work_orders;
+create trigger fm_wo_deputy before insert or update of assignee on public.work_orders for each row execute function public.fm_wo_deputy_trg();
+-- set a deputy (returns the id and how many open orders moved now)
+create or replace function public.fm_deputy_assign(p_principal uuid, p_deputy uuid, p_from timestamptz, p_to timestamptz, p_reason text default null, p_note text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare dp public.profiles; v uuid; n int := 0;
+begin
+  if not public.fm_deputy_may(p_principal) then raise exception 'not allowed' using errcode = '42501'; end if;
+  select * into dp from public.profiles where id = p_deputy;
+  if dp.id is null or not dp.active or dp.id = p_principal or dp.role in ('pending','contractor','supervisor','viewer')
+     or not (public.fm_prank(public.fm_posx(dp.role, dp.job_title)) >= 4 or public.fm_posx(dp.role, dp.job_title) in ('hse_manager','qa_manager')) then
+    raise exception 'invalid deputy'; end if;
+  if p_to <= p_from or p_to > p_from + interval '120 days' or p_to <= now() then raise exception 'invalid period'; end if;
+  update public.fm_deputies set active = false, ended_at = coalesce(ended_at, now()) where principal = p_principal and active and to_at > p_from;
+  insert into public.fm_deputies (principal, deputy, from_at, to_at, note, set_by, reason)
+  values (p_principal, p_deputy, p_from, p_to, nullif(trim(coalesce(p_note,'')),''), auth.uid(), nullif(trim(coalesce(p_reason,'')),'')) returning id into v;
+  perform public.fm_deputy_apply();
+  select transferred into n from public.fm_deputies where id = v;
+  return jsonb_build_object('id', v, 'transferred', coalesce(n,0), 'started', p_from <= now());
+end $$;
+revoke all on function public.fm_deputy_assign(uuid,uuid,timestamptz,timestamptz,text,text) from public, anon;
+grant execute on function public.fm_deputy_assign(uuid,uuid,timestamptz,timestamptz,text,text) to authenticated;
+-- the V158 entry points keep working with the new rules
+create or replace function public.fm_deputy_set(p_deputy uuid, p_from timestamptz, p_to timestamptz, p_note text default null, p_principal uuid default null) returns uuid
+language plpgsql security definer set search_path = public as $$
+begin return (public.fm_deputy_assign(coalesce(p_principal, auth.uid()), p_deputy, p_from, p_to, null, p_note)->>'id')::uuid; end $$;
+create or replace function public.fm_deputy_end(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  update public.fm_deputies set active = false, ended_at = now() where id = p_id and active
+     and (principal = auth.uid() or deputy = auth.uid() or public.fm_deputy_may(principal));
+  if not found then raise exception 'not allowed' using errcode = '42501'; end if;
+  perform public.fm_deputy_apply();
+end $$;
+-- who can be a deputy (anyone above a supervisor), and for whom the caller may set one
+create or replace function public.fm_deputy_candidates() returns table(id uuid, full_name text, job_title text, regions text[])
+language sql stable security definer set search_path = public as $$
+  select p.id, coalesce(p.full_name, p.email), public.fm_posx(p.role, p.job_title), p.regions from public.profiles p
+   where p.active and p.role not in ('pending','contractor','supervisor','viewer') and public.fm_role() <> 'pending'
+     and (public.fm_prank(public.fm_posx(p.role, p.job_title)) >= 4 or public.fm_posx(p.role, p.job_title) in ('hse_manager','qa_manager'))
+   order by public.fm_prank(public.fm_posx(p.role, p.job_title)) desc, p.full_name $$;
+create or replace function public.fm_deputy_principals() returns table(id uuid, full_name text, job_title text, regions text[])
+language sql stable security definer set search_path = public as $$
+  select p.id, coalesce(p.full_name, p.email), public.fm_posx(p.role, p.job_title), p.regions from public.profiles p
+   where public.fm_deputy_may(p.id) order by (p.id = auth.uid()) desc, public.fm_prank(public.fm_posx(p.role, p.job_title)) desc, p.full_name $$;
+-- leaves the caller may see (for the engagement page and the field app): who, when, and the deputy's name
+create or replace function public.fm_leaves() returns table(id uuid, principal uuid, principal_name text, deputy uuid, deputy_name text, from_at timestamptz, to_at timestamptz, reason text, transferred int, running boolean)
+language sql stable security definer set search_path = public as $$
+  select d.id, d.principal, coalesce(pr.full_name, pr.email), d.deputy, coalesce(dp.full_name, dp.email), d.from_at, coalesce(d.ended_at, d.to_at), d.reason, d.transferred,
+         d.active and now() >= d.from_at and now() < d.to_at
+    from public.fm_deputies d join public.profiles pr on pr.id = d.principal join public.profiles dp on dp.id = d.deputy
+   where public.fm_role() <> 'pending' and coalesce(d.ended_at, d.to_at) > now() - interval '120 days'
+     and (d.principal = auth.uid() or d.deputy = auth.uid() or public.fm_scope_all() or public.fm_is_under_base(d.principal, auth.uid())
+          or public.fm_is_under_base(auth.uid(), d.principal) or public.fm_deputy_may(d.principal))
+   order by d.from_at desc $$;
+revoke all on function public.fm_deputy_candidates() from public, anon;
+revoke all on function public.fm_deputy_principals() from public, anon;
+revoke all on function public.fm_leaves() from public, anon;
+grant execute on function public.fm_deputy_candidates() to authenticated;
+grant execute on function public.fm_deputy_principals() to authenticated;
+grant execute on function public.fm_leaves() to authenticated;
+-- the deputy may log contacts for the principal's schools during the leave
+create or replace function public.fm_eng_submit(p jsonb) returns uuid language plpgsql security definer set search_path=public as $$
+declare lid uuid; v_me uuid := auth.uid(); v_out text := p->>'outcome';
+begin
+  if not exists (select 1 from public.fm_eng_assignments a join public.profiles u on u.id=a.user_id
+                 where a.id=(p->>'assignment_id')::uuid and a.active and u.active and u.role in ('supervisor','engineer')
+                   and (a.user_id=v_me or (public.fm_deputy_now(a.user_id)).deputy = v_me)) then
+    raise exception 'not allowed';
+  end if;
+  insert into public.fm_eng_logs(assignment_id,user_id,channel,outcome,confirmed,summary,evidence_path,geo)
+  values((p->>'assignment_id')::uuid, v_me, p->>'channel', v_out, coalesce((p->>'confirmed')::boolean,false), p->>'summary', nullif(p->>'evidence_path',''),
+         case when jsonb_typeof(p->'geo')='object' then p->'geo' end)
+  returning id into lid;
+  if v_out in ('observation','urgent') then
+    insert into public.fm_eng_observations(log_id,owner_id,due_at)
+    values(lid, v_me, now() + case when v_out='urgent' then interval '24 hours' else interval '48 hours' end);
+  end if;
+  return lid;
+end $$;
+-- coverage: cycles during a leave do not count against the principal
+create or replace function public.fm_eng_scores() returns table(user_id uuid, full_name text, person_names text[], role text, cov numeric, cov_hit int, cov_total int, sat numeric, sat_n int)
+language sql stable security definer set search_path=public as $$
+  with ppl as (
+    select p.id, coalesce(p.full_name, p.email) fname, coalesce(p.person_names, '{}') pn, p.role,
+           coalesce((select t.cycle from public.fm_eng_targets t where t.role = p.role), case when p.role = 'engineer' then 'monthly' else 'weekly' end) cyc
+      from public.profiles p
+     where p.active and p.role in ('supervisor','engineer')
+       and (public.fm_eng_admin() or p.id = auth.uid() or public.fm_scope_all()
+            or exists(select 1 from public.fm_eng_assignments a where a.user_id = p.id and a.active and public.fm_eng_sees(a.user_id, a.region)))),
+  blk as (
+    select p.id uid, now() - case when p.cyc = 'weekly' then (b + 1) * interval '7 days' else interval '30 days' end f,
+           now() - b * interval '7 days' t
+      from ppl p cross join lateral generate_series(0, case when p.cyc = 'weekly' then 3 else 0 end) b),
+  cv as (
+    select b.uid, count(*)::int tot,
+           count(*) filter (where exists(select 1 from public.fm_eng_logs l where l.assignment_id = a.id and l.outcome <> 'no_reply' and l.confirmed
+                                         and l.at > b.f and l.at <= b.t))::int hit
+      from blk b join public.fm_eng_assignments a on a.user_id = b.uid and a.active
+     -- V166: cycles that overlap a leave (the person had a deputy) are not counted
+     where not exists(select 1 from public.fm_deputies d where d.principal = b.uid and d.applied_at is not null
+                        and d.from_at < b.t and coalesce(d.ended_at, d.to_at) > b.f)
+     group by b.uid),
+  st as (
+    select x.uid, avg(x.v) av, count(*)::int n from (
+      select r.supervisor_id uid, r.q_supervisor v from public.fm_eng_ratings r where r.q_supervisor is not null and r.created_at > now() - interval '90 days'
+      union all
+      select r.engineer_id, r.q_engineer from public.fm_eng_ratings r where r.q_engineer is not null and r.created_at > now() - interval '90 days') x
+     group by x.uid)
+  select p.id, p.fname, p.pn, p.role,
+         case when coalesce(cv.tot,0) > 0 then round(cv.hit * 100.0 / cv.tot, 1) end, coalesce(cv.hit,0), coalesce(cv.tot,0),
+         case when st.n > 0 then round(st.av * 20, 1) end, coalesce(st.n,0)
+    from ppl p left join cv on cv.uid = p.id left join st on st.uid = p.id $$;
+-- the apps call fm_touch when they open: it also starts / ends the leaves that are due (no pg_cron needed)
+create or replace function public.fm_touch(p_app text) returns void language plpgsql security definer set search_path=public as $$
+begin
+  insert into public.fm_activity(user_id, day, app)
+  select auth.uid(), (now() at time zone 'Asia/Riyadh')::date, p_app
+   where auth.uid() is not null and p_app in ('platform','field') and exists(select 1 from public.profiles where id = auth.uid())
+  on conflict (user_id, day, app) do update set last_at = now(), hits = public.fm_activity.hits + 1;
+  if exists(select 1 from public.fm_deputies where (active and applied_at is null and now() >= from_at and now() < to_at)
+                                            or (applied_at is not null and returned_at is null and (not active or now() >= to_at))) then
+    perform public.fm_deputy_apply();
+  end if;
+end $$;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
