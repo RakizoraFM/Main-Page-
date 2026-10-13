@@ -1519,4 +1519,46 @@ language sql stable security definer set search_path=public as $$
 revoke all on function public.fm_eng_scores() from public, anon;
 grant execute on function public.fm_eng_scores() to authenticated;
 
+-- ---------- 16) usage: who opens the platform / field app and what he does (V164, field F21) ----------
+-- Each app calls fm_touch once when it opens (and at most once every 10 minutes after): one row per user, day and app.
+create table if not exists public.fm_activity(user_id uuid not null references public.profiles(id) on delete cascade, day date not null,
+  app text not null check(app in ('platform','field')), first_at timestamptz not null default now(), last_at timestamptz not null default now(),
+  hits int not null default 1, primary key(user_id, day, app));
+alter table public.fm_activity enable row level security;
+revoke all on public.fm_activity from anon, authenticated;
+create or replace function public.fm_touch(p_app text) returns void language sql security definer set search_path=public as $$
+  insert into public.fm_activity(user_id, day, app)
+  select auth.uid(), (now() at time zone 'Asia/Riyadh')::date, p_app
+   where auth.uid() is not null and p_app in ('platform','field') and exists(select 1 from public.profiles where id = auth.uid())
+  on conflict (user_id, day, app) do update set last_at = now(), hits = public.fm_activity.hits + 1 $$;
+revoke all on function public.fm_touch(text) from public, anon;
+grant execute on function public.fm_touch(text) to authenticated;
+-- the usage report: system admin and project manager. Days in Riyadh time, p_to inclusive.
+create or replace function public.fm_usage_report(p_from date, p_to date)
+returns table(user_id uuid, full_name text, email text, job_title text, regions text[], phone text, active boolean, created_at timestamptz,
+  last_sign_in timestamptz, must_change_pw boolean, last_seen timestamptz, days int, platform_days int, field_days int,
+  wo_created int, wo_actions int, wo_done int, eng_logs int, eng_done int, rate_requests int)
+language plpgsql stable security definer set search_path=public as $$
+declare f timestamptz := (p_from::timestamp at time zone 'Asia/Riyadh'); t timestamptz := ((p_to + 1)::timestamp at time zone 'Asia/Riyadh');
+begin
+  if not (public.fm_eng_admin() or coalesce(public.fm_my_pos() = 'project_manager', false)) then raise exception 'not allowed'; end if;
+  return query
+  select p.id, coalesce(p.full_name, p.email), p.email, public.fm_posx(p.role, p.job_title), p.regions, p.phone, p.active, p.created_at,
+    u.last_sign_in_at, p.must_change_pw,
+    (select max(a.last_at) from public.fm_activity a where a.user_id = p.id),
+    (select count(distinct a.day)::int from public.fm_activity a where a.user_id = p.id and a.day between p_from and p_to),
+    (select count(*)::int from public.fm_activity a where a.user_id = p.id and a.app = 'platform' and a.day between p_from and p_to),
+    (select count(*)::int from public.fm_activity a where a.user_id = p.id and a.app = 'field' and a.day between p_from and p_to),
+    (select count(*)::int from public.work_orders w where w.created_by = p.id and w.created_at >= f and w.created_at < t),
+    (select count(*)::int from public.wo_events e where e.by_id = p.id and e.type <> 'create' and e.at >= f and e.at < t),
+    (select count(*)::int from public.wo_events e where e.by_id = p.id and e.type = 'done' and e.at >= f and e.at < t),
+    (select count(*)::int from public.fm_eng_logs l where l.user_id = p.id and l.at >= f and l.at < t),
+    (select count(*)::int from public.fm_eng_logs l where l.user_id = p.id and l.outcome <> 'no_reply' and l.confirmed and l.at >= f and l.at < t),
+    (select count(*)::int from public.fm_eng_rate_links k where k.created_by = p.id and k.created_at >= f and k.created_at < t)
+  from public.profiles p left join auth.users u on u.id = p.id
+  where p.role <> 'pending';
+end $$;
+revoke all on function public.fm_usage_report(date,date) from public, anon;
+grant execute on function public.fm_usage_report(date,date) to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
