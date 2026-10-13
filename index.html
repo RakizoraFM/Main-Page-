@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V163">
+<meta name="fm-version" content="V164">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25538,10 +25538,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V163',date:'2026-10-12',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V164',date:'2026-10-13',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V164',d:'2026-10-13',t:'توزيع المنصة على المهندسين',i:['«📨 رسائل الترحيب»: كلمة مرور مؤقتة جديدة لكل شخص تختاره (مثل مهندسي المشروع) ورسالة واتساب واحدة له فيها الرابط والبريد وكلمة المرور ومكان الدليل ورابط فيديو الشرح','«📘 دليل المنصة» لكل المستخدمين: كل مسمى يرى شرح ما يخصه فقط، ومدير النظام يعاين دليل أي مسمى','«📈 استخدام المنصة» لمدير النظام ومدير المشروع: آخر نشاط وأيام النشاط في المنصة والميدان، والأوامر المنشأة والإجراءات و«تم الإجراء»، والتواصل وطلبات التقييم، مع حالة نشط / خامل / متوقف / لم يدخل وتصدير CSV','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 16)']},
 {v:'V163',d:'2026-10-12',t:'إخفاء شريطي التمرير بجانب القائمة',i:['لا يظهر شريط تمرير القائمة الجانبية ولا شريط تمرير الصفحة الرئيسية؛ التمرير يبقى بعجلة الماوس واللمس وزرّي ↑ ↓','الجداول والنوافذ الداخلية كما هي: شريط رفيع يظهر عند المرور عليها']},
 {v:'V162',d:'2026-10-12',t:'دليل المنصة',i:['صفحة «📘 دليل المنصة» لمدير النظام في مجموعة النظام: كل خاصية بما هي وأين تجدها وخطوات استخدامها ومن يستخدمها، مع زر «افتح الصفحة»','بحث في الدليل وتصفية حسب المجموعة، وشارة «جديد» لما أُضيف أو تغيّر في آخر 3 إصدارات','«آخر التحديثات» تُقرأ تلقائياً من سجل الإصدارات، وتنبيه بأي صفحة في القائمة ليس لها شرح بعد','طباعة الدليل أو حفظه PDF']},
 {v:'V161',d:'2026-10-12',t:'أشرطة تمرير أنظف',i:['أشرطة التمرير في القائمة الجانبية وكل الصفحات الفرعية والجداول والنوافذ رفيعة ومخفية، وتظهر فقط عند المرور عليها','إزالة الخط الرمادي بجانب عناصر المجموعة المفتوحة']},
@@ -27005,7 +27006,7 @@ const GROUPS=[
  {k:'analysis',icon:'📊',t:'التحليل والمقارنات',ids:['v2-nav-charts','v2-nav-period','v2-nav-fm103-periods','v2-nav-fm131-season','v2-nav-compare','v2-nav-pivot','v2-nav-saved']},
  {k:'reports',icon:'📄',t:'التقارير',ids:['v2-nav-fm127-today','v2-nav-fm125-send','v2-nav-fm126-log','v2-nav-fm118-weekly','v2-nav-report','v2-nav-fm123-weekfu','v2-nav-fm158-qa']},
  {k:'data',icon:'🗂️',t:'البيانات والإعداد',ids:['v2-nav-school-db','v2-nav-fm125-contacts','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-quality','v2-nav-refresh']},
- {k:'system',icon:'⚙️',t:'النظام',ids:['v2-nav-fm122-settings','v2-nav-fm116','v2-nav-fm162-manual']}
+ {k:'system',icon:'⚙️',t:'النظام',ids:['v2-nav-fm122-settings','v2-nav-fm116','v2-nav-fm162-manual','v2-nav-fm164-usage']}
 ];
 const TOP=['v2-nav-portal','v2-nav-solution','v2-nav-actions','v2-nav-fm145-wo'],DANGER='fm-v38-clear-all-nav';
 const KEY='fm_nav_groups_v123';
@@ -31424,6 +31425,7 @@ const P={
  supervisor:{d:'العمل الميداني على مدارسه.',can:['تطبيق الميدان: الأوامر والفحص والتواصل'],go:['v2-nav-fm145-wo'],hide:RO},
  contractor:{d:'تنفيذ الأوامر المسندة إليه.',can:['تطبيق الميدان: الأوامر المسندة فقط'],go:['v2-nav-fm145-wo'],hide:RO},
  viewer:{d:'مشاهدة المؤشرات.',can:['قراءة فقط'],go:['v2-nav-report','v2-nav-charts'],hide:RO}};
+window.fmV157P=P;
 const prof=()=>C.state&&C.state.on&&C.state.profile;
 const pos=p=>C.posOf(p)||p.role;
 function label(id){const b=document.getElementById(id);if(!b)return null;return S(b.querySelector('.v2-nav-label')?.textContent||b.textContent)}
@@ -31710,7 +31712,9 @@ const MANUAL=[
  {id:'v2-nav-portal',t:'بورتالي',where:'أعلى القائمة الجانبية ← «بورتالي» (يظهر تلقائياً مرة عند كل دخول)',what:'صفحة شخصية لكل مستخدم: مسماه ونطاقه وأرقامه المهمة واختصاراته وصلاحياته، والأوامر المصعّدة إليه.',how:['تظهر عند الدخول؛ أغلقها بـ ×.','افتحها في أي وقت من «بورتالي» في القائمة.','الصفحات غير اللازمة لمسمى المستخدم تُخفى من قائمته (والبيانات محمية في قاعدة البيانات على أي حال).'],who:'كل مستخدمي المنصة',v:'V158'},
  {id:'users',t:'المستخدمون والمسميات الوظيفية',where:'النظام ← الإعدادات ← تبويب «السحابة» ← «👥 المستخدمون والصلاحيات»',what:'إضافة المستخدمين وتحديد المسمى الوظيفي (عشرة مسميات) والمناطق ومن يتبع له كل شخص، وكلمات المرور المؤقتة.',how:['«➕ مستخدم جديد»: الاسم والبريد والمسمى ← تُولَّد كلمة مرور مؤقتة تُرسل بواتساب أو تُنسخ.','عدّل المسمى والمناطق و«يتبع لـ» مباشرة في الجدول.','«🔑 كلمة مرور» يعيد تعيين كلمة مرور مؤقتة.','الاستيراد من Excel ينشئ الجديد ويحدّث الموجود بعد معاينة.'],who:'مدير النظام',tips:['«يتبع لـ» يحدد التسلسل: من يُسنِد لمن، ومن يرى فريق من، والتصعيد.'],v:'V157'},
  {id:'roles',t:'الصلاحيات حسب المسمى، ومن يدخل المنصة',where:'الإعدادات ← السحابة ← «الصلاحيات حسب المسمى الوظيفي» و«🔒 من يدخل المنصة»',what:'جدول يوضح ما يراه ويفعله كل مسمى؛ ومدير النظام يحدد هل يدخل مهندس المنطقة ومدير الإدارة والمشرف والمقاول المنصة أم تطبيق الميدان فقط.',how:['راجع الجدول لمعرفة صلاحيات كل مسمى.','في «من يدخل المنصة» علّم المسميات المسموح لها ثم «حفظ».'],who:'مدير النظام',tips:['الصلاحيات مطبّقة في قاعدة البيانات نفسها، لا في الواجهة فقط.'],v:'V160'},
- {id:'v2-nav-fm162-manual',t:'دليل المنصة',where:'النظام ← «📘 دليل المنصة»',what:'هذه الصفحة: كل خصائص المنصة وكيفية استخدامها، مع آخر التحديثات من سجل الإصدارات تلقائياً.',how:['ابحث بكلمة، أو اختر مجموعة.','«افتح الصفحة» ينقلك للخاصية مباشرة.','«🖨️ طباعة / PDF» لنسخة مطبوعة.'],who:'مدير النظام',tips:['الشارة «جديد» على الخصائص التي أُضيفت أو تغيّرت في آخر 3 إصدارات.'],v:'V162'}
+ {id:'v2-nav-fm162-manual',t:'دليل المنصة',where:'النظام ← «📘 دليل المنصة»',what:'هذه الصفحة: خصائص المنصة وكيفية استخدامها، مع آخر التحديثات من سجل الإصدارات تلقائياً. كل مستخدم يرى فقط شرح ما يخصه حسب مسماه الوظيفي.',how:['ابحث بكلمة، أو اختر مجموعة.','«افتح الصفحة» ينقلك للخاصية مباشرة.','«🖨️ طباعة / PDF» لنسخة مطبوعة.','مدير النظام: «عرض كما يراه» لمعاينة دليل أي مسمى قبل توزيع الحسابات.'],who:'كل مستخدمي المنصة (كلٌّ حسب مسماه)',tips:['الشارة «جديد» على الخصائص التي أُضيفت أو تغيّرت في آخر 3 إصدارات.'],v:'V164'},
+ {id:'v2-nav-fm164-usage',t:'استخدام المنصة',where:'النظام ← «📈 استخدام المنصة»',what:'من يستخدم المنصة فعلاً: آخر نشاط لكل مستخدم وأيام نشاطه في المنصة والميدان، وكم أمر عمل أنشأ وكم إجراء نفّذ، وكم تواصلاً مكتملاً سجّل وكم طلب تقييم أرسل.',how:['اختر الفترة (7 / 14 / 30 / 90 يوماً) والمسمى والمنطقة.','الحالة: 🟢 نشط خلال 3 أيام، 🟡 خامل 4–14 يوماً، 🟠 متوقف أكثر من 14 يوماً، 🔴 لم يدخل بعد.','«⬇️ CSV» لتصدير التقرير.'],who:'مدير النظام ومدير المشروع',tips:['النشاط يُسجَّل من V164؛ قبلها يظهر آخر تسجيل دخول فقط.'],v:'V164'},
+ {id:'welcome',t:'رسائل الترحيب',where:'استخدام المنصة ← «📨 رسائل الترحيب»',what:'إرسال بيانات الدخول لمجموعة مستخدمين (مثل مهندسي المشروع) برسالة واتساب واحدة لكل شخص: الرابط والبريد وكلمة مرور مؤقتة جديدة ومكان الدليل ورابط فيديو الشرح.',how:['اختر المسمى (مثلاً مهندس المنطقة)، ويُعرض افتراضياً من لم يدخل بعد.','عدّل نص الرسالة إن أردت، وضع رابط فيديو الشرح (اختياري).','«🔑 إنشاء كلمات المرور وتجهيز الرسائل»، ثم «واتساب» لكل شخص بالترتيب.'],who:'مدير النظام',tips:['كلمات المرور لا تُحفظ في أي مكان؛ أرسلها قبل إغلاق النافذة.','من دخل من قبل تتغير كلمة مروره إن اخترته — يظهر تنبيه قبل التنفيذ.','رقم الجوال من حساب المستخدم؛ بدونه يفتح واتساب لتختار المحادثة.'],v:'V164'}
 ]},
 {g:'الرئيسية والعمليات',icon:'🏠',items:[
  {id:'v2-nav-solution',t:'لوحة القيادة التنفيذية',where:'أعلى القائمة ← «لوحة القيادة التنفيذية»',what:'المؤشرات الرئيسية للمنطقة المختارة: البلاغات والمفتوح والمحلول والالتزام بالـ SLA، والرسوم، وخريطة المدارس التي بها بلاغات.',how:['اختر المنطقة (الرياض / القصيم) من شريط المناطق.','ارفع ملف البلاغات (Excel أو CSV) أو الصق النص؛ آخر ملف لكل منطقة يُسترجع تلقائياً.','استخدم شريط الفلاتر (الفترة، المكتب، المقاول، المشرف…)؛ كل الصفحات تتبعه.'],who:'المديرون والمهندس',tips:['مدير النظام يرفع الملف فيصل للجميع عبر السحابة.'],v:'V134'},
@@ -31795,7 +31799,18 @@ const MANUAL=[
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const C=window.FMCloud;
 /* the system admin (or the owner working without the cloud) */
-const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;return st.profile?.role==='admin'};
+const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;return !!st.profile&&st.profile.role!=='pending'};
+/* V164: each title sees only what concerns it. Sidebar pages follow the portal's hidden pages (fmV157P[title].hide);
+   other entries list their titles here. The system admin sees everything and can preview any title. */
+const MGR=['dept_manager','project_manager','ops_manager','area_manager'],ASG=['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'];
+const RMAP={users:['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
+ 'wo-group':ASG,'wo-templates':ASG,'wo-fci':ASG,'wo-repair':ASG.concat('dept_manager'),'gov-stop':['sysadmin','hse_manager','project_manager','ops_manager','dept_manager'],
+ 'gov-deputy':['sysadmin','project_manager','ops_manager','area_manager','area_engineer'],'eng-rating':['sysadmin',...MGR,'area_engineer'],
+ 'v2-nav-fm164-usage':['sysadmin','project_manager'],'v2-nav-fm158-qa':['sysadmin','qa_manager',...MGR],
+ 'field-tickets':['sysadmin','area_engineer'],'field-wo':['sysadmin','area_engineer'],'field-me':['sysadmin','area_engineer']};
+const myTitle=()=>{const p=C&&C.state&&C.state.on&&C.state.profile;return p?C.posOf(p):'sysadmin'};
+let asT='';const viewT=()=>myTitle()==='sysadmin'?(asT||'sysadmin'):myTitle();
+function sees(x,t){if(t==='sysadmin')return true;if(RMAP[x.id])return RMAP[x.id].includes(t);if(/^v2-nav-/.test(x.id)){const P=window.fmV157P;const h=P&&(P[t]||P.viewer)?(P[t]||P.viewer).hide:[];return !h.includes(x.id)}return true}
 const vnum=v=>+(String(v||'').match(/\d+/)||[0])[0];
 const log=()=>{try{return Array.isArray(window.FM_CHANGELOG)?window.FM_CHANGELOG:[]}catch(e){return []}};
 function isNew(v){const L=log().map(x=>vnum(x.v)).filter(Boolean),top=L.length?Math.max(...L):vnum(window.FM_APP_VERSION);return v&&vnum(v)>top-3}
@@ -31805,19 +31820,20 @@ function page(){let p=document.getElementById('fm162-page');if(!p){p=document.cr
  document.body.appendChild(p);p.querySelector('[data-print]').onclick=print}return p}
 function print(){const w=window.open('','_blank');if(!w)return;const v=window.FM_APP_VERSION||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>دليل منصة RakizoraFM ${esc(v)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;color:#0f172a;margin:24px;line-height:1.8}h1{font-size:22px}h2{font-size:17px;border-bottom:2px solid #2563eb;padding-bottom:4px;margin-top:22px}.it{break-inside:avoid;margin:10px 0 14px}.it b{font-size:15px}.m{color:#475569;font-size:12.5px}ol{margin:4px 0}</style></head><body><h1>📘 دليل منصة RakizoraFM — الإصدار ${esc(v)}</h1>`
-  +MANUAL.map(g=>`<h2>${g.icon} ${esc(g.g)}</h2>`+g.items.map(x=>`<div class="it"><b>${esc(x.t)}</b> <span class="m">${x.v?'('+esc(x.v)+')':''}</span><div>${esc(x.what)}</div><div class="m">📍 ${esc(x.where)} · 👤 ${esc(x.who)}</div><ol>${x.how.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>${(x.tips||[]).map(t=>`<div class="m">💡 ${esc(t)}</div>`).join('')}</div>`).join('')).join('')+'</body></html>');
+  +MANUAL.map(g=>({...g,items:g.items.filter(x=>sees(x,viewT()))})).filter(g=>g.items.length).map(g=>`<h2>${g.icon} ${esc(g.g)}</h2>`+g.items.map(x=>`<div class="it"><b>${esc(x.t)}</b> <span class="m">${x.v?'('+esc(x.v)+')':''}</span><div>${esc(x.what)}</div><div class="m">📍 ${esc(x.where)} · 👤 ${esc(x.who)}</div><ol>${x.how.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>${(x.tips||[]).map(t=>`<div class="m">💡 ${esc(t)}</div>`).join('')}</div>`).join('')).join('')+'</body></html>');
  w.document.close();setTimeout(()=>{try{w.print()}catch(e){}},600)}
 function missing(){const known=new Set(MANUAL.flatMap(g=>g.items.map(x=>x.id)));return [...document.querySelectorAll('nav.v2-nav .v2-nav-btn[id]')].filter(b=>b.id!=='fm-v38-clear-all-nav'&&!known.has(b.id)).map(b=>(b.querySelector('.v2-nav-label')?.textContent||b.title||b.id).trim())}
-function render(){const p=page(),body=p.querySelector('.body'),s=q.trim().toLowerCase();
- const hit=x=>!s||[x.t,x.what,x.where,x.who,...x.how,...(x.tips||[])].join(' ').toLowerCase().includes(s);
+function render(){const p=page(),body=p.querySelector('.body'),s=q.trim().toLowerCase(),T=viewT(),admin=myTitle()==='sysadmin';
+ const hit=x=>sees(x,T)&&(!s||[x.t,x.what,x.where,x.who,...x.how,...(x.tips||[])].join(' ').toLowerCase().includes(s));
  const groups=MANUAL.filter(g=>!grp||g.g===grp).map(g=>({...g,items:g.items.filter(hit)})).filter(g=>g.items.length);
- const recent=log().slice(0,4),miss=missing();
- body.innerHTML=`<div class="fm162-top"><input type="search" data-q placeholder="ابحث في الدليل… (مثال: تقييم، حملة، كلمة مرور)" value="${esc(q)}"><div class="fm162-chips"><button type="button" data-g="" class="${grp?'':'on'}">الكل</button>${MANUAL.map(g=>`<button type="button" data-g="${esc(g.g)}" class="${grp===g.g?'on':''}">${g.icon} ${esc(g.g)}</button>`).join('')}</div></div>
+ const recent=log().slice(0,4),miss=admin&&!asT?missing():[];
+ body.innerHTML=`${admin?`<div class="fm162-as">👁️ عرض كما يراه: <select data-as><option value="">مدير النظام (كل الخصائص)</option>${Object.entries(C?.POS||{}).filter(([k])=>k!=='sysadmin').map(([k,v])=>`<option value="${k}" ${asT===k?'selected':''}>${v}</option>`).join('')}</select></div>`:`<div class="fm162-as">📘 الشرح الخاص بمسماك: <b>${esc(C?.POS?.[T]||'')}</b></div>`}<div class="fm162-top"><input type="search" data-q placeholder="ابحث في الدليل… (مثال: تقييم، حملة، كلمة مرور)" value="${esc(q)}"><div class="fm162-chips"><button type="button" data-g="" class="${grp?'':'on'}">الكل</button>${MANUAL.filter(g=>g.items.some(x=>sees(x,T))).map(g=>`<button type="button" data-g="${esc(g.g)}" class="${grp===g.g?'on':''}">${g.icon} ${esc(g.g)}</button>`).join('')}</div></div>
  ${!s&&!grp?`<div class="fm162-new"><h3>🆕 آخر التحديثات</h3>${recent.map(c=>`<details${c===recent[0]?' open':''}><summary><b>${esc(c.v)}</b> — ${esc(c.t)} <span>${esc(c.d)}</span></summary><ul>${(c.i||[]).map(i=>`<li>${esc(i)}</li>`).join('')}</ul></details>`).join('')}</div>`:''}
  ${miss.length?`<div class="fm162-miss">⚠️ صفحات في القائمة ليس لها شرح في الدليل بعد: ${miss.map(esc).join('، ')}</div>`:''}
  ${groups.map(g=>`<h3 class="fm162-g">${g.icon} ${esc(g.g)} <small>${g.items.length}</small></h3><div class="fm162-grid">${g.items.map(x=>`<article class="fm162-it"><header><b>${esc(x.t)}</b>${isNew(x.v)?'<span class="fm162-badge">جديد</span>':''}${x.v?`<small>${esc(x.v)}</small>`:''}</header><p>${esc(x.what)}</p><div class="fm162-meta">📍 ${esc(x.where)}</div><ol>${x.how.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>${(x.tips||[]).map(t=>`<div class="fm162-tip">💡 ${esc(t)}</div>`).join('')}<footer><span>👤 ${esc(x.who)}</span>${document.getElementById(x.id)?`<button type="button" class="fm103-btn" data-go="${esc(x.id)}">افتح الصفحة ←</button>`:''}</footer></article>`).join('')}</div>`).join('')||'<div class="fm162-miss">لا نتائج مطابقة.</div>'}`;
  const inp=body.querySelector('[data-q]');inp.oninput=()=>{q=inp.value;const pos=inp.selectionStart;render();const n=page().querySelector('[data-q]');n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}};
  body.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{grp=b.dataset.g;render()});
+ const as=body.querySelector('[data-as]');if(as)as.onchange=()=>{asT=as.value;render()};
  body.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{const t=document.getElementById(b.dataset.go);window.fmV103ClosePages?.();if(t)t.click()})}
 function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.getElementById('fm116-page')?.classList.remove('open');document.body.classList.remove('v2-mobile-nav');
  try{window.v2SetActive?.(btn)}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;render()}
@@ -31827,6 +31843,105 @@ function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getEleme
  if(!allowed()){b0?.remove();return}if(b0)return;
  const b=document.createElement('button');b.id='v2-nav-fm162-manual';b.type='button';b.className='v2-nav-btn';b.title='دليل المنصة';b.innerHTML='<i class="fas fa-book-open"></i><span class="v2-nav-label">دليل المنصة</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
 nav();setInterval(()=>{try{nav()}catch(e){}},3000);
+})();
+</script>
+<style id="fm-v164-usage-css">
+/* V164: usage report and the manual's title switch */
+.fm164-k{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:8px 0 12px}.fm164-k>div{background:var(--bg-card,#fff);border:1px solid var(--border-color,#e2e8f0);border-radius:14px;padding:10px 12px;font-size:.82rem;color:var(--text-muted,#64748b)}.fm164-k b{display:block;font-size:1.5rem;color:var(--text-main,#0f172a)}
+.fm164-k .ok b,.fm164-ok{color:#15803d}.fm164-k .idle b,.fm164-idle{color:#a16207}.fm164-k .off b,.fm164-off{color:#c2410c}.fm164-k .never b,.fm164-never{color:#b91c1c}
+.fm162-as{margin:2px 0 8px;font-size:.85rem;font-weight:700}.fm162-as select{border:1px solid var(--border-color,#dbe3ec);border-radius:10px;padding:5px 8px;font:inherit;background:var(--bg-card,#fff);color:inherit}
+</style>
+<script id="fm-v164-usage">(function(){
+'use strict';
+/* V164: usage tracking, the usage report and the welcome messages.
+   - fm_touch('platform') once when the platform opens and every 10 minutes while the tab is visible.
+   - «📈 استخدام المنصة» (system admin, project manager): last sign-in / last seen, active days, orders, contacts.
+   - «📨 رسائل الترحيب» (system admin): new temporary passwords for the chosen people and one WhatsApp message each
+     (link, e-mail, password, where the manual is, optional video link). Passwords are never stored. */
+const C=window.FMCloud;if(!C)return;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n||0).toLocaleString('ar-EG');
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const me=()=>C.state&&C.state.profile||null,pos=p=>p?C.posOf(p):'';
+const RN={riyadh:'الرياض',qassim:'القصيم'};
+const loginUrl=()=>/^https?:$/.test(location.protocol)?location.origin+location.pathname.replace(/[^/]*$/,'')+'start.html':'https://rakizorafm.github.io/Main-Page-/start.html';
+const lsGet=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k)||'null');return v==null?d:v}catch(e){return d}},lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+const day=d=>new Date(d.getTime()+108e5).toISOString().slice(0,10);
+/* ---------- activity ---------- */
+let lastTouch=0;async function touch(){if(!C.state?.on||!me()||document.hidden||Date.now()-lastTouch<6e5)return;lastTouch=Date.now();try{const db=await C.engClient();await db.rpc('fm_touch',{p_app:'platform'})}catch(e){}}
+setInterval(touch,60000);document.addEventListener('visibilitychange',touch);setTimeout(touch,8000);
+/* ---------- report ---------- */
+const canReport=()=>{const p=me();return !!(C.state?.on&&p&&(p.role==='admin'||pos(p)==='project_manager'))};
+let rows=[],per=30,ft='',fr='',err='';
+async function load(){const db=await C.engClient(),to=new Date(),from=new Date(to.getTime()-(per-1)*864e5);
+ const r=await db.rpc('fm_usage_report',{p_from:day(from),p_to:day(to)});if(r.error)throw Error(r.error.message);rows=Array.isArray(r.data)?r.data:[]}
+function ago(t){if(!t)return null;return (Date.now()-Date.parse(t))/864e5}
+function state(u){const a=ago(u.last_seen||u.last_sign_in);if(a==null)return ['never','🔴 لم يدخل بعد',3];if(a<=3)return ['ok','🟢 نشط',0];if(a<=14)return ['idle','🟡 خامل',1];return ['off','🟠 متوقف',2]}
+function rel(t){const a=ago(t);if(a==null)return '—';if(a<1/24)return 'الآن';if(a<1)return 'منذ '+fmt(Math.round(a*24))+' ساعة';return 'منذ '+fmt(Math.round(a))+' يوم'}
+function page(){let p=document.getElementById('fm164-page');if(!p){p=document.createElement('section');p.id='fm164-page';p.className='fm103-page';
+ p.innerHTML=`<div class="fm103-wrap"><div class="fm103-head"><div><h2>📈 استخدام المنصة</h2><p class="sub">من دخل، ومتى آخر مرة، وماذا أنجز في المنصة وتطبيق الميدان</p></div><div class="fm103-actions"><span class="extra"></span>${me()?.role==='admin'?'<button class="fm103-btn primary" type="button" data-wel>📨 رسائل الترحيب</button>':''}<button class="fm103-btn" type="button" data-csv>⬇️ CSV</button><button class="fm103-btn" type="button" onclick="fmV103ClosePages?.()">إغلاق</button></div></div><div class="body"></div></div>`;
+ document.body.appendChild(p);p.querySelector('[data-csv]').onclick=csv;const w=p.querySelector('[data-wel]');if(w)w.onclick=()=>welcome()}return p}
+function view(){const q=rows.filter(u=>u.active!==false&&(!ft||u.job_title===ft)&&(!fr||(u.regions||[]).includes(fr)||!(u.regions||[]).length));
+ return q.map(u=>({...u,st:state(u)})).sort((a,b)=>b.st[2]-a.st[2]||(Date.parse(a.last_seen||a.last_sign_in||0)||0)-(Date.parse(b.last_seen||b.last_sign_in||0)||0))}
+function render(){const p=page(),b=p.querySelector('.body');
+ if(err){b.innerHTML=`<div class="fm122-note">${esc(/does not exist|schema cache|Could not find/i.test(err)?'شغّل supabase_setup.sql المحدَّث أولاً (القسم 16).':err)}</div>`;return}
+ const V=view(),n=k=>V.filter(u=>u.st[0]===k).length,titles=[...new Set(rows.map(u=>u.job_title))].filter(Boolean);
+ b.innerHTML=`<div class="fm141-bar"><label>الفترة <select data-p>${[7,14,30,90].map(d=>`<option value="${d}" ${per===d?'selected':''}>آخر ${fmt(d)} يوم</option>`).join('')}</select></label>
+  <label>المسمى <select data-t><option value="">الكل</option>${titles.map(t=>`<option value="${t}" ${ft===t?'selected':''}>${esc(C.POS[t]||t)}</option>`).join('')}</select></label>
+  <label>المنطقة <select data-r><option value="">الكل</option>${Object.entries(RN).map(([k,v])=>`<option value="${k}" ${fr===k?'selected':''}>${v}</option>`).join('')}</select></label></div>
+ <div class="fm164-k"><div><b>${fmt(V.length)}</b>مستخدم</div><div class="ok"><b>${fmt(n('ok'))}</b>🟢 نشط (آخر 3 أيام)</div><div class="idle"><b>${fmt(n('idle'))}</b>🟡 خامل (4–14 يوماً)</div><div class="off"><b>${fmt(n('off'))}</b>🟠 متوقف (أكثر من 14 يوماً)</div><div class="never"><b>${fmt(n('never'))}</b>🔴 لم يدخل بعد</div></div>
+ <div class="fm122-tw" style="max-height:none"><table class="fm122-t"><thead><tr><th>المستخدم</th><th>المسمى</th><th>الحالة</th><th>آخر نشاط</th><th>أيام النشاط</th><th>المنصة / الميدان</th><th>أوامر أنشأها</th><th>إجراءات على الأوامر</th><th>«تم الإجراء»</th><th>تواصل مكتمل / مسجّل</th><th>طلبات تقييم</th></tr></thead><tbody>
+ ${V.map(u=>`<tr><td><b>${esc(u.full_name)}</b><div class="fm125-src" dir="ltr" style="text-align:right">${esc(u.email)}</div></td><td>${esc(C.POS[u.job_title]||u.job_title)}${(u.regions||[]).length?`<div class="fm125-src">${(u.regions||[]).map(r=>RN[r]||r).join('، ')}</div>`:''}</td>
+  <td class="fm164-${u.st[0]}">${u.st[1]}${u.must_change_pw?'<div class="fm125-src">لم يغيّر كلمة المرور المؤقتة</div>':''}</td><td title="${esc(u.last_seen||u.last_sign_in||'')}">${rel(u.last_seen||u.last_sign_in)}</td><td>${fmt(u.days)}</td><td>${fmt(u.platform_days)} / ${fmt(u.field_days)}</td><td>${fmt(u.wo_created)}</td><td>${fmt(u.wo_actions)}</td><td>${fmt(u.wo_done)}</td><td>${fmt(u.eng_done)} / ${fmt(u.eng_logs)}</td><td>${fmt(u.rate_requests)}</td></tr>`).join('')||'<tr><td colspan="11">لا يوجد مستخدمون مطابقون</td></tr>'}</tbody></table></div>
+ <div class="fm125-hint">«آخر نشاط» = آخر فتح للمنصة أو تطبيق الميدان (يُسجَّل من V164)، وإن لم يوجد فآخر تسجيل دخول. الأيام والأرقام داخل الفترة المختارة.</div>`;
+ b.querySelector('[data-p]').onchange=async e=>{per=+e.target.value;await refresh()};b.querySelector('[data-t]').onchange=e=>{ft=e.target.value;render()};b.querySelector('[data-r]').onchange=e=>{fr=e.target.value;render()}}
+async function refresh(){const b=page().querySelector('.body');b.innerHTML='<div class="fm125-src">جارٍ التحميل…</div>';try{err='';await load()}catch(e){err=e.message}render()}
+function csv(){const V=view(),H=['الاسم','البريد','المسمى','المناطق','الحالة','آخر نشاط','آخر دخول','أيام النشاط','أيام المنصة','أيام الميدان','أوامر أنشأها','إجراءات على الأوامر','تم الإجراء','تواصل مسجّل','تواصل مكتمل','طلبات تقييم'];
+ const L=[H,...V.map(u=>[u.full_name,u.email,C.POS[u.job_title]||u.job_title,(u.regions||[]).map(r=>RN[r]||r).join('، '),u.st[1].replace(/^\S+\s/,''),u.last_seen||'',u.last_sign_in||'',u.days,u.platform_days,u.field_days,u.wo_created,u.wo_actions,u.wo_done,u.eng_logs,u.eng_done,u.rate_requests])];
+ const t='﻿'+L.map(r=>r.map(v=>'"'+String(v??'').replace(/^[=+@-]/,"'$&").replace(/"/g,'""')+'"').join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/csv;charset=utf-8'}));a.download='RakizoraFM-Usage-'+day(new Date())+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.getElementById('fm116-page')?.classList.remove('open');document.body.classList.remove('v2-mobile-nav');
+ try{window.v2SetActive?.(btn)}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;refresh()}
+window.fmV164Usage=()=>openPage(document.getElementById('v2-nav-fm164-usage'));
+/* ---------- welcome messages ---------- */
+const TPL_KEY='fm164_welcome_tpl',VID_KEY='fm164_welcome_video',SENT_KEY='fm164_welcome_sent';
+const DEF_TPL=`السلام عليكم {الاسم}،\nأهلاً بك في منصة RakizoraFM لإدارة صيانة المدارس.\n\nرابط الدخول: {الرابط}\nالبريد: {البريد}\nكلمة المرور المؤقتة: {كلمة_المرور}\n(سيُطلب منك تغييرها عند أول دخول)\n\nبعد الدخول افتح «📘 دليل المنصة» من القائمة الجانبية ← النظام، ستجد فيه شرح كل ما يخصك.{الفيديو}`;
+const fill=(t,u,pw)=>t.replace(/\{الاسم\}/g,u.full_name||'').replace(/\{البريد\}/g,u.email||'').replace(/\{كلمة_المرور\}/g,pw).replace(/\{الرابط\}/g,loginUrl())
+ .replace(/\{المسمى\}/g,C.POS[u.job_title]||'').replace(/\{الفيديو\}/g,S(lsGet(VID_KEY,''))?'\nفيديو الشرح: '+S(lsGet(VID_KEY,'')):'');
+const waNum=ph=>{let d=S(ph).replace(/[^\d]/g,'');if(d.startsWith('00'))d=d.slice(2);if(d.startsWith('05'))d='966'+d.slice(1);else if(d.startsWith('5')&&d.length===9)d='966'+d;return d};
+function dlg(html,w){const d=document.createElement('div');d.className='fm122-dlg-wrap';d.innerHTML=`<div class="fm122-dlg" style="width:min(${w||820}px,96vw)">${html}</div>`;document.body.appendChild(d);d.addEventListener('click',e=>{if(e.target===d&&!d.dataset.lock)d.remove()});return d}
+function genPw(){const A='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz',N='23456789',all=A+N,r=new Uint32Array(10);crypto.getRandomValues(r);return [...r].map((x,i)=>(i===3||i===7?N:all)[x%(i===3||i===7?N.length:all.length)]).join('')}
+async function welcome(){if(me()?.role!=='admin')return;if(!rows.length){try{await load()}catch(e){toast(e.message,'error');return}}
+ const sent=lsGet(SENT_KEY,{}),L=rows.filter(u=>u.active!==false&&u.user_id!==me().id).map(u=>({...u,st:state(u)}));let wt=ft||'area_engineer';
+ const d=dlg(`<h3>📨 رسائل الترحيب</h3><div class="fm125-hint">تُنشأ كلمة مرور مؤقتة <b>جديدة</b> لكل شخص تختاره (تُطلب منه تغييرها عند أول دخول)، ثم تُرسل له رسالة واتساب واحدة. كلمات المرور لا تُحفظ في أي مكان — أرسلها الآن.</div>
+  <div class="fm141-bar"><label>المسمى <select data-wt><option value="">الكل</option>${Object.entries(C.POS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label><label><input type="checkbox" data-onlynew checked style="width:auto"> من لم يدخل بعد فقط</label></div>
+  <div data-list></div>
+  <label style="font-weight:800">نص الرسالة <small>(المتغيرات: {الاسم} {البريد} {كلمة_المرور} {الرابط} {المسمى} {الفيديو})</small></label><textarea data-tpl rows="9" style="width:100%;font:600 13px Cairo,Tahoma,sans-serif;border:1px solid #cbd5e1;border-radius:10px;padding:8px">${esc(lsGet(TPL_KEY,DEF_TPL))}</textarea>
+  <label style="font-weight:800">رابط فيديو الشرح (اختياري)</label><input data-vid dir="ltr" placeholder="https://…" value="${esc(lsGet(VID_KEY,''))}" style="width:100%;border:1px solid #cbd5e1;border-radius:10px;padding:8px">
+  <div class="row" style="margin-top:10px"><button class="p" data-go>🔑 إنشاء كلمات المرور وتجهيز الرسائل</button><button data-def>استعادة النص الافتراضي</button><button data-x>إغلاق</button></div><div data-out></div>`);
+ const $=s=>d.querySelector(s);$('[data-wt]').value=wt;
+ const list=()=>{wt=$('[data-wt]').value;const only=$('[data-onlynew]').checked;const V=L.filter(u=>(!wt||u.job_title===wt)&&(!only||u.st[0]==='never'));
+  $('[data-list]').innerHTML=`<div class="fm122-tw" style="max-height:260px"><table class="fm122-t"><thead><tr><th><input type="checkbox" data-all checked style="width:auto"></th><th>الاسم</th><th>المسمى</th><th>الجوال</th><th>الحالة</th><th>أُرسل الترحيب</th></tr></thead><tbody>${V.map(u=>`<tr><td><input type="checkbox" data-u="${esc(u.user_id)}" ${sent[u.user_id]?'':'checked'} style="width:auto"></td><td>${esc(u.full_name)}<div class="fm125-src" dir="ltr" style="text-align:right">${esc(u.email)}</div></td><td>${esc(C.POS[u.job_title]||'')}</td><td dir="ltr">${esc(u.phone)||'—'}</td><td>${u.st[1]}</td><td>${sent[u.user_id]?esc(sent[u.user_id]):'—'}</td></tr>`).join('')||'<tr><td colspan="6">لا أحد مطابق</td></tr>'}</tbody></table></div>`;
+  $('[data-all]').onchange=e=>d.querySelectorAll('[data-u]').forEach(c=>c.checked=e.target.checked)};
+ list();$('[data-wt]').onchange=list;$('[data-onlynew]').onchange=list;$('[data-x]').onclick=()=>d.remove();
+ $('[data-def]').onclick=()=>{$('[data-tpl]').value=DEF_TPL};
+ $('[data-tpl]').onchange=()=>lsSet(TPL_KEY,$('[data-tpl]').value);$('[data-vid]').onchange=()=>lsSet(VID_KEY,S($('[data-vid]').value));
+ $('[data-go]').onclick=async e=>{const ids=[...d.querySelectorAll('[data-u]:checked')].map(c=>c.dataset.u),sel=L.filter(u=>ids.includes(u.user_id));if(!sel.length){toast('اختر شخصاً واحداً على الأقل','warning');return}
+  lsSet(TPL_KEY,$('[data-tpl]').value);lsSet(VID_KEY,S($('[data-vid]').value));
+  const used=sel.filter(u=>u.st[0]!=='never');if(!confirm(`إنشاء كلمة مرور مؤقتة جديدة لـ ${sel.length} شخص؟`+(used.length?`\n\nتنبيه: ${used.length} منهم دخلوا المنصة من قبل وستتغير كلمة مرورهم الحالية.`:'')))return;
+  const b=e.currentTarget;b.disabled=true;d.dataset.lock='1';const out=[],fail=[];
+  for(const u of sel){try{const pw=genPw();await C.api.setUserPassword(u.user_id,pw);out.push({u,pw})}catch(er){fail.push(u.full_name+': '+(C.msg?C.msg(er.message):er.message))}b.textContent=`… ${out.length+fail.length} / ${sel.length}`}
+  b.textContent='تم';const tpl=$('[data-tpl]').value;
+  $('[data-out]').innerHTML=`<h3>أرسل الرسائل الآن (${fmt(out.length)})</h3>${fail.length?`<div class="fm122-note">تعذّر: ${esc(fail.join('، '))}</div>`:''}<div class="fm125-hint">اضغط «واتساب» لكل شخص بالترتيب؛ يُعلَّم «أُرسل» عند الضغط. لا تغلق هذه النافذة قبل الإرسال.</div>
+   <div class="fm122-tw" style="max-height:none"><table class="fm122-t"><tbody>${out.map((x,i)=>`<tr><td><b>${esc(x.u.full_name)}</b><div class="fm125-src">${esc(x.u.email)}</div></td><td dir="ltr">${esc(x.u.phone)||'بدون جوال — اختر المحادثة'}</td><td><button class="fm122-mini" data-wa="${i}" style="color:#16a34a">واتساب</button><button class="fm122-mini" data-cp="${i}">نسخ</button><span data-ok="${i}"></span></td></tr>`).join('')}</tbody></table></div>`;
+  const mark=i=>{const s=lsGet(SENT_KEY,{});s[out[i].u.user_id]=day(new Date());lsSet(SENT_KEY,s);d.querySelector(`[data-ok="${i}"]`).textContent=' ✓ أُرسل'};
+  d.querySelectorAll('[data-wa]').forEach(x=>x.onclick=()=>{const i=+x.dataset.wa,o=out[i],n=waNum(o.u.phone);window.open('https://wa.me/'+(n||'')+'?text='+encodeURIComponent(fill(tpl,o.u,o.pw)),'_blank','noopener');mark(i)});
+  d.querySelectorAll('[data-cp]').forEach(x=>x.onclick=async()=>{const i=+x.dataset.cp;try{await navigator.clipboard.writeText(fill(tpl,out[i].u,out[i].pw));toast('تم النسخ');mark(i)}catch(er){toast('تعذّر النسخ','warning')}});
+  delete d.dataset.lock}}
+window.fmV164Welcome=welcome;
+/* ---------- sidebar ---------- */
+function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm164-usage');if(!n)return;if(!canReport()){b0?.remove();return}if(b0)return;
+ const b=document.createElement('button');b.id='v2-nav-fm164-usage';b.type='button';b.className='v2-nav-btn';b.title='استخدام المنصة';b.innerHTML='<i class="fas fa-chart-line"></i><span class="v2-nav-label">استخدام المنصة</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
+setInterval(()=>{try{nav()}catch(e){}},3000);
 })();
 </script>
 </body>

@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F20">
+<meta name="fm-version" content="F21">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -357,7 +357,7 @@ async function pull(silent){
  D.syncAt=Date.now();
  if(silent&&D.cur)ticketView(D.cur,true);else main();
  woPull();
- loadMyRank().then(()=>{if(D.view==='me'&&!D.cur&&D.myRank){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});loadMyEng().then(()=>{if(D.eng&&['me','home'].includes(D.view)&&!D.cur){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});checkAlerts(false);
+ loadMyRank().then(()=>{if(D.view==='me'&&!D.cur&&D.myRank){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});touchField();loadMyEng().then(()=>{if(D.eng&&['me','home'].includes(D.view)&&!D.cur){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});checkAlerts(false);
 }
 function fromCache(){try{const o=JSON.parse(localStorage.getItem('fmf_cache_v1')||'null');if(!o)return false;D.me=D.me||o.me;D.syncAt=o.at||null;D.ref=o.ref||{};D.rank=o.rank||{};D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
 
@@ -736,6 +736,9 @@ async function sha(t){const b=await crypto.subtle.digest('SHA-256',new TextEncod
 /* V160 (F20): contact with the schools in my score — the platform's weights (fm_settings.score_weights), my coverage of the
    last 4 weekly cycles / 30 days and my satisfaction from the ratings of the last 90 days (fm_eng_scores). A part without
    data gives its share back to the tickets. */
+/* V164 (F21): usage — one fm_touch('field') per open, then at most every 10 minutes while visible */
+let touchAt=0;function touchField(){if(!D.me||document.hidden||Date.now()-touchAt<6e5||!C.engClient)return;touchAt=Date.now();C.engClient().then(db=>db.rpc('fm_touch',{p_app:'field'})).catch(()=>{})}
+setInterval(touchField,60000);document.addEventListener('visibilitychange',touchField);
 async function loadMyEng(){if(!D.me||!['supervisor','engineer'].includes(D.me.role)||!C.engClient)return;const db=await C.engClient();
  const [sc,w]=await Promise.all([db.rpc('fm_eng_scores'),db.from('fm_settings').select('value').eq('key','score_weights').maybeSingle()]);if(sc.error||!Array.isArray(sc.data))return;
  const x=sc.data.find(r=>r.user_id===D.me.id);if(!x)return;const v=(w&&w.data&&w.data.value)||{},W=v.cov==null&&v.sat==null?{cov:10,sat:10}:{cov:Math.max(0,Math.min(50,+v.cov||0)),sat:Math.max(0,Math.min(50,+v.sat||0))};
