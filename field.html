@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F21">
+<meta name="fm-version" content="F22">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -204,7 +204,9 @@ const real={
  async deleteTicketsNotIn(region,ids){const c=await sb();const have=[];for(let f=0;;f+=1000){const d=chk(await c.from('tickets').select('ticket_id').eq('region',region).range(f,f+999));have.push(...d.map(x=>x.ticket_id));if(d.length<1000)break}
   const keep=new Set(ids),gone=have.filter(t=>!keep.has(t));for(let i=0;i<gone.length;i+=200)chk(await c.from('tickets').delete().eq('region',region).in('ticket_id',gone.slice(i,i+200)));return gone.length},
  async pullTickets(region){const c=await sb();const out=[];for(let f=0;;f+=1000){let q=c.from('tickets').select('*').range(f,f+999);if(region)q=q.eq('region',region);const d=chk(await q);out.push(...d);if(d.length<1000)break}return out},
- async getKV(keys){const c=await sb();return chk(await c.from('app_kv').select('*').in('key',keys))},
+ async getKV(keys){const c=await sb();const r=chk(await c.from('app_kv').select('*').in('key',keys));
+ /* V165: engineers / supervisors / contractors read only their schools of the school DB (fm_my_school_db) */
+ if(keys.includes('fm_school_master_db_v1')&&!r.some(x=>x.key==='fm_school_master_db_v1')){const m=await c.rpc('fm_my_school_db');if(!m.error&&Array.isArray(m.data))r.push({key:'fm_school_master_db_v1',value:m.data})}return r},
  async setKV(key,value){const c=await sb();return chk(await c.from('app_kv').upsert({key,value,updated_at:new Date().toISOString()},{onConflict:'key'}))},
  async pullWork(region){const c=await sb();const work=[],events=[];
   for(let f=0;;f+=1000){let q=c.from('ticket_work').select('*').range(f,f+999);if(region)q=q.eq('region',region);const d=chk(await q);work.push(...d);if(d.length<1000)break}
@@ -359,7 +361,9 @@ async function pull(silent){
  woPull();
  loadMyRank().then(()=>{if(D.view==='me'&&!D.cur&&D.myRank){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});touchField();loadMyEng().then(()=>{if(D.eng&&['me','home'].includes(D.view)&&!D.cur){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});checkAlerts(false);
 }
-function fromCache(){try{const o=JSON.parse(localStorage.getItem('fmf_cache_v1')||'null');if(!o)return false;D.me=D.me||o.me;D.syncAt=o.at||null;D.ref=o.ref||{};D.rank=o.rank||{};D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
+function fromCache(){try{const o=JSON.parse(localStorage.getItem('fmf_cache_v1')||'null');if(!o)return false;
+ /* V165 (F22): the cache belongs to one account; another account on this phone starts from the cloud */
+ try{const au=JSON.parse(localStorage.getItem('fm-cloud-auth')||'null'),uid=au&&au.user&&au.user.id;if(uid&&o.me&&o.me.id&&o.me.id!==uid){localStorage.removeItem('fmf_cache_v1');return false}}catch(e){}D.me=D.me||o.me;D.syncAt=o.at||null;D.ref=o.ref||{};D.rank=o.rank||{};D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
 
 function shell(inner,title,sub,back){return `<div class="top">${back?'<button id="bk">→</button>':`<img class="bm" src="${FM_BRAND.mark}" alt="${FM_BRAND.name}">`}<h1>${title}<small>${sub||''}</small></h1>${back?'':'<button id="rf" title="تحديث">🔄</button><button id="lo" title="خروج">خروج</button>'}</div><div class="wrap"><div class="q" id="qb"></div>${inner}</div>`}
 /* ---------- main screens (F4): home, tickets, schools, profile ---------- */
