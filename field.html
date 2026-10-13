@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F23">
+<meta name="fm-version" content="F24">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1441,5 +1441,68 @@ window.fmEngOpen=open;
 if(!field){const mount=()=>{const nav=document.querySelector('nav.v2-nav');if(!nav||document.getElementById('v2-nav-eng'))return;const b=document.createElement('button');b.id='v2-nav-eng';b.type='button';b.className='v2-nav-btn';b.title='التواصل مع المدارس';b.innerHTML='<i class="fas fa-comments"></i><span class="v2-nav-label">التواصل مع المدارس</span>';b.onclick=open;nav.append(b)};
  if(document.querySelector('nav.v2-nav'))mount();else addEventListener('load',mount);}
 })();
-</script></body>
+</script><style id="fm-v167-news-css">
+/* V167: news ticker at the top of the page (platform and field app) */
+:root{--fm167h:0px}body.fm167-on{--fm167h:38px;padding-top:var(--fm167h)!important}
+#fm167-bar{position:fixed;top:0;left:0;right:0;height:38px;z-index:99999;display:none;align-items:stretch;background:#0f172a;color:#fff;font:700 14px Cairo,Tahoma,sans-serif;direction:rtl;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+body.fm167-on #fm167-bar{display:flex}
+#fm167-bar .lbl{flex:none;display:flex;align-items:center;gap:6px;padding:0 12px;background:#2563eb;font-weight:900;white-space:nowrap}
+#fm167-bar .vp{flex:1;overflow:hidden;position:relative;direction:ltr;-webkit-mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent);mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)}
+#fm167-bar .track{display:inline-flex;white-space:nowrap;height:100%;align-items:center;animation:fm167-run var(--fm167d,40s) linear infinite;will-change:transform}
+#fm167-bar:hover .track,#fm167-bar.paused .track{animation-play-state:paused}
+@keyframes fm167-run{from{transform:translateX(-50%)}to{transform:translateX(0)}}
+#fm167-bar .it{direction:rtl;display:inline-flex;align-items:center;gap:6px;padding:0 22px;cursor:pointer;border:0;background:none;color:inherit;font:inherit;height:100%}
+#fm167-bar .it:hover{text-decoration:underline}
+#fm167-bar .it b{border-radius:999px;padding:1px 8px;font-size:11px}
+#fm167-bar .it.normal b{background:#1e40af}#fm167-bar .it.important b{background:#b45309}#fm167-bar .it.urgent b{background:#b91c1c}
+#fm167-bar .it.urgent{color:#fecaca}#fm167-bar .it.important{color:#fde68a}
+#fm167-bar .sep{opacity:.35;padding:0 4px}
+#fm167-bar .pz{flex:none;border:0;background:#1e293b;color:#fff;width:38px;cursor:pointer;font-size:14px}
+.fm167-dlg{position:fixed;inset:0;z-index:2147482700;background:rgba(2,6,23,.6);display:flex;align-items:center;justify-content:center;padding:14px;direction:rtl;font-family:Cairo,Tahoma,sans-serif}
+.fm167-dlg>div{background:#fff;color:#0f172a;border-radius:18px;width:min(560px,100%);max-height:86vh;overflow:auto;padding:18px 18px 14px;box-shadow:0 24px 70px rgba(0,0,0,.35)}
+.fm167-dlg h3{margin:0 0 8px;font-size:18px}.fm167-dlg .n{border-radius:14px;padding:12px 14px;margin:8px 0;line-height:1.9}
+.fm167-dlg .n.normal{background:#eff6ff;border:1px solid #bfdbfe}.fm167-dlg .n.important{background:#fffbeb;border:1px solid #fde68a}.fm167-dlg .n.urgent{background:#fef2f2;border:1px solid #fecaca}
+.fm167-dlg .n b{font-size:15px}.fm167-dlg .n small{display:block;color:#64748b;font-size:12px;margin-top:4px}.fm167-dlg .n p{margin:6px 0 0;white-space:pre-wrap}
+.fm167-dlg button.ok{width:100%;border:0;border-radius:12px;padding:11px;background:#2563eb;color:#fff;font:900 15px Cairo,Tahoma,sans-serif;cursor:pointer;margin-top:8px}
+</style>
+<script id="fm-v167-news">(function(){
+'use strict';
+/* V167: news ticker shared by the platform and the field app. Items come from fm_news_feed() (only those for the
+   signed-in person: titles, regions, team); «urgent» items also open a window once on each device. */
+const C=window.FMCloud;if(!C)return;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const PR={normal:'خبر',important:'مهم',urgent:'عاجل'};
+const dt=v=>v?new Date(v).toLocaleString('ar-SA-u-ca-gregory',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}):'';
+const SEEN='fm167_seen',ls=(k,d)=>{try{return JSON.parse(localStorage.getItem(k)||'null')||d}catch(e){return d}};
+let items=[],sig='',busy=false;
+function bar(){let b=document.getElementById('fm167-bar');if(!b){b=document.createElement('div');b.id='fm167-bar';b.setAttribute('role','marquee');b.setAttribute('aria-label','شريط الأخبار');
+ b.innerHTML='<span class="lbl">📢 الأخبار</span><div class="vp"><div class="track"></div></div><button class="pz" type="button" title="إيقاف / تشغيل الحركة">⏸</button>';document.body.prepend(b);
+ b.querySelector('.pz').onclick=e=>{b.classList.toggle('paused');e.currentTarget.textContent=b.classList.contains('paused')?'▶':'⏸';try{sessionStorage.setItem('fm167_paused',b.classList.contains('paused')?'1':'')}catch(_){}};
+ try{if(sessionStorage.getItem('fm167_paused')){b.classList.add('paused');b.querySelector('.pz').textContent='▶'}}catch(_){}
+ b.addEventListener('click',e=>{const it=e.target.closest('.it');if(it)show([items.find(x=>x.id===it.dataset.id)].filter(Boolean),'📢 خبر')})}return b}
+function draw(){const s=JSON.stringify(items.map(x=>[x.id,x.text,x.priority,x.updated_at]));if(s===sig)return;sig=s;
+ if(!items.length){document.body.classList.remove('fm167-on');return}
+ const b=bar(),one=items.slice().reverse().map(x=>`<button type="button" class="it ${x.priority}" data-id="${esc(x.id)}">${x.pinned?'📌':''}<b>${PR[x.priority]||''}</b>${esc(x.text)}</button><span class="sep">◆</span>`).join('');
+ const tr=b.querySelector('.track');tr.innerHTML=one+one;const len=items.reduce((a,x)=>a+S(x.text).length,0);tr.style.setProperty('--fm167d',Math.max(25,Math.round(len*0.28+items.length*4))+'s');
+ document.body.classList.add('fm167-on')}
+function show(L,title,ack){if(!L.length)return;const d=document.createElement('div');d.className='fm167-dlg';
+ d.innerHTML=`<div><h3>${title}</h3>${L.map(x=>`<div class="n ${x.priority}"><b>${x.priority==='urgent'?'🚨 ':''}${esc(x.text)}</b>${x.body?`<p>${esc(x.body)}</p>`:''}<small>${esc(x.author_name||'')} • ${esc(dt(x.start_at))}</small></div>`).join('')}<button class="ok" type="button">${ack?'تم الاطلاع':'إغلاق'}</button></div>`;
+ document.body.appendChild(d);const close=()=>{if(ack){const s=ls(SEEN,[]);L.forEach(x=>{if(!s.includes(x.id))s.push(x.id)});try{localStorage.setItem(SEEN,JSON.stringify(s.slice(-300)))}catch(e){}}d.remove()};
+ d.querySelector('.ok').onclick=close;d.addEventListener('click',e=>{if(e.target===d&&!ack)d.remove()})}
+async function load(){if(busy||!C.engClient||document.hidden)return;const st=C.state;let signed=st&&st.on?st.profile:null;
+ /* the field app has no cloud state: its session tells whether someone is signed in */
+ if(!(st&&st.on)){try{signed=await C.api.session()}catch(e){}}if(!signed)return;busy=true;
+ try{const db=await C.engClient();const r=await db.rpc('fm_news_feed');if(r.error)throw r.error;items=Array.isArray(r.data)?r.data:[];draw();
+  const seen=ls(SEEN,[]),u=items.filter(x=>x.priority==='urgent'&&!seen.includes(x.id));if(u.length&&!document.querySelector('.fm167-dlg'))show(u,'🚨 خبر عاجل',true)}
+ catch(e){items=[];draw()}finally{busy=false}}
+window.fmV167Reload=()=>{sig='';return load()};
+setTimeout(load,4000);setInterval(load,300000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)load()});
+})();
+</script>
+<style id="fm-v167-news-field-css">
+/* V167 (F24): the ticker pushes the field app's sticky header and full-screen sheets down */
+body.fm167-on .top{top:var(--fm167h)}body.fm167-on .sheet,body.fm167-on #eng-page{top:var(--fm167h)!important}body.fm167-on .abar{top:calc(env(safe-area-inset-top) + 8px + var(--fm167h))}
+#fm167-bar .lbl{padding:0 8px;font-size:13px}#fm167-bar{font-size:13px}
+</style>
+</body>
 </html>
