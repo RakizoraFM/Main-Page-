@@ -31735,7 +31735,7 @@ html::-webkit-scrollbar,nav.v2-nav::-webkit-scrollbar{display:none;width:0;heigh
    reach it, what = what it is for, how = steps, who = who uses it, tips, v = version that added / last changed it.
    RULE: every version that adds or changes a feature updates its entry here (and its v). */
 const MANUAL=[
- {id:'v2-nav-fm168-novaro',t:'جرد الأصول (Solvix)',where:'البيانات والإعداد ← «📦 جرد الأصول (Solvix)»',what:'منصة Solvix لجرد أصول المدارس بنفس شكلها الأصلي، وبياناتها على نفس سحابة المنصة: الفني يسجل أصول كل غرفة بالصور والموقع، والإدارة تتابع المدارس المكتملة وأداء الفنيين وتصدّر Excel.',how:['اضغط الزر لتفتح لوحة إدارة Solvix في تبويب جديد بنفس حسابك.','أول مرة فقط: من «Dashboard» اضغط «Load the built-in lists» لتحميل المدارس (2170) وقوائم الأصول والغرف والفنيين.','من «Employees» اضغط «Create logins» لإنشاء كلمات مرور الفنيين دفعة واحدة (تنزل في ملف Excel)، أو 🔑 لفني واحد.','أرسل لكل فني رابط novaro.html مع رقمه الوظيفي وكلمة مروره.','تابع من «Collections» و«Schools»، وصدّر Excel من أي صفحة.'],who:'مدير النظام، مدير المشروع، مدير العمليات، مدير المنطقة، مهندس المنطقة، مدير الجودة (تعديل)؛ مدير الإدارة ومدير الأمن والسلامة (اطلاع)',tips:['ما يسجله الفني بلا إنترنت يبقى على جواله ويُرسل تلقائياً عند عودة الاتصال (الرقم بجانب ⏳ في أسفل صفحته).','كل تعديل على أصل مُرسَل يظهر في «Change Log».'],v:'V168'},
+ {id:'v2-nav-fm168-novaro',t:'جرد الأصول (Solvix)',where:'البيانات والإعداد ← «📦 جرد الأصول (Solvix)»',what:'منصة Solvix لجرد أصول المدارس بنفس شكلها الأصلي، وبياناتها على نفس سحابة المنصة: الفني يسجل أصول كل غرفة بالصور والموقع، والإدارة تتابع المدارس المكتملة وأداء الفنيين وتصدّر Excel.',how:['اضغط الزر لتفتح لوحة إدارة Solvix في تبويب جديد بنفس حسابك.','أول مرة فقط: من «Dashboard» اضغط «Load the built-in lists» لتحميل المدارس (2170) وقوائم الأصول والغرف والفنيين.','من «Employees» اضغط «Create logins» لإنشاء كلمات مرور الفنيين دفعة واحدة (تنزل في ملف Excel)، أو 🔑 لفني واحد.','أرسل لكل فني رابط rakizorafm.github.io/solvix مع رقمه الوظيفي وكلمة مروره.','تابع من «Collections» و«Schools»، وصدّر Excel من أي صفحة.'],who:'مدير النظام، مدير المشروع، مدير العمليات، مدير المنطقة، مهندس المنطقة، مدير الجودة (تعديل)؛ مدير الإدارة ومدير الأمن والسلامة (اطلاع)',tips:['ما يسجله الفني بلا إنترنت يبقى على جواله ويُرسل تلقائياً عند عودة الاتصال (الرقم بجانب ⏳ في أسفل صفحته).','كل تعديل على أصل مُرسَل يظهر في «Change Log».'],v:'V168'},
 {g:'البداية والصلاحيات',icon:'🚀',items:[
  {id:'start',t:'الدخول وتوجيه كل مستخدم',where:'start.html (رابط الموقع)',what:'صفحة دخول واحدة لكل المستخدمين؛ بعد الدخول يُوجَّه كل شخص حسب مسماه: المنصة للمديرين والمهندس، وتطبيق الميدان للمشرف والمقاول.',how:['افتح رابط الموقع وأدخل البريد وكلمة المرور.','من يدخل بكلمة مرور مؤقتة يُطلب منه تغييرها أول مرة.','مدير النظام والمهندس يمكنهما اختيار «فتح المنصة» أو «فتح تطبيق الميدان».'],who:'كل المستخدمين',v:'V157'},
  {id:'v2-nav-portal',t:'بورتالي',where:'أعلى القائمة الجانبية ← «بورتالي» (يظهر تلقائياً مرة عند كل دخول)',what:'صفحة شخصية لكل مستخدم: مسماه ونطاقه وأرقامه المهمة واختصاراته وصلاحياته، والأوامر المصعّدة إليه.',how:['تظهر عند الدخول؛ أغلقها بـ ×.','افتحها في أي وقت من «بورتالي» في القائمة.','الصفحات غير اللازمة لمسمى المستخدم تُخفى من قائمته (والبيانات محمية في قاعدة البيانات على أي حال).'],who:'كل مستخدمي المنصة',v:'V158'},
@@ -32180,7 +32180,8 @@ setInterval(()=>{try{nav()}catch(e){}},3000);
 </script>
 <script id="fm-v168-novaro">(function(){
 'use strict';
-/* V168: «📦 جرد الأصول (Solvix)» opens novaro.html#admin in a new tab; it shares the cloud session (storageKey fm-cloud-auth).
+/* V168: «📦 جرد الأصول (Solvix)» opens the Solvix site (repository RakizoraFM/solvix, GitHub Pages) at #admin in a new tab.
+   Same origin as this site (rakizorafm.github.io), so it shares the cloud session (storageKey fm-cloud-auth).
    Shown to the titles that may read Novaro (section 20: nv_can_read), or always when the platform works without the cloud. */
 const C=window.FMCloud;
 const T=['sysadmin','dept_manager','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'];
@@ -32188,7 +32189,7 @@ function ok(){const st=C&&C.state;if(!st||!st.on)return true;const p=st.profile;
 function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm168-novaro');if(!n)return;if(!ok()){b0?.remove();return}if(b0)return;
  const b=document.createElement('button');b.id='v2-nav-fm168-novaro';b.type='button';b.className='v2-nav-btn';b.title='جرد الأصول (Solvix)';
  b.innerHTML='<i class="fas fa-boxes-stacked"></i><span class="v2-nav-label">📦 جرد الأصول (Solvix)</span>';
- b.onclick=()=>{window.open('novaro.html#admin','_blank','noopener')};n.appendChild(b)}
+ b.onclick=()=>{window.open('https://rakizorafm.github.io/solvix/#admin','_blank','noopener')};n.appendChild(b)}
 setInterval(()=>{try{nav()}catch(e){}},3000);
 })();
 </script>
