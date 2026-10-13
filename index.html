@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V167">
+<meta name="fm-version" content="V168">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25557,10 +25557,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V167',date:'2026-10-13',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V168',date:'2026-10-13',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V168',d:'2026-10-13',t:'زر Solvix لجرد الأصول',i:['زر «📦 جرد الأصول (Solvix)» في «البيانات والإعداد» يفتح موقع Solvix (rakizorafm.github.io/solvix) في تبويب جديد','Solvix تطبيق مستقل بقاعدة بيانات وحسابات خاصة به؛ يدخله المدير بحساب Solvix والفنيون برقمهم الوظيفي']},
 {v:'V167',d:'2026-10-13',t:'شريط الأخبار',i:['شريط أخبار متحرك أعلى المنصة وتطبيق الميدان، يتوقف عند المرور عليه، والضغط على الخبر يعرض تفاصيله','صفحة «📢 الأخبار»: نشر خبر بأهمية (عادي / مهم / عاجل) وتثبيت وفترة عرض، لكل المستخدمين أو لمسميات ومناطق محددة','العاجل يظهر كنافذة عند الدخول حتى يضغط المستخدم «تم الاطلاع»','النشر: مدير النظام ومدير المشروع ومدير العمليات والأمن والسلامة والجودة للكل، ومدير المنطقة لمنطقته، والمهندس لفريقه','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 19)']},
 {v:'V166',d:'2026-10-13',t:'النائب أثناء الإجازة',i:['يعيّن النائب الشخص نفسه أو مديره المباشر ومن فوقه أو مدير المنطقة أو مدير العمليات أو مدير المشروع؛ والنائب أي شخص أعلى من مشرف','عند بدء الإجازة تُحوَّل أوامر العمل المفتوحة للنائب مع ملاحظة «محوَّل من … بتاريخ …» وعليه قبولها، وأي أمر جديد للمُجاز يذهب للنائب تلقائياً','النائب يرى مدارس المُجاز وبلاغاته وفريقه، ويُسند ويعتمد مكانه، ويسجّل تواصل مدارسه','تُوقف مستهدفات التواصل للمُجاز ولا تُحسب عليه في التقييم','عند الانتهاء تعود الأوامر التي لم يبدأها النائب لصاحبها بملاحظة','تطبيق الميدان: شريط «أنت في إجازة» / «أنت تنوب عن…» / «مهندسك في إجازة — النائب…»','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 18)']},
 {v:'V165',d:'2026-10-13',t:'نطاق بيانات كل مسمى',i:['رفع ملف البلاغات لمدير النظام ومدير المشروع ومدير العمليات ومدير المنطقة (منطقته) فقط — في الواجهة وفي قاعدة البيانات؛ ويُخفى قسم الرفع عن غيرهم','قاعدة المدارس: المهندس والمشرف والمقاول يرون مدارسهم ومدارس فريقهم فقط (لم تعد تُرسل لهم القاعدة كاملة)','بيانات كل حساب على الجهاز منفصلة: إذا دخل حساب آخر على نفس المتصفح تُنقل بيانات السابق جانباً ولا تظهر له، وتعود عند عودة صاحبها','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 17)']},
@@ -27027,7 +27028,7 @@ const GROUPS=[
  {k:'staff',icon:'👷',t:'الكادر والمقاولون',ids:['v2-nav-staff','v2-nav-staff-performance','v2-nav-eng','v2-nav-fm124-visits','v2-nav-fm124-load','v2-nav-contractors','v2-nav-fm122-score']},
  {k:'analysis',icon:'📊',t:'التحليل والمقارنات',ids:['v2-nav-charts','v2-nav-period','v2-nav-fm103-periods','v2-nav-fm131-season','v2-nav-compare','v2-nav-pivot','v2-nav-saved']},
  {k:'reports',icon:'📄',t:'التقارير',ids:['v2-nav-fm127-today','v2-nav-fm125-send','v2-nav-fm126-log','v2-nav-fm118-weekly','v2-nav-report','v2-nav-fm123-weekfu','v2-nav-fm158-qa']},
- {k:'data',icon:'🗂️',t:'البيانات والإعداد',ids:['v2-nav-school-db','v2-nav-fm125-contacts','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-quality','v2-nav-refresh']},
+ {k:'data',icon:'🗂️',t:'البيانات والإعداد',ids:['v2-nav-fm168-novaro','v2-nav-school-db','v2-nav-fm125-contacts','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-quality','v2-nav-refresh']},
  {k:'system',icon:'⚙️',t:'النظام',ids:['v2-nav-fm122-settings','v2-nav-fm116','v2-nav-fm162-manual','v2-nav-fm164-usage','v2-nav-fm167-news']}
 ];
 const TOP=['v2-nav-portal','v2-nav-solution','v2-nav-actions','v2-nav-fm145-wo'],DANGER='fm-v38-clear-all-nav';
@@ -31734,6 +31735,7 @@ html::-webkit-scrollbar,nav.v2-nav::-webkit-scrollbar{display:none;width:0;heigh
    reach it, what = what it is for, how = steps, who = who uses it, tips, v = version that added / last changed it.
    RULE: every version that adds or changes a feature updates its entry here (and its v). */
 const MANUAL=[
+ {id:'v2-nav-fm168-novaro',t:'جرد الأصول (Solvix)',where:'البيانات والإعداد ← «📦 جرد الأصول (Solvix)»',what:'يفتح Solvix: تطبيق مستقل لجرد أصول المدارس (المدارس، الغرف، الأصول بالصور والموقع، وتقارير Excel) بقاعدة بيانات وحسابات خاصة به، منفصلة عن المنصة.',how:['اضغط الزر ليفتح Solvix في تبويب جديد.','ادخل بحساب Solvix (البريد وكلمة المرور الخاصين بـ Solvix، وليس حساب المنصة).','الفنيون يدخلون Solvix برقمهم الوظيفي وكلمة مرور يحددها مدير Solvix.'],who:'مدير النظام، مدير الإدارة، مدير المشروع، مدير العمليات، مدير المنطقة، مهندس المنطقة، مدير الأمن والسلامة، مدير الجودة',tips:['صلاحيات Solvix تُدار من داخله (Users)، ولا ترتبط بصلاحيات المنصة.'],v:'V168'},
 {g:'البداية والصلاحيات',icon:'🚀',items:[
  {id:'start',t:'الدخول وتوجيه كل مستخدم',where:'start.html (رابط الموقع)',what:'صفحة دخول واحدة لكل المستخدمين؛ بعد الدخول يُوجَّه كل شخص حسب مسماه: المنصة للمديرين والمهندس، وتطبيق الميدان للمشرف والمقاول.',how:['افتح رابط الموقع وأدخل البريد وكلمة المرور.','من يدخل بكلمة مرور مؤقتة يُطلب منه تغييرها أول مرة.','مدير النظام والمهندس يمكنهما اختيار «فتح المنصة» أو «فتح تطبيق الميدان».'],who:'كل المستخدمين',v:'V157'},
  {id:'v2-nav-portal',t:'بورتالي',where:'أعلى القائمة الجانبية ← «بورتالي» (يظهر تلقائياً مرة عند كل دخول)',what:'صفحة شخصية لكل مستخدم: مسماه ونطاقه وأرقامه المهمة واختصاراته وصلاحياته، والأوامر المصعّدة إليه.',how:['تظهر عند الدخول؛ أغلقها بـ ×.','افتحها في أي وقت من «بورتالي» في القائمة.','الصفحات غير اللازمة لمسمى المستخدم تُخفى من قائمته (والبيانات محمية في قاعدة البيانات على أي حال).'],who:'كل مستخدمي المنصة',v:'V158'},
@@ -31835,7 +31837,7 @@ const MGR=['dept_manager','project_manager','ops_manager','area_manager'],ASG=['
 const RMAP={users:['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
  'wo-group':ASG,'wo-templates':ASG,'wo-fci':ASG,'wo-repair':ASG.concat('dept_manager'),'gov-stop':['sysadmin','hse_manager','project_manager','ops_manager','dept_manager'],
  'gov-deputy':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'eng-rating':['sysadmin',...MGR,'area_engineer'],
- 'v2-nav-fm164-usage':['sysadmin','project_manager'],'v2-nav-fm167-news':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm158-qa':['sysadmin','qa_manager',...MGR],
+ 'v2-nav-fm164-usage':['sysadmin','project_manager'],'v2-nav-fm168-novaro':['sysadmin','dept_manager','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm167-news':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm158-qa':['sysadmin','qa_manager',...MGR],
  'field-tickets':['sysadmin','area_engineer'],'field-wo':['sysadmin','area_engineer'],'field-me':['sysadmin','area_engineer']};
 const myTitle=()=>{const p=C&&C.state&&C.state.on&&C.state.profile;return p?C.posOf(p):'sysadmin'};
 let asT='';const viewT=()=>myTitle()==='sysadmin'?(asT||'sysadmin'):myTitle();
@@ -32173,6 +32175,21 @@ function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContract
 window.fmV167News=()=>openPage(document.getElementById('v2-nav-fm167-news'));
 function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm167-news');if(!n)return;if(!scope()){b0?.remove();return}if(b0)return;
  const b=document.createElement('button');b.id='v2-nav-fm167-news';b.type='button';b.className='v2-nav-btn';b.title='الأخبار';b.innerHTML='<i class="fas fa-bullhorn"></i><span class="v2-nav-label">الأخبار</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
+setInterval(()=>{try{nav()}catch(e){}},3000);
+})();
+</script>
+<script id="fm-v168-novaro">(function(){
+'use strict';
+/* V168: «📦 جرد الأصول (Solvix)» opens the Solvix site (repository RakizoraFM/solvix, GitHub Pages) at #admin in a new tab.
+   Solvix has its own Supabase project and its own sign-in; this button is only a shortcut for the managing titles
+   (or always when the platform works without the cloud). */
+const C=window.FMCloud;
+const T=['sysadmin','dept_manager','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'];
+function ok(){const st=C&&C.state;if(!st||!st.on)return true;const p=st.profile;if(!p||p.role==='pending')return false;return p.role==='admin'||T.includes(C.posOf(p))}
+function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm168-novaro');if(!n)return;if(!ok()){b0?.remove();return}if(b0)return;
+ const b=document.createElement('button');b.id='v2-nav-fm168-novaro';b.type='button';b.className='v2-nav-btn';b.title='جرد الأصول (Solvix)';
+ b.innerHTML='<i class="fas fa-boxes-stacked"></i><span class="v2-nav-label">📦 جرد الأصول (Solvix)</span>';
+ b.onclick=()=>{window.open('https://rakizorafm.github.io/solvix/#admin','_blank','noopener')};n.appendChild(b)}
 setInterval(()=>{try{nav()}catch(e){}},3000);
 })();
 </script>
