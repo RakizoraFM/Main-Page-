@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V166">
+<meta name="fm-version" content="V167">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25557,10 +25557,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V166',date:'2026-10-13',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V167',date:'2026-10-13',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V167',d:'2026-10-13',t:'شريط الأخبار',i:['شريط أخبار متحرك أعلى المنصة وتطبيق الميدان، يتوقف عند المرور عليه، والضغط على الخبر يعرض تفاصيله','صفحة «📢 الأخبار»: نشر خبر بأهمية (عادي / مهم / عاجل) وتثبيت وفترة عرض، لكل المستخدمين أو لمسميات ومناطق محددة','العاجل يظهر كنافذة عند الدخول حتى يضغط المستخدم «تم الاطلاع»','النشر: مدير النظام ومدير المشروع ومدير العمليات والأمن والسلامة والجودة للكل، ومدير المنطقة لمنطقته، والمهندس لفريقه','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 19)']},
 {v:'V166',d:'2026-10-13',t:'النائب أثناء الإجازة',i:['يعيّن النائب الشخص نفسه أو مديره المباشر ومن فوقه أو مدير المنطقة أو مدير العمليات أو مدير المشروع؛ والنائب أي شخص أعلى من مشرف','عند بدء الإجازة تُحوَّل أوامر العمل المفتوحة للنائب مع ملاحظة «محوَّل من … بتاريخ …» وعليه قبولها، وأي أمر جديد للمُجاز يذهب للنائب تلقائياً','النائب يرى مدارس المُجاز وبلاغاته وفريقه، ويُسند ويعتمد مكانه، ويسجّل تواصل مدارسه','تُوقف مستهدفات التواصل للمُجاز ولا تُحسب عليه في التقييم','عند الانتهاء تعود الأوامر التي لم يبدأها النائب لصاحبها بملاحظة','تطبيق الميدان: شريط «أنت في إجازة» / «أنت تنوب عن…» / «مهندسك في إجازة — النائب…»','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 18)']},
 {v:'V165',d:'2026-10-13',t:'نطاق بيانات كل مسمى',i:['رفع ملف البلاغات لمدير النظام ومدير المشروع ومدير العمليات ومدير المنطقة (منطقته) فقط — في الواجهة وفي قاعدة البيانات؛ ويُخفى قسم الرفع عن غيرهم','قاعدة المدارس: المهندس والمشرف والمقاول يرون مدارسهم ومدارس فريقهم فقط (لم تعد تُرسل لهم القاعدة كاملة)','بيانات كل حساب على الجهاز منفصلة: إذا دخل حساب آخر على نفس المتصفح تُنقل بيانات السابق جانباً ولا تظهر له، وتعود عند عودة صاحبها','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 17)']},
 {v:'V164',d:'2026-10-13',t:'توزيع المنصة على المهندسين',i:['«📨 رسائل الترحيب»: كلمة مرور مؤقتة جديدة لكل شخص تختاره (مثل مهندسي المشروع) ورسالة واتساب واحدة له فيها الرابط والبريد وكلمة المرور ومكان الدليل ورابط فيديو الشرح','«📘 دليل المنصة» لكل المستخدمين: كل مسمى يرى شرح ما يخصه فقط، ومدير النظام يعاين دليل أي مسمى','«📈 استخدام المنصة» لمدير النظام ومدير المشروع: آخر نشاط وأيام النشاط في المنصة والميدان، والأوامر المنشأة والإجراءات و«تم الإجراء»، والتواصل وطلبات التقييم، مع حالة نشط / خامل / متوقف / لم يدخل وتصدير CSV','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 16)']},
@@ -27027,7 +27028,7 @@ const GROUPS=[
  {k:'analysis',icon:'📊',t:'التحليل والمقارنات',ids:['v2-nav-charts','v2-nav-period','v2-nav-fm103-periods','v2-nav-fm131-season','v2-nav-compare','v2-nav-pivot','v2-nav-saved']},
  {k:'reports',icon:'📄',t:'التقارير',ids:['v2-nav-fm127-today','v2-nav-fm125-send','v2-nav-fm126-log','v2-nav-fm118-weekly','v2-nav-report','v2-nav-fm123-weekfu','v2-nav-fm158-qa']},
  {k:'data',icon:'🗂️',t:'البيانات والإعداد',ids:['v2-nav-school-db','v2-nav-fm125-contacts','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-quality','v2-nav-refresh']},
- {k:'system',icon:'⚙️',t:'النظام',ids:['v2-nav-fm122-settings','v2-nav-fm116','v2-nav-fm162-manual','v2-nav-fm164-usage']}
+ {k:'system',icon:'⚙️',t:'النظام',ids:['v2-nav-fm122-settings','v2-nav-fm116','v2-nav-fm162-manual','v2-nav-fm164-usage','v2-nav-fm167-news']}
 ];
 const TOP=['v2-nav-portal','v2-nav-solution','v2-nav-actions','v2-nav-fm145-wo'],DANGER='fm-v38-clear-all-nav';
 const KEY='fm_nav_groups_v123';
@@ -31813,6 +31814,8 @@ const MANUAL=[
 {g:'النظام',icon:'⚙️',items:[
  {id:'v2-nav-fm122-settings',t:'الإعدادات',where:'النظام ← «الإعدادات»',what:'الأهداف ومهلة الـ SLA، قوالب الرسائل، التصعيد، جداول الإرسال، قواعد التحليل، النسخ الاحتياطي، والسحابة والمستخدمين.',how:['كل تبويب يحفظ إعداداته؛ إعدادات السحابة لمدير النظام فقط.'],who:'مدير النظام',v:'V160'},
  {id:'cloud',t:'السحابة وتطبيق الميدان',where:'الإعدادات ← «السحابة» / «📱 رابط تطبيق الميدان»',what:'ربط المنصة بقاعدة Supabase المشتركة: البلاغات والإجراءات والصور مشتركة لحظياً، ورابط جاهز لتطبيق الميدان.',how:['ملف supabase_setup.sql يُشغَّل في Supabase بعد كل تحديث يتطلبه (يُذكر في ملاحظات الإصدار).','«📱 رابط تطبيق الميدان»: نسخ أو واتساب للفريق.'],who:'مدير النظام',v:'V140'},
+ {id:'v2-nav-fm167-news',t:'الأخبار (شريط الأخبار)',where:'النظام ← «📢 الأخبار»',what:'نشر أخبار تتحرك في شريط أعلى المنصة وتطبيق الميدان لكل المستخدمين أو لمسميات ومناطق محددة؛ الخبر العاجل يظهر أيضاً كنافذة مرة واحدة عند كل مستخدم.',how:['اكتب نص الخبر (وتفاصيل اختيارية تظهر عند الضغط عليه).','اختر الأهمية: عادي / مهم / عاجل، و«📌 تثبيت» ليظهر في المقدمة.','اختر لمن: المسميات والمناطق (بدون اختيار = الكل)، وفترة العرض من / إلى، ثم «📢 نشر».','من القائمة: «تعديل» أو «إيقاف» أي خبر.'],who:'مدير النظام ومدير المشروع ومدير العمليات ومدير الأمن والسلامة ومدير الجودة (للكل)، ومدير المنطقة (منطقته)، ومهندس المنطقة (فريقه)',tips:['الشريط يتوقف عند مرور الماوس عليه، وزر ⏸ يوقف حركته.'],v:'V167'},
+ {id:'news-bar',t:'شريط الأخبار',where:'أعلى المنصة وتطبيق الميدان',what:'أخبار وتعاميم الإدارة الموجّهة لك تتحرك في الشريط أعلى الصفحة؛ الأحمر عاجل والبرتقالي مهم.',how:['اضغط على أي خبر لقراءة تفاصيله.','الخبر العاجل يظهر كنافذة عند فتح المنصة؛ اضغط «تم الاطلاع».','مرّر الماوس على الشريط أو اضغط ⏸ لإيقاف حركته.'],who:'كل المستخدمين',v:'V167'},
  {id:'scrolling',t:'التمرير في المنصة',where:'كل الصفحات',what:'لا تظهر أشرطة تمرير بجانب القائمة أو الصفحة؛ الجداول والنوافذ الداخلية يظهر شريطها رفيعاً عند المرور عليها.',how:['مرّر بعجلة الماوس أو باللمس.','زرّا ↑ ↓ العائمان للانتقال لأعلى أو أسفل الصفحة المفتوحة.'],who:'كل المستخدمين',v:'V163'},
  {id:'v2-nav-fm116',t:'سجل النسخ والفحص',where:'النظام ← «سجل النسخ والفحص»',what:'رقم الإصدار وسجل التغييرات وفحص تشغيل تلقائي عند كل فتح، مع اختبار الصفحات الفرعية.',how:['إذا ظهرت شارة تنبيه افتح الصفحة وانسخ تقرير الفحص.','«يوجد إصدار جديد» يظهر تلقائياً عند النشر: اضغط «تحديث الآن».'],who:'مدير النظام',v:'V137'}
 ]},
@@ -31832,7 +31835,7 @@ const MGR=['dept_manager','project_manager','ops_manager','area_manager'],ASG=['
 const RMAP={users:['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
  'wo-group':ASG,'wo-templates':ASG,'wo-fci':ASG,'wo-repair':ASG.concat('dept_manager'),'gov-stop':['sysadmin','hse_manager','project_manager','ops_manager','dept_manager'],
  'gov-deputy':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'eng-rating':['sysadmin',...MGR,'area_engineer'],
- 'v2-nav-fm164-usage':['sysadmin','project_manager'],'v2-nav-fm158-qa':['sysadmin','qa_manager',...MGR],
+ 'v2-nav-fm164-usage':['sysadmin','project_manager'],'v2-nav-fm167-news':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm158-qa':['sysadmin','qa_manager',...MGR],
  'field-tickets':['sysadmin','area_engineer'],'field-wo':['sysadmin','area_engineer'],'field-me':['sysadmin','area_engineer']};
 const myTitle=()=>{const p=C&&C.state&&C.state.on&&C.state.profile;return p?C.posOf(p):'sysadmin'};
 let asT='';const viewT=()=>myTitle()==='sysadmin'?(asT||'sysadmin'):myTitle();
@@ -32052,6 +32055,125 @@ async function open(){const p=C.state&&C.state.profile;if(!p){toast('سجّل ا
   catch(er){toast(ERR(er),'error');b.disabled=false}}}
 function refresh(){const X=window.fmV145X;if(X&&document.getElementById('fm145-page')?.classList.contains('open'))Promise.resolve(X.load()).then(()=>X.render()).catch(()=>{})}
 window.fmV166Deputy=open;
+})();
+</script>
+<style id="fm-v167-news-css">
+/* V167: news ticker at the top of the page (platform and field app) */
+:root{--fm167h:0px}body.fm167-on{--fm167h:38px;padding-top:var(--fm167h)!important}
+#fm167-bar{position:fixed;top:0;left:0;right:0;height:38px;z-index:99999;display:none;align-items:stretch;background:#0f172a;color:#fff;font:700 14px Cairo,Tahoma,sans-serif;direction:rtl;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+body.fm167-on #fm167-bar{display:flex}
+#fm167-bar .lbl{flex:none;display:flex;align-items:center;gap:6px;padding:0 12px;background:#2563eb;font-weight:900;white-space:nowrap}
+#fm167-bar .vp{flex:1;overflow:hidden;position:relative;direction:ltr;-webkit-mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent);mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)}
+#fm167-bar .track{display:inline-flex;white-space:nowrap;height:100%;align-items:center;animation:fm167-run var(--fm167d,40s) linear infinite;will-change:transform}
+#fm167-bar:hover .track,#fm167-bar.paused .track{animation-play-state:paused}
+@keyframes fm167-run{from{transform:translateX(-50%)}to{transform:translateX(0)}}
+#fm167-bar .it{direction:rtl;display:inline-flex;align-items:center;gap:6px;padding:0 22px;cursor:pointer;border:0;background:none;color:inherit;font:inherit;height:100%}
+#fm167-bar .it:hover{text-decoration:underline}
+#fm167-bar .it b{border-radius:999px;padding:1px 8px;font-size:11px}
+#fm167-bar .it.normal b{background:#1e40af}#fm167-bar .it.important b{background:#b45309}#fm167-bar .it.urgent b{background:#b91c1c}
+#fm167-bar .it.urgent{color:#fecaca}#fm167-bar .it.important{color:#fde68a}
+#fm167-bar .sep{opacity:.35;padding:0 4px}
+#fm167-bar .pz{flex:none;border:0;background:#1e293b;color:#fff;width:38px;cursor:pointer;font-size:14px}
+.fm167-dlg{position:fixed;inset:0;z-index:2147482700;background:rgba(2,6,23,.6);display:flex;align-items:center;justify-content:center;padding:14px;direction:rtl;font-family:Cairo,Tahoma,sans-serif}
+.fm167-dlg>div{background:#fff;color:#0f172a;border-radius:18px;width:min(560px,100%);max-height:86vh;overflow:auto;padding:18px 18px 14px;box-shadow:0 24px 70px rgba(0,0,0,.35)}
+.fm167-dlg h3{margin:0 0 8px;font-size:18px}.fm167-dlg .n{border-radius:14px;padding:12px 14px;margin:8px 0;line-height:1.9}
+.fm167-dlg .n.normal{background:#eff6ff;border:1px solid #bfdbfe}.fm167-dlg .n.important{background:#fffbeb;border:1px solid #fde68a}.fm167-dlg .n.urgent{background:#fef2f2;border:1px solid #fecaca}
+.fm167-dlg .n b{font-size:15px}.fm167-dlg .n small{display:block;color:#64748b;font-size:12px;margin-top:4px}.fm167-dlg .n p{margin:6px 0 0;white-space:pre-wrap}
+.fm167-dlg button.ok{width:100%;border:0;border-radius:12px;padding:11px;background:#2563eb;color:#fff;font:900 15px Cairo,Tahoma,sans-serif;cursor:pointer;margin-top:8px}
+</style>
+<script id="fm-v167-news">(function(){
+'use strict';
+/* V167: news ticker shared by the platform and the field app. Items come from fm_news_feed() (only those for the
+   signed-in person: titles, regions, team); «urgent» items also open a window once on each device. */
+const C=window.FMCloud;if(!C)return;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const PR={normal:'خبر',important:'مهم',urgent:'عاجل'};
+const dt=v=>v?new Date(v).toLocaleString('ar-SA-u-ca-gregory',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}):'';
+const SEEN='fm167_seen',ls=(k,d)=>{try{return JSON.parse(localStorage.getItem(k)||'null')||d}catch(e){return d}};
+let items=[],sig='',busy=false;
+function bar(){let b=document.getElementById('fm167-bar');if(!b){b=document.createElement('div');b.id='fm167-bar';b.setAttribute('role','marquee');b.setAttribute('aria-label','شريط الأخبار');
+ b.innerHTML='<span class="lbl">📢 الأخبار</span><div class="vp"><div class="track"></div></div><button class="pz" type="button" title="إيقاف / تشغيل الحركة">⏸</button>';document.body.prepend(b);
+ b.querySelector('.pz').onclick=e=>{b.classList.toggle('paused');e.currentTarget.textContent=b.classList.contains('paused')?'▶':'⏸';try{sessionStorage.setItem('fm167_paused',b.classList.contains('paused')?'1':'')}catch(_){}};
+ try{if(sessionStorage.getItem('fm167_paused')){b.classList.add('paused');b.querySelector('.pz').textContent='▶'}}catch(_){}
+ b.addEventListener('click',e=>{const it=e.target.closest('.it');if(it)show([items.find(x=>x.id===it.dataset.id)].filter(Boolean),'📢 خبر')})}return b}
+function draw(){const s=JSON.stringify(items.map(x=>[x.id,x.text,x.priority,x.updated_at]));if(s===sig)return;sig=s;
+ if(!items.length){document.body.classList.remove('fm167-on');return}
+ const b=bar(),one=items.slice().reverse().map(x=>`<button type="button" class="it ${x.priority}" data-id="${esc(x.id)}">${x.pinned?'📌':''}<b>${PR[x.priority]||''}</b>${esc(x.text)}</button><span class="sep">◆</span>`).join('');
+ const tr=b.querySelector('.track');tr.innerHTML=one+one;const len=items.reduce((a,x)=>a+S(x.text).length,0);tr.style.setProperty('--fm167d',Math.max(25,Math.round(len*0.28+items.length*4))+'s');
+ document.body.classList.add('fm167-on')}
+function show(L,title,ack){if(!L.length)return;const d=document.createElement('div');d.className='fm167-dlg';
+ d.innerHTML=`<div><h3>${title}</h3>${L.map(x=>`<div class="n ${x.priority}"><b>${x.priority==='urgent'?'🚨 ':''}${esc(x.text)}</b>${x.body?`<p>${esc(x.body)}</p>`:''}<small>${esc(x.author_name||'')} • ${esc(dt(x.start_at))}</small></div>`).join('')}<button class="ok" type="button">${ack?'تم الاطلاع':'إغلاق'}</button></div>`;
+ document.body.appendChild(d);const close=()=>{if(ack){const s=ls(SEEN,[]);L.forEach(x=>{if(!s.includes(x.id))s.push(x.id)});try{localStorage.setItem(SEEN,JSON.stringify(s.slice(-300)))}catch(e){}}d.remove()};
+ d.querySelector('.ok').onclick=close;d.addEventListener('click',e=>{if(e.target===d&&!ack)d.remove()})}
+async function load(){if(busy||!C.engClient||document.hidden)return;const st=C.state;let signed=st&&st.on?st.profile:null;
+ /* the field app has no cloud state: its session tells whether someone is signed in */
+ if(!(st&&st.on)){try{signed=await C.api.session()}catch(e){}}if(!signed)return;busy=true;
+ try{const db=await C.engClient();const r=await db.rpc('fm_news_feed');if(r.error)throw r.error;items=Array.isArray(r.data)?r.data:[];draw();
+  const seen=ls(SEEN,[]),u=items.filter(x=>x.priority==='urgent'&&!seen.includes(x.id));if(u.length&&!document.querySelector('.fm167-dlg'))show(u,'🚨 خبر عاجل',true)}
+ catch(e){items=[];draw()}finally{busy=false}}
+window.fmV167Reload=()=>{sig='';return load()};
+setTimeout(load,4000);setInterval(load,300000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)load()});
+})();
+</script>
+<style id="fm-v167-news-admin-css">
+/* V167: the ticker pushes the fixed parts of the platform down */
+body.fm167-on .v2-primary-sidebar,body.fm167-on .fm103-page,body.fm167-on #fm-v92-contractor-page,body.fm167-on #fm117-sticky,body.fm167-on #eng-page,body.fm167-on #fm157-portal,body.fm167-on #fm158-qa{top:var(--fm167h)!important}
+.fm167-form{display:grid;gap:10px;background:var(--bg-card,#fff);border:1px solid var(--border-color,#e2e8f0);border-radius:16px;padding:14px}
+.fm167-form textarea,.fm167-form input[type=text],.fm167-form input[type=date]{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:10px;padding:9px 10px;font:600 14px Cairo,Tahoma,sans-serif}
+.fm167-chips{display:flex;flex-wrap:wrap;gap:6px}.fm167-chips label{display:inline-flex;gap:5px;align-items:center;border:1px solid #e2e8f0;border-radius:999px;padding:4px 10px;font-size:.8rem;font-weight:700;cursor:pointer;background:#fff}
+.fm167-chips input{width:auto}.fm167-pr label{border-width:2px}.fm167-pr .normal{border-color:#bfdbfe}.fm167-pr .important{border-color:#fde68a}.fm167-pr .urgent{border-color:#fecaca}
+.fm167-st{border-radius:999px;padding:1px 8px;font-size:.72rem;font-weight:800}.fm167-st.on{background:#dcfce7;color:#166534}.fm167-st.soon{background:#e0f2fe;color:#075985}.fm167-st.off{background:#f1f5f9;color:#64748b}
+</style>
+<script id="fm-v167-news-admin">(function(){
+'use strict';
+/* V167: «📢 الأخبار» — publishers write ticker items for the people in their scope (database: fm_news_save / fm_news_end). */
+const C=window.FMCloud;if(!C)return;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const RN={riyadh:'الرياض',qassim:'القصيم'},PR={normal:'عادي',important:'مهم',urgent:'عاجل (يظهر كنافذة)'};
+const me=()=>C.state&&C.state.on&&C.state.profile||null;
+function scope(){const p=me();if(!p)return null;const t=C.posOf(p);if(p.role==='admin'||['sysadmin','project_manager','ops_manager','hse_manager','qa_manager'].includes(t))return 'all';if(t==='area_manager')return 'region';if(t==='area_engineer')return 'team';return null}
+const day=v=>v?new Date(Date.parse(v)+108e5).toISOString().slice(0,10):'';
+let list=[],edit=null;
+function page(){let p=document.getElementById('fm167-page');if(!p){p=document.createElement('section');p.id='fm167-page';p.className='fm103-page';
+ p.innerHTML=`<div class="fm103-wrap"><div class="fm103-head"><div><h2>📢 الأخبار</h2><p class="sub">أخبار تظهر في الشريط أعلى المنصة وتطبيق الميدان لمن تختارهم</p></div><div class="fm103-actions"><span class="extra"></span><button class="fm103-btn" type="button" onclick="fmV103ClosePages?.()">إغلاق</button></div></div><div class="body"></div></div>`;document.body.appendChild(p)}return p}
+async function load(){const db=await C.engClient();const r=await db.from('fm_news').select('*').order('created_at',{ascending:false}).limit(300);if(r.error)throw Error(r.error.message);const p=me();list=(r.data||[]).filter(x=>x.author===p.id||p.role==='admin')}
+function stat(x){const n=Date.now();if(!x.active||(x.end_at&&Date.parse(x.end_at)<=n))return ['off','منتهٍ'];if(Date.parse(x.start_at)>n)return ['soon','مجدول'];return ['on','يُعرض الآن']}
+function render(err){const p=page(),b=p.querySelector('.body'),sc=scope(),pr=me();if(err){b.innerHTML=`<div class="fm122-note">${esc(/does not exist|schema cache|Could not find/i.test(err)?'شغّل supabase_setup.sql المحدَّث أولاً (القسم 19).':err)}</div>`;return}
+ const x=edit||{priority:'normal',titles:[],regions:[],pinned:false},myR=pr.regions||[];
+ const titles=Object.entries(C.POS).filter(([k])=>sc!=='team'||['supervisor','contractor','area_engineer'].includes(k));
+ const regs=Object.entries(RN).filter(([k])=>sc!=='region'||!myR.length||myR.includes(k));
+ b.innerHTML=`<div class="fm167-form"><b>${edit?'✏️ تعديل خبر':'➕ خبر جديد'}</b>
+  <div class="fm125-hint">${sc==='all'?'تنشر لكل المستخدمين، أو لمسميات ومناطق تختارها.':sc==='region'?'تنشر لمن في منطقتك: '+esc(myR.map(r=>RN[r]||r).join('، ')||'كل المناطق')+'.':'تنشر لفريقك فقط (من يتبعون لك).'}</div>
+  <input type="text" data-k="text" maxlength="300" placeholder="نص الخبر كما يظهر في الشريط (حتى 300 حرف)" value="${esc(x.text||'')}">
+  <textarea data-k="body" rows="3" maxlength="3000" placeholder="تفاصيل تظهر عند الضغط على الخبر (اختياري)">${esc(x.body||'')}</textarea>
+  <div><b>الأهمية</b><div class="fm167-chips fm167-pr">${Object.entries(PR).map(([k,v])=>`<label class="${k}"><input type="radio" name="fm167pr" value="${k}" ${x.priority===k?'checked':''}>${v}</label>`).join('')}<label><input type="checkbox" data-k="pinned" ${x.pinned?'checked':''}>📌 تثبيت في المقدمة</label></div></div>
+  <div><b>لمن؟</b> <small>(بدون اختيار = الكل)</small><div class="fm167-chips" data-k="titles">${titles.map(([k,v])=>`<label><input type="checkbox" value="${k}" ${(x.titles||[]).includes(k)?'checked':''}>${v}</label>`).join('')}</div></div>
+  ${regs.length>1||sc==='all'?`<div><b>المنطقة</b> <small>(بدون اختيار = ${sc==='region'?'منطقتك':'الكل'})</small><div class="fm167-chips" data-k="regions">${regs.map(([k,v])=>`<label><input type="checkbox" value="${k}" ${(x.regions||[]).includes(k)?'checked':''}>${v}</label>`).join('')}</div></div>`:''}
+  <div class="two"><div><label>يبدأ</label><input type="date" data-k="from" value="${esc(day(x.start_at)||day(new Date().toISOString()))}"></div><div><label>ينتهي (اختياري)</label><input type="date" data-k="to" value="${esc(day(x.end_at))}"></div></div>
+  <div class="row"><button class="fm103-btn primary" type="button" data-save>${edit?'💾 حفظ التعديل':'📢 نشر'}</button>${edit?'<button class="fm103-btn" type="button" data-cancel>إلغاء التعديل</button>':''}</div></div>
+  <h3 style="margin:16px 0 8px">${pr.role==='admin'?'كل الأخبار':'أخباري'}</h3>
+  <div class="fm122-tw" style="max-height:none"><table class="fm122-t"><thead><tr><th>الخبر</th><th>الأهمية</th><th>لمن</th><th>الفترة</th><th>الحالة</th><th></th></tr></thead><tbody>
+  ${list.map(n=>{const s=stat(n);return `<tr><td>${n.pinned?'📌 ':''}<b>${esc(n.text)}</b>${n.body?`<div class="fm125-src">${esc(n.body.slice(0,120))}</div>`:''}${pr.role==='admin'&&n.author!==pr.id?`<div class="fm125-src">✍️ ${esc(n.author_name||'')}</div>`:''}</td><td>${esc(PR[n.priority]||'').replace(/ \(.*\)/,'')}</td>
+   <td>${(n.titles||[]).length?(n.titles||[]).map(t=>esc(C.POS[t]||t)).join('، '):'الكل'}${(n.regions||[]).length?'<div class="fm125-src">'+(n.regions||[]).map(r=>RN[r]||r).join('، ')+'</div>':''}${n.scope==='team'?'<div class="fm125-src">الفريق</div>':''}</td>
+   <td>${esc(day(n.start_at))}${n.end_at?' ← '+esc(day(n.end_at)):''}</td><td><span class="fm167-st ${s[0]}">${s[1]}</span></td><td><button class="fm122-mini" data-ed="${esc(n.id)}">تعديل</button>${s[0]!=='off'?`<button class="fm122-mini" data-end="${esc(n.id)}" style="color:#b91c1c">إيقاف</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="6">لا توجد أخبار بعد</td></tr>'}</tbody></table></div>`;
+ const $=s=>b.querySelector(s);
+ $('[data-save]').onclick=async e=>{const text=S($('[data-k=text]').value);if(!text){toast('اكتب نص الخبر','warning');return}const f=$('[data-k=from]').value,t=$('[data-k=to]').value;if(t&&f&&t<f){toast('تاريخ الانتهاء قبل البداية','warning');return}
+  const today=day(new Date().toISOString()),pick=k=>[...b.querySelectorAll(`[data-k=${k}] input:checked`)].map(i=>i.value);
+  const body={id:edit?.id||null,text,body:S($('[data-k=body]').value),priority:(b.querySelector('input[name=fm167pr]:checked')||{}).value||'normal',pinned:$('[data-k=pinned]').checked,titles:pick('titles'),regions:pick('regions'),
+   start_at:!f||f===today?(edit?.start_at||new Date().toISOString()):new Date(f+'T00:00:00+03:00').toISOString(),end_at:t?new Date(t+'T23:59:59+03:00').toISOString():null};
+  const bt=e.currentTarget;bt.disabled=true;try{const db=await C.engClient();const r=await db.rpc('fm_news_save',{p:body});if(r.error)throw Error(r.error.message);toast(edit?'تم حفظ الخبر':'تم نشر الخبر');edit=null;await refresh();window.fmV167Reload?.()}
+  catch(er){toast(/invalid region/.test(er.message)?'اختر منطقة من مناطقك':/not allowed/.test(er.message)?'لا تملك صلاحية النشر':er.message,'error');bt.disabled=false}};
+ const c=$('[data-cancel]');if(c)c.onclick=()=>{edit=null;render()};
+ b.querySelectorAll('[data-ed]').forEach(x=>x.onclick=()=>{edit=list.find(n=>n.id===x.dataset.ed);render();page().scrollTop=0});
+ b.querySelectorAll('[data-end]').forEach(x=>x.onclick=async()=>{if(!confirm('إيقاف عرض هذا الخبر؟'))return;try{const db=await C.engClient();const r=await db.rpc('fm_news_end',{p_id:x.dataset.end});if(r.error)throw Error(r.error.message);toast('تم إيقاف الخبر');await refresh();window.fmV167Reload?.()}catch(er){toast(er.message,'error')}})}
+async function refresh(){try{await load();render()}catch(e){render(e.message)}}
+function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.getElementById('fm116-page')?.classList.remove('open');document.body.classList.remove('v2-mobile-nav');
+ try{window.v2SetActive?.(btn)}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;p.querySelector('.body').innerHTML='<div class="fm125-src">جارٍ التحميل…</div>';edit=null;refresh()}
+window.fmV167News=()=>openPage(document.getElementById('v2-nav-fm167-news'));
+function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm167-news');if(!n)return;if(!scope()){b0?.remove();return}if(b0)return;
+ const b=document.createElement('button');b.id='v2-nav-fm167-news';b.type='button';b.className='v2-nav-btn';b.title='الأخبار';b.innerHTML='<i class="fas fa-bullhorn"></i><span class="v2-nav-label">الأخبار</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
+setInterval(()=>{try{nav()}catch(e){}},3000);
 })();
 </script>
 </body>

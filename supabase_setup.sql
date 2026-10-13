@@ -1823,4 +1823,69 @@ begin
   end if;
 end $$;
 
+-- ---------- 19) news ticker (V167, field F24) ----------
+-- Short news shown in a moving bar at the top of the platform and the field app. Publishers: the system admin, project /
+-- operations / HSE / QA managers (everyone), the area manager (his regions) and the area engineer (his team). Each item
+-- may target job titles and regions; «urgent» ones also open a window once on each device.
+create table if not exists public.fm_news(id uuid primary key default gen_random_uuid(),
+  text text not null check(length(btrim(text)) between 1 and 300), body text not null default '' check(length(body) <= 3000),
+  priority text not null default 'normal' check(priority in ('normal','important','urgent')),
+  titles text[] not null default '{}', regions text[] not null default '{}', scope text not null default 'all' check(scope in ('all','region','team')),
+  author uuid not null references public.profiles(id) on delete cascade, author_name text,
+  start_at timestamptz not null default now(), end_at timestamptz, pinned boolean not null default false, active boolean not null default true,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+create index if not exists fm_news_live on public.fm_news(active, start_at);
+alter table public.fm_news enable row level security;
+-- what the caller may publish: 'all', 'region' (area manager), 'team' (area engineer) or null
+create or replace function public.fm_news_scope() returns text language sql stable security definer set search_path = public as $$
+  select case when public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager','hse_manager','qa_manager') then 'all'
+              when public.fm_my_pos() = 'area_manager' then 'region' when public.fm_my_pos() = 'area_engineer' then 'team' end $$;
+-- is this item for the caller now?
+create or replace function public.fm_news_for_me(n public.fm_news) returns boolean language sql stable security definer set search_path = public as $$
+  select n.active and now() >= n.start_at and (n.end_at is null or now() < n.end_at) and public.fm_role() <> 'pending'
+     and (n.author = auth.uid() or (
+          (cardinality(n.titles) = 0 or coalesce(public.fm_my_pos() = any(n.titles), false))
+      and (cardinality(n.regions) = 0 or cardinality(public.fm_regions()) = 0 or public.fm_regions() && n.regions)
+      and (n.scope <> 'team' or public.fm_is_under(auth.uid(), n.author)))) $$;
+drop policy if exists p_news_read on public.fm_news;
+create policy p_news_read on public.fm_news for select using (author = auth.uid() or public.fm_role() = 'admin' or public.fm_news_for_me(fm_news));
+revoke all on public.fm_news from anon, authenticated;
+grant select on public.fm_news to authenticated;
+-- the ticker: items for the caller now (pinned first, then urgent, important, newest)
+create or replace function public.fm_news_feed() returns setof public.fm_news language sql stable security definer set search_path = public as $$
+  select n.* from public.fm_news n where public.fm_news_for_me(n)
+   order by n.pinned desc, case n.priority when 'urgent' then 0 when 'important' then 1 else 2 end, n.start_at desc limit 30 $$;
+-- publish / edit (author or system admin); the audience is kept inside the publisher's scope
+create or replace function public.fm_news_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare sc text := public.fm_news_scope(); me public.profiles; v uuid := nullif(p->>'id','')::uuid; r text[]; t text[];
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if sc is null or me.id is null or not me.active then raise exception 'not allowed' using errcode = '42501'; end if;
+  if v is not null and not exists(select 1 from public.fm_news where id = v and (author = me.id or public.fm_role() = 'admin')) then raise exception 'not allowed' using errcode = '42501'; end if;
+  t := coalesce((select array_agg(x) from jsonb_array_elements_text(coalesce(p->'titles','[]')) x), '{}');
+  r := coalesce((select array_agg(x) from jsonb_array_elements_text(coalesce(p->'regions','[]')) x), '{}');
+  if sc = 'region' and cardinality(coalesce(me.regions,'{}')) > 0 then
+    r := case when cardinality(r) = 0 then me.regions else coalesce((select array_agg(x) from unnest(r) x where x = any(me.regions)), '{}') end;
+    if cardinality(r) = 0 then raise exception 'invalid region'; end if;
+  end if;
+  if v is null then
+    insert into public.fm_news(text, body, priority, titles, regions, scope, author, author_name, start_at, end_at, pinned)
+    values (btrim(p->>'text'), coalesce(p->>'body',''), coalesce(nullif(p->>'priority',''),'normal'), t, r, sc, me.id, coalesce(me.full_name, me.email),
+            coalesce(nullif(p->>'start_at','')::timestamptz, now()), nullif(p->>'end_at','')::timestamptz, coalesce((p->>'pinned')::boolean, false))
+    returning id into v;
+  else
+    update public.fm_news set text = btrim(p->>'text'), body = coalesce(p->>'body',''), priority = coalesce(nullif(p->>'priority',''),'normal'), titles = t, regions = r,
+           start_at = coalesce(nullif(p->>'start_at','')::timestamptz, start_at), end_at = nullif(p->>'end_at','')::timestamptz,
+           pinned = coalesce((p->>'pinned')::boolean, false), active = true, updated_at = now() where id = v;
+  end if;
+  return v;
+end $$;
+create or replace function public.fm_news_end(p_id uuid) returns void language plpgsql security definer set search_path = public as $$
+begin
+  update public.fm_news set active = false, updated_at = now() where id = p_id and (author = auth.uid() or public.fm_role() = 'admin');
+  if not found then raise exception 'not allowed' using errcode = '42501'; end if;
+end $$;
+revoke all on function public.fm_news_scope(), public.fm_news_for_me(public.fm_news), public.fm_news_feed(), public.fm_news_save(jsonb), public.fm_news_end(uuid) from public, anon;
+grant execute on function public.fm_news_scope(), public.fm_news_for_me(public.fm_news), public.fm_news_feed(), public.fm_news_save(jsonb), public.fm_news_end(uuid) to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
