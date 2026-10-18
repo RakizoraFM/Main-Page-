@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V169">
+<meta name="fm-version" content="V170">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -5346,6 +5346,20 @@ body.v2-nav-collapsed .v2-primary-sidebar{width:var(--v2nav-mini)}
         </select>
       </div>
 
+      <!-- V170: نوع المبنى وحجمه (من قاعدة بيانات المدارس) -->
+      <div class="filter-group">
+        <label class="filter-label" for="fm170-filter-gender"><i class="fas fa-people-group text-primary"></i> نوع المبنى:</label>
+        <select id="fm170-filter-gender" class="form-select">
+          <option value="all">كل الأنواع</option><option value="بنين">بنين</option><option value="بنات">بنات</option><option value="بنين وبنات">بنين وبنات</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="filter-label" for="fm170-filter-size"><i class="fas fa-ruler-combined text-primary"></i> حجم المبنى:</label>
+        <select id="fm170-filter-size" class="form-select">
+          <option value="all">كل الأحجام</option><option value="كبير">كبير</option><option value="وسط">وسط</option><option value="صغير">صغير</option>
+        </select>
+      </div>
+
       <!-- فلتر الحالة -->
       <div class="filter-group">
         <label class="filter-label" for="filter-status"><i class="fas fa-traffic-light"></i> الحالة:</label>
@@ -9131,6 +9145,9 @@ function applyFilters() {
     if (state.filters.region && state.filters.region !== 'all' && String(fmMeta.region || '') !== state.filters.region) return false;
     if (state.filters.office && state.filters.office !== 'all' && String(fmMeta.office || '') !== state.filters.office) return false;
     if (state.filters.contractor && state.filters.contractor !== 'all' && String(fmMeta.contractor || '') !== state.filters.contractor) return false;
+    // V170: نوع المبنى (بنين / بنات / بنين وبنات) وحجمه من قاعدة بيانات المدارس
+    if (state.filters.bgender && state.filters.bgender !== 'all' && String(fmMeta.gender || '') !== state.filters.bgender) return false;
+    if (state.filters.bsize && state.filters.bsize !== 'all' && String(fmMeta.size || '') !== state.filters.bsize) return false;
 
     // 1. فلتر المدرسة
     if (state.filters.school !== 'all' && schoolName !== state.filters.school) {
@@ -9519,6 +9536,8 @@ function resetFilters() {
   state.filters.region='all'; state.filters.office='all'; state.filters.contractor='all';
   setVal('filter-supervisor', 'all');
   setVal('filter-engineer', 'all');
+  setVal('fm170-filter-gender', 'all');
+  setVal('fm170-filter-size', 'all');
   setVal('filter-status', 'all');
   setVal('filter-priority', 'all');
   setVal('filter-category', 'all');
@@ -21744,6 +21763,8 @@ function rowObj(x){
   'الرقم الوزاري / رقم المبنى':x.buildingId||'',
   'المنطقة':x.region==='qassim'?'القصيم':x.region==='riyadh'?'الرياض':(x.region||''),
   'مكتب التعليم':x.office||'',
+  'نوع المبنى':x.gender||'',
+  'حجم المبنى':x.size||'',
   'خط العرض':x.lat??'',
   'خط الطول':x.lng??'',
   'اسم مشرف الصيانة':x.supervisor||'',
@@ -21774,7 +21795,7 @@ window.fmSchoolDbDownloadTemplate=function(){
  // Keep headers but remove the dummy data row.
  Object.keys(blank).forEach((_,i)=>{const c=XLSX.utils.encode_cell({r:1,c:i});delete ws[c]});
  ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:0,c:Object.keys(blank).length-1}});
- ws['!cols']=[28,20,12,20,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26].map(w=>({wch:w}));
+ ws['!cols']=[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26].map(w=>({wch:w}));
  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'قاعدة بيانات المدارس');
  XLSX.writeFile(wb,'School_Database_Template_Full.xlsx');
 };
@@ -21961,7 +21982,7 @@ const load=()=>{try{const a=JSON.parse(localStorage.getItem(DBK)||'[]');return A
 const ctrs=()=>{try{const a=JSON.parse(localStorage.getItem(CK)||'[]');return Array.isArray(a)?a:[]}catch(e){return []}};
 const E=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const cols=[
- ['school','اسم المدرسة'],['buildingId','الرقم الوزاري'],['region','المنطقة'],['office','مكتب التعليم'],['lat','خط العرض'],['lng','خط الطول'],
+ ['school','اسم المدرسة'],['buildingId','الرقم الوزاري'],['region','المنطقة'],['office','مكتب التعليم'],['gender','نوع المبنى'],['size','حجم المبنى'],['lat','خط العرض'],['lng','خط الطول'],
  ['supervisor','اسم مشرف الصيانة'],['supervisorPhone','تليفون مشرف الصيانة'],['supervisorEmail','بريد مشرف الصيانة'],
  ['engineer','اسم مهندس الصيانة'],['engineerPhone','تليفون مهندس الصيانة'],['engineerEmail','بريد مهندس الصيانة'],
  ['lightSupervisor','اسم مشرف الخدمات الخفيفة'],['lightSupervisorPhone','تليفون مشرف الخدمات الخفيفة'],['lightSupervisorEmail','بريد مشرف الخدمات الخفيفة'],
@@ -22011,7 +22032,7 @@ window.fmSchoolDbExportExcel=async function(){
    await new Promise(r=>setTimeout(r,40));
 
    const aoa=[[
-    'اسم المدرسة','الرقم الوزاري / رقم المبنى','المنطقة','مكتب التعليم','خط العرض','خط الطول',
+    'اسم المدرسة','الرقم الوزاري / رقم المبنى','المنطقة','مكتب التعليم','نوع المبنى','حجم المبنى','خط العرض','خط الطول',
     'اسم مشرف الصيانة','رقم تليفون مشرف الصيانة','بريد مشرف الصيانة',
     'اسم مهندس الصيانة','رقم تليفون مهندس الصيانة','بريد مهندس الصيانة',
     'اسم مشرف الخدمات الخفيفة','رقم تليفون مشرف الخدمات الخفيفة','بريد مشرف الخدمات الخفيفة',
@@ -22025,7 +22046,7 @@ window.fmSchoolDbExportExcel=async function(){
      aoa.push([
       text(x.school),text(x.buildingId),
       x.region==='qassim'?'القصيم':x.region==='riyadh'?'الرياض':text(x.region),
-      text(x.office),x.lat===''||x.lat==null?'':+x.lat,x.lng===''||x.lng==null?'':+x.lng,
+      text(x.office),text(x.gender),text(x.size),x.lat===''||x.lat==null?'':+x.lat,x.lng===''||x.lng==null?'':+x.lng,
       text(x.supervisor),text(x.supervisorPhone),text(x.supervisorEmail),
       text(x.engineer),text(x.engineerPhone),text(x.engineerEmail),
       text(x.lightSupervisor),text(x.lightSupervisorPhone),text(x.lightSupervisorEmail),
@@ -22037,7 +22058,7 @@ window.fmSchoolDbExportExcel=async function(){
    }
 
    const ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:false});
-   ws['!cols']=[28,20,12,20,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26].map(w=>({wch:w}));
+   ws['!cols']=[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26].map(w=>({wch:w}));
    const wb=XLSX.utils.book_new();
    XLSX.utils.book_append_sheet(wb,ws,'قاعدة بيانات المدارس');
 
@@ -22068,7 +22089,7 @@ const load=()=>{try{const a=JSON.parse(localStorage.getItem(DBK)||'[]');return A
 const ctrs=()=>{try{const a=JSON.parse(localStorage.getItem(CK)||'[]');return Array.isArray(a)?a:[]}catch(e){return []}};
 const E=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const cols=[
- ['school','اسم المدرسة'],['buildingId','الرقم الوزاري'],['region','المنطقة'],['office','مكتب التعليم'],['lat','خط العرض'],['lng','خط الطول'],
+ ['school','اسم المدرسة'],['buildingId','الرقم الوزاري'],['region','المنطقة'],['office','مكتب التعليم'],['gender','نوع المبنى'],['size','حجم المبنى'],['lat','خط العرض'],['lng','خط الطول'],
  ['supervisor','اسم مشرف الصيانة'],['supervisorPhone','تليفون مشرف الصيانة'],['supervisorEmail','بريد مشرف الصيانة'],
  ['engineer','اسم مهندس الصيانة'],['engineerPhone','تليفون مهندس الصيانة'],['engineerEmail','بريد مهندس الصيانة'],
  ['lightSupervisor','اسم مشرف الخدمات الخفيفة'],['lightSupervisorPhone','تليفون مشرف الخدمات الخفيفة'],['lightSupervisorEmail','بريد مشرف الخدمات الخفيفة'],
@@ -22088,6 +22109,7 @@ function header(){
  cols.map(([f,l])=>'<th onclick="fmDbSort(\''+f+'\')" style="cursor:pointer">'+l+(sortF===f?(sortD===1?' ↑':' ↓'):' ↕')+'</th>').join('')+'<th>إجراءات</th>';
  const h2='<th></th>'+cols.map(([f])=>{
    if(f==='region')return '<th><select onchange="fmDbPageFilter(\''+f+'\',this.value)"><option value="">الكل</option><option value="riyadh" '+(filters[f]==='riyadh'?'selected':'')+'>الرياض</option><option value="qassim" '+(filters[f]==='qassim'?'selected':'')+'>القصيم</option></select></th>';
+   if(f==='gender'||f==='size')return '<th><select onchange="fmDbPageFilter(\''+f+'\',this.value)"><option value="">الكل</option>'+(f==='gender'?['بنين','بنات','بنين وبنات']:['كبير','وسط','صغير']).map(o=>'<option '+(filters[f]===o?'selected':'')+'>'+o+'</option>').join('')+'</select></th>';
    if(f==='operation')return '<th><select onchange="fmDbPageFilter(\''+f+'\',this.value)"><option value="">الكل</option><option value="ذاتي" '+(filters[f]==='ذاتي'?'selected':'')+'>ذاتي</option><option value="مقاول" '+(filters[f]==='مقاول'?'selected':'')+'>مقاول</option></select></th>';
    return '<th><input value="'+E(filters[f]||'')+'" placeholder="فلتر" oninput="fmDbPageFilter(\''+f+'\',this.value)"></th>';
  }).join('')+'<th></th>';
@@ -22121,6 +22143,7 @@ window.fmSchoolDbRender=function(){
  b.innerHTML=slice.map(x=>{
    const cell=f=>{const v=x[f]??'';
     if(f==='region')return '<td><select data-f="region"><option value=""></option><option value="riyadh" '+(v==='riyadh'?'selected':'')+'>الرياض</option><option value="qassim" '+(v==='qassim'?'selected':'')+'>القصيم</option></select></td>';
+    if(f==='gender'||f==='size')return '<td><select data-f="'+f+'"><option value=""></option>'+(f==='gender'?['بنين','بنات','بنين وبنات']:['كبير','وسط','صغير']).map(o=>'<option '+(v===o?'selected':'')+'>'+o+'</option>').join('')+'</select></td>';
     if(f==='operation')return '<td><select data-f="operation" onchange="fmDbOp(this)"><option value=""></option><option value="ذاتي" '+(v==='ذاتي'?'selected':'')+'>ذاتي</option><option value="مقاول" '+(v==='مقاول'?'selected':'')+'>مقاول</option></select></td>';
     if(f==='contractor')return '<td><select data-f="contractor" data-master="1" '+(x.operation==='مقاول'?'':'disabled')+'>'+copt(v)+'</select></td>';
     return '<td><input data-f="'+f+'" value="'+E(v)+'" title="'+E(v)+'"></td>';
@@ -24160,7 +24183,7 @@ function build(){
  const r=localStorage.getItem(DBK)||'[]'; if(r===raw&&idx)return idx; raw=r;
  let db=[];try{db=JSON.parse(r);if(!Array.isArray(db))db=[]}catch(e){}
  const byId=new Map(),byName=new Map();
- db.forEach(x=>{const m={region:regionLabel(x.region),office:S(x.office),contractor:S(x.contractor),school:S(x.school),buildingId:S(x.buildingId)};const id=bid(x.buildingId);if(id)byId.set(id,m);const n=N(x.school);if(n){if(!byName.has(n))byName.set(n,[]);byName.get(n).push(m)}});
+ db.forEach(x=>{const m={region:regionLabel(x.region),office:S(x.office),contractor:S(x.contractor),school:S(x.school),buildingId:S(x.buildingId),gender:S(x.gender),size:S(x.size)};const id=bid(x.buildingId);if(id)byId.set(id,m);const n=N(x.school);if(n){if(!byName.has(n))byName.set(n,[]);byName.get(n).push(m)}});
  return idx={db,byId,byName};
 }
 function activeRegion(){const a=window.FM41?.active||window.MR?.active||'';return regionLabel(a)}
@@ -24284,11 +24307,11 @@ const bid=v=>window.fmCanonicalSchoolCode(v);
 const ID_KEYS=new Set(['الرقم الوزاري / رقم المبنى','school id','building code','كود المدرسة','الرقم الوزاري','رقم المبنى','رقم المدرسة','building id','buildingid','school code','schoolcode',' المدرسة'].map(N));
 let idxVer=null,idx=null;const keyCache=new Map();let metaCache=new WeakMap();
 function build(){const v=ver();if(idx&&v===v&&v===idxVer)return idx;const byId=new Map(),byName=new Map();
-  db().forEach(x=>{const m={region:regionLabel(x.region),office:S(x.office),contractor:S(x.contractor),school:S(x.school),buildingId:S(x.buildingId)};const id=bid(x.buildingId);if(id)byId.set(id,m);const n=N(x.school);if(n){if(!byName.has(n))byName.set(n,[]);byName.get(n).push(m)}});
+  db().forEach(x=>{const m={region:regionLabel(x.region),office:S(x.office),contractor:S(x.contractor),school:S(x.school),buildingId:S(x.buildingId),gender:S(x.gender),size:S(x.size)};const id=bid(x.buildingId);if(id)byId.set(id,m);const n=N(x.school);if(n){if(!byName.has(n))byName.set(n,[]);byName.get(n).push(m)}});
   idxVer=v;metaCache=new WeakMap();return idx={byId,byName};}
 function isIdKey(k){let r=keyCache.get(k);if(r===undefined){r=ID_KEYS.has(N(k));keyCache.set(k,r)}return r}
 window.fmV81SchoolMeta=function(row){
-  if(row?.__fmSchoolDb){const x=row.__fmSchoolDb;return {region:regionLabel(x.region),office:S(x.office),contractor:S(x.contractor),school:S(x.school),buildingId:S(x.buildingId)}}
+  if(row?.__fmSchoolDb){const x=row.__fmSchoolDb;return {region:regionLabel(x.region),office:S(x.office),contractor:S(x.contractor),school:S(x.school),buildingId:S(x.buildingId),gender:S(x.gender),size:S(x.size)}}
   if(!row||typeof row!=='object')return {};
   const I=build(),scol=state?.columnsMap?.school,ck=scol+'\u0001'+(scol?row[scol]:'');
   const c=metaCache.get(row);if(c&&c.k===ck)return c.m;
@@ -24378,7 +24401,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 <script id="fm-v85-global-filters-all-dashboard">
 (function(){
 'use strict';
-const FILTER_IDS=['filter-school','detailed-table-filter-region','detailed-table-filter-office','fm-global-filter-contractor','filter-supervisor','filter-engineer','filter-status','filter-priority','filter-category','filter-time'];
+const FILTER_IDS=['filter-school','detailed-table-filter-region','detailed-table-filter-office','fm-global-filter-contractor','filter-supervisor','filter-engineer','fm170-filter-gender','fm170-filter-size','filter-status','filter-priority','filter-category','filter-time'];
 let refreshing=false, queued=false;
 function filteredSet(){return new Set(Array.isArray(state?.filteredTickets)?state.filteredTickets:[])}
 function refreshEverything(){
@@ -24425,6 +24448,8 @@ const MAP={
  'fm-global-filter-contractor':'contractor',
  'filter-supervisor':'supervisor',
  'filter-engineer':'engineer',
+ 'fm170-filter-gender':'bgender',
+ 'fm170-filter-size':'bsize',
  'filter-status':'status',
  'filter-priority':'priority',
  'filter-category':'category',
@@ -24459,7 +24484,7 @@ window.fmV86ApplyGlobalFilters=run;
 'use strict';
 const IDS={
  'filter-school':'school','detailed-table-filter-region':'region','detailed-table-filter-office':'office',
- 'fm-global-filter-contractor':'contractor','filter-supervisor':'supervisor','filter-engineer':'engineer',
+ 'fm-global-filter-contractor':'contractor','filter-supervisor':'supervisor','filter-engineer':'engineer','fm170-filter-gender':'bgender','fm170-filter-size':'bsize',
  'filter-status':'status','filter-priority':'priority','filter-category':'category','filter-time':'timeWindow'
 };
 let busy=false,timer=0;
@@ -24688,7 +24713,7 @@ const pct=n=>(Number.isFinite(n)?n:0).toFixed(1)+'%';
       transaction (V87) = sync all filters -> applyFilters once -> refresh
       dashboards once -> contractor page (if open).
    ==================================================================== */
-const IDS=['filter-school','detailed-table-filter-region','detailed-table-filter-office','fm-global-filter-contractor','filter-supervisor','filter-engineer','filter-status','filter-priority','filter-category','filter-time'];
+const IDS=['filter-school','detailed-table-filter-region','detailed-table-filter-office','fm-global-filter-contractor','filter-supervisor','filter-engineer','fm170-filter-gender','fm170-filter-size','filter-status','filter-priority','filter-category','filter-time'];
 const ID_SET=new Set(IDS);
 let tx=0;
 function transaction(){
@@ -25266,9 +25291,9 @@ function refreshOpen(){document.querySelectorAll('.fm103-page.open').forEach(p=>
 /* =====================================================================
    4) Saved views (all filters + region) and shareable view link
    ===================================================================== */
-const VIDS=['detailed-table-filter-region','detailed-table-filter-office','fm-global-filter-contractor','filter-school','filter-supervisor','filter-engineer','filter-status','filter-priority','filter-category','filter-time'];
+const VIDS=['detailed-table-filter-region','detailed-table-filter-office','fm-global-filter-contractor','filter-school','filter-supervisor','filter-engineer','fm170-filter-gender','fm170-filter-size','filter-status','filter-priority','filter-category','filter-time'];
 function snapshot(){const sel={};VIDS.forEach(id=>{const e=document.getElementById(id);if(e&&e.value&&e.value!=='all')sel[id]=e.value});return {region:window.FM41?.active||'',sel}}
-function describe(v){const L={'detailed-table-filter-region':'المنطقة','detailed-table-filter-office':'المكتب','fm-global-filter-contractor':'المقاول','filter-school':'المدرسة','filter-supervisor':'المشرف','filter-engineer':'المهندس','filter-status':'الحالة','filter-priority':'الأولوية','filter-category':'التصنيف','filter-time':'الفترة'};const p=Object.entries(v.sel||{}).map(([k,x])=>`${L[k]||k}: ${x}`);return (RN[v.region]?RN[v.region]+' • ':'')+(p.join(' • ')||'بدون فلاتر')}
+function describe(v){const L={'detailed-table-filter-region':'المنطقة','detailed-table-filter-office':'المكتب','fm-global-filter-contractor':'المقاول','filter-school':'المدرسة','filter-supervisor':'المشرف','filter-engineer':'المهندس','fm170-filter-gender':'نوع المبنى','fm170-filter-size':'حجم المبنى','filter-status':'الحالة','filter-priority':'الأولوية','filter-category':'التصنيف','filter-time':'الفترة'};const p=Object.entries(v.sel||{}).map(([k,x])=>`${L[k]||k}: ${x}`);return (RN[v.region]?RN[v.region]+' • ':'')+(p.join(' • ')||'بدون فلاتر')}
 async function applyView(v){
   if(!v)return;
   if(!v.sel&&v.filters){const f=v.filters,m={school:'filter-school',supervisor:'filter-supervisor',engineer:'filter-engineer',status:'filter-status',priority:'filter-priority',category:'filter-category',timeWindow:'filter-time',time:'filter-time',region:'detailed-table-filter-region',office:'detailed-table-filter-office',contractor:'fm-global-filter-contractor'};v={region:'',sel:{}};Object.entries(f).forEach(([k,x])=>{if(m[k]&&x&&x!=='all')v.sel[m[k]]=x})}
@@ -25347,6 +25372,8 @@ const ORDER=[
  ['filter-school','المدرسة','fa-school'],
  ['filter-supervisor','مشرف الصيانة','fa-user-tie'],
  ['filter-engineer','مهندس الصيانة','fa-user-gear'],
+ ['fm170-filter-gender','نوع المبنى','fa-people-group'],
+ ['fm170-filter-size','حجم المبنى','fa-ruler-combined'],
  ['filter-status','الحالة','fa-traffic-light'],
  ['filter-priority','الأولوية','fa-flag'],
  ['filter-category','التصنيف','fa-wrench'],
@@ -25557,10 +25584,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V169',date:'2026-10-13',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V170',date:'2026-10-18',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V170',d:'2026-10-18',t:'نوع المبنى وحجمه',i:['فلتران جديدان في شريط الفلاتر: «نوع المبنى» (بنين / بنات / بنين وبنات) و«حجم المبنى» (كبير / وسط / صغير) — كل الصفحات والمؤشرات تتبعهما','قاعدة بيانات المدارس: عمودان جديدان في القالب والتصدير والجدول (24 عموداً)، والاستيراد من Excel يقبلهما ويحوّل الصيغ المشابهة (مثل «بنين & بنات») ولا يمسح القيمة إن لم يوجد العمود في الملف','إصلاح: صفحة «دليل المنصة» كانت لا تفتح بعد V168 (بطاقة Solvix أُضيفت خارج مجموعتها)']},
 {v:'V169',d:'2026-10-13',t:'تصحيح رابط Solvix',i:['زر «📦 جرد الأصول (Solvix)» يفتح الرابط الصحيح rakizorafm.github.io/Solvix (بحرف S كبير كما في اسم المستودع؛ الرابط السابق كان يفتح صفحة غير موجودة).']},
 {v:'V168',d:'2026-10-13',t:'زر Solvix لجرد الأصول',i:['زر «📦 جرد الأصول (Solvix)» في «البيانات والإعداد» يفتح موقع Solvix (rakizorafm.github.io/Solvix) في تبويب جديد','Solvix تطبيق مستقل بقاعدة بيانات وحسابات خاصة به؛ يدخله المدير بحساب Solvix والفنيون برقمهم الوظيفي']},
 {v:'V167',d:'2026-10-13',t:'شريط الأخبار',i:['شريط أخبار متحرك أعلى المنصة وتطبيق الميدان، يتوقف عند المرور عليه، والضغط على الخبر يعرض تفاصيله','صفحة «📢 الأخبار»: نشر خبر بأهمية (عادي / مهم / عاجل) وتثبيت وفترة عرض، لكل المستخدمين أو لمسميات ومناطق محددة','العاجل يظهر كنافذة عند الدخول حتى يضغط المستخدم «تم الاطلاع»','النشر: مدير النظام ومدير المشروع ومدير العمليات والأمن والسلامة والجودة للكل، ومدير المنطقة لمنطقته، والمهندس لفريقه','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 19)']},
@@ -28514,7 +28542,7 @@ window.fmV131CoordsTemplate=async function(onlyMissing){
  const RO=window.fmSchoolDbRowObj,hd=Object.keys(RO({}));
  const aoa=[hd].concat(L.map(x=>{const o=RO(Object.assign({},x,{region:regOf(x),lat:hasXY(x)?+x.lat:'',lng:hasXY(x)?+x.lng:''}));return hd.map(h=>o[h])}));
  const help=[['طريقة التعبئة'],['• نفس أعمدة القالب المعتمد لقاعدة المدارس — لا تغيّر أسماء الأعمدة'],['• اكتب خط العرض وخط الطول كأرقام عشرية، مثل: 26.3592 و 43.9818'],['• أو الصق في خانة «خط العرض» النص "26.3592, 43.9818" أو رابط الموقع من خرائط جوجل واترك «خط الطول» فارغاً'],['• إذا كُتب خط الطول مكان خط العرض تُصحَّح تلقائياً'],['• البريد يُكتب كاملاً مثل name@company.com — البريد غير الصحيح يُتجاهل'],['• ارفع الملف من «قاعدة بيانات المدارس ← استيراد Excel». الأعمدة غير الموجودة في الملف لا تُغيّر البيانات الحالية'],['• المطابقة بالرقم الوزاري، وإن لم يوجد فباسم المدرسة']];
- saveXlsx([['قاعدة بيانات المدارس',aoa,[28,20,12,20,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26]],['طريقة التعبئة',help,[90]]],(onlyMissing?'مدارس بدون إحداثيات':'إحداثيات وبريد المدارس')+' - '+(region()||'كل المناطق'));
+ saveXlsx([['قاعدة بيانات المدارس',aoa,[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26]],['طريقة التعبئة',help,[90]]],(onlyMissing?'مدارس بدون إحداثيات':'إحداثيات وبريد المدارس')+' - '+(region()||'كل المناطق'));
  toast('تم تنزيل الملف — عبّئه ثم ارفعه من «قاعدة بيانات المدارس ← استيراد Excel»');
 };
 
@@ -31736,8 +31764,7 @@ html::-webkit-scrollbar,nav.v2-nav::-webkit-scrollbar{display:none;width:0;heigh
    reach it, what = what it is for, how = steps, who = who uses it, tips, v = version that added / last changed it.
    RULE: every version that adds or changes a feature updates its entry here (and its v). */
 const MANUAL=[
- {id:'v2-nav-fm168-novaro',t:'جرد الأصول (Solvix)',where:'البيانات والإعداد ← «📦 جرد الأصول (Solvix)»',what:'يفتح Solvix: تطبيق مستقل لجرد أصول المدارس (المدارس، الغرف، الأصول بالصور والموقع، وتقارير Excel) بقاعدة بيانات وحسابات خاصة به، منفصلة عن المنصة.',how:['اضغط الزر ليفتح Solvix في تبويب جديد.','ادخل بحساب Solvix (البريد وكلمة المرور الخاصين بـ Solvix، وليس حساب المنصة).','الفنيون يدخلون Solvix برقمهم الوظيفي وكلمة مرور يحددها مدير Solvix.'],who:'مدير النظام، مدير الإدارة، مدير المشروع، مدير العمليات، مدير المنطقة، مهندس المنطقة، مدير الأمن والسلامة، مدير الجودة',tips:['صلاحيات Solvix تُدار من داخله (Users)، ولا ترتبط بصلاحيات المنصة.'],v:'V169'},
-{g:'البداية والصلاحيات',icon:'🚀',items:[
+ {g:'البداية والصلاحيات',icon:'🚀',items:[
  {id:'start',t:'الدخول وتوجيه كل مستخدم',where:'start.html (رابط الموقع)',what:'صفحة دخول واحدة لكل المستخدمين؛ بعد الدخول يُوجَّه كل شخص حسب مسماه: المنصة للمديرين والمهندس، وتطبيق الميدان للمشرف والمقاول.',how:['افتح رابط الموقع وأدخل البريد وكلمة المرور.','من يدخل بكلمة مرور مؤقتة يُطلب منه تغييرها أول مرة.','مدير النظام والمهندس يمكنهما اختيار «فتح المنصة» أو «فتح تطبيق الميدان».'],who:'كل المستخدمين',v:'V157'},
  {id:'v2-nav-portal',t:'بورتالي',where:'أعلى القائمة الجانبية ← «بورتالي» (يظهر تلقائياً مرة عند كل دخول)',what:'صفحة شخصية لكل مستخدم: مسماه ونطاقه وأرقامه المهمة واختصاراته وصلاحياته، والأوامر المصعّدة إليه.',how:['تظهر عند الدخول؛ أغلقها بـ ×.','افتحها في أي وقت من «بورتالي» في القائمة.','الصفحات غير اللازمة لمسمى المستخدم تُخفى من قائمته (والبيانات محمية في قاعدة البيانات على أي حال).'],who:'كل مستخدمي المنصة',v:'V158'},
  {id:'users',t:'المستخدمون والمسميات الوظيفية',where:'النظام ← الإعدادات ← تبويب «السحابة» ← «👥 المستخدمون والصلاحيات»',what:'إضافة المستخدمين وتحديد المسمى الوظيفي (عشرة مسميات) والمناطق ومن يتبع له كل شخص، وكلمات المرور المؤقتة.',how:['«➕ مستخدم جديد»: الاسم والبريد والمسمى ← تُولَّد كلمة مرور مؤقتة تُرسل بواتساب أو تُنسخ.','عدّل المسمى والمناطق و«يتبع لـ» مباشرة في الجدول.','«🔑 كلمة مرور» يعيد تعيين كلمة مرور مؤقتة.','الاستيراد من Excel ينشئ الجديد ويحدّث الموجود بعد معاينة.'],who:'مدير النظام',tips:['«يتبع لـ» يحدد التسلسل: من يُسنِد لمن، ومن يرى فريق من، والتصعيد.'],v:'V157'},
@@ -31747,7 +31774,7 @@ const MANUAL=[
  {id:'welcome',t:'رسائل الترحيب',where:'استخدام المنصة ← «📨 رسائل الترحيب»',what:'إرسال بيانات الدخول لمجموعة مستخدمين (مثل مهندسي المشروع) برسالة واتساب واحدة لكل شخص: الرابط والبريد وكلمة مرور مؤقتة جديدة ومكان الدليل ورابط فيديو الشرح.',how:['اختر المسمى (مثلاً مهندس المنطقة)، ويُعرض افتراضياً من لم يدخل بعد.','عدّل نص الرسالة إن أردت، وضع رابط فيديو الشرح (اختياري).','«🔑 إنشاء كلمات المرور وتجهيز الرسائل»، ثم «واتساب» لكل شخص بالترتيب.'],who:'مدير النظام',tips:['كلمات المرور لا تُحفظ في أي مكان؛ أرسلها قبل إغلاق النافذة.','من دخل من قبل تتغير كلمة مروره إن اخترته — يظهر تنبيه قبل التنفيذ.','رقم الجوال من حساب المستخدم؛ بدونه يفتح واتساب لتختار المحادثة.'],v:'V164'}
 ]},
 {g:'الرئيسية والعمليات',icon:'🏠',items:[
- {id:'v2-nav-solution',t:'لوحة القيادة التنفيذية',where:'أعلى القائمة ← «لوحة القيادة التنفيذية»',what:'المؤشرات الرئيسية للمنطقة المختارة: البلاغات والمفتوح والمحلول والالتزام بالـ SLA، والرسوم، وخريطة المدارس التي بها بلاغات. كل مستخدم يرى بلاغات نطاقه فقط (المهندس: مدارسه).',how:['اختر المنطقة (الرياض / القصيم) من شريط المناطق.','رفع ملف البلاغات (Excel أو CSV): لمدير النظام ومدير المشروع ومدير العمليات ومدير المنطقة (منطقته) فقط؛ يصل للفريق عبر السحابة كلٌّ حسب صلاحياته.','استخدم شريط الفلاتر (الفترة، المكتب، المقاول، المشرف…)؛ كل الصفحات تتبعه.'],who:'المديرون والمهندس',tips:['المهندس والمشرف لا يرفعان ملفاً؛ بياناتهما تصلهما من السحابة.','إذا فتح حساب آخر المنصة على نفس الجهاز تُنقل بيانات الحساب السابق جانباً ولا تظهر له، وتعود عند عودة صاحبها.'],v:'V165'},
+ {id:'v2-nav-solution',t:'لوحة القيادة التنفيذية',where:'أعلى القائمة ← «لوحة القيادة التنفيذية»',what:'المؤشرات الرئيسية للمنطقة المختارة: البلاغات والمفتوح والمحلول والالتزام بالـ SLA، والرسوم، وخريطة المدارس التي بها بلاغات. كل مستخدم يرى بلاغات نطاقه فقط (المهندس: مدارسه).',how:['اختر المنطقة (الرياض / القصيم) من شريط المناطق.','رفع ملف البلاغات (Excel أو CSV): لمدير النظام ومدير المشروع ومدير العمليات ومدير المنطقة (منطقته) فقط؛ يصل للفريق عبر السحابة كلٌّ حسب صلاحياته.','استخدم شريط الفلاتر (الفترة، المكتب، المقاول، المشرف، نوع المبنى وحجمه…)؛ كل الصفحات تتبعه.'],who:'المديرون والمهندس',tips:['المهندس والمشرف لا يرفعان ملفاً؛ بياناتهما تصلهما من السحابة.','إذا فتح حساب آخر المنصة على نفس الجهاز تُنقل بيانات الحساب السابق جانباً ولا تظهر له، وتعود عند عودة صاحبها.'],v:'V165'},
  {id:'v2-nav-actions',t:'مركز الإجراءات',where:'أعلى القائمة ← «مركز الإجراءات»',what:'ما يحتاج تصرفاً الآن: المتأخر والقريب من الاختراق والمكرر، مع الإجراء المقترح.',how:['افتح المركز صباحاً وابدأ بالأعلى خطورة.','اضغط على البلاغ للانتقال إليه أو للإرسال.'],who:'المديرون والمهندس',v:'V123'},
  {id:'v2-nav-fm145-wo',t:'أوامر العمل',where:'أعلى القائمة ← «أوامر العمل»',what:'إنشاء أوامر عمل (إصلاح، صيانة وقائية، معاينة، زيارة، استلام موقع، مهمة) وإسنادها لمن هو أدنى، ومتابعتها حتى الاعتماد والإغلاق.',how:['«➕ أمر جديد»: المدرسة والنوع والمُسند إليه والمهلة وقائمة البنود (أو اختر قوالب جاهزة، ويمكن أكثر من قالب).','المنفّذ يستلم الأمر في تطبيق الميدان: قبول، بدء، توثيق الوصول بثلاث صور، نتيجة كل بند، صور قبل/بعد، ثم «تم الإجراء».','أنت تعتمد وتغلق أو تعيد للتصحيح من تفاصيل الأمر.'],who:'مدير النظام والمديرون ومهندس المنطقة والمشرف (لمن تحته)، ومدير الأمن والسلامة ومدير الجودة',tips:['الأمر يُسنَد فقط لمن هو أدنى في التسلسل.','المشتريات فوق سقف الاعتماد تحتاج اعتماد مدير المنطقة أو مدير العمليات.'],v:'V145'},
  {id:'wo-group',t:'أمر لمجموعة مدارس (حملة)',where:'أوامر العمل ← «أمر لمجموعة مدارس»',what:'أمر مستقل لكل مدرسة ضمن حملة واحدة، مع إسناد تلقائي لمسؤول كل مدرسة من قاعدة المدارس.',how:['اختر المدارس بالمنطقة أو المكتب أو المدينة أو المسؤول، أو يدوياً، أو من ملف Excel.','اختر الإسناد: مسؤول كل مدرسة، أو شخص واحد، مع بديل لغير المطابق.','تابع الحملة من لوحتها: نسبة الإنجاز والمتأخر وبانتظار الاعتماد، و«⬇️ Excel للحملة» و«PDF».'],who:'من يحق له الإسناد',v:'V146'},
@@ -31807,7 +31834,8 @@ const MANUAL=[
  {id:'v2-nav-fm123-weekfu',t:'ما تم بخصوص المتأخرات',where:'التقارير ← «ما تم بخصوص المتأخرات»',what:'تقرير أسبوعي للاجتماع بما تم في كل بلاغ متأخر (PDF وExcel).',how:['يُبنى من «متابعة المتأخرات»؛ حدّثها قبل الاجتماع.'],who:'المديرون',v:'V122'}
 ]},
 {g:'البيانات والإعداد',icon:'🗂️',items:[
- {id:'v2-nav-school-db',t:'قاعدة بيانات المدارس',where:'البيانات والإعداد ← «قاعدة بيانات المدارس»',what:'كل مدرسة ورقمها ومكتبها ومشرفها ومهندسها ومقاولها وإحداثياتها (قالب معتمد من 22 عموداً)، والنسخ الاحتياطي.',how:['«تنزيل القالب» ثم املأه وارفعه؛ الاستيراد لا يمسح عموداً غير موجود في الملف.','«نسخة احتياطية» أسبوعياً (يُنبَّه بعد أسبوع بدونها).'],who:'مدير النظام',tips:['هذه القاعدة مصدر إسناد التواصل وأوامر الحملات والمسؤولين.'],v:'V133'},
+ {id:'v2-nav-fm168-novaro',t:'جرد الأصول (Solvix)',where:'البيانات والإعداد ← «📦 جرد الأصول (Solvix)»',what:'يفتح Solvix: تطبيق مستقل لجرد أصول المدارس (المدارس، الغرف، الأصول بالصور والموقع، وتقارير Excel) بقاعدة بيانات وحسابات خاصة به، منفصلة عن المنصة.',how:['اضغط الزر ليفتح Solvix في تبويب جديد.','ادخل بحساب Solvix (البريد وكلمة المرور الخاصين بـ Solvix، وليس حساب المنصة).','الفنيون يدخلون Solvix برقمهم الوظيفي وكلمة مرور يحددها مدير Solvix.'],who:'مدير النظام، مدير الإدارة، مدير المشروع، مدير العمليات، مدير المنطقة، مهندس المنطقة، مدير الأمن والسلامة، مدير الجودة',tips:['صلاحيات Solvix تُدار من داخله (Users)، ولا ترتبط بصلاحيات المنصة.'],v:'V169'},
+ {id:'v2-nav-school-db',t:'قاعدة بيانات المدارس',where:'البيانات والإعداد ← «قاعدة بيانات المدارس»',what:'كل مدرسة ورقمها ومكتبها ونوع المبنى (بنين / بنات / بنين وبنات) وحجمه (كبير / وسط / صغير) ومشرفها ومهندسها ومقاولها وإحداثياتها (قالب معتمد من 24 عموداً)، والنسخ الاحتياطي.',how:['«تنزيل القالب» ثم املأه وارفعه؛ الاستيراد لا يمسح عموداً غير موجود في الملف.','عمودا «نوع المبنى» و«حجم المبنى» يقبلان: بنين / بنات / بنين وبنات، وكبير / وسط / صغير؛ ويمكن تعديلهما من الجدول مباشرة.','«نسخة احتياطية» أسبوعياً (يُنبَّه بعد أسبوع بدونها).'],who:'مدير النظام',tips:['هذه القاعدة مصدر إسناد التواصل وأوامر الحملات والمسؤولين، وفلتري «نوع المبنى» و«حجم المبنى» في لوحة القيادة.'],v:'V170'},
  {id:'v2-nav-fm125-contacts',t:'جهات الاتصال',where:'البيانات والإعداد ← «جهات الاتصال»',what:'جوال وبريد كل مشرف ومهندس ومقاول والإدارة، مع آخر رسالة لكل شخص.',how:['تُعبّأ من قاعدة المدارس أو يدوياً أو باستيراد Excel.'],who:'المديرون',v:'V127'},
  {id:'v2-nav-workforce',t:'إدارة القوى العاملة',where:'البيانات والإعداد ← «إدارة القوى العاملة»',what:'الفنيون والقوى العاملة لكل مقاول ومنطقة.',how:['أضف أو استورد ثم راجع التوزيع.'],who:'مدير النظام'},
  {id:'v2-nav-bulk-assignment',t:'الإسناد الجماعي للمناطق',where:'البيانات والإعداد ← «الإسناد الجماعي للمناطق»',what:'تعديل مسؤولي مجموعة مدارس دفعة واحدة.',how:['حدد المدارس ثم المسؤول الجديد.'],who:'مدير النظام'},
@@ -32192,6 +32220,28 @@ function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getEleme
  b.innerHTML='<i class="fas fa-boxes-stacked"></i><span class="v2-nav-label">📦 جرد الأصول (Solvix)</span>';
  b.onclick=()=>{window.open('https://rakizorafm.github.io/Solvix/#admin','_blank','noopener')};n.appendChild(b)}
 setInterval(()=>{try{nav()}catch(e){}},3000);
+})();
+</script>
+<script id="fm-v170-building-type">(function(){
+'use strict';
+/* V170: building type (بنين / بنات / بنين وبنات → school DB field `gender`) and size (كبير / وسط / صغير → `size`).
+   The Excel import reads them through the V131 extra-columns hook; a missing column keeps the stored value. */
+const S=v=>String(v??'').replace(/\s+/g,' ').trim();
+const HG=['نوع المبنى','نوع المدرسة','بنين / بنات','بنين/بنات','الجنس','Gender','Type'],HS=['حجم المبنى','حجم المدرسة','الحجم','Size'];
+const normG=v=>{v=S(v).replace(/[أإآ]/g,'ا');if(!v)return '';const b=/بنين|ذكور|boys|male/i.test(v),g=/بنات|اناث|girls|female/i.test(v);
+ if((b&&g)||/مشترك|مختلط|mixed|both/i.test(v))return 'بنين وبنات';if(b)return 'بنين';if(g)return 'بنات';return null};
+const normS=v=>{v=S(v);if(!v)return '';if(/كبير|large|big|^l$/i.test(v))return 'كبير';if(/وسط|متوسط|medium|mid|^m$/i.test(v))return 'وسط';if(/صغير|small|^s$/i.test(v))return 'صغير';return null};
+function col(r,names){const keys=Object.keys(r);for(const n of names){const k=keys.find(k=>S(k)===n);if(k!=null)return {k,v:r[k]}}return null}
+let bad=0,badT=null;
+function hook(){const base=window.fmV131DbExtra;if(typeof base!=='function'||base.__v170)return;
+ const f=function(r){const o=base.apply(this,arguments)||{};if(!r||typeof r!=='object')return o;
+  const g=col(r,HG),z=col(r,HS);
+  if(g){const v=normG(g.v);if(v===null)bad++;else o.gender=v}
+  if(z){const v=normS(z.v);if(v===null)bad++;else o.size=v}
+  if(bad){clearTimeout(badT);badT=setTimeout(()=>{try{window.showToast?.(`${bad} قيمة غير مفهومة في «نوع المبنى» أو «حجم المبنى» لم تُستورد — المسموح: بنين / بنات / بنين وبنات، وكبير / وسط / صغير`,'warning')}catch(e){}bad=0},900)}
+  return o};f.__v170=1;window.fmV131DbExtra=f;
+ const kh=window.fmV131KnownHeaders;if(typeof kh==='function'&&!kh.__v170){const k=function(){const s=kh.apply(this,arguments);HG.concat(HS).forEach(h=>s.add(h));return s};k.__v170=1;window.fmV131KnownHeaders=k}}
+hook();addEventListener('load',hook);setTimeout(hook,1500);
 })();
 </script>
 </body>
