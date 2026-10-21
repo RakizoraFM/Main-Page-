@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F26">
+<meta name="fm-version" content="F27">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -638,14 +638,23 @@ async function schoolSheet(name){const r=schoolRows().find(x=>x.name===name);if(
    ${person('🧰','مشرف الصيانة',sc.supervisor,sc.supervisorPhone)}${person('👷','مهندس الصيانة',sc.engineer,sc.engineerPhone)}
    <div class="btns" style="margin-top:10px"><a class="big" href="${navUrl(r)}" target="_blank" rel="noopener">🗺️ الاتجاهات</a>${r.total?`<button class="big" data-all>📋 كل بلاغات المدرسة</button>`:''}</div>
    <h3>📂 البلاغات المفتوحة (${fmt(r.open)})</h3>${r.tks.length?r.tks.slice(0,15).map(tkCard).join('')+(r.tks.length>15?`<div class="muted">و${fmt(r.tks.length-15)} أخرى — «كل بلاغات المدرسة»</div>`:''):'<div class="muted">لا توجد بلاغات مفتوحة ✅</div>'}
+   <div data-sreq></div>
    <h3>🛠️ أوامر العمل المفتوحة (${fmt(r.wos.length)})</h3>${r.wos.length?r.wos.slice(0,15).map(woCard).join(''):'<div class="muted">لا توجد أوامر عمل مفتوحة ✅</div>'}`;
   el.querySelector('[data-x]').onclick=closeSheet;
   el.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{closeSheet();D.view='list';ticketView(b.dataset.k)});
   el.querySelectorAll('[data-wo]').forEach(b=>b.onclick=()=>{closeSheet();openWo(b.dataset.wo)});
   const all=el.querySelector('[data-all]');if(all)all.onclick=()=>{closeSheet();D.f.school=r.name;D.f.ids=null;D.tab=r.open?'open':'all';go('list')}};
- const pr={n:sc.principal,p:sc.principalPhone};draw(pr);
+ const pr={n:sc.principal,p:sc.principalPhone};draw(pr);schoolReqs(el,r,sc);
  if(!telH(pr.p)){const a=await engPrincipal(sc,name);if(a&&el.isConnected){pr.n=S(pr.n)||a.principal;pr.p=a.phone;draw(pr)}}}
 window.fmfSchoolSheet=schoolSheet;
+/* F27: the open requests of the school from the principal portal (accept / done with a reply) */
+const RQS={new:'🆕 جديد',accepted:'👍 مستلم',in_progress:'🛠️ قيد التنفيذ'};
+async function schoolReqs(el,r,sc){try{const db=await C.engClient?.();if(!db)return;const x=await db.rpc('fm_school_req_list',{p_days:30});if(x.error||!el.isConnected)return;
+ const b=wkey(sc&&sc.buildingId),L=(x.data||[]).filter(q=>['new','accepted','in_progress'].includes(q.status)&&((b&&q.bkey===b)||S(q.school_name)===S(r.name)));
+ const box=el.querySelector('[data-sreq]');if(!box||!L.length)return;const act=['admin','manager','engineer','supervisor'].includes(D.me?.role);
+ box.innerHTML=`<h3>📨 طلبات المدرسة (${fmt(L.length)})</h3>`+L.map(q=>`<div class="card" style="margin:6px 0;padding:10px"><div class="r1" style="display:flex;justify-content:space-between;gap:6px"><b>${esc(q.category)}${q.urgency==='urgent'?' · 🚨 عاجل':''}</b><span class="chip">${RQS[q.status]||q.status}</span></div><div class="muted">${esc(q.code||'')}${q.contact_name?' · '+esc(q.contact_name):''}</div><div style="margin-top:4px;font-weight:600">${esc(q.description)}</div>${act?`<div class="btns" style="margin-top:8px">${q.status==='new'?`<button class="big" data-rq="accept" data-id="${esc(q.id)}">👍 استلام</button>`:''}<button class="big" data-rq="done" data-id="${esc(q.id)}">✅ تم</button></div>`:''}</div>`).join('');
+ box.querySelectorAll('[data-rq]').forEach(bt=>bt.onclick=async()=>{let note=null;if(bt.dataset.rq==='done'){note=prompt('الرد على المدرسة (ما تم تنفيذه):','');if(!note||!S(note))return}
+  try{const y=await db.rpc('fm_school_req_act',{p_id:bt.dataset.id,p_action:bt.dataset.rq,p_note:note,p_wo:null});if(y.error)throw Error(y.error.message);toast('تم');schoolReqs(el,r,sc)}catch(e){toast(e.message,'w')}})}catch(e){}}
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet()});
 
 /* ---------- profile: rating, period review, comparison, daily chart, top schools, contact ---------- */

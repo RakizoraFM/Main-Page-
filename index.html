@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V174">
+<meta name="fm-version" content="V175">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25593,10 +25593,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V174',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V175',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V175',d:'2026-10-21',t:'بوابة مدير المدرسة',i:['رابط دائم وخاص لكل مدرسة (school.html) بدون حساب: يرفع مدير المدرسة طلب صيانة مع الصور ويحدد العاجل، ويتابع حالة طلباته ويقيّم التنفيذ، ويرى البلاغات والأعمال الجارية في مدرسته','صفحة «🏫 طلبات المدارس»: استلام الطلب، أو تحويله لأمر عمل (اعتماد الأمر ينجز الطلب تلقائياً)، أو الرد بالإنجاز أو الرفض — والرد يظهر للمدرسة','«🔗 روابط المدارس»: إنشاء الروابط لكل المدارس دفعة واحدة، وإرسالها لمدير المدرسة بواتساب أو نسخها أو طباعتها QR، وتجديدها أو إيقافها','تطبيق الميدان: طلبات المدرسة المفتوحة في بطاقة المدرسة مع الاستلام والإنجاز','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 22)']},
  {v:'V174',d:'2026-10-21',t:'جودة البيانات',i:['صفحة «🧹 جودة البيانات»: نسبة اكتمال قاعدة المدارس والمدارس الناقصة (الإحداثيات، نوع المبنى وحجمه، جوال المدير والحارس، المشرف والمهندس والمقاول، أرقام وبريد غير صحيحة، أرقام أو أسماء مكررة)','حسب المهندس: رسالة واتساب جاهزة بنواقص مدارسه وملف Excel بنفس القالب لتعبئته واستيراده','مدارس البلاغات غير الموجودة في القاعدة، وأسماء الكادر بدون حساب في المنصة']},
  {v:'V173',d:'2026-10-21',t:'المخزون وقطع الغيار',i:['صفحة «📦 المخزون»: مستودع لكل منطقة، رصيد كل صنف وقيمته وحد الطلب والتغطية بالأيام','توريد من مورد (مع تحديث سعر الصنف اختيارياً)، جرد (يدوي أو من Excel)، وتحويل بين المستودعات — كل تغيير حركة مسجلة','عند اعتماد أمر العمل (الإغلاق) تُخصم مواده من المخزن تلقائياً من مستودع منطقته، مرة واحدة','الاستهلاك الشهري لآخر 6 أشهر، وطلب شراء مقترح للأصناف تحت حد الطلب، وتصدير Excel','تطبيق الميدان: الرصيد المتاح يظهر بجانب الصنف عند اختياره','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 21)']},
  {v:'V172',d:'2026-10-21',t:'خريطة المدارس التفاعلية في تطبيق الميدان',i:['تطبيق الميدان ← «المدارس» يفتح على خريطة تفاعلية لكل مدارس المشرف / الفني (حتى بدون بلاغات): لون كل مدرسة حسب البلاغات المتأخرة والمفتوحة وأوامر العمل المفتوحة، بحث وفلاتر','بطاقة المدرسة عند الضغط عليها: بياناتها، مدير المدرسة والحارس بزر اتصال وواتساب، المشرف والمهندس، البلاغات وأوامر العمل المفتوحة (تفتح بالضغط) والاتجاهات','قاعدة المدارس: 4 أعمدة جديدة في آخر القالب (28 عموداً): «اسم مدير المدرسة» و«جوال مدير المدرسة» و«اسم الحارس» و«جوال الحارس»، وتظهر في ملف المدرسة']},
@@ -27068,7 +27069,7 @@ nav.v2-nav.fm123-searching .fm123-danger-wrap:not(:has(.v2-nav-btn:not(.fm123-hi
 'use strict';
 const GROUPS=[
  {k:'sla',icon:'🚨',t:'الـ SLA والمتابعة اليومية',ids:['v2-nav-fm103-alerts','v2-nav-fm122-risk','v2-nav-sla','v2-nav-fm122-follow','v2-nav-fm135-work','v2-nav-fm118-breach','v2-nav-risk']},
- {k:'schools',icon:'🏫',t:'المدارس والأعطال',ids:['v2-nav-fm118-school','v2-nav-fm171-costs','v2-nav-fm131-map','v2-nav-school-analysis','v2-nav-recurring','v2-nav-fm131-cost','v2-nav-table']},
+ {k:'schools',icon:'🏫',t:'المدارس والأعطال',ids:['v2-nav-fm118-school','v2-nav-fm175-req','v2-nav-fm171-costs','v2-nav-fm131-map','v2-nav-school-analysis','v2-nav-recurring','v2-nav-fm131-cost','v2-nav-table']},
  {k:'staff',icon:'👷',t:'الكادر والمقاولون',ids:['v2-nav-staff','v2-nav-staff-performance','v2-nav-eng','v2-nav-fm124-visits','v2-nav-fm124-load','v2-nav-contractors','v2-nav-fm122-score']},
  {k:'analysis',icon:'📊',t:'التحليل والمقارنات',ids:['v2-nav-charts','v2-nav-period','v2-nav-fm103-periods','v2-nav-fm131-season','v2-nav-compare','v2-nav-pivot','v2-nav-saved']},
  {k:'reports',icon:'📄',t:'التقارير',ids:['v2-nav-fm127-today','v2-nav-fm125-send','v2-nav-fm126-log','v2-nav-fm118-weekly','v2-nav-report','v2-nav-fm123-weekfu','v2-nav-fm158-qa']},
@@ -31818,6 +31819,7 @@ const MANUAL=[
 ]},
 {g:'المدارس والأعطال',icon:'🏫',items:[
  {id:'v2-nav-fm118-school',t:'ملف المدرسة (بروفايل المبنى)',where:'المدارس والأعطال ← «ملف المدرسة»، أو بالضغط على مبنى في «💰 تكاليف المباني»',what:'بروفايل لكل مبنى في قاعدة المدارس (حتى بدون بلاغات): بيانات المبنى (النوع والحجم والتشغيل والكادر والجوالات والموقع) وتبويبات: «📋 البلاغات» (الشهرية والأعطال المتكررة والسجل)، «💰 المصاريف وقطع الغيار» لفترة تختارها، و«🛠️ أوامر العمل».',how:['ابحث عن المدرسة بالاسم أو الرقم.','«💰 المصاريف وقطع الغيار»: اختر الفترة (هذا الشهر / الربع / السنة / مخصصة) لترى الإجمالي (مخزن · مشتريات · مصروفات)، والتكلفة حسب البند وشهرياً، و«🔧 الإصلاحات المنفذة» (البنود المُصلَحة في أوامر العمل وأوامر الإصلاح وتكلفة موادها، وفواتير الإصلاحات) حسب النظام، وأكثر القطع صرفاً، وسجل التكاليف.','«➕ مصروف / فاتورة لهذا المبنى» و«🎯 ميزانية المبنى» حسب صلاحيتك، و«⬇️ Excel» لسجل التكاليف.','«🛠️ أوامر العمل»: كل أوامر المبنى في نطاقك؛ اضغط الأمر لفتحه.'],who:'المديرون والمهندس (التكاليف حسب صلاحيات التكاليف)',tips:['المواد تُحسب من أوامر العمل المنجزة (بانتظار الاعتماد أو مغلقة) بسعر الصنف وقت الصرف؛ الصنف بدون سعر لا يُحسب ويظهر تنبيه.','فاتورة إصلاح من مقاول تُسجَّل بتصنيف «إصلاحات» لتظهر مع الإصلاحات.','المقارنة بالمباني المشابهة تظهر عند تعبئة «نوع المبنى» و«حجم المبنى» ووجود 3 مبانٍ مشابهة أو أكثر.'],v:'V171'},
+ {id:'v2-nav-fm175-req',t:'طلبات المدارس (بوابة المدرسة)',where:'المدارس والأعطال ← «🏫 طلبات المدارس»',what:'طلبات مديري المدارس من «بوابة المدرسة» (رابط خاص لكل مدرسة بدون حساب)، وروابط البوابة لكل مدرسة.',how:['«🔗 روابط المدارس» ← «إنشاء روابط» ثم «💬 واتساب» لإرسال الرابط لمدير المدرسة (من جوال مدير المدرسة في قاعدة المدارس)، أو «📋 نسخ» أو «▦ QR» للطباعة.','في «📨 الطلبات»: «👍 استلام» للطلب الجديد، أو «🛠️ أمر عمل» لإسناده لأحد فريقك وربطه بالطلب (اعتماد الأمر يجعل الطلب منجزاً تلقائياً)، أو «✅ تم» مع الرد، أو «رفض» مع السبب.','يرى مدير المدرسة الحالة والرد ويقيّم التنفيذ بعد الإنجاز.'],who:'المديرون والمهندس والمشرف لمدارسهم',tips:['«🔁 تجديد» يوقف الرابط القديم إذا انتشر خارج الإدارة.','الرقم بجانب الصفحة في القائمة = الطلبات الجديدة.'],v:'V175'},
  {id:'v2-nav-fm174-dq',t:'جودة البيانات',where:'البيانات والإعداد ← «🧹 جودة البيانات»',what:'فحص قاعدة المدارس: نسبة الاكتمال، والنواقص حسب النوع وحسب المهندس، ومدارس البلاغات غير الموجودة في القاعدة، وأسماء الكادر بدون حساب.',how:['اختر المنطقة أو المهندس أو نوع النقص، وانقر النقص لعرض مدارسه أو المدرسة لفتح ملفها.','«💬 واتساب» بجانب المهندس يفتح رسالة جاهزة بنواقص مدارسه، و«⬇️ ملف» ينزّل مدارسه الناقصة بنفس قالب قاعدة المدارس مع عمود «البيانات الناقصة».','بعد أن يملأ المهندس الملف استورده من «قاعدة بيانات المدارس» ← استيراد (الاستيراد لا يمسح ما لم يُكتب).'],who:'مدير النظام والمديرون (والمهندس لمدارسه)',tips:['الخريطة والتكاليف والمقارنات والإسناد وتطبيق الميدان كلها تعتمد على اكتمال هذه البيانات.'],v:'V174'},
  {id:'v2-nav-fm173-stock',t:'المخزون وقطع الغيار',where:'البيانات والإعداد ← «📦 المخزون»',what:'أرصدة المستودعات لكل صنف معتمد (أصناف المواد) مع القيمة وحد الطلب والتغطية بالأيام، وسجل الحركات، والاستهلاك الشهري، وطلب شراء مقترح. مواد أوامر العمل (من المخزن) تُخصم تلقائياً عند اعتماد الأمر من المستودع الافتراضي لمنطقته.',how:['«🏬 المستودعات»: أنشئ مستودعاً لكل منطقة وحدد الافتراضي.','«⚖️ جرد»: اكتب الرصيد المعدود لكل صنف (أو نزّل ورقة الجرد واملأها وارفعها) — يُسجَّل الفرق فقط.','«📥 توريد»: المورد ورقم الفاتورة والأصناف بالكمية والسعر (ويمكن تحديث سعر الصنف).','«🔁 تحويل» بين مستودعين، واختر مستودعاً لتعديل «حد الطلب» من تبويب الأرصدة.','«🛒 طلب شراء مقترح» يقترح كميات الأصناف تحت حد الطلب، و«⬇️ Excel» يصدّر الأرصدة والطلب والحركات.'],who:'يدير المخزون: مدير النظام ومدير المشروع ومدير العمليات، ومدير المنطقة ومهندس المنطقة لمستودعات مناطقهم؛ والمديرون والمحاسب يطّلعون',tips:['الرصيد قد يصبح بالسالب إذا اعتُمد أمر بمواد أكثر من الموجود — يظهر «بالسالب» حتى يُسجَّل توريد أو جرد.','المشتريات المباشرة (شراء) لا تُخصم من المخزن.'],v:'V173'},
  {id:'v2-nav-fm171-costs',t:'تكاليف المباني',where:'المدارس والأعطال ← «💰 تكاليف المباني»',what:'كل المباني في نطاقك مع تكلفتها في الفترة (مواد المخزن · المشتريات · المصروفات) والمصروف منذ بداية السنة مقابل الميزانية السنوية، وقائمة الفواتير والمصروفات المسجلة.',how:['اختر الفترة، وفلتر بالمنطقة أو النوع أو الحجم أو بالبحث، ورتّب حسب التكلفة أو استهلاك الميزانية.','«➕ مصروف / فاتورة»: البيان والتصنيف والمبلغ والمورد ورقم الفاتورة؛ مرة واحدة أو شهري ثابت (من شهر إلى شهر أو مستمر)؛ لمبنى واحد أو مجموعة مبانٍ (بحث وفلاتر وتحديد) أو منطقة كاملة، ويُقسم المبلغ بالتساوي أو يُحمَّل كاملاً على كل مبنى.','«🎯 الميزانيات»: اختر السنة واكتب ميزانية كل مبنى، أو «تطبيق على الظاهر»، أو استورد من Excel (رقم المبنى / اسم المدرسة / الميزانية).','اضغط المبنى لفتح بروفايله على تبويب التكاليف، و«⬇️ Excel» لتصدير المباني والتفاصيل والمصروفات.'],who:'حسب صلاحيات التكاليف: افتراضياً مهندس المنطقة فما فوق والمحاسب',tips:['المصروف الشهري يُحسب مرة لكل شهر يقع في الفترة.','يعدّل المصروف أو يلغيه من أدخله، أو مدير المشروع ومدير النظام.','النطاق: مديرو المشروع والعمليات والإدارة ← كل المباني، مدير المنطقة والمحاسب ← مناطقهم، مهندس المنطقة ← مدارسه.'],v:'V171'},
@@ -32961,6 +32963,109 @@ window.fmV174Dq=()=>openPage(document.getElementById('v2-nav-fm174-dq'));
 const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;const p=st.profile;return !!p&&['admin','manager','staff','viewer','engineer'].includes(p.role)};
 function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm174-dq');if(!n)return;if(!allowed()){b0?.remove();return}if(b0)return;
  const b=document.createElement('button');b.id='v2-nav-fm174-dq';b.type='button';b.className='v2-nav-btn';b.title='جودة البيانات';b.innerHTML='<i class="fas fa-broom"></i><span class="v2-nav-label">🧹 جودة البيانات</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
+setInterval(()=>{try{nav()}catch(e){}},3000);
+})();
+</script>
+<script id="fm-v175-school-requests">(function(){
+'use strict';
+/* V175: school principal portal. Each school gets a permanent private link school.html?k=<token> (section 22 of
+   supabase_setup.sql). Page «🏫 طلبات المدارس» (#v2-nav-fm175-req): the requests of the caller's schools
+   (fm_school_req_list) with accept / work order (created here, then linked; closing the order finishes the request) /
+   done with a reply / reject with a reason (fm_school_req_act), and the links of the schools (fm_school_links_list,
+   fm_school_link_make, fm_school_link_revoke) sent to the principal by WhatsApp, copied or shown as a QR code. */
+const C=window.FMCloud;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const GREG='ar-SA-u-ca-gregory',RN={riyadh:'الرياض',qassim:'القصيم'},rn=r=>RN[r]||r||'—';
+const num=v=>(+v||0).toLocaleString('en-US',{maximumFractionDigits:1});
+const cloudOn=()=>!!(C&&C.state&&C.state.on&&C.state.profile);
+const role=()=>cloudOn()?C.state.profile.role:'';
+const canRead=()=>['admin','manager','staff','viewer','engineer','supervisor'].includes(role());
+const canAct=()=>['admin','manager','engineer','supervisor'].includes(role());
+const SQLMSG='شغّل supabase_setup.sql المحدَّث أولاً (القسم 22).';
+const sqlMsg=m=>/does not exist|schema cache|Could not find/i.test(String(m))?SQLMSG:/not allowed/.test(m)?'لا تملك صلاحية على هذه المدرسة':/reason required/.test(m)?'اكتب الرد أو السبب':/action not allowed/.test(m)?'لا يمكن هذا الإجراء في حالة الطلب الحالية':m;
+const RST={new:['new','🆕 جديد'],accepted:['acc','👍 مستلم'],in_progress:['prog','🛠️ قيد التنفيذ'],done:['done','✅ منجز'],rejected:['rej','⛔ مرفوض']};
+const dshow=v=>{const d=new Date(v);return isNaN(d)?'—':d.toLocaleDateString(GREG,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
+const linkOf=t=>{const u=new URL('school.html',location.href);u.search='?k='+t;u.hash='';return u.href};
+async function rpc(fn,a){const db=await C.engClient();const r=await db.rpc(fn,a||{});if(r.error)throw Error(r.error.message);return r.data}
+let REQ=[],LINKS=null,TAB='req',F={st:'open',q:''},err='';
+function page(){let p=document.getElementById('fm175-page');if(!p){p=document.createElement('section');p.id='fm175-page';p.className='fm103-page';
+ p.innerHTML=`<div class="fm103-wrap"><div class="fm103-head"><div><h2>🏫 طلبات المدارس</h2><p class="sub">طلبات مديري المدارس من بوابة المدرسة، وروابط البوابة لكل مدرسة</p></div><div class="fm103-actions"><span class="extra"></span><button class="fm103-btn" type="button" onclick="fmV103ClosePages?.()">إغلاق</button></div></div><div class="body"></div></div>`;document.body.appendChild(p)}return p}
+async function load(){err='';try{REQ=await rpc('fm_school_req_list',{p_days:120})||[]}catch(e){err=e.message;REQ=[]}}
+async function loadLinks(){try{LINKS=await rpc('fm_school_links_list')||[]}catch(e){err=e.message;LINKS=[]}}
+function render(){const p=page(),b=p.querySelector('.body');p.querySelector('.extra').innerHTML='<button class="fm103-btn" type="button" data-rl>🔄 تحديث</button>';p.querySelector('[data-rl]').onclick=()=>refresh();
+ if(err){b.innerHTML=`<div class="fm103-card fm103-empty">${esc(sqlMsg(err))}</div>`;return}
+ const now=new Date(),mo=REQ.filter(r=>{const d=new Date(r.created_at);return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()});
+ const rated=REQ.filter(r=>r.rating),avg=rated.length?rated.reduce((t,r)=>t+r.rating,0)/rated.length:null;
+ b.innerHTML=`<div class="fm103-kpis"><div class="fm103-kpi"><span>جديدة بانتظار المراجعة</span><b style="color:${REQ.some(r=>r.status==='new')?'#b91c1c':'#15803d'}">${num(REQ.filter(r=>r.status==='new').length)}</b><small>${num(REQ.filter(r=>r.status==='new'&&r.urgency==='urgent').length)} عاجلة</small></div>
+  <div class="fm103-kpi"><span>قيد التنفيذ</span><b>${num(REQ.filter(r=>['accepted','in_progress'].includes(r.status)).length)}</b><small>مستلمة أو مرتبطة بأمر عمل</small></div>
+  <div class="fm103-kpi"><span>طلبات هذا الشهر</span><b>${num(mo.length)}</b><small>${num(mo.filter(r=>r.status==='done').length)} منجزة</small></div>
+  <div class="fm103-kpi"><span>رضا المدارس عن التنفيذ</span><b>${avg==null?'—':num(avg)+' / 5'}</b><small>${num(rated.length)} تقييم</small></div></div>
+ <div class="fm171-tabs">${[['req','📨 الطلبات'],['links','🔗 روابط المدارس']].map(([k,l])=>`<button type="button" data-t="${k}" class="${TAB===k?'on':''}">${l}</button>`).join('')}</div><div data-pane></div>`;
+ b.querySelectorAll('[data-t]').forEach(t=>t.onclick=async()=>{TAB=t.dataset.t;if(TAB==='links'&&!LINKS)await loadLinks();render()});
+ const pane=b.querySelector('[data-pane]');TAB==='links'?drawLinks(pane):drawReq(pane)}
+function drawReq(pane){const V=REQ.filter(r=>(F.st==='all'||(F.st==='open'?['new','accepted','in_progress'].includes(r.status):r.status===F.st))&&(!F.q||[r.school_name,r.code,r.category,r.description].join(' ').includes(F.q)));
+ pane.innerHTML=`<div class="fm171-per"><select data-f="st">${[['open','المفتوحة'],['new','الجديدة'],['in_progress','قيد التنفيذ'],['done','المنجزة'],['rejected','المرفوضة'],['all','الكل']].map(([k,l])=>`<option value="${k}" ${F.st===k?'selected':''}>${l}</option>`).join('')}</select><input data-f="q" placeholder="🔎 مدرسة أو رقم أو وصف" value="${esc(F.q)}"></div>
+ <div class="fm103-card">${V.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>الطلب</th><th>المدرسة</th><th>الوصف</th><th>الحالة</th><th></th></tr></thead><tbody>${V.map(r=>{const st=RST[r.status]||['',r.status];const ph=Array.isArray(r.photos)?r.photos:[];
+  return `<tr><td><b>${esc(r.code||'')}</b>${r.urgency==='urgent'?' <span class="fm173-st out">🚨 عاجل</span>':''}<div class="fm125-src">${esc(dshow(r.created_at))}</div><div class="fm125-src">${esc(r.category)}</div></td>
+   <td><b>${esc(r.school_name)}</b><div class="fm125-src">${esc(rn(r.region))}</div>${r.contact_name||r.contact_phone?`<div class="fm125-src">${esc(r.contact_name||'')} ${r.contact_phone?`<a href="tel:${esc(S(r.contact_phone).replace(/[^\d+]/g,''))}" dir="ltr">${esc(r.contact_phone)}</a>`:''}</div>`:''}</td>
+   <td class="wrap">${esc(r.description)}${ph.length?`<div style="display:flex;gap:4px;margin-top:4px">${ph.map(x=>`<a href="${esc(x)}" target="_blank" rel="noopener"><img src="${esc(x)}" alt="" style="width:46px;height:46px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0"></a>`).join('')}</div>`:''}${r.response?`<div class="fm125-src">💬 ${esc(r.response)}${r.handled_by_name?' — '+esc(r.handled_by_name):''}</div>`:''}${r.rating?`<div class="fm125-src">⭐ ${r.rating}/5 ${esc(r.rating_comment||'')}</div>`:''}</td>
+   <td><span class="fm171-tag">${st[1]}</span>${r.wo_code?`<div class="fm125-src">🛠️ ${esc(r.wo_code)}</div>`:''}</td>
+   <td>${canAct()&&['new','accepted','in_progress'].includes(r.status)?`${r.status==='new'?`<button class="fm122-mini" data-a="accept" data-id="${esc(r.id)}">👍 استلام</button>`:''}${!r.wo_id?`<button class="fm122-mini" data-a="wo" data-id="${esc(r.id)}">🛠️ أمر عمل</button>`:''}<button class="fm122-mini" data-a="done" data-id="${esc(r.id)}">✅ تم</button>${r.status!=='in_progress'?`<button class="fm122-mini" data-a="reject" data-id="${esc(r.id)}" style="color:#b91c1c">رفض</button>`:''}`:''}</td></tr>`}).join('')}</tbody></table></div>`:`<div class="fm103-empty">${REQ.length?'لا توجد طلبات مطابقة':'لا توجد طلبات بعد — أرسل روابط البوابة لمديري المدارس من «🔗 روابط المدارس»'}</div>`}</div>`;
+ pane.querySelectorAll('[data-f]').forEach(i=>i.onchange=()=>{F[i.dataset.f]=S(i.value);render()});
+ pane.querySelectorAll('[data-a]').forEach(btn=>btn.onclick=()=>act(REQ.find(r=>r.id===btn.dataset.id),btn.dataset.a))}
+async function act(r,a){if(!r)return;
+ if(a==='wo')return woDlg(r);
+ let note=null;if(a==='done'||a==='reject'){note=prompt(a==='done'?'الرد على المدرسة (ما تم تنفيذه):':'سبب الرفض (يظهر للمدرسة):','');if(note===null)return;if(!S(note)){toast('اكتب الرد','warning');return}}
+ try{await rpc('fm_school_req_act',{p_id:r.id,p_action:a,p_note:note,p_wo:null});toast('تم');await load();render()}catch(e){toast(sqlMsg(e.message),'error')}}
+async function woDlg(r){let P=[];try{P=await C.api.woAssignable()}catch(e){toast(e.message,'error');return}if(!P.length){toast('لا يوجد في فريقك من يمكن إسناد أمر عمل إليه','warning');return}
+ const d=document.createElement('dialog');d.className='fm171-dlg';d.innerHTML=`<div class="in"><h3>🛠️ أمر عمل لطلب ${esc(r.code)}</h3><div class="fm125-src">${esc(r.school_name)} — ${esc(r.description)}</div>
+  <label class="f">العنوان<input data-k="t" value="${esc(r.category+' — طلب المدرسة '+(r.code||''))}"></label>
+  <div class="fm171-two"><label class="f">المُسند إليه<select data-k="as">${P.map(p=>`<option value="${esc(p.id)}">${esc(p.full_name)} — ${esc(C.ROLE[p.role]||p.role)}</option>`).join('')}</select></label>
+  <label class="f">الأولوية<select data-k="pr">${['متوسط','عالي','طارئ'].map(x=>`<option ${x===(r.urgency==='urgent'?'طارئ':'متوسط')?'selected':''}>${x}</option>`).join('')}</select></label></div></div>
+  <div class="ft"><button class="fm103-btn primary" type="button" data-go>📤 إسناد وربط بالطلب</button><button class="fm103-btn" type="button" data-x>إلغاء</button></div>`;
+ document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();const q=s=>d.querySelector(s);q('[data-x]').onclick=()=>d.close();
+ q('[data-go]').onclick=async ev=>{const b=ev.currentTarget;b.disabled=true;const pr=q('[data-k=pr]').value,H={'طارئ':24,'عالي':48,'متوسط':72}[pr];
+  try{const x=await C.api.woCreate({title:S(q('[data-k=t]').value)||r.category,type:'repair',assignee:q('[data-k=as]').value,school:r.school_name,region:r.region,building_id:r.bkey&&!/^N:/.test(r.bkey)?r.bkey:'',priority:pr,
+    due_at:new Date(Date.now()+H*36e5).toISOString(),description:`طلب المدرسة ${r.code||''} (${r.category}):\n${r.description}${r.contact_name||r.contact_phone?`\nالتواصل: ${r.contact_name||''} ${r.contact_phone||''}`:''}`,checklist:[],ticket_refs:[]});
+   const w=Array.isArray(x)?x[0]:x,id=typeof w==='string'?w:w&&w.id;if(!id)throw Error('أُنشئ الأمر لكن لم يُرجع رقمه — راجع أوامر العمل قبل التكرار');
+   await rpc('fm_school_req_act',{p_id:r.id,p_action:'link',p_note:null,p_wo:{wo_id:id}});toast('تم إسناد الأمر وربطه بالطلب');d.close();await load();render()}
+  catch(e){toast(sqlMsg(e.message),'error');b.disabled=false}}}
+let qrP=null;function qr(url){if(!qrP)qrP=new Promise(res=>{if(window.qrcode)return res();const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';s.onload=res;s.onerror=()=>{qrP=null;res()};document.head.append(s)});
+ return qrP.then(()=>{if(!window.qrcode)return '';const q=window.qrcode(0,'M');q.addData(url);q.make();return q.createSvgTag({cellSize:5,margin:2})}).catch(()=>'')}
+let LQ='',LF='';
+function drawLinks(pane){const L=(LINKS||[]).filter(x=>(!LQ||S(x.name).includes(LQ)||S(x.k).includes(LQ))&&(!LF||(LF==='none'?!x.token:LF==='has'?!!x.token:true)));const no=(LINKS||[]).filter(x=>!x.token);
+ pane.innerHTML=`<div class="fm171-per"><input data-lq placeholder="🔎 مدرسة" value="${esc(LQ)}"><select data-lf><option value="">الكل</option><option value="none" ${LF==='none'?'selected':''}>بدون رابط</option><option value="has" ${LF==='has'?'selected':''}>لها رابط</option></select>
+  ${canAct()&&no.length?`<button class="fm103-btn primary" type="button" data-mk>🔗 إنشاء روابط لـ ${num(no.length)} مدرسة</button>`:''}</div>
+ <div class="fm171-info">الرابط دائم وخاص بالمدرسة: يرسله المشرف أو المهندس لمدير المدرسة بواتساب (من «جوال مدير المدرسة» في قاعدة المدارس). «تجديد» يوقف الرابط القديم.</div>
+ <div class="fm103-card">${L.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>المدرسة</th><th>مدير المدرسة</th><th>الرابط</th><th>آخر فتح</th><th></th></tr></thead><tbody>${L.map(x=>`<tr><td><b>${esc(x.name)}</b><div class="fm125-src">${esc(x.k)} · ${esc(rn(x.region))}</div></td><td>${esc(x.principal||'—')}${x.phone?`<div class="fm125-src" dir="ltr">${esc(x.phone)}</div>`:''}</td>
+  <td>${x.token?'✅ مفعّل':'—'}</td><td>${x.last_used_at?esc(dshow(x.last_used_at)):x.token?'لم يُفتح بعد':'—'}</td>
+  <td>${x.token?`<button class="fm122-mini" data-wa="${esc(x.k)}">💬 واتساب</button><button class="fm122-mini" data-cp="${esc(x.k)}">📋 نسخ</button><button class="fm122-mini" data-qr="${esc(x.k)}">▦ QR</button>${canAct()?`<button class="fm122-mini" data-rn="${esc(x.k)}">🔁 تجديد</button><button class="fm122-mini" data-rv="${esc(x.k)}" style="color:#b91c1c">إيقاف</button>`:''}`:canAct()?`<button class="fm122-mini" data-one="${esc(x.k)}">🔗 إنشاء</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد مدارس في نطاقك (تأتي من قاعدة المدارس)</div>'}</div>`;
+ const X=k=>(LINKS||[]).find(x=>x.k===k);
+ pane.querySelector('[data-lq]').onchange=e=>{LQ=S(e.target.value);render()};pane.querySelector('[data-lf]').onchange=e=>{LF=e.target.value;render()};
+ const mk=async(keys,renew)=>{try{const n=await rpc('fm_school_link_make',{p_keys:keys,p_renew:!!renew});toast(renew?'تم تجديد الرابط — أرسله للمدرسة':`تم إنشاء ${num(n)} رابط`);await loadLinks();render()}catch(e){toast(sqlMsg(e.message),'error')}};
+ const m0=pane.querySelector('[data-mk]');if(m0)m0.onclick=()=>mk(no.map(x=>x.k));
+ pane.querySelectorAll('[data-one]').forEach(b=>b.onclick=()=>mk([b.dataset.one]));
+ pane.querySelectorAll('[data-rn]').forEach(b=>b.onclick=()=>{if(confirm('تجديد الرابط يوقف الرابط القديم. متابعة؟'))mk([b.dataset.rn],true)});
+ pane.querySelectorAll('[data-rv]').forEach(b=>b.onclick=async()=>{if(!confirm('إيقاف رابط هذه المدرسة؟'))return;try{await rpc('fm_school_link_revoke',{p_key:b.dataset.rv});await loadLinks();render()}catch(e){toast(sqlMsg(e.message),'error')}});
+ pane.querySelectorAll('[data-cp]').forEach(b=>b.onclick=async()=>{const u=linkOf(X(b.dataset.cp).token);try{await navigator.clipboard.writeText(u);toast('تم نسخ الرابط')}catch(e){prompt('انسخ الرابط:',u)}});
+ pane.querySelectorAll('[data-wa]').forEach(b=>b.onclick=()=>{const x=X(b.dataset.wa),u=linkOf(x.token);let ph=S(x.phone).replace(/[^\d]/g,'');if(/^05\d{8}$/.test(ph))ph='966'+ph.slice(1);
+  const t=`السلام عليكم ${x.principal?'أ. '+S(x.principal).replace(/^(أ\.?|الأستاذ)\s*/,''):'مدير المدرسة'}\nهذا رابط «بوابة المدرسة» الخاص بـ ${x.name} لدى RakizoraFM للصيانة:\n${u}\n\nمن خلاله يمكنكم رفع طلبات الصيانة مع الصور ومتابعة حالتها وتقييم التنفيذ، ومعرفة البلاغات والأعمال الجارية في المدرسة.\nالرابط خاص بمدرستكم فلا تشاركوه خارج الإدارة.`;
+  window.open(`https://wa.me/${ph}?text=${encodeURIComponent(t)}`,'_blank','noopener');if(!ph)toast('لا يوجد جوال لمدير المدرسة — اختر المحادثة يدوياً، وأضف الجوال في قاعدة المدارس','warning')});
+ pane.querySelectorAll('[data-qr]').forEach(b=>b.onclick=async()=>{const x=X(b.dataset.qr),u=linkOf(x.token),svg=await qr(u);const d=document.createElement('dialog');d.className='fm171-dlg';
+  d.innerHTML=`<div class="in" style="text-align:center"><h3>${esc(x.name)}</h3>${svg||'<div class="fm125-src">تعذّر تحميل مولّد QR</div>'}<div class="fm125-src" style="direction:ltr;word-break:break-all">${esc(u)}</div><div class="fm125-src">اطبعه وعلّقه في مكتب الإدارة</div></div><div class="ft"><button class="fm103-btn" type="button" onclick="this.closest('dialog').close()">إغلاق</button></div>`;
+  document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal()})}
+async function refresh(){const p=page();p.querySelector('.body').innerHTML='<div class="fm125-src">جارٍ التحميل…</div>';await load();if(TAB==='links')await loadLinks();render()}
+function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.getElementById('fm116-page')?.classList.remove('open');document.body.classList.remove('v2-mobile-nav');
+ try{window.v2SetActive?.(btn)}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;LINKS=null;refresh()}
+window.fmV175Req=()=>openPage(document.getElementById('v2-nav-fm175-req'));
+/* nav + a badge with the new requests (checked every 5 minutes) */
+let newN=0,lastChk=0;
+async function badge(){if(Date.now()-lastChk<3e5)return;lastChk=Date.now();try{const L=await rpc('fm_school_req_list',{p_days:30});newN=(L||[]).filter(r=>r.status==='new').length}catch(e){newN=0}}
+function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm175-req');if(!n)return;if(!cloudOn()||!canRead()){b0?.remove();return}
+ let b=b0;if(!b){b=document.createElement('button');b.id='v2-nav-fm175-req';b.type='button';b.className='v2-nav-btn';b.title='طلبات المدارس';b.innerHTML='<i class="fas fa-school-flag"></i><span class="v2-nav-label">🏫 طلبات المدارس <em class="fm175-n" style="font-style:normal;background:#dc2626;color:#fff;border-radius:999px;padding:0 7px;font-size:11px;margin-inline-start:4px"></em></span>';b.onclick=()=>openPage(b);n.appendChild(b)}
+ const e=b.querySelector('.fm175-n');if(e){e.textContent=newN?String(newN):'';e.style.display=newN?'':'none'}
+ badge().catch(()=>{})}
 setInterval(()=>{try{nav()}catch(e){}},3000);
 })();
 </script>
