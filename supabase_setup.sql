@@ -2056,11 +2056,25 @@ begin
   return n;
 end $$;
 
+-- the finished orders (done / closed) in a period with their building key (internal, used by fm_bld_costs)
+create or replace function public.fm_cost_orders(ks text[], ns text[], wide boolean, p_from date, p_to date)
+returns table(id uuid, code text, title text, type text, status text, school text, k text, at timestamptz, checklist jsonb)
+language sql stable security definer set search_path = public as $$
+  with s as (select * from unnest(ks, ns) as t(bkey, name))
+  select w.id, w.code, w.title, w.type, w.status, w.school,
+         coalesce(sb.bkey, sn.bkey, case when wide then public.fm_bkey(w.building_id, w.school) end),
+         coalesce(w.done_at, w.closed_at, w.updated_at), case when jsonb_typeof(w.checklist) = 'array' then w.checklist else '[]' end
+    from public.work_orders w
+    left join s sb on not public.fm_bkey(w.building_id, null) like 'N:%' and sb.bkey = public.fm_bkey(w.building_id, null)
+    left join lateral (select s2.bkey from s s2 where sb.bkey is null and s2.name = btrim(w.school) limit 1) sn on true
+   where w.status in ('done','closed') and coalesce(w.done_at, w.closed_at, w.updated_at)::date between p_from and p_to
+     and (sb.bkey is not null or sn.bkey is not null or wide) $$;
+revoke all on function public.fm_cost_orders(text[], text[], boolean, date, date) from public, anon, authenticated;
 -- the costs of the caller's buildings between two dates (one building with p_key):
--- {materials: [...], expenses: [...], budgets: [...]}; the platform sums them per period
+-- {materials: [...], repairs: [...], expenses: [...], budgets: [...]}; the platform sums them per period
 create or replace function public.fm_bld_costs(p_from date, p_to date, p_key text default null) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
-declare sc text := public.fm_cost_scope(); me uuid := auth.uid(); v_mat jsonb; v_exp jsonb; v_bud jsonb; ks text[]; ns text[]; rs text[];
+declare sc text := public.fm_cost_scope(); me uuid := auth.uid(); v_mat jsonb; v_rep jsonb; v_exp jsonb; v_bud jsonb; ks text[]; ns text[]; rs text[];
   ed boolean := public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager');
   wide boolean := sc = 'all' and p_key is null;
 begin
@@ -2068,22 +2082,32 @@ begin
   if p_from is null or p_to is null or p_to < p_from or p_to - p_from > 3700 then raise exception 'invalid period'; end if;
   select coalesce(array_agg(c.bkey),'{}'), coalesce(array_agg(c.name),'{}'), coalesce(array_agg(c.region),'{}') into ks, ns, rs
     from public.fm_cost_schools() c where p_key is null or c.bkey = p_key;
-  -- materials of finished orders; the building comes from building_id, else the school name
-  -- (everything that sees all buildings also gets the orders that match no building, keyed by their own number / name)
-  with s as (select * from unnest(ks, ns) as t(bkey, name))
+  -- the materials of the finished orders (fm_cost_orders: building by building_id, else the school name; whoever sees
+  -- all buildings also gets the orders that match no building, keyed by their own number / name)
   select coalesce(jsonb_agg(m order by m->>'at'), '[]'::jsonb) into v_mat from (
-    select jsonb_build_object('wo', w.id, 'code', w.code, 'title', w.title, 'type', w.type, 'status', w.status, 'school', w.school,
-        'k', coalesce(sb.bkey, sn.bkey, case when wide then public.fm_bkey(w.building_id, w.school) end),
-        'at', coalesce(w.done_at, w.closed_at, w.updated_at), 'item', it.e->>'t', 'g', it.e->>'g', 'n', mt.m->>'n', 'mid', mt.m->>'id',
+    select jsonb_build_object('wo', w.id, 'code', w.code, 'title', w.title, 'type', w.type, 'status', w.status, 'school', w.school, 'k', w.k,
+        'at', w.at, 'item', it.e->>'t', 'g', it.e->>'g', 'n', mt.m->>'n', 'mid', mt.m->>'id',
         'q', coalesce(nullif(mt.m->>'q','')::numeric, 0), 'u', mt.m->>'u', 'src', coalesce(mt.m->>'src','store'),
         'price', nullif(mt.m->>'price','')::numeric) m
-      from public.work_orders w
-      left join s sb on not public.fm_bkey(w.building_id, null) like 'N:%' and sb.bkey = public.fm_bkey(w.building_id, null)
-      left join lateral (select s2.bkey from s s2 where sb.bkey is null and s2.name = btrim(w.school) limit 1) sn on true
-      cross join lateral jsonb_array_elements(case when jsonb_typeof(w.checklist) = 'array' then w.checklist else '[]' end) it(e)
+      from public.fm_cost_orders(ks, ns, wide, p_from, p_to) w
+      cross join lateral jsonb_array_elements(w.checklist) it(e)
       cross join lateral jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) mt(m)
-     where w.status in ('done','closed') and coalesce(w.done_at, w.closed_at, w.updated_at)::date between p_from and p_to
-       and jsonb_typeof(mt.m) = 'object' and (sb.bkey is not null or sn.bkey is not null or wide)) z;
+     where jsonb_typeof(mt.m) = 'object') z;
+  -- the repairs: items marked «fixed» in any order, the done items of repair orders (a repair order without items counts
+  -- once by its title); cost = the item's materials (q × price)
+  select coalesce(jsonb_agg(r order by r->>'at'), '[]'::jsonb) into v_rep from (
+    select jsonb_build_object('wo', w.id, 'code', w.code, 'title', w.title, 'type', w.type, 'status', w.status, 'school', w.school, 'k', w.k, 'at', w.at,
+        't', it.e->>'t', 'g', it.e->>'g', 'res', it.e->>'res', 'note', it.e->>'note', 'opt', it.e->>'opt',
+        'cost', (select coalesce(sum(coalesce(nullif(m->>'q','')::numeric, 0) * coalesce(nullif(m->>'price','')::numeric, 0)), 0)
+                   from jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) m
+                  where jsonb_typeof(m) = 'object')) r
+      from public.fm_cost_orders(ks, ns, wide, p_from, p_to) w cross join lateral jsonb_array_elements(w.checklist) it(e)
+     where jsonb_typeof(it.e) = 'object' and (it.e->>'res' = 'fixed'
+        or (w.type = 'repair' and coalesce(it.e->>'res','') not in ('na','fix') and (it.e->>'res' is not null or coalesce(it.e->>'done','') = 'true')))
+    union all
+    select jsonb_build_object('wo', w.id, 'code', w.code, 'title', w.title, 'type', w.type, 'status', w.status, 'school', w.school, 'k', w.k, 'at', w.at,
+        't', w.title, 'g', null, 'res', null, 'note', null, 'opt', null, 'cost', 0)
+      from public.fm_cost_orders(ks, ns, wide, p_from, p_to) w where w.type = 'repair' and jsonb_array_length(w.checklist) = 0) z;
   -- expenses that run in the period (only the caller's buildings are listed; n = all buildings it covers)
   select coalesce(jsonb_agg(jsonb_build_object('id', e.id, 'title', e.title, 'category', e.category, 'vendor', e.vendor, 'invoice_no', e.invoice_no,
       'amount', e.amount, 'kind', e.kind, 'start_on', e.start_on, 'end_on', e.end_on, 'split', e.split, 'scope', e.scope, 'region', e.region,
@@ -2096,7 +2120,7 @@ begin
      and e.schools && ks;
   select coalesce(jsonb_agg(jsonb_build_object('k', b.bkey, 'year', b.year, 'amount', b.amount)), '[]'::jsonb) into v_bud
     from public.fm_budgets b where b.bkey = any(ks) and b.year between extract(year from p_from)::int and extract(year from p_to)::int;
-  return jsonb_build_object('scope', sc, 'materials', v_mat, 'expenses', v_exp, 'budgets', v_bud);
+  return jsonb_build_object('scope', sc, 'materials', v_mat, 'repairs', v_rep, 'expenses', v_exp, 'budgets', v_bud);
 end $$;
 revoke all on function public.fm_cost_can(text), public.fm_cost_scope(), public.fm_cost_schools(), public.fm_cost_me(), public.fm_expense_save(jsonb),
   public.fm_expense_cancel(uuid, text), public.fm_budget_set(int, jsonb), public.fm_bld_costs(date, date, text) from public, anon;
