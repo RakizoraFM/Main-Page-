@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V176">
+<meta name="fm-version" content="V177">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25593,10 +25593,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V176',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V177',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V177',d:'2026-10-21',t:'أداء المقاولين والغرامات',i:['صفحة «⚖️ أداء المقاولين والغرامات»: بطاقة شهرية لكل مقاول — البلاغات والالتزام بالـ SLA ومتوسط الإغلاق، وأوامر العمل المتأخرة والمعادة للتصحيح، ودرجة من 100','الغرامات حسب بنود يحددها مدير النظام: لكل بلاغ متجاوز حسب أولويته، ولكل يوم تأخير أمر، ولكل إرجاع، بحد أقصى نسبة من قيمة العقد الشهرية','خطاب غرامات PDF جاهز للتوقيع لكل مقاول، وExcel بالتفاصيل']},
  {v:'V176',d:'2026-10-21',t:'خطة الإحلال والصيانة الرأسمالية',i:['صفحة «🏗️ خطة الإحلال»: ترتيب كل مبنى × نظام (التكييف، الكهرباء، السباكة، الحريق والسلامة، المدني، المصاعد) بدرجة 0–100 من البلاغات المتكررة (12 شهراً) وعدد الإصلاحات وتكلفتها (24 شهراً) وتقييم FCI من «استلام موقع»','توصية لكل نظام: إحلال / صيانة رأسمالية / متابعة مع الأسباب','تقديرات تكلفة الإحلال لكل نظام حسب حجم المبنى، والميزانية التقديرية، وExcel «طلب الميزانية» للعميل']},
  {v:'V175',d:'2026-10-21',t:'بوابة مدير المدرسة',i:['رابط دائم وخاص لكل مدرسة (school.html) بدون حساب: يرفع مدير المدرسة طلب صيانة مع الصور ويحدد العاجل، ويتابع حالة طلباته ويقيّم التنفيذ، ويرى البلاغات والأعمال الجارية في مدرسته','صفحة «🏫 طلبات المدارس»: استلام الطلب، أو تحويله لأمر عمل (اعتماد الأمر ينجز الطلب تلقائياً)، أو الرد بالإنجاز أو الرفض — والرد يظهر للمدرسة','«🔗 روابط المدارس»: إنشاء الروابط لكل المدارس دفعة واحدة، وإرسالها لمدير المدرسة بواتساب أو نسخها أو طباعتها QR، وتجديدها أو إيقافها','تطبيق الميدان: طلبات المدرسة المفتوحة في بطاقة المدرسة مع الاستلام والإنجاز','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 22)']},
  {v:'V174',d:'2026-10-21',t:'جودة البيانات',i:['صفحة «🧹 جودة البيانات»: نسبة اكتمال قاعدة المدارس والمدارس الناقصة (الإحداثيات، نوع المبنى وحجمه، جوال المدير والحارس، المشرف والمهندس والمقاول، أرقام وبريد غير صحيحة، أرقام أو أسماء مكررة)','حسب المهندس: رسالة واتساب جاهزة بنواقص مدارسه وملف Excel بنفس القالب لتعبئته واستيراده','مدارس البلاغات غير الموجودة في القاعدة، وأسماء الكادر بدون حساب في المنصة']},
@@ -27071,7 +27072,7 @@ nav.v2-nav.fm123-searching .fm123-danger-wrap:not(:has(.v2-nav-btn:not(.fm123-hi
 const GROUPS=[
  {k:'sla',icon:'🚨',t:'الـ SLA والمتابعة اليومية',ids:['v2-nav-fm103-alerts','v2-nav-fm122-risk','v2-nav-sla','v2-nav-fm122-follow','v2-nav-fm135-work','v2-nav-fm118-breach','v2-nav-risk']},
  {k:'schools',icon:'🏫',t:'المدارس والأعطال',ids:['v2-nav-fm118-school','v2-nav-fm175-req','v2-nav-fm171-costs','v2-nav-fm176-capex','v2-nav-fm131-map','v2-nav-school-analysis','v2-nav-recurring','v2-nav-fm131-cost','v2-nav-table']},
- {k:'staff',icon:'👷',t:'الكادر والمقاولون',ids:['v2-nav-staff','v2-nav-staff-performance','v2-nav-eng','v2-nav-fm124-visits','v2-nav-fm124-load','v2-nav-contractors','v2-nav-fm122-score']},
+ {k:'staff',icon:'👷',t:'الكادر والمقاولون',ids:['v2-nav-staff','v2-nav-staff-performance','v2-nav-eng','v2-nav-fm124-visits','v2-nav-fm124-load','v2-nav-contractors','v2-nav-fm177-pen','v2-nav-fm122-score']},
  {k:'analysis',icon:'📊',t:'التحليل والمقارنات',ids:['v2-nav-charts','v2-nav-period','v2-nav-fm103-periods','v2-nav-fm131-season','v2-nav-compare','v2-nav-pivot','v2-nav-saved']},
  {k:'reports',icon:'📄',t:'التقارير',ids:['v2-nav-fm127-today','v2-nav-fm125-send','v2-nav-fm126-log','v2-nav-fm118-weekly','v2-nav-report','v2-nav-fm123-weekfu','v2-nav-fm158-qa']},
  {k:'data',icon:'🗂️',t:'البيانات والإعداد',ids:['v2-nav-fm173-stock','v2-nav-fm174-dq','v2-nav-fm168-novaro','v2-nav-school-db','v2-nav-fm125-contacts','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-quality','v2-nav-refresh']},
@@ -31821,6 +31822,7 @@ const MANUAL=[
 {g:'المدارس والأعطال',icon:'🏫',items:[
  {id:'v2-nav-fm118-school',t:'ملف المدرسة (بروفايل المبنى)',where:'المدارس والأعطال ← «ملف المدرسة»، أو بالضغط على مبنى في «💰 تكاليف المباني»',what:'بروفايل لكل مبنى في قاعدة المدارس (حتى بدون بلاغات): بيانات المبنى (النوع والحجم والتشغيل والكادر والجوالات والموقع) وتبويبات: «📋 البلاغات» (الشهرية والأعطال المتكررة والسجل)، «💰 المصاريف وقطع الغيار» لفترة تختارها، و«🛠️ أوامر العمل».',how:['ابحث عن المدرسة بالاسم أو الرقم.','«💰 المصاريف وقطع الغيار»: اختر الفترة (هذا الشهر / الربع / السنة / مخصصة) لترى الإجمالي (مخزن · مشتريات · مصروفات)، والتكلفة حسب البند وشهرياً، و«🔧 الإصلاحات المنفذة» (البنود المُصلَحة في أوامر العمل وأوامر الإصلاح وتكلفة موادها، وفواتير الإصلاحات) حسب النظام، وأكثر القطع صرفاً، وسجل التكاليف.','«➕ مصروف / فاتورة لهذا المبنى» و«🎯 ميزانية المبنى» حسب صلاحيتك، و«⬇️ Excel» لسجل التكاليف.','«🛠️ أوامر العمل»: كل أوامر المبنى في نطاقك؛ اضغط الأمر لفتحه.'],who:'المديرون والمهندس (التكاليف حسب صلاحيات التكاليف)',tips:['المواد تُحسب من أوامر العمل المنجزة (بانتظار الاعتماد أو مغلقة) بسعر الصنف وقت الصرف؛ الصنف بدون سعر لا يُحسب ويظهر تنبيه.','فاتورة إصلاح من مقاول تُسجَّل بتصنيف «إصلاحات» لتظهر مع الإصلاحات.','المقارنة بالمباني المشابهة تظهر عند تعبئة «نوع المبنى» و«حجم المبنى» ووجود 3 مبانٍ مشابهة أو أكثر.'],v:'V171'},
  {id:'v2-nav-fm176-capex',t:'خطة الإحلال والصيانة الرأسمالية',where:'المدارس والأعطال ← «🏗️ خطة الإحلال»',what:'ترتيب الأنظمة في كل مبنى بدرجة 0–100 تجمع البلاغات خلال 12 شهراً وعدد الإصلاحات وتكلفتها خلال 24 شهراً وتقييم FCI، مع التوصية (إحلال / صيانة رأسمالية / متابعة) والأسباب والتكلفة التقديرية.',how:['فلتر بالمنطقة أو النظام أو التوصية، وانقر المبنى لفتح ملفه.','«💵 تقديرات التكلفة»: اكتب تكلفة إحلال كل نظام لمبنى وسط (الكبير × 1.3 والصغير × 0.7) لتظهر الميزانية التقديرية.','«⬇️ Excel طلب الميزانية»: ملف بالأنظمة المرشحة وأسبابها وتقديرها وملخص لكل نظام لرفعه للعميل.'],who:'المديرون والمهندس',tips:['تقييم FCI بالمستوى 4 (الأسوأ) يجعل التوصية «إحلال» مباشرة.','بدون صلاحية التكاليف يُحسب بالبلاغات وتقييم FCI فقط.'],v:'V176'},
+ {id:'v2-nav-fm177-pen',t:'أداء المقاولين والغرامات',where:'الكادر والمقاولون ← «⚖️ أداء المقاولين والغرامات»',what:'بطاقة شهرية لكل مقاول (البلاغات والالتزام بالـ SLA ومتوسط الإغلاق وأوامر العمل المتأخرة والمعادة) مع حساب الغرامات وفق بنود العقد وخطاب PDF.',how:['اختر الشهر من أعلى الصفحة.','«⚙️ بنود الغرامات والعقود» (مدير النظام): غرامة البلاغ المتجاوز لكل أولوية، ولكل يوم تأخير أمر، ولكل إرجاع، والحد الأقصى كنسبة من قيمة العقد الشهرية لكل مقاول.','«📄 خطاب» يفتح إشعار الغرامات للمقاول جاهزاً للطباعة والتوقيع، و«⬇️ Excel» بالبطاقة والتفاصيل.'],who:'مدير النظام والمديرون والمحاسب',tips:['المقاول يُعرف من بيانات البلاغ / قاعدة المدارس، ومن اسم المُسند إليه في أوامر العمل.','البلاغ يُحسب في شهر إنشائه.'],v:'V177'},
  {id:'v2-nav-fm175-req',t:'طلبات المدارس (بوابة المدرسة)',where:'المدارس والأعطال ← «🏫 طلبات المدارس»',what:'طلبات مديري المدارس من «بوابة المدرسة» (رابط خاص لكل مدرسة بدون حساب)، وروابط البوابة لكل مدرسة.',how:['«🔗 روابط المدارس» ← «إنشاء روابط» ثم «💬 واتساب» لإرسال الرابط لمدير المدرسة (من جوال مدير المدرسة في قاعدة المدارس)، أو «📋 نسخ» أو «▦ QR» للطباعة.','في «📨 الطلبات»: «👍 استلام» للطلب الجديد، أو «🛠️ أمر عمل» لإسناده لأحد فريقك وربطه بالطلب (اعتماد الأمر يجعل الطلب منجزاً تلقائياً)، أو «✅ تم» مع الرد، أو «رفض» مع السبب.','يرى مدير المدرسة الحالة والرد ويقيّم التنفيذ بعد الإنجاز.'],who:'المديرون والمهندس والمشرف لمدارسهم',tips:['«🔁 تجديد» يوقف الرابط القديم إذا انتشر خارج الإدارة.','الرقم بجانب الصفحة في القائمة = الطلبات الجديدة.'],v:'V175'},
  {id:'v2-nav-fm174-dq',t:'جودة البيانات',where:'البيانات والإعداد ← «🧹 جودة البيانات»',what:'فحص قاعدة المدارس: نسبة الاكتمال، والنواقص حسب النوع وحسب المهندس، ومدارس البلاغات غير الموجودة في القاعدة، وأسماء الكادر بدون حساب.',how:['اختر المنطقة أو المهندس أو نوع النقص، وانقر النقص لعرض مدارسه أو المدرسة لفتح ملفها.','«💬 واتساب» بجانب المهندس يفتح رسالة جاهزة بنواقص مدارسه، و«⬇️ ملف» ينزّل مدارسه الناقصة بنفس قالب قاعدة المدارس مع عمود «البيانات الناقصة».','بعد أن يملأ المهندس الملف استورده من «قاعدة بيانات المدارس» ← استيراد (الاستيراد لا يمسح ما لم يُكتب).'],who:'مدير النظام والمديرون (والمهندس لمدارسه)',tips:['الخريطة والتكاليف والمقارنات والإسناد وتطبيق الميدان كلها تعتمد على اكتمال هذه البيانات.'],v:'V174'},
  {id:'v2-nav-fm173-stock',t:'المخزون وقطع الغيار',where:'البيانات والإعداد ← «📦 المخزون»',what:'أرصدة المستودعات لكل صنف معتمد (أصناف المواد) مع القيمة وحد الطلب والتغطية بالأيام، وسجل الحركات، والاستهلاك الشهري، وطلب شراء مقترح. مواد أوامر العمل (من المخزن) تُخصم تلقائياً عند اعتماد الأمر من المستودع الافتراضي لمنطقته.',how:['«🏬 المستودعات»: أنشئ مستودعاً لكل منطقة وحدد الافتراضي.','«⚖️ جرد»: اكتب الرصيد المعدود لكل صنف (أو نزّل ورقة الجرد واملأها وارفعها) — يُسجَّل الفرق فقط.','«📥 توريد»: المورد ورقم الفاتورة والأصناف بالكمية والسعر (ويمكن تحديث سعر الصنف).','«🔁 تحويل» بين مستودعين، واختر مستودعاً لتعديل «حد الطلب» من تبويب الأرصدة.','«🛒 طلب شراء مقترح» يقترح كميات الأصناف تحت حد الطلب، و«⬇️ Excel» يصدّر الأرصدة والطلب والحركات.'],who:'يدير المخزون: مدير النظام ومدير المشروع ومدير العمليات، ومدير المنطقة ومهندس المنطقة لمستودعات مناطقهم؛ والمديرون والمحاسب يطّلعون',tips:['الرصيد قد يصبح بالسالب إذا اعتُمد أمر بمواد أكثر من الموجود — يظهر «بالسالب» حتى يُسجَّل توريد أو جرد.','المشتريات المباشرة (شراء) لا تُخصم من المخزن.'],v:'V173'},
@@ -33182,6 +33184,118 @@ window.fmV176Capex=()=>openPage(document.getElementById('v2-nav-fm176-capex'));
 const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;const p=st.profile;return !!p&&['admin','manager','staff','viewer','engineer'].includes(p.role)};
 function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm176-capex');if(!n)return;if(!allowed()){b0?.remove();return}if(b0)return;
  const b=document.createElement('button');b.id='v2-nav-fm176-capex';b.type='button';b.className='v2-nav-btn';b.title='خطة الإحلال';b.innerHTML='<i class="fas fa-helmet-safety"></i><span class="v2-nav-label">🏗️ خطة الإحلال</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
+setInterval(()=>{try{nav()}catch(e){}},3000);
+})();
+</script>
+<script id="fm-v177-penalties">(function(){
+'use strict';
+/* V177: «⚖️ أداء المقاولين والغرامات» (#v2-nav-fm177-pen). Monthly scorecard per contractor: tickets created in the month
+   (contractor from getTicketStaff), SLA breaches (getTicketSLAInfo) and hours over the limit, average closing time, work
+   orders assigned to him (by assignee name) that were late (days after due_at) or returned for correction (events).
+   Penalties from fm_settings.penalties (system admin): per breached ticket by priority, per day of a late order, per
+   returned order, capped at a % of the contractor's monthly contract value. PDF letter per contractor and Excel. */
+const C=window.FMCloud;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const GREG='ar-SA-u-ca-gregory';
+const num=(v,d)=>(+v||0).toLocaleString('en-US',{maximumFractionDigits:d??0});
+const money=v=>num(v,2)+' ر.س';
+const nk=v=>S(v).normalize('NFKC').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/[ىئ]/g,'ي').replace(/[ً-ٰٟ]/g,'').replace(/^(مؤسسه|شركه)\s+/,'').replace(/[^\dA-Za-z؀-ۿ]+/g,'').toLowerCase();
+const cloudOn=()=>!!(C&&C.state&&C.state.on&&C.state.profile);
+const isAdmin=()=>!cloudOn()||C.state.profile.role==='admin';
+const DEF={breach:{'طارئ':500,'عالي':300,'متوسط':150},wo_day:100,wo_return:100,cap_pct:10,contracts:{}};
+let P=JSON.parse(JSON.stringify(DEF)),MON='',DATA=null,busy=false;
+const LK='fm177_penalties';
+async function loadP(){try{const l=JSON.parse(localStorage.getItem(LK)||'null');if(l)P=Object.assign(JSON.parse(JSON.stringify(DEF)),l)}catch(e){}
+ if(cloudOn())try{const db=await C.engClient();const r=await db.from('fm_settings').select('value').eq('key','penalties').maybeSingle();if(!r.error&&r.data&&r.data.value)P=Object.assign(JSON.parse(JSON.stringify(DEF)),r.data.value)}catch(e){}}
+async function saveP(v){P=v;try{localStorage.setItem(LK,JSON.stringify(v))}catch(e){}
+ if(cloudOn()&&C.state.profile.role==='admin'){const db=await C.engClient();const r=await db.from('fm_settings').upsert([{key:'penalties',value:v}],{onConflict:'key'});if(r.error)throw Error(r.error.message)}}
+const monthKey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+function monRange(m){const [y,mo]=m.split('-').map(Number);return [new Date(y,mo-1,1),new Date(y,mo,1)]}
+const prioOf=v=>{let p=S(v);try{if(window.normalizePriority)p=S(normalizePriority(v))}catch(e){}return /طار|عاجل|urgent|critical/i.test(p)?'طارئ':/عال|high/i.test(p)?'عالي':'متوسط'};
+async function collect(){const [a,b]=monRange(MON),cm=(window.state&&state.columnsMap)||{};const by=new Map();
+ const get=n=>{const k=nk(n)||'—';let o=by.get(k);if(!o)by.set(k,o={k,n:S(n)||'— بدون مقاول',tk:0,closed:0,closeH:0,br:[],wos:0,late:[],ret:[]});return o};
+ const rowsAll=[];try{const D=window.FM41&&FM41.datasets;if(D)for(const k of Object.keys(D))for(const r of (D[k].rows||[]))rowsAll.push(r)}catch(e){}if(!rowsAll.length)(window.state&&state.rawTickets||[]).forEach(r=>rowsAll.push(r));
+ const seen=new Set();
+ for(const r of rowsAll){let d=null;try{d=parseDateTime(r[cm.date])}catch(e){}if(!d||isNaN(d)||d<a||d>=b)continue;const id=S(r[cm.ticketId]);if(id&&seen.has(id))continue;if(id)seen.add(id);
+  let con='';try{con=S(window.fmAuthoritativeSchoolRecord?.(r)?.contractor)}catch(e){}if(!con)con=S(r['اسم المقاول']||r['المقاول']||r['Contractor']);if(!con)try{con=S(window.fmV81SchoolMeta?.(r)?.contractor)}catch(e){}if(!con)continue;const o=get(con);o.tk++;
+  let st='';try{st=normalizeStatus(r[cm.status])}catch(e){}if(/ملغ/.test(st))continue;
+  if(/تم حله|مغلق/.test(st)&&cm.resolvedDate){try{const z=parseDateTime(r[cm.resolvedDate]);if(z&&z>=d){o.closed++;o.closeH+=(z-d)/36e5}}catch(e){}}
+  let s=null;try{s=getTicketSLAInfo(r)}catch(e){}if(s&&s.isBreached){const pr=prioOf(r[cm.priority]);o.br.push({id,school:S(r[cm.school]),pr,over:Math.max(0,Math.round((+s.elapsedHours||0)-(+s.limitHours||0))),fee:+((P.breach||{})[pr]||0)})}}
+ let woErr='';if(cloudOn())try{const W=(await C.api.woList()).filter(w=>w.assignee_name&&w.due_at&&w.status!=='cancelled');const evN=[];
+  for(const w of W){const due=new Date(w.due_at);if(isNaN(due)||due<a||due>=b)continue;const o=get(w.assignee_name);o.wos++;const end=w.done_at?new Date(w.done_at):(['closed','done'].includes(w.status)?new Date(w.updated_at):new Date());
+   const days=Math.ceil((end-due)/864e5);if(days>0)o.late.push({code:w.code,title:w.title,school:w.school,days,fee:days*(+P.wo_day||0)});evN.push([w,o])}
+  for(const [w,o] of evN.slice(0,300)){try{const E=await C.api.woEvents(w.id);const n=(E||[]).filter(e=>e.type==='return').length;if(n)o.ret.push({code:w.code,title:w.title,school:w.school,n,fee:n*(+P.wo_return||0)})}catch(e){}}}catch(e){woErr=e.message}
+ const L=[...by.values()].filter(o=>o.tk||o.wos);
+ for(const o of L){const c=(P.contracts||{})[o.k]||{};o.monthly=+c.monthly||0;o.pT=o.br.reduce((t,x)=>t+x.fee,0);o.pW=o.late.reduce((t,x)=>t+x.fee,0);o.pR=o.ret.reduce((t,x)=>t+x.fee,0);
+  o.gross=o.pT+o.pW+o.pR;o.cap=o.monthly&&+P.cap_pct?o.monthly*(+P.cap_pct)/100:0;o.pen=o.cap?Math.min(o.gross,o.cap):o.gross;o.capped=o.cap&&o.gross>o.cap;
+  o.sla=o.tk?100-o.br.length*100/o.tk:null;o.avgH=o.closed?o.closeH/o.closed:null;
+  o.score=Math.round(Math.max(0,(o.sla??100)*.6+(o.wos?100-o.late.length*100/o.wos:100)*.25+(o.wos?100-Math.min(100,o.ret.length*100/o.wos):100)*.15))}
+ return {L:L.sort((x,y)=>y.pen-x.pen||x.score-y.score),woErr}}
+
+function page(){let p=document.getElementById('fm177-page');if(!p){p=document.createElement('section');p.id='fm177-page';p.className='fm103-page';
+ p.innerHTML=`<div class="fm103-wrap"><div class="fm103-head"><div><h2>⚖️ أداء المقاولين والغرامات</h2><p class="sub">بطاقة شهرية لكل مقاول: الالتزام بالـ SLA وأوامر العمل، والغرامات حسب بنود العقد</p></div><div class="fm103-actions"><span class="extra"></span><button class="fm103-btn" type="button" onclick="fmV103ClosePages?.()">إغلاق</button></div></div><div class="body"></div></div>`;document.body.appendChild(p)}return p}
+function render(){const p=page(),b=p.querySelector('.body'),x=p.querySelector('.extra');if(!DATA)return;const L=DATA.L;
+ const ms=[];const d=new Date();for(let i=0;i<12;i++){const m=new Date(d.getFullYear(),d.getMonth()-i,1);ms.push([monthKey(m),m.toLocaleDateString(GREG,{month:'long',year:'numeric'})])}
+ x.innerHTML=`<select data-mon class="fm103-btn">${ms.map(([k,l])=>`<option value="${k}" ${MON===k?'selected':''}>${l}</option>`).join('')}</select><button class="fm103-btn" type="button" data-set>⚙️ بنود الغرامات والعقود</button><button class="fm103-btn primary" type="button" data-xl>⬇️ Excel</button>`;
+ x.querySelector('[data-mon]').onchange=e=>{MON=e.target.value;run(true)};x.querySelector('[data-set]').onclick=setDlg;x.querySelector('[data-xl]').onclick=excel;
+ const tot=L.reduce((t,o)=>t+o.pen,0);
+ b.innerHTML=`${DATA.woErr?`<div class="fm171-warn">تعذّر قراءة أوامر العمل: ${esc(DATA.woErr)}</div>`:''}
+ <div class="fm103-kpis"><div class="fm103-kpi"><span>المقاولون</span><b>${num(L.length)}</b><small>لهم بلاغات أو أوامر في الشهر</small></div>
+  <div class="fm103-kpi"><span>إجمالي الغرامات</span><b style="color:${tot?'#b91c1c':'#15803d'}">${money(tot)}</b><small>بعد تطبيق السقف</small></div>
+  <div class="fm103-kpi"><span>بلاغات متجاوزة الـ SLA</span><b>${num(L.reduce((t,o)=>t+o.br.length,0))}</b><small>من ${num(L.reduce((t,o)=>t+o.tk,0))} بلاغ</small></div>
+  <div class="fm103-kpi"><span>أوامر متأخرة / معادة</span><b>${num(L.reduce((t,o)=>t+o.late.length,0))} / ${num(L.reduce((t,o)=>t+o.ret.length,0))}</b><small>من ${num(L.reduce((t,o)=>t+o.wos,0))} أمر</small></div></div>
+ <div class="fm103-card"><h3>بطاقة المقاولين</h3><div class="q">الدرجة: الالتزام بالـ SLA 60% · أوامر في موعدها 25% · بدون إرجاع 15% • البنود: ${esc(Object.entries(P.breach||{}).map(([k,v])=>k+' '+num(v)).join(' / '))} ر.س لكل بلاغ متجاوز، ${num(P.wo_day)} ر.س لكل يوم تأخير أمر، ${num(P.wo_return)} ر.س لكل إرجاع${+P.cap_pct?`، بحد أقصى ${num(P.cap_pct)}% من قيمة العقد الشهرية`:''}</div>
+ ${L.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>المقاول</th><th>الدرجة</th><th>البلاغات</th><th>الالتزام بالـ SLA</th><th>متوسط الإغلاق</th><th>الأوامر</th><th>متأخرة</th><th>معادة</th><th>غرامة البلاغات</th><th>غرامة الأوامر</th><th>الإجمالي</th><th></th></tr></thead><tbody>
+ ${L.map((o,i)=>`<tr><td><b>${esc(o.n)}</b>${o.monthly?`<div class="fm125-src">العقد ${money(o.monthly)} / شهر</div>`:''}</td><td><b style="color:${o.score>=85?'#15803d':o.score>=70?'#c2410c':'#b91c1c'}">${o.score}</b></td><td>${num(o.tk)}</td><td>${o.sla==null?'—':num(o.sla,1)+'%'}<div class="fm125-src">${num(o.br.length)} متجاوز</div></td><td>${o.avgH==null?'—':num(o.avgH,1)+' س'}</td>
+  <td>${num(o.wos)}</td><td>${num(o.late.length)}</td><td>${num(o.ret.length)}</td><td>${money(o.pT)}</td><td>${money(o.pW+o.pR)}</td><td><b style="color:${o.pen?'#b91c1c':'#15803d'}">${money(o.pen)}</b>${o.capped?`<div class="fm125-src">بلغ السقف (${money(o.gross)} قبل السقف)</div>`:''}</td>
+  <td><button class="fm122-mini" data-pdf="${i}">📄 خطاب</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد بلاغات بمقاولين في هذا الشهر — تأكد من رفع البلاغات وربط المقاول في قاعدة المدارس</div>'}</div>`;
+ b.querySelectorAll('[data-pdf]').forEach(btn=>btn.onclick=()=>letter(L[+btn.dataset.pdf]))}
+function letter(o){const [a]=monRange(MON),ml=a.toLocaleDateString(GREG,{month:'long',year:'numeric'}),w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة','warning');return}
+ const T=(h,rows)=>rows.length?`<table><thead><tr>${h.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`:'<p class="m">لا يوجد</p>';
+ w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>خطاب غرامات — ${esc(o.n)} — ${esc(ml)}</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet"><style>
+ body{font-family:Cairo,Tahoma,sans-serif;color:#0f172a;margin:28px 34px;font-size:13px}h1{font-size:20px;margin:0}h2{font-size:15px;margin:18px 0 6px;border-bottom:2px solid #0f172a;padding-bottom:4px}
+ .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px double #0f172a;padding-bottom:10px;margin-bottom:14px}.m{color:#64748b}
+ table{width:100%;border-collapse:collapse;margin-top:4px}th,td{border:1px solid #cbd5e1;padding:5px 7px;text-align:right}th{background:#f1f5f9}
+ .tot td{font-weight:900;background:#fef2f2}.sg{display:flex;justify-content:space-between;margin-top:46px}.sg div{width:30%;text-align:center;border-top:1px solid #0f172a;padding-top:6px}
+ @media print{button{display:none}}</style></head><body>
+ <div class="hd"><div><h1>إشعار غرامات تأخير — ${esc(ml)}</h1><div class="m">RakizoraFM · إدارة المرافق — Shalfa International</div></div><div class="m">التاريخ: ${new Date().toLocaleDateString(GREG)}</div></div>
+ <p>السادة / <b>${esc(o.n)}</b> المحترمين،<br>نحيطكم علماً بنتائج أدائكم لشهر ${esc(ml)} وما ترتب عليها من غرامات وفق بنود العقد:</p>
+ <table><tbody><tr><th>البلاغات</th><td>${num(o.tk)}</td><th>الالتزام بالـ SLA</th><td>${o.sla==null?'—':num(o.sla,1)+'%'}</td></tr><tr><th>أوامر العمل</th><td>${num(o.wos)}</td><th>متأخرة / معادة</th><td>${num(o.late.length)} / ${num(o.ret.length)}</td></tr><tr><th>متوسط زمن الإغلاق</th><td>${o.avgH==null?'—':num(o.avgH,1)+' ساعة'}</td><th>الدرجة</th><td>${o.score} / 100</td></tr></tbody></table>
+ <h2>1) بلاغات تجاوزت المهلة (${num(o.br.length)})</h2>${T(['#','رقم البلاغ','المدرسة','الأولوية','ساعات التجاوز','الغرامة'],o.br.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.id)}</td><td>${esc(x.school)}</td><td>${esc(x.pr)}</td><td>${num(x.over)}</td><td>${money(x.fee)}</td></tr>`))}
+ <h2>2) أوامر عمل متأخرة (${num(o.late.length)})</h2>${T(['#','الأمر','المدرسة','أيام التأخير','الغرامة'],o.late.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.code)} — ${esc(x.title)}</td><td>${esc(x.school||'')}</td><td>${num(x.days)}</td><td>${money(x.fee)}</td></tr>`))}
+ <h2>3) أوامر أُعيدت للتصحيح (${num(o.ret.length)})</h2>${T(['#','الأمر','المدرسة','مرات الإرجاع','الغرامة'],o.ret.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.code)} — ${esc(x.title)}</td><td>${esc(x.school||'')}</td><td>${num(x.n)}</td><td>${money(x.fee)}</td></tr>`))}
+ <h2>الإجمالي</h2><table><tbody><tr><td>غرامات البلاغات</td><td>${money(o.pT)}</td></tr><tr><td>غرامات تأخير الأوامر</td><td>${money(o.pW)}</td></tr><tr><td>غرامات الإرجاع</td><td>${money(o.pR)}</td></tr>${o.cap?`<tr><td>السقف (${num(P.cap_pct)}% من ${money(o.monthly)})</td><td>${money(o.cap)}</td></tr>`:''}<tr class="tot"><td>الغرامة المستحقة</td><td>${money(o.pen)}</td></tr></tbody></table>
+ <p class="m">يحق لكم الاعتراض كتابياً خلال 5 أيام عمل من تاريخ هذا الإشعار مع المستندات المؤيدة.</p>
+ <div class="sg"><div>مدير المشروع</div><div>مدير العمليات</div><div>المقاول — للعلم والاستلام</div></div>
+ <script>setTimeout(()=>print(),600)<\/script></body></html>`);w.document.close()}
+function setDlg(){const ad=isAdmin(),d=document.createElement('dialog');d.className='fm171-dlg';const names=(DATA&&DATA.L||[]).filter(o=>o.k!=='—');
+ d.innerHTML=`<div class="in"><h3>⚙️ بنود الغرامات والعقود</h3><div class="fm125-src">${ad?'تُحفظ للجميع.':'للاطلاع — يعدّلها مدير النظام.'}</div>
+  <b>غرامة البلاغ المتجاوز للمهلة (ر.س)</b><div class="fm171-two">${['طارئ','عالي','متوسط'].map(k=>`<label class="f">${k}<input data-b="${k}" inputmode="decimal" value="${esc((P.breach||{})[k]??'')}" ${ad?'':'disabled'}></label>`).join('')}</div>
+  <div class="fm171-two"><label class="f">لكل يوم تأخير في أمر عمل<input data-k="wo_day" inputmode="decimal" value="${esc(P.wo_day)}" ${ad?'':'disabled'}></label><label class="f">لكل إرجاع أمر للتصحيح<input data-k="wo_return" inputmode="decimal" value="${esc(P.wo_return)}" ${ad?'':'disabled'}></label></div>
+  <label class="f">الحد الأقصى للغرامة (% من قيمة العقد الشهرية — 0 بدون حد)<input data-k="cap_pct" inputmode="decimal" value="${esc(P.cap_pct)}" ${ad?'':'disabled'}></label>
+  <b>قيمة العقد الشهرية لكل مقاول (ر.س)</b><div class="fm171-pick" style="max-height:220px">${names.length?names.map(o=>`<label style="display:grid;grid-template-columns:1fr 140px;gap:8px"><span>${esc(o.n)}</span><input data-c="${esc(o.k)}" inputmode="decimal" value="${esc(((P.contracts||{})[o.k]||{}).monthly||'')}" ${ad?'':'disabled'}></label>`).join(''):'<small>لا يوجد مقاولون في الشهر المختار</small>'}</div></div>
+  <div class="ft">${ad?'<button class="fm103-btn primary" type="button" data-s>💾 حفظ</button>':''}<button class="fm103-btn" type="button" data-x>إغلاق</button></div>`;
+ document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();d.querySelector('[data-x]').onclick=()=>d.close();
+ const n=v=>{const t=S(v).replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/,/g,'');return t===''?0:+t};
+ const sb=d.querySelector('[data-s]');if(sb)sb.onclick=async()=>{const v={breach:{},wo_day:n(d.querySelector('[data-k=wo_day]').value),wo_return:n(d.querySelector('[data-k=wo_return]').value),cap_pct:n(d.querySelector('[data-k=cap_pct]').value),contracts:Object.assign({},P.contracts||{})};
+  d.querySelectorAll('[data-b]').forEach(i=>v.breach[i.dataset.b]=n(i.value));d.querySelectorAll('[data-c]').forEach(i=>{const m=n(i.value);if(m)v.contracts[i.dataset.c]={monthly:m};else delete v.contracts[i.dataset.c]});
+  if([v.wo_day,v.wo_return,v.cap_pct,...Object.values(v.breach)].some(x=>!(x>=0))||v.cap_pct>100){toast('قيمة غير صحيحة','warning');return}
+  try{await saveP(v);toast('تم حفظ البنود');d.close();run(true)}catch(e){toast(e.message,'error')}}}
+async function excel(){try{try{await window.fmEnsureLibraries?.()}catch(e){}if(typeof XLSX==='undefined')throw Error('مكتبة Excel غير متاحة');const L=DATA.L;
+ const sh=[['البطاقة',L.map(o=>({'المقاول':o.n,'الدرجة':o.score,'البلاغات':o.tk,'متجاوزة':o.br.length,'الالتزام %':o.sla==null?'':+o.sla.toFixed(1),'متوسط الإغلاق (س)':o.avgH==null?'':+o.avgH.toFixed(1),'الأوامر':o.wos,'متأخرة':o.late.length,'معادة':o.ret.length,'قيمة العقد':o.monthly||'','غرامة البلاغات':o.pT,'غرامة التأخير':o.pW,'غرامة الإرجاع':o.pR,'قبل السقف':o.gross,'الغرامة المستحقة':o.pen}))],
+  ['البلاغات المتجاوزة',L.flatMap(o=>o.br.map(x=>({'المقاول':o.n,'رقم البلاغ':x.id,'المدرسة':x.school,'الأولوية':x.pr,'ساعات التجاوز':x.over,'الغرامة':x.fee})))],
+  ['الأوامر المتأخرة والمعادة',L.flatMap(o=>o.late.map(x=>({'المقاول':o.n,'الأمر':x.code,'العنوان':x.title,'المدرسة':x.school||'','البند':'تأخير','العدد':x.days,'الغرامة':x.fee})).concat(o.ret.map(x=>({'المقاول':o.n,'الأمر':x.code,'العنوان':x.title,'المدرسة':x.school||'','البند':'إرجاع','العدد':x.n,'الغرامة':x.fee}))))]];
+ const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};for(const [nm,r] of sh){const ws=XLSX.utils.json_to_sheet(r.length?r:[{'—':'لا يوجد'}]);ws['!views']=[{RTL:true}];ws['!cols']=Object.keys(r[0]||{}).map(k=>({wch:Math.max(10,k.length+6)}));XLSX.utils.book_append_sheet(wb,ws,nm)}
+ XLSX.writeFile(wb,'أداء المقاولين والغرامات '+MON+'.xlsx');toast('تم التصدير')}catch(e){toast('تعذر التصدير: '+e.message,'error')}}
+async function run(force){if(busy)return;busy=true;const p=page();p.querySelector('.body').innerHTML='<div class="fm125-src">جارٍ الحساب…</div>';
+ try{if(!MON){const r=window.state&&state.detectedMaxDate?new Date(state.detectedMaxDate):new Date();MON=monthKey(r)}await loadP();DATA=await collect();render()}catch(e){p.querySelector('.body').innerHTML=`<div class="fm103-card fm103-empty">${esc(e.message)}</div>`}busy=false}
+function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.getElementById('fm116-page')?.classList.remove('open');document.body.classList.remove('v2-mobile-nav');
+ try{window.v2SetActive?.(btn)}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;run(true)}
+window.fmV177Pen=()=>openPage(document.getElementById('v2-nav-fm177-pen'));
+const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;const p=st.profile;return !!p&&['admin','manager','staff','viewer'].includes(p.role)};
+function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm177-pen');if(!n)return;if(!allowed()){b0?.remove();return}if(b0)return;
+ const b=document.createElement('button');b.id='v2-nav-fm177-pen';b.type='button';b.className='v2-nav-btn';b.title='أداء المقاولين والغرامات';b.innerHTML='<i class="fas fa-scale-balanced"></i><span class="v2-nav-label">⚖️ أداء المقاولين والغرامات</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
 setInterval(()=>{try{nav()}catch(e){}},3000);
 })();
 </script>
