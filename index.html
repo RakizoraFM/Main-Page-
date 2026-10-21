@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V173">
+<meta name="fm-version" content="V174">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25593,10 +25593,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V173',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V174',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V174',d:'2026-10-21',t:'جودة البيانات',i:['صفحة «🧹 جودة البيانات»: نسبة اكتمال قاعدة المدارس والمدارس الناقصة (الإحداثيات، نوع المبنى وحجمه، جوال المدير والحارس، المشرف والمهندس والمقاول، أرقام وبريد غير صحيحة، أرقام أو أسماء مكررة)','حسب المهندس: رسالة واتساب جاهزة بنواقص مدارسه وملف Excel بنفس القالب لتعبئته واستيراده','مدارس البلاغات غير الموجودة في القاعدة، وأسماء الكادر بدون حساب في المنصة']},
  {v:'V173',d:'2026-10-21',t:'المخزون وقطع الغيار',i:['صفحة «📦 المخزون»: مستودع لكل منطقة، رصيد كل صنف وقيمته وحد الطلب والتغطية بالأيام','توريد من مورد (مع تحديث سعر الصنف اختيارياً)، جرد (يدوي أو من Excel)، وتحويل بين المستودعات — كل تغيير حركة مسجلة','عند اعتماد أمر العمل (الإغلاق) تُخصم مواده من المخزن تلقائياً من مستودع منطقته، مرة واحدة','الاستهلاك الشهري لآخر 6 أشهر، وطلب شراء مقترح للأصناف تحت حد الطلب، وتصدير Excel','تطبيق الميدان: الرصيد المتاح يظهر بجانب الصنف عند اختياره','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 21)']},
  {v:'V172',d:'2026-10-21',t:'خريطة المدارس التفاعلية في تطبيق الميدان',i:['تطبيق الميدان ← «المدارس» يفتح على خريطة تفاعلية لكل مدارس المشرف / الفني (حتى بدون بلاغات): لون كل مدرسة حسب البلاغات المتأخرة والمفتوحة وأوامر العمل المفتوحة، بحث وفلاتر','بطاقة المدرسة عند الضغط عليها: بياناتها، مدير المدرسة والحارس بزر اتصال وواتساب، المشرف والمهندس، البلاغات وأوامر العمل المفتوحة (تفتح بالضغط) والاتجاهات','قاعدة المدارس: 4 أعمدة جديدة في آخر القالب (28 عموداً): «اسم مدير المدرسة» و«جوال مدير المدرسة» و«اسم الحارس» و«جوال الحارس»، وتظهر في ملف المدرسة']},
  {v:'V171',d:'2026-10-21',t:'بروفايل المبنى وتكاليفه',i:['«ملف المدرسة» صار بروفايلاً لكل مبنى في قاعدة المدارس (حتى بدون بلاغات): بيانات المبنى كاملة (النوع والحجم والتشغيل والجوالات والموقع) وتبويبات «📋 البلاغات» و«💰 المصاريف وقطع الغيار» و«🛠️ أوامر العمل»','«💰 المصاريف وقطع الغيار» لفترة تختارها: مواد المخزن والمشتريات من أوامر العمل المنجزة + الفواتير والمصروفات الشهرية، حسب البند وشهرياً، وأكثر القطع صرفاً، وسجل التكاليف، والمقارنة بالمباني من نفس النوع والحجم، وتصدير Excel','«🔧 الإصلاحات المنفذة» في تكاليف المبنى: البنود المُصلَحة في أوامر العمل وأوامر الإصلاح مع تكلفة موادها، وفواتير بتصنيف «إصلاحات»، حسب النظام، وعمود وترتيب وورقة Excel في «تكاليف المباني»','إدخال فاتورة أو مصروف شهري ثابت لمبنى أو مجموعة مبانٍ أو منطقة كاملة، يُقسم بالتساوي أو بنفس المبلغ لكل مبنى','ميزانية سنوية لكل مبنى (يدوياً أو من Excel) مع تنبيه عند 80% وعند التجاوز','صفحة «💰 تكاليف المباني»: كل المباني والمصروفات في الفترة مع الفلاتر والتصدير','صلاحيات التكاليف لكل مسمى من «الإعدادات» ← السحابة، ومسمى جديد «المحاسب»','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 20)']},
@@ -27071,7 +27072,7 @@ const GROUPS=[
  {k:'staff',icon:'👷',t:'الكادر والمقاولون',ids:['v2-nav-staff','v2-nav-staff-performance','v2-nav-eng','v2-nav-fm124-visits','v2-nav-fm124-load','v2-nav-contractors','v2-nav-fm122-score']},
  {k:'analysis',icon:'📊',t:'التحليل والمقارنات',ids:['v2-nav-charts','v2-nav-period','v2-nav-fm103-periods','v2-nav-fm131-season','v2-nav-compare','v2-nav-pivot','v2-nav-saved']},
  {k:'reports',icon:'📄',t:'التقارير',ids:['v2-nav-fm127-today','v2-nav-fm125-send','v2-nav-fm126-log','v2-nav-fm118-weekly','v2-nav-report','v2-nav-fm123-weekfu','v2-nav-fm158-qa']},
- {k:'data',icon:'🗂️',t:'البيانات والإعداد',ids:['v2-nav-fm173-stock','v2-nav-fm168-novaro','v2-nav-school-db','v2-nav-fm125-contacts','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-quality','v2-nav-refresh']},
+ {k:'data',icon:'🗂️',t:'البيانات والإعداد',ids:['v2-nav-fm173-stock','v2-nav-fm174-dq','v2-nav-fm168-novaro','v2-nav-school-db','v2-nav-fm125-contacts','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-quality','v2-nav-refresh']},
  {k:'system',icon:'⚙️',t:'النظام',ids:['v2-nav-fm122-settings','v2-nav-fm116','v2-nav-fm162-manual','v2-nav-fm164-usage','v2-nav-fm167-news']}
 ];
 const TOP=['v2-nav-portal','v2-nav-solution','v2-nav-actions','v2-nav-fm145-wo'],DANGER='fm-v38-clear-all-nav';
@@ -31817,6 +31818,7 @@ const MANUAL=[
 ]},
 {g:'المدارس والأعطال',icon:'🏫',items:[
  {id:'v2-nav-fm118-school',t:'ملف المدرسة (بروفايل المبنى)',where:'المدارس والأعطال ← «ملف المدرسة»، أو بالضغط على مبنى في «💰 تكاليف المباني»',what:'بروفايل لكل مبنى في قاعدة المدارس (حتى بدون بلاغات): بيانات المبنى (النوع والحجم والتشغيل والكادر والجوالات والموقع) وتبويبات: «📋 البلاغات» (الشهرية والأعطال المتكررة والسجل)، «💰 المصاريف وقطع الغيار» لفترة تختارها، و«🛠️ أوامر العمل».',how:['ابحث عن المدرسة بالاسم أو الرقم.','«💰 المصاريف وقطع الغيار»: اختر الفترة (هذا الشهر / الربع / السنة / مخصصة) لترى الإجمالي (مخزن · مشتريات · مصروفات)، والتكلفة حسب البند وشهرياً، و«🔧 الإصلاحات المنفذة» (البنود المُصلَحة في أوامر العمل وأوامر الإصلاح وتكلفة موادها، وفواتير الإصلاحات) حسب النظام، وأكثر القطع صرفاً، وسجل التكاليف.','«➕ مصروف / فاتورة لهذا المبنى» و«🎯 ميزانية المبنى» حسب صلاحيتك، و«⬇️ Excel» لسجل التكاليف.','«🛠️ أوامر العمل»: كل أوامر المبنى في نطاقك؛ اضغط الأمر لفتحه.'],who:'المديرون والمهندس (التكاليف حسب صلاحيات التكاليف)',tips:['المواد تُحسب من أوامر العمل المنجزة (بانتظار الاعتماد أو مغلقة) بسعر الصنف وقت الصرف؛ الصنف بدون سعر لا يُحسب ويظهر تنبيه.','فاتورة إصلاح من مقاول تُسجَّل بتصنيف «إصلاحات» لتظهر مع الإصلاحات.','المقارنة بالمباني المشابهة تظهر عند تعبئة «نوع المبنى» و«حجم المبنى» ووجود 3 مبانٍ مشابهة أو أكثر.'],v:'V171'},
+ {id:'v2-nav-fm174-dq',t:'جودة البيانات',where:'البيانات والإعداد ← «🧹 جودة البيانات»',what:'فحص قاعدة المدارس: نسبة الاكتمال، والنواقص حسب النوع وحسب المهندس، ومدارس البلاغات غير الموجودة في القاعدة، وأسماء الكادر بدون حساب.',how:['اختر المنطقة أو المهندس أو نوع النقص، وانقر النقص لعرض مدارسه أو المدرسة لفتح ملفها.','«💬 واتساب» بجانب المهندس يفتح رسالة جاهزة بنواقص مدارسه، و«⬇️ ملف» ينزّل مدارسه الناقصة بنفس قالب قاعدة المدارس مع عمود «البيانات الناقصة».','بعد أن يملأ المهندس الملف استورده من «قاعدة بيانات المدارس» ← استيراد (الاستيراد لا يمسح ما لم يُكتب).'],who:'مدير النظام والمديرون (والمهندس لمدارسه)',tips:['الخريطة والتكاليف والمقارنات والإسناد وتطبيق الميدان كلها تعتمد على اكتمال هذه البيانات.'],v:'V174'},
  {id:'v2-nav-fm173-stock',t:'المخزون وقطع الغيار',where:'البيانات والإعداد ← «📦 المخزون»',what:'أرصدة المستودعات لكل صنف معتمد (أصناف المواد) مع القيمة وحد الطلب والتغطية بالأيام، وسجل الحركات، والاستهلاك الشهري، وطلب شراء مقترح. مواد أوامر العمل (من المخزن) تُخصم تلقائياً عند اعتماد الأمر من المستودع الافتراضي لمنطقته.',how:['«🏬 المستودعات»: أنشئ مستودعاً لكل منطقة وحدد الافتراضي.','«⚖️ جرد»: اكتب الرصيد المعدود لكل صنف (أو نزّل ورقة الجرد واملأها وارفعها) — يُسجَّل الفرق فقط.','«📥 توريد»: المورد ورقم الفاتورة والأصناف بالكمية والسعر (ويمكن تحديث سعر الصنف).','«🔁 تحويل» بين مستودعين، واختر مستودعاً لتعديل «حد الطلب» من تبويب الأرصدة.','«🛒 طلب شراء مقترح» يقترح كميات الأصناف تحت حد الطلب، و«⬇️ Excel» يصدّر الأرصدة والطلب والحركات.'],who:'يدير المخزون: مدير النظام ومدير المشروع ومدير العمليات، ومدير المنطقة ومهندس المنطقة لمستودعات مناطقهم؛ والمديرون والمحاسب يطّلعون',tips:['الرصيد قد يصبح بالسالب إذا اعتُمد أمر بمواد أكثر من الموجود — يظهر «بالسالب» حتى يُسجَّل توريد أو جرد.','المشتريات المباشرة (شراء) لا تُخصم من المخزن.'],v:'V173'},
  {id:'v2-nav-fm171-costs',t:'تكاليف المباني',where:'المدارس والأعطال ← «💰 تكاليف المباني»',what:'كل المباني في نطاقك مع تكلفتها في الفترة (مواد المخزن · المشتريات · المصروفات) والمصروف منذ بداية السنة مقابل الميزانية السنوية، وقائمة الفواتير والمصروفات المسجلة.',how:['اختر الفترة، وفلتر بالمنطقة أو النوع أو الحجم أو بالبحث، ورتّب حسب التكلفة أو استهلاك الميزانية.','«➕ مصروف / فاتورة»: البيان والتصنيف والمبلغ والمورد ورقم الفاتورة؛ مرة واحدة أو شهري ثابت (من شهر إلى شهر أو مستمر)؛ لمبنى واحد أو مجموعة مبانٍ (بحث وفلاتر وتحديد) أو منطقة كاملة، ويُقسم المبلغ بالتساوي أو يُحمَّل كاملاً على كل مبنى.','«🎯 الميزانيات»: اختر السنة واكتب ميزانية كل مبنى، أو «تطبيق على الظاهر»، أو استورد من Excel (رقم المبنى / اسم المدرسة / الميزانية).','اضغط المبنى لفتح بروفايله على تبويب التكاليف، و«⬇️ Excel» لتصدير المباني والتفاصيل والمصروفات.'],who:'حسب صلاحيات التكاليف: افتراضياً مهندس المنطقة فما فوق والمحاسب',tips:['المصروف الشهري يُحسب مرة لكل شهر يقع في الفترة.','يعدّل المصروف أو يلغيه من أدخله، أو مدير المشروع ومدير النظام.','النطاق: مديرو المشروع والعمليات والإدارة ← كل المباني، مدير المنطقة والمحاسب ← مناطقهم، مهندس المنطقة ← مدارسه.'],v:'V171'},
  {id:'v2-nav-fm131-map',t:'خريطة المدارس',where:'المدارس والأعطال ← «خريطة المدارس»',what:'نقطة لكل مدرسة ملونة حسب المفتوح أو المتجاوز، وتحديد المواقع تلقائياً من OpenStreetMap.',how:['اختر «العرض» و«اللون حسب».','«تحديد المواقع تلقائياً» ثم راجع النتائج قبل الحفظ، أو الصق رابط خرائط جوجل للمدرسة.'],who:'المديرون والمهندس',v:'V134'},
@@ -32854,6 +32856,111 @@ function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContract
 window.fmV173Stock=()=>openPage(document.getElementById('v2-nav-fm173-stock'));
 function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm173-stock');if(!n)return;if(!canRead()){b0?.remove();return}if(b0)return;
  const b=document.createElement('button');b.id='v2-nav-fm173-stock';b.type='button';b.className='v2-nav-btn';b.title='المخزون وقطع الغيار';b.innerHTML='<i class="fas fa-warehouse"></i><span class="v2-nav-label">📦 المخزون</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
+setInterval(()=>{try{nav()}catch(e){}},3000);
+})();
+</script>
+<script id="fm-v174-data-quality">(function(){
+'use strict';
+/* V174: «🧹 جودة البيانات» (#v2-nav-fm174-dq). Checks every school of the school DB for missing or wrong data that the
+   map, the costs, the comparisons, the assignment and the field app depend on (coordinates, type / size, principal and
+   guard phones, staff names, phone and e-mail format, duplicate numbers), lists the schools of the tickets that are not
+   in the DB and, with the cloud, the staff names without an account. Per engineer: a WhatsApp message with his missing
+   items and an Excel file in the approved template (plus a «البيانات الناقصة» column) to fill and import back. */
+const C=window.FMCloud;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const RN={riyadh:'الرياض',qassim:'القصيم'},rn=r=>RN[r]||r||'—';
+const num=v=>(+v||0).toLocaleString('en-US',{maximumFractionDigits:1});
+const DBK='fm_school_master_db_v1';
+const dbList=()=>{try{const a=JSON.parse(localStorage.getItem(DBK)||'[]');return Array.isArray(a)?a.filter(x=>x&&typeof x==='object'):[]}catch(e){return []}};
+const regOf=x=>{const v=S(x&&x.region);return /قصيم|qassim/i.test(v)?'qassim':/رياض|riyadh/i.test(v)?'riyadh':v};
+const nk=v=>S(v).normalize('NFKC').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/[ىئ]/g,'ي').replace(/[ً-ٰٟ]/g,'').replace(/^(م|م\.|المهندس|مهندس|أ|أ\.|الاستاذ|الأستاذ)\s+/,'').replace(/[^\dA-Za-z؀-ۿ]+/g,'').toLowerCase();
+const bk=v=>S(v).toUpperCase().replace(/^S[\s-]*/,'').replace(/[^A-Z0-9]/g,'');
+const hasXY=x=>x.lat!==''&&x.lng!==''&&x.lat!=null&&x.lng!=null&&isFinite(+x.lat)&&isFinite(+x.lng)&&!(+x.lat===0&&+x.lng===0);
+const phoneOk=v=>/^(05\d{8}|9665\d{8}|\+9665\d{8}|01\d{7,8})$/.test(S(v).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[\s-]/g,''));
+const mailOk=v=>/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/.test(S(v));
+/* the checks: k, label, group, test(row) → true when there is a problem */
+const CHECKS=[
+ ['xy','بدون إحداثيات','الموقع',x=>!hasXY(x)],
+ ['gender','بدون نوع المبنى','بيانات المبنى',x=>!S(x.gender)],
+ ['size','بدون حجم المبنى','بيانات المبنى',x=>!S(x.size)],
+ ['office','بدون مكتب التعليم','بيانات المبنى',x=>!S(x.office)],
+ ['bid','بدون الرقم الوزاري / رقم المبنى','بيانات المبنى',x=>!bk(x.buildingId)],
+ ['principal','بدون جوال مدير المدرسة','جهات الاتصال',x=>!S(x.principalPhone)],
+ ['guard','بدون جوال الحارس','جهات الاتصال',x=>!S(x.guardPhone)],
+ ['sup','بدون مشرف صيانة','الكادر',x=>!S(x.supervisor)],
+ ['eng','بدون مهندس صيانة','الكادر',x=>!S(x.engineer)],
+ ['con','بدون مقاول','الكادر',x=>!S(x.contractor)],
+ ['phone','رقم جوال غير صحيح','التنسيق',x=>['principalPhone','guardPhone','supervisorPhone','engineerPhone','contractorPhone'].some(k=>S(x[k])&&!phoneOk(x[k]))],
+ ['mail','بريد غير صحيح','التنسيق',x=>['supervisorEmail','engineerEmail','contractorEmail','lightSupervisorEmail','lightEngineerEmail'].some(k=>S(x[k])&&!mailOk(x[k]))]
+];
+const CL=Object.fromEntries(CHECKS.map(c=>[c[0],c[1]]));
+let F={reg:'',chk:'',eng:'',q:''},accounts=null;
+function model(){const L=dbList().filter(x=>!F.reg||regOf(x)===F.reg);
+ const ids=new Map(),names=new Map();L.forEach(x=>{const b=bk(x.buildingId),n=nk(x.school);if(b)ids.set(b,(ids.get(b)||0)+1);if(n)names.set(n,(names.get(n)||0)+1)});
+ const rows=L.map(x=>{const miss=CHECKS.filter(c=>c[3](x)).map(c=>c[0]);if((bk(x.buildingId)&&ids.get(bk(x.buildingId))>1)||(nk(x.school)&&names.get(nk(x.school))>1))miss.push('dup');return {x,miss}});
+ const by=new Map();for(const r of rows){const e=S(r.x.engineer)||'— بدون مهندس';let o=by.get(e);if(!o)by.set(e,o={e,rows:[],miss:0,phone:''});o.rows.push(r);o.miss+=r.miss.length;if(!o.phone&&S(r.x.engineerPhone))o.phone=S(r.x.engineerPhone)}
+ /* schools in the tickets that are not in the DB */
+ const dbN=new Set(L.map(x=>nk(x.school))),dbB=new Set(L.map(x=>bk(x.buildingId)).filter(Boolean)),tk=new Map();
+ try{const T=(window.state&&state.rawTickets)||[],cm=state.columnsMap||{};for(const t of T){const n=S(t[cm.school]);if(!n)continue;let rec=null;try{rec=window.fmAuthoritativeSchoolRecord?.(t)}catch(e){}
+  if(rec&&(dbN.has(nk(rec.school))||dbB.has(bk(rec.buildingId))))continue;if(dbN.has(nk(n)))continue;tk.set(n,(tk.get(n)||0)+1)}}catch(e){}
+ return {L,rows,by:[...by.values()].sort((a,b)=>b.miss-a.miss),notInDb:[...tk.entries()].sort((a,b)=>b[1]-a[1])}}
+const KEY=['xy','gender','size','principal','guard','sup','eng'];
+function score(rows){if(!rows.length)return 0;const t=rows.length*KEY.length,bad=rows.reduce((s,r)=>s+r.miss.filter(k=>KEY.includes(k)).length,0);return 100-bad*100/t}
+/* staff names in the DB without a matching account (cloud, system admin) */
+async function loadAccounts(){if(accounts||!(C&&C.state&&C.state.on&&C.state.profile&&C.state.profile.role==='admin'))return;try{const P=await C.api.listProfiles();accounts=new Set();P.filter(p=>p.active!==false).forEach(p=>[p.full_name,...(p.person_names||[])].forEach(n=>{const k=nk(n);if(k)accounts.add(k)}))}catch(e){accounts=null}}
+function noAccount(L){if(!accounts)return [];const m=new Map();for(const x of L)for(const [k,role] of [['supervisor','مشرف صيانة'],['engineer','مهندس صيانة'],['lightSupervisor','مشرف خدمات خفيفة'],['lightEngineer','مهندس خدمات خفيفة']]){const n=S(x[k]);if(!n||accounts.has(nk(n)))continue;const o=m.get(n+'|'+role)||{n,role,c:0};o.c++;m.set(n+'|'+role,o)}return [...m.values()].sort((a,b)=>b.c-a.c)}
+
+function page(){let p=document.getElementById('fm174-page');if(!p){p=document.createElement('section');p.id='fm174-page';p.className='fm103-page';
+ p.innerHTML=`<div class="fm103-wrap"><div class="fm103-head"><div><h2>🧹 جودة البيانات</h2><p class="sub">ما ينقص قاعدة المدارس — الخريطة والتكاليف والمقارنات والإسناد وتطبيق الميدان تعتمد عليها</p></div><div class="fm103-actions"><span class="extra"></span><button class="fm103-btn" type="button" onclick="fmV103ClosePages?.()">إغلاق</button></div></div><div class="body"></div></div>`;document.body.appendChild(p)}return p}
+async function render(){const p=page(),b=p.querySelector('.body'),x=p.querySelector('.extra');await loadAccounts();
+ const M=model();x.innerHTML='<button class="fm103-btn" type="button" data-xl>⬇️ Excel بالنواقص</button>';x.querySelector('[data-xl]').onclick=()=>excel(M.rows.filter(r=>r.miss.length),'نواقص قاعدة المدارس');
+ if(!M.L.length){b.innerHTML='<div class="fm103-card fm103-empty">قاعدة المدارس فارغة — ارفعها من «قاعدة بيانات المدارس».</div>';return}
+ const sc=score(M.rows),full=M.rows.filter(r=>!r.miss.length).length,col=v=>v>=90?'#15803d':v>=70?'#c2410c':'#b91c1c';
+ const regs=[...new Set(dbList().map(regOf).filter(Boolean))],engs=M.by.map(o=>o.e),NA=noAccount(M.L);
+ const V=M.rows.filter(r=>r.miss.length&&(!F.chk||r.miss.includes(F.chk))&&(!F.eng||(S(r.x.engineer)||'— بدون مهندس')===F.eng)&&(!F.q||S(r.x.school).includes(F.q)||S(r.x.buildingId).includes(F.q)));
+ b.innerHTML=`<div class="fm171-per"><select data-f="reg"><option value="">كل المناطق</option>${regs.map(r=>`<option value="${esc(r)}" ${F.reg===r?'selected':''}>${esc(rn(r))}</option>`).join('')}</select>
+  <select data-f="eng"><option value="">كل المهندسين</option>${engs.map(e=>`<option ${F.eng===e?'selected':''}>${esc(e)}</option>`).join('')}</select>
+  <select data-f="chk"><option value="">كل النواقص</option>${CHECKS.concat([['dup','رقم أو اسم مكرر']]).map(c=>`<option value="${c[0]}" ${F.chk===c[0]?'selected':''}>${esc(c[1])}</option>`).join('')}</select>
+  <input data-f="q" placeholder="🔎 مدرسة أو رقم" value="${esc(F.q)}"></div>
+ <div class="fm103-kpis"><div class="fm103-kpi"><span>اكتمال البيانات</span><b style="color:${col(sc)}">${num(sc)}%</b><small>الموقع والنوع والحجم وجوالا المدير والحارس والمشرف والمهندس</small></div>
+  <div class="fm103-kpi"><span>المدارس</span><b>${num(M.L.length)}</b><small>${num(full)} مكتملة تماماً</small></div>
+  <div class="fm103-kpi"><span>مدارس بها نواقص</span><b style="color:${M.L.length-full?'#c2410c':'#15803d'}">${num(M.L.length-full)}</b><small>${num(M.rows.reduce((t,r)=>t+r.miss.length,0))} نقص إجمالاً</small></div>
+  <div class="fm103-kpi"><span>مدارس البلاغات غير الموجودة بالقاعدة</span><b style="color:${M.notInDb.length?'#b91c1c':'#15803d'}">${num(M.notInDb.length)}</b><small>لا تظهر بياناتها في الفلاتر والخريطة</small></div>
+  ${accounts?`<div class="fm103-kpi"><span>أسماء كادر بدون حساب</span><b style="color:${NA.length?'#c2410c':'#15803d'}">${num(NA.length)}</b><small>لا يرون مدارسهم في التطبيق</small></div>`:''}</div>
+ <div class="fm103-grid"><div class="fm103-card"><h3>النواقص حسب النوع</h3><div class="q">انقر لعرض المدارس</div><div class="fm103-tw"><table class="fm103-t"><thead><tr><th>النقص</th><th>المجموعة</th><th>المدارس</th><th>النسبة</th></tr></thead><tbody>
+  ${CHECKS.concat([['dup','رقم أو اسم مكرر','التنسيق']]).map(c=>{const n=M.rows.filter(r=>r.miss.includes(c[0])).length;return `<tr data-chk="${c[0]}" style="cursor:pointer"><td><b>${esc(c[1])}</b></td><td>${esc(c[2])}</td><td>${num(n)}</td><td style="color:${col(100-n*100/M.L.length)}">${num(n*100/M.L.length)}%</td></tr>`}).join('')}</tbody></table></div></div>
+  <div class="fm103-card"><h3>حسب المهندس</h3><div class="q">أرسل لكل مهندس نواقص مدارسه بواتساب، أو ملف Excel يملؤه ويُعاد استيراده</div><div class="fm103-tw"><table class="fm103-t"><thead><tr><th>المهندس</th><th>المدارس</th><th>الاكتمال</th><th>النواقص</th><th></th></tr></thead><tbody>
+  ${M.by.map((o,i)=>{const s=score(o.rows);return `<tr><td><b>${esc(o.e)}</b>${o.phone?`<div class="fm125-src" dir="ltr">${esc(o.phone)}</div>`:''}</td><td>${num(o.rows.length)}</td><td style="color:${col(s)};font-weight:800">${num(s)}%</td><td>${num(o.miss)}</td><td>${o.miss?`<button class="fm122-mini" data-wa="${i}">💬 واتساب</button><button class="fm122-mini" data-ex="${i}">⬇️ ملف</button>`:'✅'}</td></tr>`}).join('')}</tbody></table></div></div></div>
+ ${M.notInDb.length?`<div class="fm103-card" style="margin-bottom:14px"><h3>مدارس في البلاغات غير موجودة في قاعدة المدارس</h3><div class="q">أضفها للقاعدة أو صحّح اسمها / رقمها ليتطابق</div><div class="fm103-tw"><table class="fm103-t"><thead><tr><th>المدرسة كما في البلاغات</th><th>البلاغات</th></tr></thead><tbody>${M.notInDb.slice(0,300).map(([n,c])=>`<tr><td><b>${esc(n)}</b></td><td>${num(c)}</td></tr>`).join('')}</tbody></table></div></div>`:''}
+ ${NA.length?`<div class="fm103-card" style="margin-bottom:14px"><h3>أسماء الكادر بدون حساب في المنصة</h3><div class="q">أنشئ حساباتهم من «📋 مراجعة الإسناد من قاعدة المدارس» في الإعدادات، أو أضف الاسم في «أسماء الشخص» لحسابه</div><div class="fm103-tw"><table class="fm103-t"><thead><tr><th>الاسم في القاعدة</th><th>الدور</th><th>المدارس</th></tr></thead><tbody>${NA.slice(0,300).map(o=>`<tr><td><b>${esc(o.n)}</b></td><td>${esc(o.role)}</td><td>${num(o.c)}</td></tr>`).join('')}</tbody></table></div></div>`:''}
+ <div class="fm103-card"><h3>المدارس التي بها نواقص (${num(V.length)})</h3><div class="q">انقر المدرسة لفتح ملفها • التعديل من «قاعدة بيانات المدارس» أو باستيراد الملف بعد إكماله</div>${V.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>المدرسة</th><th>الرقم</th><th>المنطقة</th><th>المهندس</th><th>الناقص</th></tr></thead><tbody>${V.slice(0,800).map(r=>`<tr data-open="${esc(r.x.school)}" style="cursor:pointer"><td><b>${esc(r.x.school)}</b></td><td>${esc(r.x.buildingId||'—')}</td><td>${esc(rn(regOf(r.x)))}</td><td>${esc(r.x.engineer||'—')}</td><td class="wrap">${r.miss.map(k=>`<span class="fm171-tag">${esc(CL[k]||'رقم أو اسم مكرر')}</span>`).join(' ')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد نواقص مطابقة ✅</div>'}</div>`;
+ b.querySelectorAll('[data-f]').forEach(i=>i.onchange=()=>{F[i.dataset.f]=S(i.value);render()});
+ b.querySelectorAll('[data-chk]').forEach(r=>r.onclick=()=>{F.chk=r.dataset.chk;render()});
+ b.querySelectorAll('[data-open]').forEach(r=>r.onclick=()=>window.fmV171OpenProfile?.(r.dataset.open));
+ b.querySelectorAll('[data-wa]').forEach(btn=>btn.onclick=()=>{const o=M.by[+btn.dataset.wa];wa(o)});
+ b.querySelectorAll('[data-ex]').forEach(btn=>btn.onclick=()=>{const o=M.by[+btn.dataset.ex];excel(o.rows.filter(r=>r.miss.length),'نواقص مدارس '+o.e)})}
+function wa(o){const R=o.rows.filter(r=>r.miss.length),cnt=new Map();R.forEach(r=>r.miss.forEach(k=>cnt.set(k,(cnt.get(k)||0)+1)));
+ const lines=R.slice(0,25).map(r=>`• ${S(r.x.school)}${S(r.x.buildingId)?' ('+S(r.x.buildingId)+')':''}: ${r.miss.map(k=>(CL[k]||'رقم أو اسم مكرر').replace(/^بدون /,'')).join('، ')}`);
+ const txt=`السلام عليكم م. ${o.e.replace(/^(م\.?|المهندس)\s*/,'')}\nلاستكمال بيانات مدارسك في منصة RakizoraFM (الخريطة وتطبيق الميدان والتكاليف) نحتاج:\n${[...cnt.entries()].map(([k,c])=>`- ${CL[k]||'رقم أو اسم مكرر'}: ${c} مدرسة`).join('\n')}\n\nالتفاصيل:\n${lines.join('\n')}${R.length>25?`\n… و${R.length-25} مدرسة أخرى (في الملف المرفق)`:''}\n\nأرجو إرسال البيانات أو تعبئة الملف المرفق. شكراً`;
+ let ph=S(o.phone).replace(/[^\d]/g,'');if(/^05\d{8}$/.test(ph))ph='966'+ph.slice(1);
+ window.open(`https://wa.me/${ph}?text=${encodeURIComponent(txt)}`,'_blank','noopener');if(!ph)toast('لا يوجد جوال للمهندس في القاعدة — اختر المحادثة يدوياً','warning')}
+async function excel(R,name){try{try{await window.fmEnsureLibraries?.()}catch(e){}if(typeof XLSX==='undefined')throw Error('مكتبة Excel غير متاحة');if(!R.length){toast('لا توجد نواقص','warning');return}
+ const RO=window.fmSchoolDbRowObj,hd=Object.keys(RO({})).concat('البيانات الناقصة');
+ const aoa=[hd].concat(R.map(r=>{const o=RO(Object.assign({},r.x,{region:regOf(r.x)}));return hd.map(h=>h==='البيانات الناقصة'?r.miss.map(k=>CL[k]||'رقم أو اسم مكرر').join('، '):o[h])}));
+ const ws=XLSX.utils.aoa_to_sheet(aoa);ws['!views']=[{RTL:true}];ws['!cols']=hd.map((h,i)=>({wch:i===hd.length-1?50:Math.max(12,h.length+4)}));
+ const help=XLSX.utils.aoa_to_sheet([['طريقة التعبئة'],['• املأ الخانات الناقصة فقط ولا تغيّر أسماء الأعمدة'],['• الإحداثيات أرقام عشرية (خط العرض مثل 24.71 وخط الطول مثل 46.67) أو رابط خرائط جوجل في خانة خط العرض'],['• نوع المبنى: بنين / بنات / بنين وبنات — حجم المبنى: كبير / وسط / صغير'],['• الجوال بصيغة 05xxxxxxxx'],['• يُستورد الملف من «قاعدة بيانات المدارس» ← استيراد؛ عمود «البيانات الناقصة» يُتجاهل']]);help['!views']=[{RTL:true}];help['!cols']=[{wch:90}];
+ const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};XLSX.utils.book_append_sheet(wb,ws,'قاعدة بيانات المدارس');XLSX.utils.book_append_sheet(wb,help,'طريقة التعبئة');
+ XLSX.writeFile(wb,name.replace(/[\\/:*?"<>|]/g,'-').slice(0,80)+'.xlsx');toast('تم التصدير')}catch(e){toast('تعذر التصدير: '+e.message,'error')}}
+/* the import ignores the helper column */
+(function(){const t=setInterval(()=>{const kh=window.fmV131KnownHeaders;if(typeof kh!=='function')return;clearInterval(t);if(kh.__v174)return;const k=function(){const s=kh.apply(this,arguments);s.add('البيانات الناقصة');return s};Object.assign(k,{__v174:1,__v172:kh.__v172,__v170:kh.__v170});window.fmV131KnownHeaders=k},800);setTimeout(()=>clearInterval(t),20000)})();
+
+function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.getElementById('fm116-page')?.classList.remove('open');document.body.classList.remove('v2-mobile-nav');
+ try{window.v2SetActive?.(btn)}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;p.querySelector('.body').innerHTML='<div class="fm125-src">جارٍ الفحص…</div>';setTimeout(render,30)}
+window.fmV174Dq=()=>openPage(document.getElementById('v2-nav-fm174-dq'));
+const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;const p=st.profile;return !!p&&['admin','manager','staff','viewer','engineer'].includes(p.role)};
+function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm174-dq');if(!n)return;if(!allowed()){b0?.remove();return}if(b0)return;
+ const b=document.createElement('button');b.id='v2-nav-fm174-dq';b.type='button';b.className='v2-nav-btn';b.title='جودة البيانات';b.innerHTML='<i class="fas fa-broom"></i><span class="v2-nav-label">🧹 جودة البيانات</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
 setInterval(()=>{try{nav()}catch(e){}},3000);
 })();
 </script>
