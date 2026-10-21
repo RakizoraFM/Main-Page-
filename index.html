@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V170">
+<meta name="fm-version" content="V172">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -21782,7 +21782,12 @@ function rowObj(x){
   'التشغيل':x.operation||'',
   'اسم المقاول':x.contractor||'',
   'رقم تليفون المقاول':x.contractorPhone||'',
-  'بريد المقاول':x.contractorEmail||''
+  'بريد المقاول':x.contractorEmail||'',
+  /* V172: contacts at the school (shown on the field app map) */
+  'اسم مدير المدرسة':x.principal||'',
+  'جوال مدير المدرسة':x.principalPhone||'',
+  'اسم الحارس':x.guard||'',
+  'جوال الحارس':x.guardPhone||''
  };
 }
 window.fmSchoolDbRowObj=rowObj;
@@ -21795,7 +21800,7 @@ window.fmSchoolDbDownloadTemplate=function(){
  // Keep headers but remove the dummy data row.
  Object.keys(blank).forEach((_,i)=>{const c=XLSX.utils.encode_cell({r:1,c:i});delete ws[c]});
  ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:0,c:Object.keys(blank).length-1}});
- ws['!cols']=[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26].map(w=>({wch:w}));
+ ws['!cols']=[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26,22,18,18,16].map(w=>({wch:w}));
  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'قاعدة بيانات المدارس');
  XLSX.writeFile(wb,'School_Database_Template_Full.xlsx');
 };
@@ -21987,7 +21992,8 @@ const cols=[
  ['engineer','اسم مهندس الصيانة'],['engineerPhone','تليفون مهندس الصيانة'],['engineerEmail','بريد مهندس الصيانة'],
  ['lightSupervisor','اسم مشرف الخدمات الخفيفة'],['lightSupervisorPhone','تليفون مشرف الخدمات الخفيفة'],['lightSupervisorEmail','بريد مشرف الخدمات الخفيفة'],
  ['lightEngineer','اسم مهندس الخدمات الخفيفة'],['lightEngineerPhone','تليفون مهندس الخدمات الخفيفة'],['lightEngineerEmail','بريد مهندس الخدمات الخفيفة'],
- ['operation','التشغيل'],['contractor','المقاول'],['contractorPhone','تليفون المقاول'],['contractorEmail','بريد المقاول']
+ ['operation','التشغيل'],['contractor','المقاول'],['contractorPhone','تليفون المقاول'],['contractorEmail','بريد المقاول'],
+ ['principal','مدير المدرسة'],['principalPhone','جوال مدير المدرسة'],['guard','الحارس'],['guardPhone','جوال الحارس']
 ];
 let sortF='school',sortD=1;
 const filterValue=f=>(document.querySelector('[data-final-filter="'+f+'"]')?.value||'').trim().toLowerCase();
@@ -22037,7 +22043,8 @@ window.fmSchoolDbExportExcel=async function(){
     'اسم مهندس الصيانة','رقم تليفون مهندس الصيانة','بريد مهندس الصيانة',
     'اسم مشرف الخدمات الخفيفة','رقم تليفون مشرف الخدمات الخفيفة','بريد مشرف الخدمات الخفيفة',
     'اسم مهندس الخدمات الخفيفة','رقم تليفون مهندس الخدمات الخفيفة','بريد مهندس الخدمات الخفيفة',
-    'التشغيل','اسم المقاول','رقم تليفون المقاول','بريد المقاول'
+    'التشغيل','اسم المقاول','رقم تليفون المقاول','بريد المقاول',
+    'اسم مدير المدرسة','جوال مدير المدرسة','اسم الحارس','جوال الحارس'
    ]];
 
    // Build a compact array only; do not inspect/render the table.
@@ -22051,14 +22058,15 @@ window.fmSchoolDbExportExcel=async function(){
       text(x.engineer),text(x.engineerPhone),text(x.engineerEmail),
       text(x.lightSupervisor),text(x.lightSupervisorPhone),text(x.lightSupervisorEmail),
       text(x.lightEngineer),text(x.lightEngineerPhone),text(x.lightEngineerEmail),
-      text(x.operation),text(x.contractor),text(x.contractorPhone),text(x.contractorEmail)
+      text(x.operation),text(x.contractor),text(x.contractorPhone),text(x.contractorEmail),
+      text(x.principal),text(x.principalPhone),text(x.guard),text(x.guardPhone)
      ]);
      // Yield occasionally on large databases to keep UI responsive.
      if(i>0 && i%750===0) await new Promise(r=>setTimeout(r,0));
    }
 
    const ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:false});
-   ws['!cols']=[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26].map(w=>({wch:w}));
+   ws['!cols']=[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26,22,18,18,16].map(w=>({wch:w}));
    const wb=XLSX.utils.book_new();
    XLSX.utils.book_append_sheet(wb,ws,'قاعدة بيانات المدارس');
 
@@ -22094,7 +22102,8 @@ const cols=[
  ['engineer','اسم مهندس الصيانة'],['engineerPhone','تليفون مهندس الصيانة'],['engineerEmail','بريد مهندس الصيانة'],
  ['lightSupervisor','اسم مشرف الخدمات الخفيفة'],['lightSupervisorPhone','تليفون مشرف الخدمات الخفيفة'],['lightSupervisorEmail','بريد مشرف الخدمات الخفيفة'],
  ['lightEngineer','اسم مهندس الخدمات الخفيفة'],['lightEngineerPhone','تليفون مهندس الخدمات الخفيفة'],['lightEngineerEmail','بريد مهندس الخدمات الخفيفة'],
- ['operation','التشغيل'],['contractor','المقاول'],['contractorPhone','تليفون المقاول'],['contractorEmail','بريد المقاول']
+ ['operation','التشغيل'],['contractor','المقاول'],['contractorPhone','تليفون المقاول'],['contractorEmail','بريد المقاول'],
+ ['principal','مدير المدرسة'],['principalPhone','جوال مدير المدرسة'],['guard','الحارس'],['guardPhone','جوال الحارس']
 ];
 function fv(f){return String(filters[f]??'').toLowerCase()}
 function filtered(){
@@ -25584,10 +25593,12 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V170',date:'2026-10-18',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V172',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V172',d:'2026-10-21',t:'خريطة المدارس التفاعلية في تطبيق الميدان',i:['تطبيق الميدان ← «المدارس» يفتح على خريطة تفاعلية لكل مدارس المشرف / الفني (حتى بدون بلاغات): لون كل مدرسة حسب البلاغات المتأخرة والمفتوحة وأوامر العمل المفتوحة، بحث وفلاتر','بطاقة المدرسة عند الضغط عليها: بياناتها، مدير المدرسة والحارس بزر اتصال وواتساب، المشرف والمهندس، البلاغات وأوامر العمل المفتوحة (تفتح بالضغط) والاتجاهات','قاعدة المدارس: 4 أعمدة جديدة في آخر القالب (28 عموداً): «اسم مدير المدرسة» و«جوال مدير المدرسة» و«اسم الحارس» و«جوال الحارس»، وتظهر في ملف المدرسة']},
+ {v:'V171',d:'2026-10-21',t:'بروفايل المبنى وتكاليفه',i:['«ملف المدرسة» صار بروفايلاً لكل مبنى في قاعدة المدارس (حتى بدون بلاغات): بيانات المبنى كاملة (النوع والحجم والتشغيل والجوالات والموقع) وتبويبات «📋 البلاغات» و«💰 المصاريف وقطع الغيار» و«🛠️ أوامر العمل»','«💰 المصاريف وقطع الغيار» لفترة تختارها: مواد المخزن والمشتريات من أوامر العمل المنجزة + الفواتير والمصروفات الشهرية، حسب البند وشهرياً، وأكثر القطع صرفاً، وسجل التكاليف، والمقارنة بالمباني من نفس النوع والحجم، وتصدير Excel','«🔧 الإصلاحات المنفذة» في تكاليف المبنى: البنود المُصلَحة في أوامر العمل وأوامر الإصلاح مع تكلفة موادها، وفواتير بتصنيف «إصلاحات»، حسب النظام، وعمود وترتيب وورقة Excel في «تكاليف المباني»','إدخال فاتورة أو مصروف شهري ثابت لمبنى أو مجموعة مبانٍ أو منطقة كاملة، يُقسم بالتساوي أو بنفس المبلغ لكل مبنى','ميزانية سنوية لكل مبنى (يدوياً أو من Excel) مع تنبيه عند 80% وعند التجاوز','صفحة «💰 تكاليف المباني»: كل المباني والمصروفات في الفترة مع الفلاتر والتصدير','صلاحيات التكاليف لكل مسمى من «الإعدادات» ← السحابة، ومسمى جديد «المحاسب»','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 20)']},
 {v:'V170',d:'2026-10-18',t:'نوع المبنى وحجمه',i:['فلتران جديدان في شريط الفلاتر: «نوع المبنى» (بنين / بنات / بنين وبنات) و«حجم المبنى» (كبير / وسط / صغير) — كل الصفحات والمؤشرات تتبعهما','قاعدة بيانات المدارس: عمودان جديدان في القالب والتصدير والجدول (24 عموداً)، والاستيراد من Excel يقبلهما ويحوّل الصيغ المشابهة (مثل «بنين & بنات») ولا يمسح القيمة إن لم يوجد العمود في الملف','إصلاح: صفحة «دليل المنصة» كانت لا تفتح بعد V168 (بطاقة Solvix أُضيفت خارج مجموعتها)']},
 {v:'V169',d:'2026-10-13',t:'تصحيح رابط Solvix',i:['زر «📦 جرد الأصول (Solvix)» يفتح الرابط الصحيح rakizorafm.github.io/Solvix (بحرف S كبير كما في اسم المستودع؛ الرابط السابق كان يفتح صفحة غير موجودة).']},
 {v:'V168',d:'2026-10-13',t:'زر Solvix لجرد الأصول',i:['زر «📦 جرد الأصول (Solvix)» في «البيانات والإعداد» يفتح موقع Solvix (rakizorafm.github.io/Solvix) في تبويب جديد','Solvix تطبيق مستقل بقاعدة بيانات وحسابات خاصة به؛ يدخله المدير بحساب Solvix والفنيون برقمهم الوظيفي']},
@@ -26034,16 +26045,17 @@ PAGES['fm118-breach']=renderBreach;
 
 /* ---------------- School profile ---------------- */
 let currentSchool='';
-function schoolsList(){const m=new Map();for(const r of raw()){const n=schoolOf(r);if(n)m.set(n,(m.get(n)||0)+1)}return [...m.entries()].sort((a,b)=>b[1]-a[1])}
+function schoolsList(){const m=new Map();for(const r of raw()){const n=schoolOf(r);if(n)m.set(n,(m.get(n)||0)+1)}const out=[...m.entries()].sort((a,b)=>b[1]-a[1]);
+ /* V171: buildings of the school DB without tickets get a profile too */
+ try{for(const n of (window.fmV171ExtraSchools?.()||[])){const k=S(n);if(k&&!m.has(k)){m.set(k,0);out.push([k,0])}}}catch(e){}return out}
 function renderSchool(){
   const p=page('fm118-school','ملف المدرسة'),body=p.querySelector('.body');kill();
-  if(!raw().length){body.innerHTML='<div class="fm103-card fm103-empty">لا توجد بلاغات محمّلة.</div>';return}
-  const list=schoolsList();if(!currentSchool||!list.some(x=>x[0]===currentSchool))currentSchool=(()=>{const f=document.getElementById('filter-school')?.value;return f&&f!=='all'&&list.some(x=>x[0]===f)?f:list[0]?.[0]||''})();
+  const list=schoolsList();if(!list.length){body.innerHTML='<div class="fm103-card fm103-empty">لا توجد بلاغات محمّلة ولا مدارس في قاعدة المدارس.</div>';return}if(!currentSchool||!list.some(x=>x[0]===currentSchool))currentSchool=(()=>{const f=document.getElementById('filter-school')?.value;return f&&f!=='all'&&list.some(x=>x[0]===f)?f:list[0]?.[0]||''})();
   p.querySelector('.extra').innerHTML=`<div class="fm118-picker"><input id="fm118-school-q" list="fm118-school-list" placeholder="ابحث باسم المدرسة..." value="${esc(currentSchool)}"><datalist id="fm118-school-list">${list.map(([n,c])=>`<option value="${esc(n)}">${fmt(c)} بلاغ</option>`).join('')}</datalist><button class="fm103-btn primary" type="button" onclick="fmV118SchoolExcel()"><i class="fas fa-file-excel"></i> Excel</button></div>`;
   const q=p.querySelector('#fm118-school-q');q.onchange=()=>{if(list.some(x=>x[0]===q.value)){currentSchool=q.value;renderSchool()}};
   const rows=raw().filter(r=>schoolOf(r)===currentSchool).sort((a,b)=>(created(b)?.getTime()||0)-(created(a)?.getTime()||0));
   p.querySelector('.sub').textContent=`${region()} • كل بلاغات المدرسة في الملف المحمّل (بدون فلاتر) • ترتيبها ${list.findIndex(x=>x[0]===currentSchool)+1} من ${list.length} حسب عدد البلاغات`;
-  if(!rows.length){body.innerHTML='<div class="fm103-card fm103-empty">لا توجد بلاغات لهذه المدرسة.</div>';return}
+  if(!rows.length){body.innerHTML='<div class="fm103-card fm103-empty">لا توجد بلاغات لهذه المدرسة في الملف المحمّل.</div>';try{window.fmV171SchoolAfter?.(p,currentSchool,null)}catch(e){console.warn('V171',e)}return}
   let rec=null;try{rec=window.fmAuthoritativeSchoolRecord?.(rows[0])}catch(e){}const m=metaOf(rows[0]),sf=staffOf(rows[0]);
   const C=cols(),ref=refDate();let open=0,br=0,closed=0,h=0,n=0;
   for(const r of rows){const s=st(r);if(isCancelled(s))continue;if(isClosed(s)){closed++;const a=created(r),b=C.resolved?dt(r[C.resolved]):null;if(a&&b&&b>=a){h+=(b-a)/36e5;n++}}else open++;if(sla(r).isBreached)br++}
@@ -26077,6 +26089,7 @@ function renderSchool(){
   mk(document.getElementById('fm118-sm'),{type:'bar',data:{labels:months.map(x=>x.l),datasets:[{label:'البلاغات',data:mc,backgroundColor:'#2a78d6',borderRadius:4,barPercentage:.7}]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:250},plugins:{legend:{display:false},datalabels:{display:c=>c.raw>0,anchor:'end',align:'end',offset:2,color:'#0f172a',font:{weight:'800',size:10}}},scales:{y:{beginAtZero:true,grace:'12%',ticks:{precision:0},grid:{color:'#eef1f5'}},x:{grid:{display:false}}}}});
   const cc=new Map();rows.forEach(r=>{const k=subcat(r);cc.set(k,(cc.get(k)||0)+1)});const top=[...cc.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
   mk(document.getElementById('fm118-sc'),{type:'bar',data:{labels:top.map(x=>x[0]),datasets:[{label:'البلاغات',data:top.map(x=>x[1]),backgroundColor:'#ea580c',borderRadius:4,barPercentage:.7}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:{duration:250},plugins:{legend:{display:false},datalabels:{display:false}},scales:{x:{reverse:true,beginAtZero:true,grace:'15%',ticks:{precision:0},grid:{color:'#eef1f5'}},y:{position:'right',grid:{display:false},ticks:{autoSkip:false,font:{weight:'700'}}}}}});
+  try{window.fmV171SchoolAfter?.(p,currentSchool,rows[0])}catch(e){console.warn('V171',e)}
 }
 window.fmV118SchoolRow=i=>{const r=window.__fm118School?.rows?.[i];if(r)openRows([r],'بلاغ '+tid(r),currentSchool,'fa-ticket','#2563eb')};
 window.fmV118SchoolRec=i=>{const x=window.__fm118School?.rec?.[i];if(x)openRows(x.a,currentSchool+' — '+x.k,`${fmt(x.count)} بلاغ خلال 90 يوماً`,'fa-repeat','#ea580c')};
@@ -27053,7 +27066,7 @@ nav.v2-nav.fm123-searching .fm123-danger-wrap:not(:has(.v2-nav-btn:not(.fm123-hi
 'use strict';
 const GROUPS=[
  {k:'sla',icon:'🚨',t:'الـ SLA والمتابعة اليومية',ids:['v2-nav-fm103-alerts','v2-nav-fm122-risk','v2-nav-sla','v2-nav-fm122-follow','v2-nav-fm135-work','v2-nav-fm118-breach','v2-nav-risk']},
- {k:'schools',icon:'🏫',t:'المدارس والأعطال',ids:['v2-nav-fm118-school','v2-nav-fm131-map','v2-nav-school-analysis','v2-nav-recurring','v2-nav-fm131-cost','v2-nav-table']},
+ {k:'schools',icon:'🏫',t:'المدارس والأعطال',ids:['v2-nav-fm118-school','v2-nav-fm171-costs','v2-nav-fm131-map','v2-nav-school-analysis','v2-nav-recurring','v2-nav-fm131-cost','v2-nav-table']},
  {k:'staff',icon:'👷',t:'الكادر والمقاولون',ids:['v2-nav-staff','v2-nav-staff-performance','v2-nav-eng','v2-nav-fm124-visits','v2-nav-fm124-load','v2-nav-contractors','v2-nav-fm122-score']},
  {k:'analysis',icon:'📊',t:'التحليل والمقارنات',ids:['v2-nav-charts','v2-nav-period','v2-nav-fm103-periods','v2-nav-fm131-season','v2-nav-compare','v2-nav-pivot','v2-nav-saved']},
  {k:'reports',icon:'📄',t:'التقارير',ids:['v2-nav-fm127-today','v2-nav-fm125-send','v2-nav-fm126-log','v2-nav-fm118-weekly','v2-nav-report','v2-nav-fm123-weekfu','v2-nav-fm158-qa']},
@@ -28542,7 +28555,7 @@ window.fmV131CoordsTemplate=async function(onlyMissing){
  const RO=window.fmSchoolDbRowObj,hd=Object.keys(RO({}));
  const aoa=[hd].concat(L.map(x=>{const o=RO(Object.assign({},x,{region:regOf(x),lat:hasXY(x)?+x.lat:'',lng:hasXY(x)?+x.lng:''}));return hd.map(h=>o[h])}));
  const help=[['طريقة التعبئة'],['• نفس أعمدة القالب المعتمد لقاعدة المدارس — لا تغيّر أسماء الأعمدة'],['• اكتب خط العرض وخط الطول كأرقام عشرية، مثل: 26.3592 و 43.9818'],['• أو الصق في خانة «خط العرض» النص "26.3592, 43.9818" أو رابط الموقع من خرائط جوجل واترك «خط الطول» فارغاً'],['• إذا كُتب خط الطول مكان خط العرض تُصحَّح تلقائياً'],['• البريد يُكتب كاملاً مثل name@company.com — البريد غير الصحيح يُتجاهل'],['• ارفع الملف من «قاعدة بيانات المدارس ← استيراد Excel». الأعمدة غير الموجودة في الملف لا تُغيّر البيانات الحالية'],['• المطابقة بالرقم الوزاري، وإن لم يوجد فباسم المدرسة']];
- saveXlsx([['قاعدة بيانات المدارس',aoa,[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26]],['طريقة التعبئة',help,[90]]],(onlyMissing?'مدارس بدون إحداثيات':'إحداثيات وبريد المدارس')+' - '+(region()||'كل المناطق'));
+ saveXlsx([['قاعدة بيانات المدارس',aoa,[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26,22,18,18,16]],['طريقة التعبئة',help,[90]]],(onlyMissing?'مدارس بدون إحداثيات':'إحداثيات وبريد المدارس')+' - '+(region()||'كل المناطق'));
  toast('تم تنزيل الملف — عبّئه ثم ارفعه من «قاعدة بيانات المدارس ← استيراد Excel»');
 };
 
@@ -29546,9 +29559,9 @@ window.FMCloud={__core:true,cfg,setCfg,api:real,msg:ARmsg,uuid,engClient:sb,
  state:{on:false,profile:null},
  ROLE:{admin:'مدير النظام',manager:'مدير (مشروع / عمليات / منطقة)',staff:'إدارة مساندة (سلامة / جودة)',engineer:'مهندس',supervisor:'مشرف',contractor:'مقاول',viewer:'مشاهد (إدارة)',pending:'بانتظار التفعيل'},
  /* V157: the ten job titles; the technical role follows the title (set by the database) */
- POS:{sysadmin:'مدير النظام',dept_manager:'مدير الإدارة',project_manager:'مدير المشروع',ops_manager:'مدير العمليات',area_manager:'مدير المنطقة',area_engineer:'مهندس المنطقة',supervisor:'المشرف',contractor:'المقاول',hse_manager:'مدير الأمن والسلامة',qa_manager:'مدير الجودة والتخطيط'},
- POSROLE:{sysadmin:'admin',dept_manager:'viewer',project_manager:'manager',ops_manager:'manager',area_manager:'manager',area_engineer:'engineer',supervisor:'supervisor',contractor:'contractor',hse_manager:'staff',qa_manager:'staff'},
- POSRANK:{sysadmin:9,dept_manager:8,project_manager:7,ops_manager:6,area_manager:5,area_engineer:4,supervisor:3,contractor:2,hse_manager:0,qa_manager:0},
+ POS:{sysadmin:'مدير النظام',dept_manager:'مدير الإدارة',project_manager:'مدير المشروع',ops_manager:'مدير العمليات',area_manager:'مدير المنطقة',area_engineer:'مهندس المنطقة',supervisor:'المشرف',contractor:'المقاول',hse_manager:'مدير الأمن والسلامة',qa_manager:'مدير الجودة والتخطيط',accountant:'المحاسب'},
+ POSROLE:{sysadmin:'admin',dept_manager:'viewer',project_manager:'manager',ops_manager:'manager',area_manager:'manager',area_engineer:'engineer',supervisor:'supervisor',contractor:'contractor',hse_manager:'staff',qa_manager:'staff',accountant:'staff'},
+ POSRANK:{sysadmin:9,dept_manager:8,project_manager:7,ops_manager:6,area_manager:5,area_engineer:4,supervisor:3,contractor:2,hse_manager:0,qa_manager:0,accountant:0},
  posOf:u=>u&&(u.job_title||{admin:'sysadmin',engineer:'area_engineer',supervisor:'supervisor',contractor:'contractor'}[u.role])||'',
  posLabel(u){const k=this.posOf(u);return k?this.POS[k]:(this.ROLE[u&&u.role]||'')}};
 })();
@@ -29790,7 +29803,8 @@ async function hubCloud(pane){
    <tr><td><b>المشرف</b></td><td>بلاغاته وأوامره</td><td>✓ حتى «تم الحل»</td><td>—</td><td>—</td></tr>
    <tr><td><b>المقاول</b></td><td>بلاغات مدارسه وأوامره</td><td>✓ حتى «تم الحل»</td><td>—</td><td>—</td></tr>
    <tr><td><b>مدير الأمن والسلامة</b></td><td>كل المناطق</td><td>عرض البلاغات؛ ينشئ أوامر لمن تحت مدير العمليات و«إيقاف عمل»</td><td>—</td><td>—</td></tr>
-   <tr><td><b>مدير الجودة والتخطيط</b></td><td>كل المناطق</td><td>عرض البلاغات؛ ينشئ أوامر، تدقيق الجودة وتقارير عدم المطابقة</td><td>—</td><td>—</td></tr></tbody></table></div><div class="fm125-hint">الصلاحيات مطبّقة في قاعدة البيانات نفسها (Row Level Security)، وليس في الواجهة فقط.</div></div>`);
+   <tr><td><b>مدير الجودة والتخطيط</b></td><td>كل المناطق</td><td>عرض البلاغات؛ ينشئ أوامر، تدقيق الجودة وتقارير عدم المطابقة</td><td>—</td><td>—</td></tr>
+   <tr><td><b>المحاسب</b></td><td>مناطقه (قراءة) وتكاليف المباني</td><td>إدخال الفواتير والمصروفات حسب «صلاحيات تكاليف المباني»</td><td>—</td><td>—</td></tr></tbody></table></div><div class="fm125-hint">الصلاحيات مطبّقة في قاعدة البيانات نفسها (Row Level Security)، وليس في الواجهة فقط.</div></div>`);
  pane.querySelector('#cl-save').onclick=async()=>{const url=S(pane.querySelector('#cl-url').value),key=S(pane.querySelector('#cl-key').value);
   if(!/^https:\/\/.+/.test(url)||key.length<30){toast('تحقق من الرابط والمفتاح','warning');return}
   if(/service_role/.test(atobSafe(key))){toast('هذا مفتاح service_role — استخدم مفتاح anon public','error');return}
@@ -29995,7 +30009,7 @@ function genPw(){const A='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz',N='234
 
 /* role and region parsing for the Excel import */
 const ROLE_IN=Object.assign({},...Object.entries(ROLE).map(([k,v])=>({[k]:k,[v]:k})),{'مدير':'admin','ادمن':'admin','أدمن':'admin','مشاهد':'viewer','ادارة':'viewer','إدارة':'viewer','مشرف':'supervisor','مهندس':'engineer','مقاول':'contractor'});
-const POS_IN=Object.assign({},...Object.entries(C.POS).map(([k,v])=>({[k]:k,[v]:k,[v.replace(/^ال/,'')]:k})),{'مدير الامن والسلامة':'hse_manager','مدير السلامة':'hse_manager','مدير الجودة':'qa_manager','مدير الادارة':'dept_manager','مهندس':'area_engineer','مشرف':'supervisor','مقاول':'contractor'});
+const POS_IN=Object.assign({},...Object.entries(C.POS).map(([k,v])=>({[k]:k,[v]:k,[v.replace(/^ال/,'')]:k})),{'محاسب':'accountant','المحاسب المالي':'accountant','مدير الامن والسلامة':'hse_manager','مدير السلامة':'hse_manager','مدير الجودة':'qa_manager','مدير الادارة':'dept_manager','مهندس':'area_engineer','مشرف':'supervisor','مقاول':'contractor'});
 const posIn=v=>{v=S(v).replace(/\s+/g,' ');return POS_IN[v]||POS_IN[v.toLowerCase()]||''};
 const roleOf=v=>{v=S(v);const p=posIn(v);return p?POSROLE[p]:(ROLE_IN[v]||ROLE_IN[v.toLowerCase()]||'')};
 const listOf=v=>S(v).split(/[,،;\n|]+/).map(S).filter(Boolean);
@@ -31479,6 +31493,7 @@ const P={
  area_engineer:{d:'يتابع مدارسه وفريقه من المشرفين والمقاولين.',can:['يرى مدارسه وأوامر فريقه','يُسند للمشرفين والمقاولين تحته ويعتمد أوامرهم','يرى تواصل فريقه ويتابع ملاحظاتهم'],go:['v2-nav-fm145-wo','v2-nav-fm122-follow','v2-nav-eng','v2-nav-fm118-school'],hide:RO.concat(['v2-nav-fm116'])},
  hse_manager:{d:'السلامة في كل المدارس: أنظمة الحريق والإنذار، والعناصر الحرجة، والبلاغات الطارئة.',can:['يرى كل المناطق (قراءة)','ينشئ أوامر فحص السلامة ويُسندها لأي شخص تحت مدير العمليات'],go:['v2-nav-fm145-wo','v2-nav-fm122-risk','v2-nav-risk','v2-nav-fm103-alerts'],hide:RO.concat(['v2-nav-fm116'])},
  qa_manager:{d:'الجودة والتخطيط: الالتزام بالـ SLA والصيانة الوقائية، وجودة التوثيق، والقوالب والحملات.',can:['يرى كل المناطق (قراءة)','ينشئ أوامر التدقيق ويُسندها لأي شخص تحت مدير العمليات','يحدّث القوالب المشتركة والحملات المتكررة'],go:['v2-nav-fm145-wo','v2-nav-quality','v2-nav-sla','v2-nav-staff-performance','v2-nav-eng'],hide:RO.concat(['v2-nav-fm116'])},
+ accountant:{d:'المتابعة المالية: تكاليف المباني والمواد وقطع الغيار والفواتير والميزانيات في مناطقه.',can:['يرى تكاليف المباني في مناطقه (حسب صلاحيات التكاليف)','يُدخل الفواتير والمصروفات الشهرية لمبنى أو مجموعة أو منطقة','يرى البلاغات في مناطقه (قراءة)'],go:['v2-nav-fm171-costs','v2-nav-fm118-school'],hide:RO.concat(['v2-nav-fm116'])},
  supervisor:{d:'العمل الميداني على مدارسه.',can:['تطبيق الميدان: الأوامر والفحص والتواصل'],go:['v2-nav-fm145-wo'],hide:RO},
  contractor:{d:'تنفيذ الأوامر المسندة إليه.',can:['تطبيق الميدان: الأوامر المسندة فقط'],go:['v2-nav-fm145-wo'],hide:RO},
  viewer:{d:'مشاهدة المؤشرات.',can:['قراءة فقط'],go:['v2-nav-report','v2-nav-charts'],hide:RO}};
@@ -31768,6 +31783,7 @@ const MANUAL=[
  {id:'start',t:'الدخول وتوجيه كل مستخدم',where:'start.html (رابط الموقع)',what:'صفحة دخول واحدة لكل المستخدمين؛ بعد الدخول يُوجَّه كل شخص حسب مسماه: المنصة للمديرين والمهندس، وتطبيق الميدان للمشرف والمقاول.',how:['افتح رابط الموقع وأدخل البريد وكلمة المرور.','من يدخل بكلمة مرور مؤقتة يُطلب منه تغييرها أول مرة.','مدير النظام والمهندس يمكنهما اختيار «فتح المنصة» أو «فتح تطبيق الميدان».'],who:'كل المستخدمين',v:'V157'},
  {id:'v2-nav-portal',t:'بورتالي',where:'أعلى القائمة الجانبية ← «بورتالي» (يظهر تلقائياً مرة عند كل دخول)',what:'صفحة شخصية لكل مستخدم: مسماه ونطاقه وأرقامه المهمة واختصاراته وصلاحياته، والأوامر المصعّدة إليه.',how:['تظهر عند الدخول؛ أغلقها بـ ×.','افتحها في أي وقت من «بورتالي» في القائمة.','الصفحات غير اللازمة لمسمى المستخدم تُخفى من قائمته (والبيانات محمية في قاعدة البيانات على أي حال).'],who:'كل مستخدمي المنصة',v:'V158'},
  {id:'users',t:'المستخدمون والمسميات الوظيفية',where:'النظام ← الإعدادات ← تبويب «السحابة» ← «👥 المستخدمون والصلاحيات»',what:'إضافة المستخدمين وتحديد المسمى الوظيفي (عشرة مسميات) والمناطق ومن يتبع له كل شخص، وكلمات المرور المؤقتة.',how:['«➕ مستخدم جديد»: الاسم والبريد والمسمى ← تُولَّد كلمة مرور مؤقتة تُرسل بواتساب أو تُنسخ.','عدّل المسمى والمناطق و«يتبع لـ» مباشرة في الجدول.','«🔑 كلمة مرور» يعيد تعيين كلمة مرور مؤقتة.','الاستيراد من Excel ينشئ الجديد ويحدّث الموجود بعد معاينة.'],who:'مدير النظام',tips:['«يتبع لـ» يحدد التسلسل: من يُسنِد لمن، ومن يرى فريق من، والتصعيد.'],v:'V157'},
+ {id:'cost-perms',t:'صلاحيات تكاليف المباني',where:'الإعدادات ← السحابة ← «💰 صلاحيات تكاليف المباني»',what:'جدول يحدد لكل مسمى: عرض التكاليف، وإدخال المصروفات والفواتير، وتحديد الميزانية السنوية.',how:['ضع علامة أمام المسمى في كل عمود ثم «💾 حفظ الصلاحيات».','«الافتراضي»: العرض لمهندس المنطقة فما فوق والمحاسب، والإدخال لمهندس المنطقة ومدير المنطقة ومدير المشروع والمحاسب، والميزانية لمدير المشروع ومدير الإدارة.'],who:'مدير النظام',v:'V171'},
  {id:'roles',t:'الصلاحيات حسب المسمى، ومن يدخل المنصة',where:'الإعدادات ← السحابة ← «الصلاحيات حسب المسمى الوظيفي» و«🔒 من يدخل المنصة»',what:'جدول يوضح ما يراه ويفعله كل مسمى؛ ومدير النظام يحدد هل يدخل مهندس المنطقة ومدير الإدارة والمشرف والمقاول المنصة أم تطبيق الميدان فقط.',how:['راجع الجدول لمعرفة صلاحيات كل مسمى.','في «من يدخل المنصة» علّم المسميات المسموح لها ثم «حفظ».'],who:'مدير النظام',tips:['الصلاحيات مطبّقة في قاعدة البيانات نفسها، لا في الواجهة فقط.'],v:'V160'},
  {id:'v2-nav-fm162-manual',t:'دليل المنصة',where:'النظام ← «📘 دليل المنصة»',what:'هذه الصفحة: خصائص المنصة وكيفية استخدامها، مع آخر التحديثات من سجل الإصدارات تلقائياً. كل مستخدم يرى فقط شرح ما يخصه حسب مسماه الوظيفي.',how:['ابحث بكلمة، أو اختر مجموعة.','«افتح الصفحة» ينقلك للخاصية مباشرة.','«🖨️ طباعة / PDF» لنسخة مطبوعة.','مدير النظام: «عرض كما يراه» لمعاينة دليل أي مسمى قبل توزيع الحسابات.'],who:'كل مستخدمي المنصة (كلٌّ حسب مسماه)',tips:['الشارة «جديد» على الخصائص التي أُضيفت أو تغيّرت في آخر 3 إصدارات.'],v:'V164'},
  {id:'v2-nav-fm164-usage',t:'استخدام المنصة',where:'النظام ← «📈 استخدام المنصة»',what:'من يستخدم المنصة فعلاً: آخر نشاط لكل مستخدم وأيام نشاطه في المنصة والميدان، وكم أمر عمل أنشأ وكم إجراء نفّذ، وكم تواصلاً مكتملاً سجّل وكم طلب تقييم أرسل.',how:['اختر الفترة (7 / 14 / 30 / 90 يوماً) والمسمى والمنطقة.','الحالة: 🟢 نشط خلال 3 أيام، 🟡 خامل 4–14 يوماً، 🟠 متوقف أكثر من 14 يوماً، 🔴 لم يدخل بعد.','«⬇️ CSV» لتصدير التقرير.'],who:'مدير النظام ومدير المشروع',tips:['النشاط يُسجَّل من V164؛ قبلها يظهر آخر تسجيل دخول فقط.'],v:'V164'},
@@ -31799,7 +31815,8 @@ const MANUAL=[
  {id:'v2-nav-risk',t:'المخاطر والتنبيهات',where:'الـ SLA والمتابعة ← «المخاطر والتنبيهات»',what:'المدارس والأعطال الأعلى خطورة وكثافة البلاغات.',how:['راجع القائمة واطّلع على المدرسة من «ملف المدرسة».'],who:'المديرون والمهندس'}
 ]},
 {g:'المدارس والأعطال',icon:'🏫',items:[
- {id:'v2-nav-fm118-school',t:'ملف المدرسة',where:'المدارس والأعطال ← «ملف المدرسة»',what:'بيانات المدرسة وكادرها، والبلاغات الشهرية، والأعطال المتكررة، وسجل البلاغات.',how:['ابحث عن المدرسة بالاسم أو الرقم.','«تصدير Excel» لسجلها.'],who:'المديرون والمهندس',v:'V118'},
+ {id:'v2-nav-fm118-school',t:'ملف المدرسة (بروفايل المبنى)',where:'المدارس والأعطال ← «ملف المدرسة»، أو بالضغط على مبنى في «💰 تكاليف المباني»',what:'بروفايل لكل مبنى في قاعدة المدارس (حتى بدون بلاغات): بيانات المبنى (النوع والحجم والتشغيل والكادر والجوالات والموقع) وتبويبات: «📋 البلاغات» (الشهرية والأعطال المتكررة والسجل)، «💰 المصاريف وقطع الغيار» لفترة تختارها، و«🛠️ أوامر العمل».',how:['ابحث عن المدرسة بالاسم أو الرقم.','«💰 المصاريف وقطع الغيار»: اختر الفترة (هذا الشهر / الربع / السنة / مخصصة) لترى الإجمالي (مخزن · مشتريات · مصروفات)، والتكلفة حسب البند وشهرياً، و«🔧 الإصلاحات المنفذة» (البنود المُصلَحة في أوامر العمل وأوامر الإصلاح وتكلفة موادها، وفواتير الإصلاحات) حسب النظام، وأكثر القطع صرفاً، وسجل التكاليف.','«➕ مصروف / فاتورة لهذا المبنى» و«🎯 ميزانية المبنى» حسب صلاحيتك، و«⬇️ Excel» لسجل التكاليف.','«🛠️ أوامر العمل»: كل أوامر المبنى في نطاقك؛ اضغط الأمر لفتحه.'],who:'المديرون والمهندس (التكاليف حسب صلاحيات التكاليف)',tips:['المواد تُحسب من أوامر العمل المنجزة (بانتظار الاعتماد أو مغلقة) بسعر الصنف وقت الصرف؛ الصنف بدون سعر لا يُحسب ويظهر تنبيه.','فاتورة إصلاح من مقاول تُسجَّل بتصنيف «إصلاحات» لتظهر مع الإصلاحات.','المقارنة بالمباني المشابهة تظهر عند تعبئة «نوع المبنى» و«حجم المبنى» ووجود 3 مبانٍ مشابهة أو أكثر.'],v:'V171'},
+ {id:'v2-nav-fm171-costs',t:'تكاليف المباني',where:'المدارس والأعطال ← «💰 تكاليف المباني»',what:'كل المباني في نطاقك مع تكلفتها في الفترة (مواد المخزن · المشتريات · المصروفات) والمصروف منذ بداية السنة مقابل الميزانية السنوية، وقائمة الفواتير والمصروفات المسجلة.',how:['اختر الفترة، وفلتر بالمنطقة أو النوع أو الحجم أو بالبحث، ورتّب حسب التكلفة أو استهلاك الميزانية.','«➕ مصروف / فاتورة»: البيان والتصنيف والمبلغ والمورد ورقم الفاتورة؛ مرة واحدة أو شهري ثابت (من شهر إلى شهر أو مستمر)؛ لمبنى واحد أو مجموعة مبانٍ (بحث وفلاتر وتحديد) أو منطقة كاملة، ويُقسم المبلغ بالتساوي أو يُحمَّل كاملاً على كل مبنى.','«🎯 الميزانيات»: اختر السنة واكتب ميزانية كل مبنى، أو «تطبيق على الظاهر»، أو استورد من Excel (رقم المبنى / اسم المدرسة / الميزانية).','اضغط المبنى لفتح بروفايله على تبويب التكاليف، و«⬇️ Excel» لتصدير المباني والتفاصيل والمصروفات.'],who:'حسب صلاحيات التكاليف: افتراضياً مهندس المنطقة فما فوق والمحاسب',tips:['المصروف الشهري يُحسب مرة لكل شهر يقع في الفترة.','يعدّل المصروف أو يلغيه من أدخله، أو مدير المشروع ومدير النظام.','النطاق: مديرو المشروع والعمليات والإدارة ← كل المباني، مدير المنطقة والمحاسب ← مناطقهم، مهندس المنطقة ← مدارسه.'],v:'V171'},
  {id:'v2-nav-fm131-map',t:'خريطة المدارس',where:'المدارس والأعطال ← «خريطة المدارس»',what:'نقطة لكل مدرسة ملونة حسب المفتوح أو المتجاوز، وتحديد المواقع تلقائياً من OpenStreetMap.',how:['اختر «العرض» و«اللون حسب».','«تحديد المواقع تلقائياً» ثم راجع النتائج قبل الحفظ، أو الصق رابط خرائط جوجل للمدرسة.'],who:'المديرون والمهندس',v:'V134'},
  {id:'v2-nav-school-analysis',t:'تحليل بلاغات المدارس',where:'المدارس والأعطال ← «تحليل بلاغات المدارس»',what:'ترتيب المدارس بعدد البلاغات وأنواعها والتزامها بالمهلة.',how:['استخدم الفلاتر، واضغط المدرسة للتفاصيل.'],who:'المديرون والمهندس'},
  {id:'v2-nav-recurring',t:'الأعطال المتكررة',where:'المدارس والأعطال ← «الأعطال المتكررة»',what:'البلاغات المتكررة في نفس المدرسة بنفس الوصف أو وصف مشابه.',how:['راجع المجموعات المتكررة، وحوّل المتكرر إلى أمر إصلاح جذري.'],who:'المديرون والمهندس'},
@@ -31835,7 +31852,7 @@ const MANUAL=[
 ]},
 {g:'البيانات والإعداد',icon:'🗂️',items:[
  {id:'v2-nav-fm168-novaro',t:'جرد الأصول (Solvix)',where:'البيانات والإعداد ← «📦 جرد الأصول (Solvix)»',what:'يفتح Solvix: تطبيق مستقل لجرد أصول المدارس (المدارس، الغرف، الأصول بالصور والموقع، وتقارير Excel) بقاعدة بيانات وحسابات خاصة به، منفصلة عن المنصة.',how:['اضغط الزر ليفتح Solvix في تبويب جديد.','ادخل بحساب Solvix (البريد وكلمة المرور الخاصين بـ Solvix، وليس حساب المنصة).','الفنيون يدخلون Solvix برقمهم الوظيفي وكلمة مرور يحددها مدير Solvix.'],who:'مدير النظام، مدير الإدارة، مدير المشروع، مدير العمليات، مدير المنطقة، مهندس المنطقة، مدير الأمن والسلامة، مدير الجودة',tips:['صلاحيات Solvix تُدار من داخله (Users)، ولا ترتبط بصلاحيات المنصة.'],v:'V169'},
- {id:'v2-nav-school-db',t:'قاعدة بيانات المدارس',where:'البيانات والإعداد ← «قاعدة بيانات المدارس»',what:'كل مدرسة ورقمها ومكتبها ونوع المبنى (بنين / بنات / بنين وبنات) وحجمه (كبير / وسط / صغير) ومشرفها ومهندسها ومقاولها وإحداثياتها (قالب معتمد من 24 عموداً)، والنسخ الاحتياطي.',how:['«تنزيل القالب» ثم املأه وارفعه؛ الاستيراد لا يمسح عموداً غير موجود في الملف.','عمودا «نوع المبنى» و«حجم المبنى» يقبلان: بنين / بنات / بنين وبنات، وكبير / وسط / صغير؛ ويمكن تعديلهما من الجدول مباشرة.','«نسخة احتياطية» أسبوعياً (يُنبَّه بعد أسبوع بدونها).'],who:'مدير النظام',tips:['هذه القاعدة مصدر إسناد التواصل وأوامر الحملات والمسؤولين، وفلتري «نوع المبنى» و«حجم المبنى» في لوحة القيادة.'],v:'V170'},
+ {id:'v2-nav-school-db',t:'قاعدة بيانات المدارس',where:'البيانات والإعداد ← «قاعدة بيانات المدارس»',what:'كل مدرسة ورقمها ومكتبها ونوع المبنى (بنين / بنات / بنين وبنات) وحجمه (كبير / وسط / صغير) ومشرفها ومهندسها ومقاولها وإحداثياتها ومدير المدرسة والحارس وجوالاتهما (قالب معتمد من 28 عموداً)، والنسخ الاحتياطي.',how:['«تنزيل القالب» ثم املأه وارفعه؛ الاستيراد لا يمسح عموداً غير موجود في الملف.','آخر 4 أعمدة: «اسم مدير المدرسة» و«جوال مدير المدرسة» و«اسم الحارس» و«جوال الحارس» — تظهر للمشرف والفني في خريطة تطبيق الميدان بزر اتصال وواتساب.','عمودا «نوع المبنى» و«حجم المبنى» يقبلان: بنين / بنات / بنين وبنات، وكبير / وسط / صغير؛ ويمكن تعديلهما من الجدول مباشرة.','«نسخة احتياطية» أسبوعياً (يُنبَّه بعد أسبوع بدونها).'],who:'مدير النظام',tips:['هذه القاعدة مصدر إسناد التواصل وأوامر الحملات والمسؤولين، وفلتري «نوع المبنى» و«حجم المبنى» في لوحة القيادة، وخريطة المدارس في تطبيق الميدان.'],v:'V172'},
  {id:'v2-nav-fm125-contacts',t:'جهات الاتصال',where:'البيانات والإعداد ← «جهات الاتصال»',what:'جوال وبريد كل مشرف ومهندس ومقاول والإدارة، مع آخر رسالة لكل شخص.',how:['تُعبّأ من قاعدة المدارس أو يدوياً أو باستيراد Excel.'],who:'المديرون',v:'V127'},
  {id:'v2-nav-workforce',t:'إدارة القوى العاملة',where:'البيانات والإعداد ← «إدارة القوى العاملة»',what:'الفنيون والقوى العاملة لكل مقاول ومنطقة.',how:['أضف أو استورد ثم راجع التوزيع.'],who:'مدير النظام'},
  {id:'v2-nav-bulk-assignment',t:'الإسناد الجماعي للمناطق',where:'البيانات والإعداد ← «الإسناد الجماعي للمناطق»',what:'تعديل مسؤولي مجموعة مدارس دفعة واحدة.',how:['حدد المدارس ثم المسؤول الجديد.'],who:'مدير النظام'},
@@ -31863,7 +31880,7 @@ const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;return !!st.pr
 /* V164: each title sees only what concerns it. Sidebar pages follow the portal's hidden pages (fmV157P[title].hide);
    other entries list their titles here. The system admin sees everything and can preview any title. */
 const MGR=['dept_manager','project_manager','ops_manager','area_manager'],ASG=['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'];
-const RMAP={users:['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
+const RMAP={users:['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],'cost-perms':['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
  'wo-group':ASG,'wo-templates':ASG,'wo-fci':ASG,'wo-repair':ASG.concat('dept_manager'),'gov-stop':['sysadmin','hse_manager','project_manager','ops_manager','dept_manager'],
  'gov-deputy':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'eng-rating':['sysadmin',...MGR,'area_engineer'],
  'v2-nav-fm164-usage':['sysadmin','project_manager'],'v2-nav-fm168-novaro':['sysadmin','dept_manager','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm167-news':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm158-qa':['sysadmin','qa_manager',...MGR],
@@ -32242,6 +32259,413 @@ function hook(){const base=window.fmV131DbExtra;if(typeof base!=='function'||bas
   return o};f.__v170=1;window.fmV131DbExtra=f;
  const kh=window.fmV131KnownHeaders;if(typeof kh==='function'&&!kh.__v170){const k=function(){const s=kh.apply(this,arguments);HG.concat(HS).forEach(h=>s.add(h));return s};k.__v170=1;window.fmV131KnownHeaders=k}}
 hook();addEventListener('load',hook);setTimeout(hook,1500);
+})();
+</script>
+<style id="fm-v171-costs-css">
+.fm171-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px;padding-bottom:10px;border-bottom:1px solid #e2e8f0}
+.fm171-tabs button{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:6px 16px;font:800 13px Cairo,Tahoma,sans-serif;cursor:pointer;color:#334155}
+.fm171-tabs button.on{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+.fm171-per{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.fm171-per button{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:5px 12px;font:700 12.5px Cairo,Tahoma,sans-serif;cursor:pointer;color:#334155}
+.fm171-per button.on{background:#0f766e;border-color:#0f766e;color:#fff}
+.fm171-per input,.fm171-per select{font:600 12.5px Cairo,Tahoma,sans-serif;border:1px solid #cbd5e1;border-radius:10px;padding:5px 8px;background:#fff}
+.fm171-per .lbl{font-weight:800;color:#475569;font-size:12.5px}
+.fm171-bars .r{display:grid;grid-template-columns:minmax(110px,190px) 1fr auto;gap:8px;align-items:center;margin:6px 0;font-size:12.5px}
+.fm171-bars .r b{font-weight:800;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fm171-bars .t{height:12px;background:#eef2f7;border-radius:6px;overflow:hidden}
+.fm171-bars .t i{display:block;height:100%;border-radius:6px;background:#2563eb}
+.fm171-bars .v{font-variant-numeric:tabular-nums;font-weight:700;color:#334155;white-space:nowrap}
+.fm171-bud{height:10px;background:#eef2f7;border-radius:6px;overflow:hidden;margin-top:6px}
+.fm171-bud i{display:block;height:100%;border-radius:6px}
+.fm171-warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:8px 12px;font-weight:700;font-size:12.5px;margin-bottom:12px}
+.fm171-warn.bad{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+.fm171-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:10px;padding:8px 12px;font-weight:700;font-size:12.5px;margin-bottom:12px}
+.fm171-tag{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:800;background:#f1f5f9;color:#334155}
+.fm171-tag.buy{background:#fef3c7;color:#92400e}.fm171-tag.store{background:#dcfce7;color:#166534}.fm171-tag.exp{background:#e0e7ff;color:#3730a3}
+.fm171-dlg{border:0;border-radius:16px;padding:0;width:min(680px,96vw);max-height:92vh;font-family:Cairo,Tahoma,sans-serif;direction:rtl;box-shadow:0 20px 60px rgba(15,23,42,.35)}
+.fm171-dlg::backdrop{background:rgba(15,23,42,.45)}
+.fm171-dlg[open]{position:fixed;inset:0;margin:auto;height:fit-content}
+.fm171-dlg [hidden]{display:none!important}
+.fm171-dlg .fm171-row input,.fm171-dlg .fm171-row select{width:auto;flex:1 1 120px;min-width:0}
+.fm171-dlg .fm171-pick input[data-b]{width:100%}
+.fm171-dlg .in{display:grid;gap:10px;padding:16px 18px}
+.fm171-dlg h3{margin:0;font-size:17px}
+.fm171-dlg label.f{font-weight:800;font-size:12.5px;color:#334155;display:grid;gap:4px}
+.fm171-dlg input,.fm171-dlg select,.fm171-dlg textarea{font:600 13px Cairo,Tahoma,sans-serif;border:1px solid #cbd5e1;border-radius:10px;padding:7px 10px;width:100%;box-sizing:border-box;background:#fff}
+.fm171-dlg input[type=checkbox],.fm171-dlg input[type=radio]{width:auto}
+.fm171-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fm171-chips{display:flex;gap:6px;flex-wrap:wrap}
+.fm171-chips label{display:flex;gap:5px;align-items:center;border:1px solid #cbd5e1;border-radius:999px;padding:4px 10px;font-weight:700;font-size:12.5px;cursor:pointer}
+.fm171-pick{max-height:230px;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;padding:6px 8px;display:grid;gap:2px}
+.fm171-pick label{display:flex;gap:6px;align-items:center;font-weight:600;font-size:12.5px}
+.fm171-pick small{color:#64748b}
+.fm171-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.fm171-dlg .ft{display:flex;gap:8px;justify-content:flex-start;padding:12px 18px;border-top:1px solid #e2e8f0;background:#f8fafc;border-radius:0 0 16px 16px;position:sticky;bottom:0}
+.fm171-perm td,.fm171-perm th{text-align:center!important}
+.fm171-perm td:first-child,.fm171-perm th:first-child{text-align:right!important}
+@media(max-width:640px){.fm171-two{grid-template-columns:1fr}.fm171-bars .r{grid-template-columns:100px 1fr auto}}
+</style>
+<script id="fm-v171-costs">(function(){
+'use strict';
+/* V171: the building profile. «ملف المدرسة» (V118) gets the building data of the school DB, tabs and two new parts:
+   «💰 المصاريف وقطع الغيار» (materials of the finished work orders + expenses entered by hand, for a chosen period,
+   with the yearly budget and a comparison with buildings of the same type and size) and «🛠️ أوامر العمل».
+   Page «💰 تكاليف المباني» (#v2-nav-fm171-costs) lists every building of the caller's scope, the expenses, and opens
+   the dialogs to add an expense (one building, a group or a region; monthly or once) and to set yearly budgets.
+   Everything comes from section 20 of supabase_setup.sql (fm_cost_me, fm_bld_costs, fm_expense_save / _cancel,
+   fm_budget_set); who may view / enter / budget is set per job title in «الإعدادات» ← السحابة (fm_settings.cost_perms). */
+const C=window.FMCloud;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const GREG='ar-SA-u-ca-gregory',RN={riyadh:'الرياض',qassim:'القصيم'},rn=r=>RN[r]||r||'—';
+const num=v=>(Math.round((+v||0)*100)/100).toLocaleString('en-US',{maximumFractionDigits:2});
+const money=v=>num(v)+' ر.س';
+const CATS=['فاتورة صيانة','إصلاحات','عقد / اشتراك شهري','كهرباء ومياه','مقاول باطن','مواد وقطع غيار','نظافة','أخرى'];
+const SQLMSG='شغّل supabase_setup.sql المحدَّث أولاً (القسم 20).';
+const isRepCat=c=>/إصلاح/.test(S(c));
+const RES={fixed:'تم الإصلاح',ok:'منفذ'};
+const sqlMsg=m=>/does not exist|schema cache|Could not find/i.test(String(m))?SQLMSG:/not allowed/.test(m)?'لا تملك هذه الصلاحية':/building not allowed/.test(m)?'مبنى خارج نطاقك':/region not allowed/.test(m)?'المنطقة خارج نطاقك':/invalid amount/.test(m)?'المبلغ غير صحيح':/end before start/.test(m)?'نهاية الفترة قبل بدايتها':/no buildings/.test(m)?'اختر مبنى واحداً على الأقل':m;
+const bkey=(id,name)=>{const k=S(id).toUpperCase().replace(/^S[\s-]*/,'').replace(/[^A-Z0-9]/g,'');return k||('N:'+S(name).replace(/\s+/g,'').toLowerCase())};
+const cloudOn=()=>!!(C&&C.state&&C.state.on&&C.state.profile);
+const DBK='fm_school_master_db_v1';
+const db0=()=>{try{const a=JSON.parse(localStorage.getItem(DBK)||'[]');return Array.isArray(a)?a:[]}catch(e){return []}};
+function dbMeta(){const m=new Map();for(const r of db0()){if(!r||typeof r!=='object')continue;const k=bkey(r.buildingId,r.school);if(!m.has(k))m.set(k,r)}return m}
+
+/* ---------- what the caller may do (cached 5 minutes) ---------- */
+let ME=null,meAt=0,meP=null;
+async function me(force){if(!cloudOn())return null;if(ME&&!force&&Date.now()-meAt<3e5)return ME;if(meP)return meP;
+ meP=(async()=>{try{const db=await C.engClient();const r=await db.rpc('fm_cost_me');if(r.error)throw Error(r.error.message);ME=r.data||{};}catch(e){ME={err:e.message}}meAt=Date.now();meP=null;return ME})();return meP}
+window.fmV171Me=me;
+window.fmV171ExtraSchools=()=>{const out=new Set();for(const r of db0()){const n=S(r&&r.school);if(n)out.add(n)}for(const x of (ME&&ME.schools)||[])if(S(x.n))out.add(S(x.n));return [...out]};
+
+/* ---------- the period ---------- */
+let PER={p:'year',a:'',b:''},TAB='tickets';
+const ymd=d=>{const z=new Date(d.getTime()-d.getTimezoneOffset()*6e4);return z.toISOString().slice(0,10)};
+function range(){const t=new Date(),y=t.getFullYear(),m=t.getMonth();let a,b;
+ switch(PER.p){case 'month':a=new Date(y,m,1);b=new Date(y,m+1,0);break;case 'prev':a=new Date(y,m-1,1);b=new Date(y,m,0);break;
+  case 'quarter':{const q=Math.floor(m/3)*3;a=new Date(y,q,1);b=new Date(y,q+3,0);break}
+  case 'lastyear':a=new Date(y-1,0,1);b=new Date(y-1,11,31);break;
+  case 'custom':{const A=PER.a||ymd(new Date(y,0,1)),B=PER.b||ymd(t);return A<=B?{a:A,b:B}:{a:B,b:A}}
+  default:a=new Date(y,0,1);b=new Date(y,11,31)}
+ return {a:ymd(a),b:ymd(b)}}
+const PNAMES={month:'هذا الشهر',prev:'الشهر الماضي',quarter:'هذا الربع',year:'هذه السنة',lastyear:'السنة الماضية',custom:'فترة مخصصة'};
+const dshow=s=>{if(!s)return '—';const d=new Date(S(s).slice(0,10)+'T12:00:00');return isNaN(d)?S(s):d.toLocaleDateString(GREG,{year:'numeric',month:'short',day:'numeric'})};
+function perBar(){const r=range();return `<div class="fm171-per"><span class="lbl">📅 الفترة:</span>${Object.entries(PNAMES).map(([k,v])=>`<button type="button" data-per="${k}" class="${PER.p===k?'on':''}">${v}</button>`).join('')}
+ <span class="fm171-cust" ${PER.p==='custom'?'':'hidden'}><input type="date" data-pa value="${esc(r.a)}"> ← <input type="date" data-pb value="${esc(r.b)}"></span>
+ <span class="fm125-src">${dshow(r.a)} — ${dshow(r.b)}</span></div>`}
+function wirePer(box,again){box.querySelectorAll('[data-per]').forEach(x=>x.onclick=()=>{PER.p=x.dataset.per;if(PER.p==='custom'){const r=range();PER.a=PER.a||r.a;PER.b=PER.b||r.b}again()});
+ const A=box.querySelector('[data-pa]'),B=box.querySelector('[data-pb]');if(A&&B){const ch=()=>{if(A.value&&B.value){PER.a=A.value;PER.b=B.value;again()}};A.onchange=ch;B.onchange=ch}}
+
+/* ---------- data and sums ---------- */
+const CACHE=new Map();
+function costs(a,b,force){const k=a+'|'+b,c=CACHE.get(k);if(c&&!force&&Date.now()-c.t<12e4)return c.p;
+ const p=(async()=>{const db=await C.engClient();const r=await db.rpc('fm_bld_costs',{p_from:a,p_to:b,p_key:null});if(r.error)throw Error(r.error.message);return r.data||{}})();
+ CACHE.set(k,{t:Date.now(),p});p.catch(()=>CACHE.delete(k));return p}
+const flush=()=>CACHE.clear();
+/* the fetch covers the period and the whole year of its end (for the budget) */
+function span(){const r=range(),Y=+r.b.slice(0,4),y0=Y+'-01-01',y1=Y+'-12-31';return {...r,Y,fa:r.a<y0?r.a:y0,fb:r.b>y1?r.b:y1,ya:y0,yb:Y===new Date().getFullYear()?ymd(new Date()):y1}}
+const mi=s=>{const [y,m]=S(s).slice(0,10).split('-').map(Number);return y*12+m-1};
+/* how many times an expense is charged in [a, b]: once → its date is inside; monthly → each calendar month it runs in */
+function occ(e,a,b){if(e.kind!=='monthly')return e.start_on>=a&&e.start_on<=b?1:0;if(e.start_on>b||(e.end_on&&e.end_on<a))return 0;
+ return Math.max(0,Math.min(mi(e.end_on||b),mi(b))-Math.max(mi(e.start_on),mi(a))+1)}
+const share=e=>e.split==='each'?+e.amount:+e.amount/Math.max(1,+e.n||1);
+function model(D,a,b){const by=new Map();const get=(k,n)=>{let o=by.get(k);if(!o)by.set(k,o={k,n:n||'',store:0,buy:0,exp:0,total:0,lines:[],noPrice:0,rep:[],repCost:0});if(n&&!o.n)o.n=n;return o};
+ /* repairs: items fixed in any order and the done items of repair orders (their materials are already in store / buy) */
+ for(const r of D.repairs||[]){const d=S(r.at).slice(0,10);if(!r.k||d<a||d>b)continue;const o=get(r.k,r.school);o.rep.push({d,kind:'wo',r,v:+r.cost||0});o.repCost+=+r.cost||0}
+ for(const m of D.materials||[]){const d=S(m.at).slice(0,10);if(!m.k||d<a||d>b)continue;const o=get(m.k,m.school),pr=m.price==null?null:+m.price,v=(+m.q||0)*(pr||0);
+  if(pr==null)o.noPrice++;if(m.src==='buy')o.buy+=v;else o.store+=v;
+  o.lines.push({d,kind:m.src==='buy'?'buy':'store',m,v})}
+ for(const e of D.expenses||[]){const c=occ(e,a,b);if(!c)continue;const sh=share(e);
+  for(const s of e.schools||[]){const o=get(s.k,s.n);const v=sh*c,L={d:e.kind==='monthly'&&e.start_on<a?a:e.start_on,kind:'exp',e,c,sh,v};o.exp+=v;o.lines.push(L);if(isRepCat(e.category)){o.rep.push(L);o.repCost+=v}}}
+ const srt=(x,y)=>y.d<x.d?-1:y.d>x.d?1:0;for(const o of by.values()){o.total=o.store+o.buy+o.exp;o.lines.sort(srt);o.rep.sort(srt)}
+ return by}
+const zero=(k,n)=>({k,n:n||'',store:0,buy:0,exp:0,total:0,lines:[],noPrice:0,rep:[],repCost:0});
+const budOf=(D,k,Y)=>{const b=(D.budgets||[]).find(x=>x.k===k&&+x.year===Y);return b?+b.amount:0};
+function budBox(spent,bud,Y){if(!bud)return `<div class="fm103-kpi"><span>ميزانية ${Y}</span><b>—</b><small>لم تُحدَّد ميزانية لهذه السنة</small></div>`;
+ const p=spent*100/bud,c=p>=100?'#b91c1c':p>=80?'#c2410c':'#15803d';
+ return `<div class="fm103-kpi"><span>ميزانية ${Y}</span><b style="color:${c}">${num(p)}%</b><small>${money(spent)} من ${money(bud)} منذ بداية السنة</small><div class="fm171-bud"><i style="width:${Math.min(100,p)}%;background:${c}"></i></div></div>`}
+function bars(list,color){const mx=Math.max(1,...list.map(x=>x[1]));return `<div class="fm171-bars">${list.map(([l,v])=>`<div class="r"><b title="${esc(l)}">${esc(l)}</b><div class="t"><i style="width:${Math.max(v>0?2:0,v*100/mx)}%;background:${color||'#2563eb'}"></i></div><span class="v">${money(v)}</span></div>`).join('')||'<div class="fm103-empty">لا توجد تكاليف في الفترة</div>'}</div>`}
+const SRC={store:['store','من المخزن'],buy:['buy','مشتريات'],exp:['exp','مصروف']};
+function lineRow(L){if(L.kind==='exp'){const e=L.e;return `<tr><td>${dshow(L.d)}</td><td><span class="fm171-tag exp">${e.kind==='monthly'?'🔁 شهري':'🧾 فاتورة'}</span></td><td class="wrap"><b>${esc(e.title)}</b><div class="fm125-src">${esc(e.category)}${e.vendor?' · '+esc(e.vendor):''}${e.invoice_no?' · رقم '+esc(e.invoice_no):''}${+e.n>1?` · ${e.split==='each'?'نفس المبلغ لكل مبنى':'حصة من '+num(e.n)+' مبنى'}`:''}</div></td><td>${e.kind==='monthly'?num(L.c)+' شهر':'—'}</td><td>${money(L.sh)}</td><td><b>${money(L.v)}</b></td><td>${e.can_edit?`<button class="fm122-mini" data-ex-ed="${esc(e.id)}">تعديل</button><button class="fm122-mini" data-ex-del="${esc(e.id)}" style="color:#b91c1c">إلغاء</button>`:''}</td></tr>`}
+ const m=L.m;return `<tr><td>${dshow(L.d)}</td><td><span class="fm171-tag ${L.kind}">${SRC[L.kind][1]}</span></td><td class="wrap"><b>${esc(m.n)}</b><div class="fm125-src"><a href="#" data-wo="${esc(m.wo)}">${esc(m.code||'أمر عمل')}</a> · ${esc(m.title||'')}${m.item?' · '+esc(m.item):''}${m.status==='done'?' · بانتظار الاعتماد':''}</div></td><td>${num(m.q)} ${esc(m.u||'')}</td><td>${m.price==null?'<span style="color:#b91c1c">بدون سعر</span>':money(m.price)}</td><td><b>${money(L.v)}</b></td><td></td></tr>`}
+function repRow(L){if(L.kind==='exp'){const e=L.e;return `<tr><td>${dshow(L.d)}</td><td><span class="fm171-tag exp">🧾 ${e.kind==='monthly'?'شهري':'فاتورة'}</span></td><td class="wrap"><b>${esc(e.title)}</b><div class="fm125-src">${esc(e.vendor||'')}${e.invoice_no?' · رقم '+esc(e.invoice_no):''}${e.note?' · '+esc(e.note):''}</div></td><td>${esc(e.category)}</td><td>—</td><td><b>${money(L.v)}</b></td></tr>`}
+ const r=L.r;return `<tr><td>${dshow(L.d)}</td><td><a href="#" data-wo="${esc(r.wo)}">${esc(r.code||'أمر عمل')}</a>${r.type==='repair'?'<div class="fm125-src">أمر إصلاح</div>':''}</td><td class="wrap"><b>${esc(r.t||r.title)}</b>${r.opt||r.note?`<div class="fm125-src">${esc([r.opt,r.note].filter(Boolean).join(' · '))}</div>`:''}</td><td>${esc(r.g||'—')}</td><td>${esc(RES[r.res]||'منفذ')}${r.status==='done'?'<div class="fm125-src">بانتظار الاعتماد</div>':''}</td><td><b>${money(L.v)}</b></td></tr>`}
+const RHEAD='<tr><th>التاريخ</th><th>المصدر</th><th>الإصلاح</th><th>النظام / التصنيف</th><th>الحالة</th><th>التكلفة</th></tr>';
+function repXl(L,name){if(L.kind==='exp'){const e=L.e;return {'المبنى':name,'التاريخ':L.d,'المصدر':(e.kind==='monthly'?'مصروف شهري':'فاتورة')+(e.invoice_no?' '+e.invoice_no:''),'الإصلاح':e.title,'النظام / التصنيف':e.category,'الحالة':'','المورد / الملاحظة':[e.vendor,e.note].filter(Boolean).join(' · '),'التكلفة':Math.round(L.v*100)/100}}
+ const r=L.r;return {'المبنى':name,'التاريخ':L.d,'المصدر':r.code||'','الإصلاح':r.t||r.title,'النظام / التصنيف':r.g||'','الحالة':(RES[r.res]||'منفذ')+(r.status==='done'?' (بانتظار الاعتماد)':''),'المورد / الملاحظة':[r.opt,r.note].filter(Boolean).join(' · '),'التكلفة':Math.round(L.v*100)/100}}
+const LHEAD='<tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>الكمية / الأشهر</th><th>سعر الوحدة / الحصة</th><th>المبلغ</th><th></th></tr>';
+
+/* ---------- open a work order of the work-orders page ---------- */
+function openWo(id){if(!id)return;window.fmV145OpenWorkOrders?.();let n=0;const t=setInterval(()=>{const X=window.fmV145X;try{if(X&&X.list().some(w=>w.id===id)){clearInterval(t);X.detail(id)}else if(++n>60)clearInterval(t)}catch(e){clearInterval(t)}},250)}
+function wireCommon(box,again){
+ box.querySelectorAll('[data-wo]').forEach(a=>a.onclick=e=>{e.preventDefault();openWo(a.dataset.wo)});
+ box.querySelectorAll('[data-ex-ed]').forEach(b=>b.onclick=()=>{const e=(window.__fm171Exp||[]).find(x=>x.id===b.dataset.exEd);if(e)expenseDlg({edit:e,done:again})});
+ box.querySelectorAll('[data-ex-del]').forEach(b=>b.onclick=async()=>{const e=(window.__fm171Exp||[]).find(x=>x.id===b.dataset.exDel);if(!e)return;
+  const why=prompt(`إلغاء المصروف «${e.title}» (${money(e.amount)})؟\nاكتب السبب:`);if(why===null)return;
+  try{const db=await C.engClient();const r=await db.rpc('fm_expense_cancel',{p_id:e.id,p_reason:why});if(r.error)throw Error(r.error.message);toast('تم إلغاء المصروف');flush();again()}catch(er){toast(sqlMsg(er.message),'error')}})}
+
+/* ---------- profile tab: costs of one building ---------- */
+async function renderCosts(box,ctx){const again=()=>renderCosts(box,ctx);
+ const M=await me();if(!M||M.err||!M.view){box.innerHTML=`<div class="fm103-card fm103-empty">${esc(M&&M.err?sqlMsg(M.err):'لا تملك صلاحية عرض التكاليف')}</div>`;return}
+ const sp=span();box.innerHTML=perBar()+'<div class="fm125-src">جارٍ تحميل التكاليف…</div>';wirePer(box,again);
+ let D;try{D=await costs(sp.fa,sp.fb)}catch(e){box.innerHTML=perBar()+`<div class="fm171-warn bad">${esc(sqlMsg(e.message))}</div>`;wirePer(box,again);return}
+ window.__fm171Exp=D.expenses||[];
+ const P=model(D,sp.a,sp.b),o=P.get(ctx.key)||zero(ctx.key,ctx.name),yt=(model(D,sp.ya,sp.yb).get(ctx.key)||zero()).total,bud=budOf(D,ctx.key,sp.Y);
+ /* the average of buildings with the same type and size (3 or more, the caller's scope) */
+ const meta=dbMeta(),mine=meta.get(ctx.key)||ctx.rec||{};let cmp='';
+ if(S(mine.gender)&&S(mine.size)){const sim=(M.schools||[]).filter(s=>s.k!==ctx.key&&(()=>{const r=meta.get(s.k);return r&&S(r.gender)===S(mine.gender)&&S(r.size)===S(mine.size)})());
+  if(sim.length>=3){const avg=sim.reduce((t,s)=>t+((P.get(s.k)||{}).total||0),0)/sim.length;const d=avg?(o.total-avg)*100/avg:0;
+   cmp=`<div class="fm171-info">⚖️ مقارنة بـ ${num(sim.length)} مبنى (${esc(mine.gender)} · ${esc(mine.size)}): متوسط تكلفتها في الفترة ${money(avg)} — هذا المبنى ${avg?(Math.abs(d)<5?'قريب من المتوسط':d>0?`<b style="color:#b91c1c">أعلى بـ ${num(d)}%</b>`:`<b style="color:#15803d">أقل بـ ${num(-d)}%</b>`):''}</div>`}}
+ else cmp='<div class="fm125-src" style="margin-bottom:10px">💡 أدخل «نوع المبنى» و«حجم المبنى» في قاعدة المدارس لتظهر المقارنة بالمباني المشابهة.</div>';
+ const warn=bud&&yt>=bud?`<div class="fm171-warn bad">⛔ تجاوز المبنى ميزانية ${sp.Y}: ${money(yt)} من ${money(bud)}</div>`:bud&&yt>=bud*.8?`<div class="fm171-warn">⚠️ وصل المبنى إلى ${num(yt*100/bud)}% من ميزانية ${sp.Y}</div>`:'';
+ const byCat=[['مواد من المخزن',o.store],['مشتريات',o.buy]];const cm=new Map();o.lines.filter(l=>l.kind==='exp').forEach(l=>cm.set(l.e.category||'أخرى',(cm.get(l.e.category||'أخرى')||0)+l.v));
+ byCat.push(...[...cm.entries()].sort((a,b)=>b[1]-a[1]));
+ const months=[];for(let k=mi(sp.a);k<=mi(sp.b);k++)months.push(k);const mv=months.map(k=>[new Date(Math.floor(k/12),k%12,1).toLocaleDateString(GREG,{month:'short',year:'numeric'}),o.lines.filter(l=>l.kind!=='exp'&&mi(l.d)===k).reduce((t,l)=>t+l.v,0)+(o.lines.filter(l=>l.kind==='exp').reduce((t,l)=>t+(occ(l.e,ymd(new Date(Math.floor(k/12),k%12,1)),ymd(new Date(Math.floor(k/12),k%12+1,0)))?l.sh:0),0))]);
+ const parts=new Map();o.lines.filter(l=>l.kind!=='exp').forEach(l=>{const k=S(l.m.n)+'|'+S(l.m.u);let x=parts.get(k);if(!x)parts.set(k,x={n:l.m.n,u:l.m.u,q:0,v:0,w:new Set()});x.q+=+l.m.q||0;x.v+=l.v;x.w.add(l.m.wo)});
+ const top=[...parts.values()].sort((a,b)=>b.v-a.v||b.q-a.q);
+ box.innerHTML=perBar()+warn+`<div class="fm171-row" style="margin-bottom:12px">${M.entry?'<button class="fm103-btn primary" type="button" data-add>➕ مصروف / فاتورة لهذا المبنى</button>':''}${M.budget?'<button class="fm103-btn" type="button" data-bud>🎯 ميزانية المبنى</button>':''}<button class="fm103-btn" type="button" data-xl>⬇️ Excel</button></div>
+ <div class="fm103-kpis"><div class="fm103-kpi"><span>إجمالي التكلفة</span><b>${money(o.total)}</b><small>${PNAMES[PER.p]}</small></div>
+  <div class="fm103-kpi"><span>مواد من المخزن</span><b>${money(o.store)}</b><small>${num(o.lines.filter(l=>l.kind==='store').length)} صرف</small></div>
+  <div class="fm103-kpi"><span>مشتريات</span><b>${money(o.buy)}</b><small>${num(o.lines.filter(l=>l.kind==='buy').length)} شراء</small></div>
+  <div class="fm103-kpi"><span>مصروفات وفواتير</span><b>${money(o.exp)}</b><small>${num(o.lines.filter(l=>l.kind==='exp').length)} بند</small></div>
+  <div class="fm103-kpi"><span>🔧 الإصلاحات</span><b>${num(o.rep.length)}</b><small>تكلفتها ${money(o.repCost)} (ضمن الإجمالي)</small></div>
+  ${budBox(yt,bud,sp.Y)}</div>${cmp}
+ ${o.noPrice?`<div class="fm171-warn">${num(o.noPrice)} صرف بدون سعر وحدة (لم يُحسب) — أضف السعر في «🧰 أصناف المواد».</div>`:''}
+ <div class="fm103-grid"><div class="fm103-card"><h3>التكلفة حسب البند</h3>${bars(byCat.filter(x=>x[1]>0),'#0f766e')}</div><div class="fm103-card"><h3>التكلفة شهرياً</h3>${bars(mv.slice(-24),'#2563eb')}</div></div>
+ <div class="fm103-card" style="margin-bottom:14px"><h3>🔧 الإصلاحات المنفذة</h3><div class="q">البنود المُصلَحة في أوامر العمل وبنود أوامر الإصلاح المنفذة (التكلفة = موادها) + الفواتير بتصنيف «إصلاحات»</div>${(()=>{const g=new Map();o.rep.forEach(L=>{const k=L.kind==='exp'?'فواتير إصلاحات':(S(L.r.g)||'بدون نظام');g.set(k,(g.get(k)||0)+L.v)});return g.size>1?bars([...g.entries()].sort((a,b)=>b[1]-a[1]),'#ea580c'):''})()}${o.rep.length?`<div class="fm103-tw"><table class="fm103-t"><thead>${RHEAD}</thead><tbody>${o.rep.map(repRow).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد إصلاحات في الفترة</div>'}</div>
+ <div class="fm103-card" style="margin-bottom:14px"><h3>المواد وقطع الغيار المصروفة</h3><div class="q">من أوامر العمل المنجزة في الفترة</div>${top.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>الصنف</th><th>الكمية</th><th>الأوامر</th><th>التكلفة</th></tr></thead><tbody>${top.map(x=>`<tr><td><b>${esc(x.n)}</b></td><td>${num(x.q)} ${esc(x.u||'')}</td><td>${num(x.w.size)}</td><td>${money(x.v)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد مواد مصروفة في الفترة</div>'}</div>
+ <div class="fm103-card"><h3>سجل التكاليف</h3><div class="q">الأحدث أولاً • الشهري يُحسب مرة لكل شهر يقع في الفترة • انقر كود الأمر لفتحه</div>${o.lines.length?`<div class="fm103-tw"><table class="fm103-t"><thead>${LHEAD}</thead><tbody>${o.lines.map(lineRow).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد تكاليف لهذا المبنى في الفترة</div>'}</div>`;
+ wirePer(box,again);wireCommon(box,again);
+ const q=s=>box.querySelector(s);
+ if(q('[data-add]'))q('[data-add]').onclick=()=>expenseDlg({keys:[ctx.key],done:again});
+ if(q('[data-bud]'))q('[data-bud]').onclick=()=>budgetDlg({keys:[ctx.key],year:sp.Y,done:again});
+ q('[data-xl]').onclick=()=>xl([{n:'تكاليف المبنى',rows:o.lines.map(l=>lineXl(l,ctx.name))},{n:'الإصلاحات',rows:o.rep.map(l=>repXl(l,ctx.name))}],`تكاليف ${ctx.name.slice(0,50)} ${sp.a} - ${sp.b}`)}
+function lineXl(l,name){if(l.kind==='exp'){const e=l.e;return {'المبنى':name,'التاريخ':l.d,'النوع':e.kind==='monthly'?'مصروف شهري':'فاتورة / مصروف','البيان':e.title,'التصنيف':e.category,'المورد':e.vendor||'','رقم الفاتورة':e.invoice_no||'','أمر العمل':'','الكمية / الأشهر':e.kind==='monthly'?l.c:1,'الوحدة':e.kind==='monthly'?'شهر':'','سعر الوحدة / الحصة':Math.round(l.sh*100)/100,'المبلغ':Math.round(l.v*100)/100,'ملاحظة':+e.n>1?(e.split==='each'?'نفس المبلغ لكل مبنى':'حصة من '+e.n+' مبنى'):''}}
+ const m=l.m;return {'المبنى':name,'التاريخ':l.d,'النوع':SRC[l.kind][1],'البيان':m.n,'التصنيف':m.g||'','المورد':'','رقم الفاتورة':'','أمر العمل':m.code||'','الكمية / الأشهر':+m.q||0,'الوحدة':m.u||'','سعر الوحدة / الحصة':m.price==null?'':+m.price,'المبلغ':Math.round(l.v*100)/100,'ملاحظة':(m.item||'')+(m.status==='done'?' (بانتظار الاعتماد)':'')}}
+async function xl(sheets,name){try{try{await window.fmEnsureLibraries?.()}catch(e){}if(typeof XLSX==='undefined')throw Error('مكتبة Excel غير متاحة');
+ const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};
+ for(const s of sheets){const ws=XLSX.utils.json_to_sheet(s.rows.length?s.rows:[{'—':'لا توجد بيانات'}]);ws['!views']=[{RTL:true}];const h=Object.keys(s.rows[0]||{});ws['!cols']=h.map(k=>({wch:Math.max(10,Math.min(40,k.length+6))}));XLSX.utils.book_append_sheet(wb,ws,s.n.slice(0,31))}
+ XLSX.writeFile(wb,name.replace(/[\\/:*?"<>|]/g,'-')+'.xlsx');toast('تم التصدير')}catch(e){toast('تعذر التصدير: '+e.message,'error')}}
+
+/* ---------- profile tab: work orders of one building ---------- */
+const WST={assigned:'بانتظار القبول',accepted:'مقبول',rejected:'مرفوض',in_progress:'قيد التنفيذ',done:'بانتظار الاعتماد',returned:'مُعاد للتصحيح',closed:'مغلق',cancelled:'ملغى',stopped:'موقوف'};
+async function renderWo(box,ctx){box.innerHTML='<div class="fm125-src">جارٍ تحميل أوامر العمل…</div>';
+ let W=[];try{W=await C.api.woList()}catch(e){box.innerHTML=`<div class="fm171-warn bad">${esc(e.message)}</div>`;return}
+ const bid=ctx.rec&&S(ctx.rec.buildingId)?bkey(ctx.rec.buildingId,''):'';
+ const L=W.filter(w=>(bid&&S(w.building_id)&&bkey(w.building_id,'')===bid)||S(w.school)===S(ctx.name)).sort((a,b)=>S(b.created_at).localeCompare(S(a.created_at)));
+ const T=(window.fmV145X&&window.fmV145X.T)||{};const open=L.filter(w=>!['closed','cancelled','rejected'].includes(w.status));
+ box.innerHTML=`<div class="fm103-kpis"><div class="fm103-kpi"><span>كل الأوامر</span><b>${num(L.length)}</b><small>التي تراها في نطاقك</small></div><div class="fm103-kpi"><span>مفتوحة</span><b>${num(open.length)}</b><small>${num(L.filter(w=>w.status==='done').length)} بانتظار الاعتماد</small></div><div class="fm103-kpi"><span>مغلقة</span><b>${num(L.filter(w=>w.status==='closed').length)}</b><small>${num(L.filter(w=>w.type==='preventive').length)} وقائية · ${num(L.filter(w=>w.type==='repair').length)} إصلاح</small></div></div>
+ <div class="fm103-card">${L.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>الكود</th><th>النوع</th><th>العنوان</th><th>الحالة</th><th>المسند إليه</th><th>التاريخ</th></tr></thead><tbody>${L.slice(0,500).map(w=>`<tr data-wo="${esc(w.id)}" style="cursor:pointer"><td><b>${esc(w.code||'')}</b></td><td>${esc((T[w.type]||['',w.type])[1])}</td><td class="wrap">${esc(w.title)}</td><td>${esc(WST[w.status]||w.status)}</td><td>${esc(w.assignee_name||'')}</td><td>${dshow(w.created_at)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد أوامر عمل لهذا المبنى</div>'}</div>`;
+ box.querySelectorAll('tr[data-wo]').forEach(r=>r.onclick=()=>openWo(r.dataset.wo))}
+
+/* ---------- the profile: building data + tabs ---------- */
+function recOf(name,row){let r=null;try{r=row?window.fmAuthoritativeSchoolRecord?.(row):null}catch(e){}const n=S(name),D=db0();
+ const d=D.find(x=>S(x&&x.school)===n)||(r&&S(r.buildingId)?D.find(x=>x&&bkey(x.buildingId,'')===bkey(r.buildingId,'')):null);return Object.assign({},r||{},d||{})}
+function keyOf(name,rec){const n=S(name),hit=((ME&&ME.schools)||[]).find(s=>S(s.n)===n);if(S(rec.buildingId)||S(rec.school))return bkey(rec.buildingId,rec.school||n);return hit?hit.k:bkey('',n)}
+const idf=(l,v)=>`<div><span>${esc(l)}</span><b>${esc(S(v)||'—')}</b></div>`;
+window.fmV171SchoolAfter=function(p,name,row){
+ const body=p&&p.querySelector('.body');if(!body||!name)return;
+ const rec=recOf(name,row),ctx={name:S(name),rec,key:keyOf(name,rec)};
+ /* building data */
+ let idc=body.querySelector('.fm118-id'),card=idc&&idc.closest('.fm103-card');
+ const geo=+rec.lat&&+rec.lng?`<div><span>الموقع</span><b><a href="https://www.google.com/maps?q=${+rec.lat},${+rec.lng}" target="_blank" rel="noopener">خرائط جوجل ↗</a></b></div>`:'';
+ const tel=(l,n,ph)=>n||ph?`<div><span>${esc(l)}</span><b>${esc(S(n)||'—')}${S(ph)?` · <a href="tel:${esc(S(ph).replace(/[^\d+]/g,''))}" dir="ltr">${esc(ph)}</a>`:''}</b></div>`:'';
+ const extra=idf('نوع المبنى',rec.gender)+idf('حجم المبنى',rec.size)+idf('التشغيل',rec.operation)+tel('مدير المدرسة',rec.principal,rec.principalPhone)+tel('الحارس',rec.guard,rec.guardPhone)+(rec.supervisorPhone?idf('جوال مشرف الصيانة',rec.supervisorPhone):'')+(rec.engineerPhone?idf('جوال مهندس الصيانة',rec.engineerPhone):'')+(rec.contractorPhone?idf('جوال المقاول',rec.contractorPhone):'')+geo;
+ if(idc)idc.insertAdjacentHTML('beforeend',extra);
+ else{card=document.createElement('div');card.className='fm103-card';card.style.marginBottom='14px';
+  card.innerHTML=`<h3 style="font-size:18px;margin-bottom:10px">${esc(name)}</h3><div class="fm118-id">${idf('الرقم الوزاري / المبنى',rec.buildingId)}${idf('المنطقة',rn(rec.region))}${idf('مكتب التعليم',rec.office)}${idf('المقاول',rec.contractor)}${idf('مشرف الصيانة',rec.supervisor)}${idf('مهندس الصيانة',rec.engineer)}${idf('مشرف الخدمات الخفيفة',rec.lightSupervisor)}${idf('مهندس الخدمات الخفيفة',rec.lightEngineer)}${extra}</div>`;
+  body.insertBefore(card,body.firstChild)}
+ /* tabs: the V118 content becomes «البلاغات» */
+ const panes={tickets:document.createElement('div')};panes.tickets.dataset.fm171='tickets';
+ [...body.childNodes].filter(n=>n!==card).forEach(n=>panes.tickets.appendChild(n));
+ const bar=document.createElement('div');bar.className='fm171-tabs';body.appendChild(bar);body.appendChild(panes.tickets);
+ const tabs=[['tickets','📋 البلاغات']];
+ const show=(k,auto)=>{if(!auto)TAB=k;bar.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.t===k));
+  for(const [t,el] of Object.entries(panes))el.hidden=t!==k;
+  if(k!=='tickets'&&!panes[k].dataset.done){panes[k].dataset.done=1;(k==='costs'?renderCosts:renderWo)(panes[k],ctx)}};
+ const draw=()=>{bar.innerHTML=tabs.map(([k,l])=>`<button type="button" data-t="${k}">${l}</button>`).join('');bar.querySelectorAll('button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+  show(tabs.some(t=>t[0]===TAB)?TAB:'tickets',true)};
+ const add=(k,l)=>{if(panes[k])return;panes[k]=document.createElement('div');panes[k].dataset.fm171=k;panes[k].hidden=true;body.appendChild(panes[k]);tabs.push([k,l])};
+ if(cloudOn())add('wo','🛠️ أوامر العمل');
+ draw();
+ if(cloudOn())me().then(M=>{if(!bar.isConnected||!M||M.err||!M.view)return;add('costs','💰 المصاريف وقطع الغيار');tabs.sort((a,b)=>['tickets','costs','wo'].indexOf(a[0])-['tickets','costs','wo'].indexOf(b[0]));draw()})};
+window.fmV171OpenProfile=(name,tab)=>{if(tab)TAB=tab;window.fmV118OpenSchool?.(name)};
+
+/* ---------- dialog helpers ---------- */
+function dlg(html){const d=document.createElement('dialog');d.className='fm171-dlg';d.innerHTML=html;document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();return d}
+const metaTxt=r=>[r&&r.gender,r&&r.size].filter(Boolean).join(' · ');
+
+/* ---------- add / edit an expense ---------- */
+async function expenseDlg(o){o=o||{};const M=await me(true);if(!M||M.err||!M.entry){toast(M&&M.err?sqlMsg(M.err):'لا تملك صلاحية إدخال المصروفات','error');return}
+ const e=o.edit||{},SC=M.schools||[],meta=dbMeta(),regs=[...new Set(SC.map(s=>s.r).filter(Boolean))];
+ const regionOk=M.scope==='all'||M.scope==='region';
+ let sel=new Set(e.id?(e.schools||[]).map(s=>s.k):(o.keys||[]));
+ let scope=e.scope||(sel.size>1?'group':'school');if(scope==='region'&&!regionOk)scope='group';
+ const today=ymd(new Date());
+ const d=dlg(`<div class="in"><h3>${e.id?'✏️ تعديل مصروف':'➕ مصروف / فاتورة'}</h3>
+  <label class="f">البيان<input data-k="title" maxlength="200" placeholder="مثال: فاتورة إصلاح مكيفات / عقد نظافة شهري" value="${esc(e.title||'')}"></label>
+  <div class="fm171-two"><label class="f">التصنيف<select data-k="category">${CATS.map(c=>`<option ${S(e.category||'فاتورة صيانة')===c?'selected':''}>${c}</option>`).join('')}${e.category&&!CATS.includes(e.category)?`<option selected>${esc(e.category)}</option>`:''}</select></label>
+   <label class="f">المبلغ (ر.س)<input data-k="amount" inputmode="decimal" value="${esc(e.amount||'')}" placeholder="0.00"></label></div>
+  <div class="fm171-two"><label class="f">المورد / المقاول (اختياري)<input data-k="vendor" maxlength="200" value="${esc(e.vendor||'')}"></label><label class="f">رقم الفاتورة (اختياري)<input data-k="invoice_no" maxlength="80" value="${esc(e.invoice_no||'')}"></label></div>
+  <div><b>التكرار</b><div class="fm171-chips"><label><input type="radio" name="fm171k" value="once" ${e.kind!=='monthly'?'checked':''}>🧾 مرة واحدة</label><label><input type="radio" name="fm171k" value="monthly" ${e.kind==='monthly'?'checked':''}>🔁 شهري ثابت</label></div></div>
+  <div class="fm171-two"><label class="f"><span data-l-start>التاريخ</span><input type="date" data-k="start_on" value="${esc(S(e.start_on).slice(0,10)||today)}"></label><label class="f" data-endbox>حتى (اختياري — بدون = مستمر)<input type="date" data-k="end_on" value="${esc(S(e.end_on).slice(0,10))}"></label></div>
+  <div><b>يشمل</b><div class="fm171-chips"><label><input type="radio" name="fm171s" value="school" ${scope==='school'?'checked':''}>🏫 مبنى واحد</label><label><input type="radio" name="fm171s" value="group" ${scope==='group'?'checked':''}>🏘️ مجموعة مبانٍ</label>${regionOk?`<label><input type="radio" name="fm171s" value="region" ${scope==='region'?'checked':''}>🗺️ منطقة كاملة</label>`:''}</div></div>
+  <div data-pane="school"><input data-k="one" list="fm171-dl" placeholder="ابحث باسم المبنى أو رقمه…" value="${esc(sel.size===1?(SC.find(s=>sel.has(s.k))||{}).n||'':'')}"><datalist id="fm171-dl">${SC.map(s=>`<option value="${esc(s.n||s.k)}">${esc(s.k)} · ${esc(rn(s.r))}</option>`).join('')}</datalist></div>
+  <div data-pane="group"><div class="fm171-row" style="margin-bottom:6px"><input data-k="q" placeholder="بحث…" style="flex:1;min-width:140px"><select data-k="fr"><option value="">كل المناطق</option>${regs.map(r=>`<option value="${esc(r)}">${esc(rn(r))}</option>`).join('')}</select><select data-k="fg"><option value="">كل الأنواع</option><option>بنين</option><option>بنات</option><option>بنين وبنات</option></select><select data-k="fs"><option value="">كل الأحجام</option><option>كبير</option><option>وسط</option><option>صغير</option></select></div>
+   <div class="fm171-row" style="margin-bottom:6px"><button type="button" class="fm122-mini" data-all>تحديد الظاهر</button><button type="button" class="fm122-mini" data-none>إلغاء التحديد</button><span class="fm125-src" data-cnt></span></div><div class="fm171-pick" data-list></div></div>
+  <div data-pane="region"><select data-k="region">${regs.map(r=>`<option value="${esc(r)}" ${e.region===r?'selected':''}>${esc(rn(r))} (${num(SC.filter(s=>s.r===r).length)} مبنى)</option>`).join('')}</select></div>
+  <div data-splitbox><b>التوزيع على المباني</b><div class="fm171-chips"><label><input type="radio" name="fm171p" value="equal" ${e.split!=='each'?'checked':''}>➗ يُقسم المبلغ بالتساوي</label><label><input type="radio" name="fm171p" value="each" ${e.split==='each'?'checked':''}>🟰 نفس المبلغ لكل مبنى</label></div></div>
+  <div class="fm171-info" data-prev></div>
+  <label class="f">ملاحظة (اختياري)<textarea data-k="note" rows="2" maxlength="1000">${esc(e.note||'')}</textarea></label></div>
+  <div class="ft"><button class="fm103-btn primary" type="button" data-save>💾 حفظ</button><button class="fm103-btn" type="button" data-x>إلغاء</button></div>`);
+ const q=s=>d.querySelector(s),val=k=>S(q(`[data-k=${k}]`).value),radio=n=>(d.querySelector(`input[name=${n}]:checked`)||{}).value;
+ const amt=()=>{const v=+val('amount').replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/,/g,'');return isFinite(v)?v:NaN};
+ const visible=()=>{const t=val('q').toLowerCase(),r=val('fr'),g=val('fg'),z=val('fs');return SC.filter(s=>{const m=meta.get(s.k)||{};return (!t||S(s.n).toLowerCase().includes(t)||s.k.toLowerCase().includes(t))&&(!r||s.r===r)&&(!g||S(m.gender)===g)&&(!z||S(m.size)===z)})};
+ const drawList=()=>{const V=visible();q('[data-list]').innerHTML=V.slice(0,800).map(s=>`<label><input type="checkbox" value="${esc(s.k)}" ${sel.has(s.k)?'checked':''}>${esc(s.n||s.k)} <small>${esc(rn(s.r))}${metaTxt(meta.get(s.k))?' · '+esc(metaTxt(meta.get(s.k))):''}</small></label>`).join('')+(V.length>800?`<small>يعرض أول 800 من ${num(V.length)} — ضيّق البحث</small>`:'')||'<small>لا توجد مبانٍ مطابقة</small>';
+  q('[data-list]').querySelectorAll('input').forEach(i=>i.onchange=()=>{i.checked?sel.add(i.value):sel.delete(i.value);prev()});prev()};
+ const count=()=>{const s=radio('fm171s');if(s==='region')return SC.filter(x=>x.r===val('region')).length;if(s==='school'){const n=val('one');return SC.some(x=>(x.n||x.k)===n||x.k===n)?1:0}return sel.size};
+ function prev(){const s=radio('fm171s'),n=count(),a=amt(),k=radio('fm171k');q('[data-cnt]').textContent=`محدد: ${num(sel.size)}`;
+  for(const p of ['school','group','region'])q(`[data-pane=${p}]`).hidden=p!==s;q('[data-splitbox]').hidden=s==='school';
+  q('[data-endbox]').hidden=k!=='monthly';q('[data-l-start]').textContent=k==='monthly'?'يبدأ من':'التاريخ';
+  const each=s==='school'||radio('fm171p')==='each'?a:a/Math.max(1,n);
+  q('[data-prev]').innerHTML=!n?'اختر المبنى / المباني':isNaN(a)||a<=0?`${num(n)} مبنى`:`${num(n)} مبنى · نصيب كل مبنى ${money(each)}${k==='monthly'?' في الشهر':''} · الإجمالي ${money(s==='school'||radio('fm171p')!=='each'?a:a*n)}${k==='monthly'?' شهرياً':''}`}
+ d.querySelectorAll('input[type=radio]').forEach(i=>i.onchange=prev);['amount','one','region'].forEach(k=>{const x=q(`[data-k=${k}]`);if(x){x.oninput=prev;x.onchange=prev}});
+ ['q','fr','fg','fs'].forEach(k=>{q(`[data-k=${k}]`).oninput=drawList;q(`[data-k=${k}]`).onchange=drawList});
+ q('[data-all]').onclick=()=>{visible().forEach(s=>sel.add(s.k));drawList()};q('[data-none]').onclick=()=>{sel.clear();drawList()};
+ q('[data-x]').onclick=()=>d.close();drawList();
+ q('[data-save]').onclick=async ev=>{const s=radio('fm171s'),a=amt(),k=radio('fm171k');
+  if(!val('title')){toast('اكتب البيان','warning');return}if(isNaN(a)||a<=0){toast('اكتب المبلغ','warning');return}if(!val('start_on')){toast('اختر التاريخ','warning');return}
+  if(k==='monthly'&&val('end_on')&&val('end_on')<val('start_on')){toast('تاريخ النهاية قبل البداية','warning');return}
+  let keys=[];if(s==='school'){const n=val('one'),hit=SC.find(x=>(x.n||x.k)===n)||SC.find(x=>x.k===n);if(!hit){toast('اختر المبنى من القائمة','warning');return}keys=[hit.k]}
+  else if(s==='group'){keys=[...sel];if(!keys.length){toast('حدد المباني','warning');return}}
+  const body={id:e.id||null,title:val('title'),category:val('category'),vendor:val('vendor'),invoice_no:val('invoice_no'),amount:a,kind:k,start_on:val('start_on'),end_on:k==='monthly'?val('end_on')||null:null,
+   split:s==='school'?'equal':radio('fm171p'),scope:s,region:s==='region'?val('region'):null,schools:keys,note:val('note')};
+  const b=ev.currentTarget;b.disabled=true;try{const db=await C.engClient();const r=await db.rpc('fm_expense_save',{p:body});if(r.error)throw Error(r.error.message);toast(e.id?'تم حفظ التعديل':'تم تسجيل المصروف');flush();d.close();o.done&&o.done()}
+  catch(er){toast(sqlMsg(er.message),'error');b.disabled=false}}}
+window.fmV171Expense=expenseDlg;
+
+/* ---------- yearly budgets ---------- */
+async function budgetDlg(o){o=o||{};const M=await me(true);if(!M||M.err||!M.budget){toast(M&&M.err?sqlMsg(M.err):'تحديد الميزانية لمدير المشروع ومن هو أعلى منه','error');return}
+ const SC=M.schools||[],meta=dbMeta(),regs=[...new Set(SC.map(s=>s.r).filter(Boolean))],only=o.keys&&o.keys.length?new Set(o.keys):null;
+ let Y=o.year||new Date().getFullYear(),cur=new Map(),chg=new Map();
+ const d=dlg(`<div class="in"><h3>🎯 الميزانية السنوية ${only&&only.size===1?'— '+esc((SC.find(s=>only.has(s.k))||{}).n||''):'للمباني'}</h3>
+  <div class="fm171-row"><label class="f" style="display:flex;gap:6px;align-items:center">السنة <select data-k="y">${[Y-1,Y,Y+1].map(y=>`<option ${y===Y?'selected':''}>${y}</option>`).join('')}</select></label>
+  ${only?'':`<input data-k="q" placeholder="بحث…" style="flex:1;min-width:120px;width:auto"><select data-k="fr" style="width:auto"><option value="">كل المناطق</option>${regs.map(r=>`<option value="${esc(r)}">${esc(rn(r))}</option>`).join('')}</select>`}</div>
+  ${only?'':`<div class="fm171-row"><input data-k="fill" inputmode="decimal" placeholder="مبلغ" style="width:140px"><button type="button" class="fm122-mini" data-fill>تطبيق على الظاهر</button><button type="button" class="fm122-mini" data-tpl>⬇️ قالب Excel</button><label class="fm122-mini" style="cursor:pointer">⬆️ استيراد Excel<input type="file" accept=".xlsx,.xls,.csv" data-imp hidden></label></div>`}
+  <div class="fm171-pick" data-list style="max-height:340px"></div><div class="fm125-src">اترك الخانة فارغة أو 0 لحذف الميزانية. يُنبَّه عند 80% وعند التجاوز.</div></div>
+  <div class="ft"><button class="fm103-btn primary" type="button" data-save>💾 حفظ</button><button class="fm103-btn" type="button" data-x>إغلاق</button><span class="fm125-src" data-cnt></span></div>`);
+ const q=s=>d.querySelector(s);
+ const vis=()=>{const t=S(q('[data-k=q]')?.value).toLowerCase(),r=S(q('[data-k=fr]')?.value);return SC.filter(s=>(!only||only.has(s.k))&&(!t||S(s.n).toLowerCase().includes(t)||s.k.toLowerCase().includes(t))&&(!r||s.r===r))};
+ const vOf=k=>chg.has(k)?chg.get(k):(cur.get(k)??'');
+ const draw=()=>{const V=vis();q('[data-list]').innerHTML=V.slice(0,1500).map(s=>`<label style="display:grid;grid-template-columns:1fr 130px;gap:8px"><span>${esc(s.n||s.k)} <small>${esc(rn(s.r))}${metaTxt(meta.get(s.k))?' · '+esc(metaTxt(meta.get(s.k))):''}</small></span><input data-b="${esc(s.k)}" inputmode="decimal" value="${esc(vOf(s.k))}" placeholder="—"></label>`).join('')||'<small>لا توجد مبانٍ</small>';
+  q('[data-list]').querySelectorAll('[data-b]').forEach(i=>i.oninput=()=>{chg.set(i.dataset.b,i.value);cnt()});cnt()};
+ const cnt=()=>{q('[data-cnt]').textContent=chg.size?`${num(chg.size)} تعديل لم يُحفظ`:''};
+ const loadY=async()=>{q('[data-list]').innerHTML='<small>جارٍ التحميل…</small>';try{const D=await costs(Y+'-01-01',Y+'-12-31',true);cur=new Map((D.budgets||[]).filter(b=>+b.year===Y).map(b=>[b.k,String(+b.amount)]))}catch(e){q('[data-list]').innerHTML=`<small>${esc(sqlMsg(e.message))}</small>`;return}chg.clear();draw()};
+ q('[data-k=y]').onchange=()=>{if(chg.size&&!confirm('توجد تعديلات لم تُحفظ — تجاهلها؟')){q('[data-k=y]').value=Y;return}Y=+q('[data-k=y]').value;loadY()};
+ if(q('[data-k=q]')){q('[data-k=q]').oninput=draw;q('[data-k=fr]').onchange=draw;
+  q('[data-fill]').onclick=()=>{const v=S(q('[data-k=fill]').value);if(!v)return;vis().forEach(s=>chg.set(s.k,v));draw()};
+  q('[data-tpl]').onclick=()=>xl([{n:'الميزانيات',rows:vis().map(s=>({'رقم المبنى':s.k.startsWith('N:')?'':s.k,'اسم المدرسة':s.n||'','المنطقة':rn(s.r),'السنة':Y,'الميزانية':+vOf(s.k)||''}))}],`ميزانيات المباني ${Y}`);
+  q('[data-imp]').onchange=async ev=>{const f=ev.target.files[0];ev.target.value='';if(!f)return;try{try{await window.fmEnsureLibraries?.()}catch(e){}const wb=XLSX.read(await f.arrayBuffer());const R=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+   let ok=0,miss=0;for(const r of R){const id=S(r['رقم المبنى']||r['الرقم الوزاري / رقم المبنى']||r['الرقم الوزاري']),nm=S(r['اسم المدرسة']||r['المبنى']),v=S(r['الميزانية']||r['الميزانية السنوية']);
+    const hit=(id&&SC.find(s=>s.k===bkey(id,'')))||(nm&&SC.find(s=>S(s.n)===nm));if(!hit){if(id||nm)miss++;continue}chg.set(hit.k,v);ok++}
+   draw();toast(`قُرئت ${num(ok)} ميزانية${miss?` — ${num(miss)} صف لمبانٍ غير موجودة في نطاقك`:''} • اضغط حفظ`,miss?'warning':'success')}catch(e){toast('تعذر قراءة الملف: '+e.message,'error')}}}
+ q('[data-x]').onclick=()=>{if(chg.size&&!confirm('توجد تعديلات لم تُحفظ — إغلاق؟'))return;d.close()};
+ q('[data-save]').onclick=async ev=>{const rows=[];for(const [k,v] of chg){const t=S(v).replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/,/g,'');if(t&&!(isFinite(+t)&&+t>=0)){toast('مبلغ غير صحيح: '+v,'warning');return}if(S(cur.get(k)??'')===t)continue;rows.push({k,amount:t?+t:null})}
+  if(!rows.length){toast('لا توجد تعديلات','warning');return}const b=ev.currentTarget;b.disabled=true;
+  try{const db=await C.engClient();for(let i=0;i<rows.length;i+=500){const r=await db.rpc('fm_budget_set',{p_year:Y,p_rows:rows.slice(i,i+500)});if(r.error)throw Error(r.error.message)}
+   toast(`تم حفظ ${num(rows.length)} ميزانية لسنة ${Y}`);flush();d.close();o.done&&o.done()}catch(er){toast(sqlMsg(er.message),'error');b.disabled=false}};
+ loadY()}
+window.fmV171Budget=budgetDlg;
+
+/* ---------- page «💰 تكاليف المباني» ---------- */
+let F={r:'',g:'',z:'',q:'',sort:'total'};
+function page(){let p=document.getElementById('fm171-page');if(!p){p=document.createElement('section');p.id='fm171-page';p.className='fm103-page';
+ p.innerHTML=`<div class="fm103-wrap"><div class="fm103-head"><div><h2>💰 تكاليف المباني</h2><p class="sub">المواد وقطع الغيار من أوامر العمل + الفواتير والمصروفات الشهرية، مقابل الميزانية السنوية لكل مبنى</p></div><div class="fm103-actions"><span class="extra"></span><button class="fm103-btn" type="button" onclick="fmV103ClosePages?.()">إغلاق</button></div></div><div class="body"></div></div>`;document.body.appendChild(p)}return p}
+async function renderPage(){const p=page(),b=p.querySelector('.body'),x=p.querySelector('.extra');
+ const M=await me(true);if(!M||M.err||!M.view){x.innerHTML='';b.innerHTML=`<div class="fm103-card fm103-empty">${esc(M&&M.err?sqlMsg(M.err):'لا تملك صلاحية عرض التكاليف')}</div>`;return}
+ x.innerHTML=`${M.entry?'<button class="fm103-btn primary" type="button" data-add>➕ مصروف / فاتورة</button>':''}${M.budget?'<button class="fm103-btn" type="button" data-bud>🎯 الميزانيات</button>':''}<button class="fm103-btn" type="button" data-xl>⬇️ Excel</button>`;
+ const sp=span();b.innerHTML=perBar()+'<div class="fm125-src">جارٍ تحميل التكاليف…</div>';wirePer(b,renderPage);
+ x.querySelector('[data-add]')&&(x.querySelector('[data-add]').onclick=()=>expenseDlg({done:renderPage}));x.querySelector('[data-bud]')&&(x.querySelector('[data-bud]').onclick=()=>budgetDlg({year:sp.Y,done:renderPage}));
+ let D;try{D=await costs(sp.fa,sp.fb)}catch(e){b.innerHTML=perBar()+`<div class="fm171-warn bad">${esc(sqlMsg(e.message))}</div>`;wirePer(b,renderPage);return}
+ window.__fm171Exp=D.expenses||[];
+ const P=model(D,sp.a,sp.b),YT=model(D,sp.ya,sp.yb),meta=dbMeta(),known=new Set((M.schools||[]).map(s=>s.k));
+ let rows=(M.schools||[]).map(s=>({...(P.get(s.k)||zero(s.k,s.n)),n:s.n||s.k,r:s.r,known:true}));
+ for(const o of P.values())if(!known.has(o.k)&&o.total)rows.push({...o,n:o.n||o.k,r:'',known:false});
+ rows.forEach(o=>{const m=meta.get(o.k)||{};o.g=S(m.gender);o.z=S(m.size);o.yt=(YT.get(o.k)||{}).total||0;o.bud=budOf(D,o.k,sp.Y);o.pct=o.bud?o.yt*100/o.bud:null});
+ const regs=[...new Set(rows.map(o=>o.r).filter(Boolean))];
+ const V=rows.filter(o=>(!F.r||o.r===F.r)&&(!F.g||o.g===F.g)&&(!F.z||o.z===F.z)&&(!F.q||S(o.n).toLowerCase().includes(F.q.toLowerCase())||o.k.toLowerCase().includes(F.q.toLowerCase())))
+  .sort((a,c)=>F.sort==='name'?S(a.n).localeCompare(S(c.n),'ar'):F.sort==='pct'?(c.pct??-1)-(a.pct??-1):(c[F.sort]||0)-(a[F.sort]||0));
+ const sum=k=>V.reduce((t,o)=>t+(o[k]||0),0),wb=V.filter(o=>o.bud),o80=wb.filter(o=>o.pct>=80&&o.pct<100).length,o100=wb.filter(o=>o.pct>=100).length,withCost=V.filter(o=>o.total>0).length;
+ const vk=new Set(V.map(o=>o.k)),EX=(D.expenses||[]).filter(e=>occ(e,sp.a,sp.b)&&(e.schools||[]).some(s=>vk.has(s.k)));
+ b.innerHTML=perBar()+`<div class="fm171-per"><span class="lbl">🔎</span><input data-f="q" placeholder="بحث باسم المبنى أو رقمه" value="${esc(F.q)}"><select data-f="r"><option value="">كل المناطق</option>${regs.map(r=>`<option value="${esc(r)}" ${F.r===r?'selected':''}>${esc(rn(r))}</option>`).join('')}</select>
+  <select data-f="g"><option value="">كل الأنواع</option>${['بنين','بنات','بنين وبنات'].map(v=>`<option ${F.g===v?'selected':''}>${v}</option>`).join('')}</select><select data-f="z"><option value="">كل الأحجام</option>${['كبير','وسط','صغير'].map(v=>`<option ${F.z===v?'selected':''}>${v}</option>`).join('')}</select>
+  <select data-f="sort">${[['total','الأعلى تكلفة'],['repCost','الأعلى تكلفة إصلاحات'],['exp','الأعلى مصروفات'],['buy','الأعلى مشتريات'],['pct','الأعلى استهلاكاً للميزانية'],['name','الاسم']].map(([k,v])=>`<option value="${k}" ${F.sort===k?'selected':''}>ترتيب: ${v}</option>`).join('')}</select></div>
+ <div class="fm103-kpis"><div class="fm103-kpi"><span>إجمالي التكلفة</span><b>${money(sum('total'))}</b><small>${num(withCost)} من ${num(V.length)} مبنى عليها تكاليف</small></div>
+  <div class="fm103-kpi"><span>مواد من المخزن</span><b>${money(sum('store'))}</b><small>بسعر الصنف وقت الصرف</small></div>
+  <div class="fm103-kpi"><span>مشتريات</span><b>${money(sum('buy'))}</b><small>مشتريات مباشرة بفاتورة</small></div>
+  <div class="fm103-kpi"><span>مصروفات وفواتير</span><b>${money(sum('exp'))}</b><small>${num(EX.length)} مصروف في الفترة</small></div>
+  <div class="fm103-kpi"><span>🔧 الإصلاحات</span><b>${num(V.reduce((t,o)=>t+o.rep.length,0))}</b><small>تكلفتها ${money(sum('repCost'))} (ضمن الإجمالي)</small></div>
+  <div class="fm103-kpi"><span>الميزانيات ${sp.Y}</span><b style="font-size:19px;color:${o100?'#b91c1c':o80?'#c2410c':'#0f172a'}">${num(o100)} تجاوز · ${num(o80)} فوق 80%</b><small>${num(wb.length)} مبنى له ميزانية — ${money(wb.reduce((t,o)=>t+o.bud,0))}</small></div></div>
+ <div class="fm103-card" style="margin-bottom:14px"><h3>المباني</h3><div class="q">انقر المبنى لفتح ملفه على تبويب التكاليف</div><div class="fm103-tw"><table class="fm103-t"><thead><tr><th>المبنى</th><th>المنطقة</th><th>النوع / الحجم</th><th>المخزن</th><th>المشتريات</th><th>المصروفات</th><th>الإجمالي</th><th>🔧 الإصلاحات</th><th>منذ بداية ${sp.Y}</th><th>الميزانية</th><th>%</th></tr></thead><tbody>
+ ${V.slice(0,600).map(o=>`<tr ${o.known?`data-open="${esc(o.n)}" style="cursor:pointer"`:''}><td><b>${esc(o.n)}</b>${o.known?'':'<div class="fm125-src">غير موجود في قاعدة المدارس</div>'}</td><td>${esc(rn(o.r))}</td><td>${esc([o.g,o.z].filter(Boolean).join(' · ')||'—')}</td><td>${money(o.store)}</td><td>${money(o.buy)}</td><td>${money(o.exp)}</td><td><b>${money(o.total)}</b></td><td>${o.rep.length?`${num(o.rep.length)} · ${money(o.repCost)}`:'—'}</td><td>${money(o.yt)}</td><td>${o.bud?money(o.bud):'—'}</td><td>${o.pct==null?'—':`<b style="color:${o.pct>=100?'#b91c1c':o.pct>=80?'#c2410c':'#15803d'}">${num(o.pct)}%</b>`}</td></tr>`).join('')||'<tr><td colspan="11">لا توجد مبانٍ مطابقة</td></tr>'}
+ </tbody></table></div>${V.length>600?`<div class="q" style="margin-top:6px">يعرض أول 600 — التصدير يشمل الكل (${num(V.length)})</div>`:''}</div>
+ <div class="fm103-card"><h3>المصروفات والفواتير في الفترة</h3>${EX.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>التاريخ</th><th>البيان</th><th>التصنيف</th><th>المبلغ</th><th>التكرار</th><th>المباني</th><th>بواسطة</th><th></th></tr></thead><tbody>${EX.map(e=>`<tr><td>${dshow(e.start_on)}${e.kind==='monthly'?`<div class="fm125-src">حتى ${e.end_on?dshow(e.end_on):'مستمر'}</div>`:''}</td><td class="wrap"><b>${esc(e.title)}</b><div class="fm125-src">${esc(e.vendor||'')}${e.invoice_no?' · رقم '+esc(e.invoice_no):''}${e.note?' · '+esc(e.note):''}</div></td><td>${esc(e.category)}</td><td>${money(e.amount)}</td><td>${e.kind==='monthly'?'🔁 شهري':'🧾 مرة'}</td><td>${e.scope==='region'?'🗺️ '+esc(rn(e.region))+' · ':''}${num(e.n)} مبنى${+e.n>1?`<div class="fm125-src">${e.split==='each'?'نفس المبلغ لكل مبنى':'يُقسم بالتساوي'}</div>`:`<div class="fm125-src">${esc((e.schools||[])[0]?.n||'')}</div>`}</td><td>${esc(e.by||'')}</td><td>${e.can_edit?`<button class="fm122-mini" data-ex-ed="${esc(e.id)}">تعديل</button><button class="fm122-mini" data-ex-del="${esc(e.id)}" style="color:#b91c1c">إلغاء</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد مصروفات مسجلة في الفترة</div>'}</div>`;
+ wirePer(b,renderPage);wireCommon(b,renderPage);
+ b.querySelectorAll('[data-f]').forEach(i=>{const f=()=>{F[i.dataset.f]=i.value;renderPage()};if(i.tagName==='INPUT')i.onchange=f;else i.onchange=f});
+ b.querySelectorAll('tr[data-open]').forEach(r=>r.onclick=()=>window.fmV171OpenProfile(r.dataset.open,'costs'));
+ x.querySelector('[data-xl]').onclick=()=>xl([
+  {n:'المباني',rows:V.map(o=>({'المبنى':o.n,'رقم المبنى':o.k.startsWith('N:')?'':o.k,'المنطقة':rn(o.r),'نوع المبنى':o.g,'حجم المبنى':o.z,'مواد من المخزن':+o.store.toFixed(2),'مشتريات':+o.buy.toFixed(2),'مصروفات':+o.exp.toFixed(2),'الإجمالي':+o.total.toFixed(2),'عدد الإصلاحات':o.rep.length,'تكلفة الإصلاحات':+o.repCost.toFixed(2),['منذ بداية '+sp.Y]:+o.yt.toFixed(2),['ميزانية '+sp.Y]:o.bud||'','نسبة الاستهلاك %':o.pct==null?'':+o.pct.toFixed(1)}))},
+  {n:'التفاصيل',rows:V.flatMap(o=>o.lines.map(l=>lineXl(l,o.n)))},
+  {n:'الإصلاحات',rows:V.flatMap(o=>o.rep.map(l=>repXl(l,o.n)))},
+  {n:'المصروفات',rows:EX.map(e=>({'التاريخ':e.start_on,'حتى':e.kind==='monthly'?(e.end_on||'مستمر'):'','البيان':e.title,'التصنيف':e.category,'المورد':e.vendor||'','رقم الفاتورة':e.invoice_no||'','المبلغ':+e.amount,'التكرار':e.kind==='monthly'?'شهري':'مرة','التوزيع':e.split==='each'?'نفس المبلغ لكل مبنى':'بالتساوي','عدد المباني':+e.n,'المنطقة':e.region?rn(e.region):'','بواسطة':e.by||'','ملاحظة':e.note||''}))}],
+  `تكاليف المباني ${sp.a} - ${sp.b}`)}
+function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.getElementById('fm116-page')?.classList.remove('open');document.body.classList.remove('v2-mobile-nav');
+ try{window.v2SetActive?.(btn)}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;p.querySelector('.body').innerHTML='<div class="fm125-src">جارٍ التحميل…</div>';renderPage()}
+window.fmV171Costs=()=>openPage(document.getElementById('v2-nav-fm171-costs'));
+let navBusy=false;
+async function nav(){if(navBusy)return;navBusy=true;try{const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm171-costs');if(!n)return;
+ const M=cloudOn()?await me():null;if(!M||M.err||!M.view){b0?.remove();return}if(b0)return;
+ const b=document.createElement('button');b.id='v2-nav-fm171-costs';b.type='button';b.className='v2-nav-btn';b.title='تكاليف المباني';b.innerHTML='<i class="fas fa-coins"></i><span class="v2-nav-label">💰 تكاليف المباني</span>';b.onclick=()=>openPage(b);
+ const after=document.getElementById('v2-nav-fm118-school');if(after&&after.parentNode)after.insertAdjacentElement('afterend',b);else n.appendChild(b)}finally{navBusy=false}}
+setInterval(()=>{nav().catch(()=>{})},3000);
+
+/* ---------- settings → cloud: cost permissions per job title (system admin) ---------- */
+const PK=[['view','عرض التكاليف'],['entry','إدخال المصروفات والفواتير'],['budget','تحديد الميزانية السنوية']];
+const PDEF={view:['dept_manager','project_manager','ops_manager','area_manager','area_engineer','accountant'],entry:['project_manager','area_manager','area_engineer','accountant'],budget:['dept_manager','project_manager']};
+(window.fmHubExtras=window.fmHubExtras||[]).push(function(tab,pane){if(tab!=='cloud'||!cloudOn()||C.state.profile?.role!=='admin')return;
+ const box=document.createElement('div');box.className='fm122-card';box.style.marginTop='14px';pane.appendChild(box);
+ box.innerHTML='<h3>💰 صلاحيات تكاليف المباني</h3><div class="fm125-src">جارٍ التحميل…</div>';
+ (async()=>{let v=null;try{const db=await C.engClient();const r=await db.from('fm_settings').select('value').eq('key','cost_perms').maybeSingle();if(r.error)throw Error(r.error.message);v=r.data&&r.data.value}catch(e){box.innerHTML=`<h3>💰 صلاحيات تكاليف المباني</h3><div class="fm122-note">${esc(sqlMsg(e.message))}</div>`;return}
+  v=v||PDEF;const T=Object.keys(C.POS).filter(k=>k!=='sysadmin');
+  box.innerHTML=`<h3>💰 صلاحيات تكاليف المباني</h3><div class="fm122-note">حدّد لكل مسمى ما يمكنه في التكاليف. مدير النظام يملك الكل دائماً. النطاق ثابت حسب المسمى: مديرو المشروع والعمليات والإدارة والسلامة والجودة ← كل المباني، مدير المنطقة والمحاسب ← مناطقهم، والباقي ← مدارسه وفريقه. من يُدخل المصروفات أو يحدد الميزانية يرى التكاليف تلقائياً.</div>
+  <div class="fm122-tw" style="max-height:none;min-height:0"><table class="fm122-t fm171-perm"><thead><tr><th>المسمى</th>${PK.map(([,l])=>`<th>${l}</th>`).join('')}</tr></thead><tbody>
+  <tr><td><b>${esc(C.POS.sysadmin)}</b></td>${PK.map(()=>'<td>✅</td>').join('')}</tr>
+  ${T.map(t=>`<tr><td><b>${esc(C.POS[t])}</b></td>${PK.map(([k])=>`<td><input type="checkbox" data-p="${k}" value="${t}" ${(v[k]||[]).includes(t)?'checked':''}></td>`).join('')}</tr>`).join('')}</tbody></table></div>
+  <div class="row" style="margin-top:8px"><button class="fm103-btn primary" type="button" data-s171>💾 حفظ الصلاحيات</button><button class="fm103-btn" type="button" data-d171>الافتراضي</button></div>`;
+  box.querySelector('[data-d171]').onclick=()=>box.querySelectorAll('[data-p]').forEach(i=>i.checked=(PDEF[i.dataset.p]||[]).includes(i.value));
+  box.querySelector('[data-s171]').onclick=async ev=>{const val={};PK.forEach(([k])=>val[k]=[...box.querySelectorAll(`[data-p=${k}]:checked`)].map(i=>i.value));
+   const b=ev.currentTarget;b.disabled=true;try{const db=await C.engClient();const r=await db.from('fm_settings').upsert([{key:'cost_perms',value:val}],{onConflict:'key'});if(r.error)throw Error(r.error.message);toast('تم حفظ صلاحيات التكاليف');ME=null;flush()}catch(e){toast(sqlMsg(e.message),'error')}b.disabled=false}})()});
+
+let tries=0;const t0=setInterval(()=>{if(cloudOn()){clearInterval(t0);me().catch(()=>{})}else if(++tries>60)clearInterval(t0)},1000);
+})();
+</script>
+<script id="fm-v172-school-contacts">(function(){
+'use strict';
+/* V172: the school DB gets the principal and the guard (name + mobile), four columns at the end of the template.
+   The Excel import reads them through the V131 extra-columns hook; a missing column keeps the stored value.
+   The field app shows them on the schools map (call / WhatsApp). */
+const S=v=>String(v??'').replace(/\s+/g,' ').trim();
+const H={principal:['اسم مدير المدرسة','مدير المدرسة','اسم المدير','قائد المدرسة','اسم قائد المدرسة'],
+ principalPhone:['جوال مدير المدرسة','رقم جوال مدير المدرسة','تليفون مدير المدرسة','رقم تليفون مدير المدرسة','جوال المدير','جوال قائد المدرسة'],
+ guard:['اسم الحارس','الحارس','اسم حارس المدرسة'],guardPhone:['جوال الحارس','رقم جوال الحارس','تليفون الحارس','رقم تليفون الحارس','رقم الحارس']};
+const phone=v=>{v=S(v).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\.0$/,'');if(/^(NA|N\/A|NULL|-|—)$/i.test(v))return '';if(/^5\d{8}$/.test(v))v='0'+v;return v};
+function col(r,names){const keys=Object.keys(r);for(const n of names){const k=keys.find(k=>S(k)===n);if(k!=null)return {k,v:r[k]}}return null}
+function hook(){const base=window.fmV131DbExtra;if(typeof base!=='function'||base.__v172)return;
+ const f=function(r){const o=base.apply(this,arguments)||{};if(!r||typeof r!=='object')return o;
+  for(const [k,names] of Object.entries(H)){const c=col(r,names);if(!c)continue;o[k]=/Phone$/.test(k)?phone(c.v):S(c.v).replace(/^(NA|N\/A|NULL|-|—)$/i,'')}
+  return o};f.__v172=1;f.__v170=base.__v170;window.fmV131DbExtra=f;
+ const kh=window.fmV131KnownHeaders;if(typeof kh==='function'&&!kh.__v172){const k=function(){const s=kh.apply(this,arguments);Object.values(H).flat().forEach(h=>s.add(h));return s};k.__v172=1;k.__v170=kh.__v170;window.fmV131KnownHeaders=k}}
+hook();addEventListener('load',hook);setTimeout(hook,1600);
 })();
 </script>
 </body>

@@ -23,6 +23,7 @@ alter table public.profiles add column if not exists reports_to uuid references 
 --   sysadmin=مدير النظام, dept_manager=مدير الإدارة (read only), project_manager=مدير المشروع, ops_manager=مدير العمليات,
 --   area_manager=مدير المنطقة (his regions), area_engineer=مهندس المنطقة, supervisor=المشرف, contractor=المقاول,
 --   hse_manager=مدير الأمن والسلامة, qa_manager=مدير الجودة والتخطيط (both see everything, may open orders for anyone below the ops manager)
+--   accountant=المحاسب (V171: support role like HSE / QA, sees his regions; building costs per the cost permissions)
 alter table public.profiles add column if not exists job_title text;
 do $$ declare c text; begin
   for c in select conname from pg_constraint where conrelid = 'public.profiles'::regclass and contype = 'c'
@@ -33,12 +34,12 @@ do $$ declare c text; begin
 end $$;
 alter table public.profiles drop constraint if exists profiles_position_check;
 alter table public.profiles add constraint profiles_position_check check (job_title is null or job_title in
-  ('sysadmin','dept_manager','project_manager','ops_manager','area_manager','area_engineer','supervisor','contractor','hse_manager','qa_manager'));
+  ('sysadmin','dept_manager','project_manager','ops_manager','area_manager','area_engineer','supervisor','contractor','hse_manager','qa_manager','accountant'));
 create or replace function public.fm_pos_role(p text) returns text language sql immutable as $$
   select case p when 'sysadmin' then 'admin' when 'dept_manager' then 'viewer'
     when 'project_manager' then 'manager' when 'ops_manager' then 'manager' when 'area_manager' then 'manager'
     when 'area_engineer' then 'engineer' when 'supervisor' then 'supervisor' when 'contractor' then 'contractor'
-    when 'hse_manager' then 'staff' when 'qa_manager' then 'staff' end $$;
+    when 'hse_manager' then 'staff' when 'qa_manager' then 'staff' when 'accountant' then 'staff' end $$;
 create or replace function public.fm_profile_pos_trg() returns trigger language plpgsql as $$
 begin
   if new.job_title is not null then new.role := public.fm_pos_role(new.job_title); end if;
@@ -1887,5 +1888,243 @@ begin
 end $$;
 revoke all on function public.fm_news_scope(), public.fm_news_for_me(public.fm_news), public.fm_news_feed(), public.fm_news_save(jsonb), public.fm_news_end(uuid) from public, anon;
 grant execute on function public.fm_news_scope(), public.fm_news_for_me(public.fm_news), public.fm_news_feed(), public.fm_news_save(jsonb), public.fm_news_end(uuid) to authenticated;
+
+-- ---------- 20) building costs: expenses, budgets and cost permissions (V171) ----------
+-- Each building («ملف المدرسة») shows what was spent on it in a period: the materials of its finished work orders
+-- (done / closed; q × the unit price kept on the item, store or purchase) and the expenses entered by hand:
+-- an invoice, or a known monthly cost (a monthly expense counts once per calendar month it runs in the period).
+-- One expense may cover one building, a group of buildings or a whole region; its amount is split equally between
+-- them or charged in full to each. A yearly budget per building (fm_budgets) is compared with the year's spending.
+-- Who may see costs, enter expenses and set budgets is set per job title by the system admin (fm_settings.cost_perms);
+-- the system admin always may. Scope: managers who see everything → all buildings; area manager and accountant →
+-- their regions; anyone else (area engineer) → his schools (fm_my_school_db). Tables are read and written only
+-- through the functions below.
+insert into public.fm_settings(key, value) values ('cost_perms',
+  '{"view":["dept_manager","project_manager","ops_manager","area_manager","area_engineer","accountant"],"entry":["project_manager","area_manager","area_engineer","accountant"],"budget":["dept_manager","project_manager"]}')
+on conflict (key) do nothing;
+-- the building key: the ministry / building number (S prefix and separators dropped), else the school name
+create or replace function public.fm_bkey(p_id text, p_name text) returns text language sql immutable as $$
+  select case when regexp_replace(regexp_replace(upper(coalesce(p_id,'')), '^S[[:space:]-]*', ''), '[^A-Z0-9]', '', 'g') <> ''
+    then regexp_replace(regexp_replace(upper(coalesce(p_id,'')), '^S[[:space:]-]*', ''), '[^A-Z0-9]', '', 'g')
+    else 'N:' || lower(regexp_replace(coalesce(p_name,''), '[[:space:]]+', '', 'g')) end $$;
+-- may the caller view / enter / budget? (view also follows from entry or budget)
+create or replace function public.fm_cost_can(p_what text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin'
+    or public.fm_my_pos() in (select jsonb_array_elements_text(case when p_what = 'view'
+         then coalesce(s.value->'view','[]') || coalesce(s.value->'entry','[]') || coalesce(s.value->'budget','[]')
+         else coalesce(s.value->p_what,'[]') end)
+       from public.fm_settings s where s.key = 'cost_perms'), false) $$;
+create or replace function public.fm_cost_scope() returns text language sql stable security definer set search_path = public as $$
+  select case when not public.fm_cost_can('view') then null
+    when public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','hse_manager','qa_manager') then 'all'
+    when public.fm_my_pos() in ('area_manager','accountant') then 'region'
+    else 'mine' end $$;
+-- the buildings the caller may see costs of (from the school DB)
+create or replace function public.fm_cost_schools() returns table(bkey text, name text, region text)
+language plpgsql stable security definer set search_path = public as $$
+declare sc text := public.fm_cost_scope(); v jsonb;
+begin
+  if sc is null then return; end if;
+  if sc = 'mine' then v := public.fm_my_school_db();
+  else select value into v from public.app_kv where key = 'fm_school_master_db_v1';
+       if jsonb_typeof(v) = 'string' then v := (v #>> '{}')::jsonb; end if; end if;
+  if v is null or jsonb_typeof(v) <> 'array' then return; end if;
+  return query select distinct on (x.k) x.k, x.n, x.r from (
+      select public.fm_bkey(e->>'buildingId', e->>'school') k, nullif(btrim(coalesce(e->>'school','')),'') n, nullif(btrim(coalesce(e->>'region','')),'') r
+        from jsonb_array_elements(v) e
+       where jsonb_typeof(e) = 'object' and (btrim(coalesce(e->>'school','')) <> '' or btrim(coalesce(e->>'buildingId','')) <> '')) x
+    where sc <> 'region' or public.fm_region_ok(coalesce(x.r,''))
+    order by x.k, x.n nulls last;
+end $$;
+
+create table if not exists public.fm_expenses (
+  id              uuid primary key default gen_random_uuid(),
+  title           text not null,
+  category        text not null default 'أخرى',
+  vendor          text,
+  invoice_no      text,
+  amount          numeric(14,2) not null check (amount > 0),
+  kind            text not null default 'once' check (kind in ('once','monthly')),
+  start_on        date not null,
+  end_on          date,
+  split           text not null default 'equal' check (split in ('equal','each')),
+  scope           text not null default 'school' check (scope in ('school','group','region')),
+  region          text,
+  schools         text[] not null default '{}',
+  school_names    text[] not null default '{}',
+  note            text,
+  active          boolean not null default true,
+  created_by      uuid default auth.uid() references public.profiles(id) on delete set null,
+  created_by_name text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  cancelled_by    uuid references public.profiles(id) on delete set null,
+  cancel_reason   text
+);
+create index if not exists fm_expenses_dates_idx on public.fm_expenses (start_on, end_on) where active;
+create index if not exists fm_expenses_schools_idx on public.fm_expenses using gin (schools);
+alter table public.fm_expenses enable row level security;
+create table if not exists public.fm_budgets (
+  bkey       text not null,
+  year       int  not null check (year between 2000 and 2100),
+  amount     numeric(14,2) not null check (amount > 0),
+  name       text,
+  region     text,
+  updated_by uuid default auth.uid() references public.profiles(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  primary key (bkey, year)
+);
+alter table public.fm_budgets enable row level security;
+revoke all on public.fm_expenses, public.fm_budgets from anon;
+
+-- what the caller may do and the buildings he may see
+create or replace function public.fm_cost_me() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('scope', public.fm_cost_scope(), 'view', public.fm_cost_can('view'), 'entry', public.fm_cost_can('entry'),
+    'budget', public.fm_cost_can('budget'), 'edit_all', public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager'),
+    'schools', coalesce((select jsonb_agg(jsonb_build_object('k', s.bkey, 'n', s.name, 'r', s.region)) from public.fm_cost_schools() s), '[]'::jsonb)) $$;
+
+-- add or change an expense. p: {id?, title, category, vendor, invoice_no, amount, kind, start_on, end_on, split, scope,
+-- region (scope region), schools: [keys] (scope school / group), note}
+create or replace function public.fm_expense_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); v_id uuid := nullif(p->>'id','')::uuid; e public.fm_expenses; sc text := public.fm_cost_scope();
+  v_keys text[]; v_names text[]; v_scope text := coalesce(nullif(p->>'scope',''),'school'); v_kind text := coalesce(nullif(p->>'kind',''),'once');
+  v_amt numeric := nullif(p->>'amount','')::numeric; v_start date := nullif(p->>'start_on','')::date; v_end date := nullif(p->>'end_on','')::date;
+  v_region text := nullif(btrim(coalesce(p->>'region','')),'');
+begin
+  if me is null or not public.fm_cost_can('entry') then raise exception 'not allowed'; end if;
+  if btrim(coalesce(p->>'title','')) = '' then raise exception 'title required'; end if;
+  if v_amt is null or v_amt <= 0 or v_amt > 100000000 then raise exception 'invalid amount'; end if;
+  if v_kind not in ('once','monthly') or v_scope not in ('school','group','region') or coalesce(p->>'split','equal') not in ('equal','each') then raise exception 'invalid kind'; end if;
+  if v_start is null then raise exception 'date required'; end if;
+  if v_kind = 'once' then v_end := null; elsif v_end is not null and v_end < v_start then raise exception 'end before start'; end if;
+  if v_scope = 'region' then
+    if v_region is null or sc not in ('all','region') or not (sc = 'all' or public.fm_region_ok(v_region)) then raise exception 'region not allowed'; end if;
+    select array_agg(s.bkey order by s.name), array_agg(coalesce(s.name, s.bkey) order by s.name) into v_keys, v_names from public.fm_cost_schools() s where s.region = v_region;
+  else
+    select array_agg(s.bkey order by s.name), array_agg(coalesce(s.name, s.bkey) order by s.name) into v_keys, v_names
+      from public.fm_cost_schools() s where s.bkey in (select distinct jsonb_array_elements_text(coalesce(p->'schools','[]')));
+    if coalesce(cardinality(v_keys),0) <> (select count(distinct x) from jsonb_array_elements_text(coalesce(p->'schools','[]')) x) then raise exception 'building not allowed'; end if;
+    v_region := null;
+  end if;
+  if coalesce(cardinality(v_keys),0) = 0 then raise exception 'no buildings'; end if;
+  if cardinality(v_keys) > 5000 then raise exception 'too many buildings'; end if;
+  if v_scope = 'school' and cardinality(v_keys) > 1 then v_scope := 'group'; end if;
+  if v_id is null then
+    insert into public.fm_expenses(title, category, vendor, invoice_no, amount, kind, start_on, end_on, split, scope, region, schools, school_names, note, created_by, created_by_name)
+    values (left(btrim(p->>'title'),200), left(coalesce(nullif(btrim(p->>'category'),''),'أخرى'),60), left(nullif(btrim(p->>'vendor'),''),200),
+            left(nullif(btrim(p->>'invoice_no'),''),80), v_amt, v_kind, v_start, v_end, coalesce(p->>'split','equal'), v_scope, v_region, v_keys, v_names,
+            left(nullif(btrim(p->>'note'),''),1000), me, (select full_name from public.profiles where id = me))
+    returning id into v_id;
+  else
+    select * into e from public.fm_expenses where id = v_id for update;
+    if not found or not e.active then raise exception 'not found'; end if;
+    if e.created_by is distinct from me and not (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager')) then raise exception 'not allowed'; end if;
+    update public.fm_expenses set title = left(btrim(p->>'title'),200), category = left(coalesce(nullif(btrim(p->>'category'),''),'أخرى'),60),
+      vendor = left(nullif(btrim(p->>'vendor'),''),200), invoice_no = left(nullif(btrim(p->>'invoice_no'),''),80), amount = v_amt, kind = v_kind,
+      start_on = v_start, end_on = v_end, split = coalesce(p->>'split','equal'), scope = v_scope, region = v_region, schools = v_keys,
+      school_names = v_names, note = left(nullif(btrim(p->>'note'),''),1000), updated_at = now() where id = v_id;
+  end if;
+  return v_id;
+end $$;
+create or replace function public.fm_expense_cancel(p_id uuid, p_reason text) returns void language plpgsql security definer set search_path = public as $$
+declare e public.fm_expenses; me uuid := auth.uid();
+begin
+  if me is null or not public.fm_cost_can('entry') then raise exception 'not allowed'; end if;
+  select * into e from public.fm_expenses where id = p_id for update;
+  if not found or not e.active then raise exception 'not found'; end if;
+  if e.created_by is distinct from me and not (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager')) then raise exception 'not allowed'; end if;
+  update public.fm_expenses set active = false, cancelled_by = me, cancel_reason = left(nullif(btrim(coalesce(p_reason,'')),''),300), updated_at = now() where id = p_id;
+end $$;
+
+-- set the yearly budgets: p_rows [{k, amount}] (amount empty or 0 removes it)
+create or replace function public.fm_budget_set(p_year int, p_rows jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare n int := 0; x jsonb; s record; v numeric;
+begin
+  if auth.uid() is null or not public.fm_cost_can('budget') then raise exception 'not allowed'; end if;
+  if p_year is null or p_year < 2000 or p_year > 2100 then raise exception 'invalid year'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p_rows,'[]')) loop
+    select * into s from public.fm_cost_schools() c where c.bkey = x->>'k';
+    if not found then raise exception 'building not allowed: %', x->>'k'; end if;
+    v := nullif(x->>'amount','')::numeric;
+    if v is null or v <= 0 then delete from public.fm_budgets where bkey = s.bkey and year = p_year;
+    elsif v > 100000000 then raise exception 'invalid amount';
+    else insert into public.fm_budgets(bkey, year, amount, name, region) values (s.bkey, p_year, v, s.name, s.region)
+         on conflict (bkey, year) do update set amount = excluded.amount, name = excluded.name, region = excluded.region, updated_by = auth.uid(), updated_at = now();
+    end if;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+
+-- the finished orders (done / closed) in a period with their building key (internal, used by fm_bld_costs)
+create or replace function public.fm_cost_orders(ks text[], ns text[], wide boolean, p_from date, p_to date)
+returns table(id uuid, code text, title text, type text, status text, school text, k text, at timestamptz, checklist jsonb)
+language sql stable security definer set search_path = public as $$
+  with s as (select * from unnest(ks, ns) as t(bkey, name))
+  select w.id, w.code, w.title, w.type, w.status, w.school,
+         coalesce(sb.bkey, sn.bkey, case when wide then public.fm_bkey(w.building_id, w.school) end),
+         coalesce(w.done_at, w.closed_at, w.updated_at), case when jsonb_typeof(w.checklist) = 'array' then w.checklist else '[]' end
+    from public.work_orders w
+    left join s sb on not public.fm_bkey(w.building_id, null) like 'N:%' and sb.bkey = public.fm_bkey(w.building_id, null)
+    left join lateral (select s2.bkey from s s2 where sb.bkey is null and s2.name = btrim(w.school) limit 1) sn on true
+   where w.status in ('done','closed') and coalesce(w.done_at, w.closed_at, w.updated_at)::date between p_from and p_to
+     and (sb.bkey is not null or sn.bkey is not null or wide) $$;
+revoke all on function public.fm_cost_orders(text[], text[], boolean, date, date) from public, anon, authenticated;
+-- the costs of the caller's buildings between two dates (one building with p_key):
+-- {materials: [...], repairs: [...], expenses: [...], budgets: [...]}; the platform sums them per period
+create or replace function public.fm_bld_costs(p_from date, p_to date, p_key text default null) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare sc text := public.fm_cost_scope(); me uuid := auth.uid(); v_mat jsonb; v_rep jsonb; v_exp jsonb; v_bud jsonb; ks text[]; ns text[]; rs text[];
+  ed boolean := public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager');
+  wide boolean := sc = 'all' and p_key is null;
+begin
+  if me is null or sc is null then raise exception 'not allowed'; end if;
+  if p_from is null or p_to is null or p_to < p_from or p_to - p_from > 3700 then raise exception 'invalid period'; end if;
+  select coalesce(array_agg(c.bkey),'{}'), coalesce(array_agg(c.name),'{}'), coalesce(array_agg(c.region),'{}') into ks, ns, rs
+    from public.fm_cost_schools() c where p_key is null or c.bkey = p_key;
+  -- the materials of the finished orders (fm_cost_orders: building by building_id, else the school name; whoever sees
+  -- all buildings also gets the orders that match no building, keyed by their own number / name)
+  select coalesce(jsonb_agg(m order by m->>'at'), '[]'::jsonb) into v_mat from (
+    select jsonb_build_object('wo', w.id, 'code', w.code, 'title', w.title, 'type', w.type, 'status', w.status, 'school', w.school, 'k', w.k,
+        'at', w.at, 'item', it.e->>'t', 'g', it.e->>'g', 'n', mt.m->>'n', 'mid', mt.m->>'id',
+        'q', coalesce(nullif(mt.m->>'q','')::numeric, 0), 'u', mt.m->>'u', 'src', coalesce(mt.m->>'src','store'),
+        'price', nullif(mt.m->>'price','')::numeric) m
+      from public.fm_cost_orders(ks, ns, wide, p_from, p_to) w
+      cross join lateral jsonb_array_elements(w.checklist) it(e)
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) mt(m)
+     where jsonb_typeof(mt.m) = 'object') z;
+  -- the repairs: items marked «fixed» in any order, the done items of repair orders (a repair order without items counts
+  -- once by its title); cost = the item's materials (q × price)
+  select coalesce(jsonb_agg(r order by r->>'at'), '[]'::jsonb) into v_rep from (
+    select jsonb_build_object('wo', w.id, 'code', w.code, 'title', w.title, 'type', w.type, 'status', w.status, 'school', w.school, 'k', w.k, 'at', w.at,
+        't', it.e->>'t', 'g', it.e->>'g', 'res', it.e->>'res', 'note', it.e->>'note', 'opt', it.e->>'opt',
+        'cost', (select coalesce(sum(coalesce(nullif(m->>'q','')::numeric, 0) * coalesce(nullif(m->>'price','')::numeric, 0)), 0)
+                   from jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) m
+                  where jsonb_typeof(m) = 'object')) r
+      from public.fm_cost_orders(ks, ns, wide, p_from, p_to) w cross join lateral jsonb_array_elements(w.checklist) it(e)
+     where jsonb_typeof(it.e) = 'object' and (it.e->>'res' = 'fixed'
+        or (w.type = 'repair' and coalesce(it.e->>'res','') not in ('na','fix') and (it.e->>'res' is not null or coalesce(it.e->>'done','') = 'true')))
+    union all
+    select jsonb_build_object('wo', w.id, 'code', w.code, 'title', w.title, 'type', w.type, 'status', w.status, 'school', w.school, 'k', w.k, 'at', w.at,
+        't', w.title, 'g', null, 'res', null, 'note', null, 'opt', null, 'cost', 0)
+      from public.fm_cost_orders(ks, ns, wide, p_from, p_to) w where w.type = 'repair' and jsonb_array_length(w.checklist) = 0) z;
+  -- expenses that run in the period (only the caller's buildings are listed; n = all buildings it covers)
+  select coalesce(jsonb_agg(jsonb_build_object('id', e.id, 'title', e.title, 'category', e.category, 'vendor', e.vendor, 'invoice_no', e.invoice_no,
+      'amount', e.amount, 'kind', e.kind, 'start_on', e.start_on, 'end_on', e.end_on, 'split', e.split, 'scope', e.scope, 'region', e.region,
+      'n', cardinality(e.schools), 'note', e.note, 'by', e.created_by_name, 'created_at', e.created_at, 'mine', e.created_by = me,
+      'can_edit', public.fm_cost_can('entry') and (e.created_by = me or ed),
+      'schools', (select jsonb_agg(jsonb_build_object('k', x, 'n', e.school_names[i])) from unnest(e.schools) with ordinality u(x, i) where x = any(ks)))
+      order by e.start_on desc), '[]'::jsonb) into v_exp
+    from public.fm_expenses e
+   where e.active and e.start_on <= p_to and (case when e.kind = 'once' then e.start_on >= p_from else coalesce(e.end_on, p_to) >= p_from end)
+     and e.schools && ks;
+  select coalesce(jsonb_agg(jsonb_build_object('k', b.bkey, 'year', b.year, 'amount', b.amount)), '[]'::jsonb) into v_bud
+    from public.fm_budgets b where b.bkey = any(ks) and b.year between extract(year from p_from)::int and extract(year from p_to)::int;
+  return jsonb_build_object('scope', sc, 'materials', v_mat, 'repairs', v_rep, 'expenses', v_exp, 'budgets', v_bud);
+end $$;
+revoke all on function public.fm_cost_can(text), public.fm_cost_scope(), public.fm_cost_schools(), public.fm_cost_me(), public.fm_expense_save(jsonb),
+  public.fm_expense_cancel(uuid, text), public.fm_budget_set(int, jsonb), public.fm_bld_costs(date, date, text) from public, anon;
+grant execute on function public.fm_cost_can(text), public.fm_cost_scope(), public.fm_cost_schools(), public.fm_cost_me(), public.fm_expense_save(jsonb),
+  public.fm_expense_cancel(uuid, text), public.fm_budget_set(int, jsonb), public.fm_bld_costs(date, date, text) to authenticated;
 
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
