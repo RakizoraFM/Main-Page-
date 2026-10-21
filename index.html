@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V178">
+<meta name="fm-version" content="V179">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25593,10 +25593,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V178',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V179',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V179',d:'2026-10-21',t:'المنصة كاشتراك لعدة شركات (SaaS)',i:['كل شركة لها قاعدة بيانات (مشروع Supabase) منفصلة تماماً، والمنصة نفسها تخدم الجميع: الدخول من start.html?c=رمز الشركة مع اسمها وشعارها ولونها','الاشتراك داخل قاعدة كل شركة: الباقة وحد المدارس وتاريخ الانتهاء — تنبيه قبل 15 يوماً، ومهلة 7 أيام، ثم إيقاف الدخول حتى إدخال كود التفعيل (البيانات محفوظة)','«💳 الاشتراك» في الإعدادات ← السحابة: حالة الاشتراك وعدد المدارس من الحد وإدخال كود التفعيل','لوحة مالك المنصة saas.html: الشركات والتجهيز والباقات والفواتير الضريبية وأكواد التفعيل','اسم الشركة في التقارير والخطابات، ورمزها في روابط بوابة المدرسة والتقييم','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 23) في كل شركة، وsaas_control.sql مرة واحدة في مشروع التحكم']},
  {v:'V178',d:'2026-10-21',t:'التقرير الشهري للعميل',i:['صفحة «📑 التقرير الشهري للعميل»: تقرير PDF من عدة صفحات لكل شهر ومنطقة — الملخص التنفيذي ومقارنة بالشهر السابق، البلاغات حسب النوع والأولوية والمدرسة، أوامر العمل والصيانة الوقائية، التكاليف والمواد، ورضا المدارس','ملخص تنفيذي تلقائي قابل للتعديل، وخطة الشهر القادم والتوصيات']},
  {v:'V177',d:'2026-10-21',t:'أداء المقاولين والغرامات',i:['صفحة «⚖️ أداء المقاولين والغرامات»: بطاقة شهرية لكل مقاول — البلاغات والالتزام بالـ SLA ومتوسط الإغلاق، وأوامر العمل المتأخرة والمعادة للتصحيح، ودرجة من 100','الغرامات حسب بنود يحددها مدير النظام: لكل بلاغ متجاوز حسب أولويته، ولكل يوم تأخير أمر، ولكل إرجاع، بحد أقصى نسبة من قيمة العقد الشهرية','خطاب غرامات PDF جاهز للتوقيع لكل مقاول، وExcel بالتفاصيل']},
  {v:'V176',d:'2026-10-21',t:'خطة الإحلال والصيانة الرأسمالية',i:['صفحة «🏗️ خطة الإحلال»: ترتيب كل مبنى × نظام (التكييف، الكهرباء، السباكة، الحريق والسلامة، المدني، المصاعد) بدرجة 0–100 من البلاغات المتكررة (12 شهراً) وعدد الإصلاحات وتكلفتها (24 شهراً) وتقييم FCI من «استلام موقع»','توصية لكل نظام: إحلال / صيانة رأسمالية / متابعة مع الأسباب','تقديرات تكلفة الإحلال لكل نظام حسب حجم المبنى، والميزانية التقديرية، وExcel «طلب الميزانية» للعميل']},
@@ -31212,7 +31213,7 @@ window.fmV151Page=function(o,h){const {w,ph,ev}=o,cl=Array.isArray(w.checklist)?
  return `<section class="pg fci"><header><div><h1>تقرير مؤشر مستوى التشغيل لمبنى مدرسي</h1><div class="sub">Operational Level Indicator Report for a School Building (FCI) • ${e(w.code||'')}</div></div>${logo?`<img class="lg" src="${e(logo)}" alt="">`:''}</header>
   <table class="kv"><tr><th>اسم المدرسة</th><td>${e(w.school||'')}</td><th>الرقم الوزاري</th><td>${e(w.building_id||'')}</td></tr>
    <tr><th>العنوان الوطني</th><td>${e(val('العنوان الوطني للمبنى'))}</td><th>المنطقة</th><td>${e({riyadh:'الرياض',qassim:'القصيم'}[w.region]||w.region||'')}</td></tr>
-   <tr><th>رقم العقد</th><td>${e(val('رقم العقد'))}</td><th>اسم المقاول</th><td>شركة شلفا</td></tr>
+   <tr><th>رقم العقد</th><td>${e(val('رقم العقد'))}</td><th>اسم المقاول</th><td>${e((window.FM_TENANT&&FM_TENANT.name)||'شركة شلفا')}</td></tr>
    <tr><th>عدد الطلاب</th><td>${e(val('عدد الطلاب'))}</td><th>النوع</th><td>${e(val('النوع'))}</td></tr>
    <tr><th>تاريخ تعبئة التقرير</th><td>${dt(done&&done.at||w.done_at||arrive&&arrive.at)}</td><th>حالة المبنى التشغيلية النهائية</th><td>${fin?`<span class="fin" style="background:${FC[fin]||'#64748b'}">${e(fin)}</span>`:'—'}</td></tr></table>
   ${ph.some(p=>p.kind==='arrival')?`<h2>📍 توثيق الوصول ${arrive?'— '+dt(arrive.at):''}</h2><div class="g3">${[['sign','لوحة المدرسة'],['entrance','مدخل المدرسة'],['fence','سور المدرسة']].map(([t,l])=>{const p=ph.filter(p=>p.kind==='arrival'&&p.tag===t).pop();return p?img(p,l):''}).join('')}</div>`:''}
@@ -31371,7 +31372,7 @@ const stars=v=>v==null?'—':`<b class="eg-st ${v<=2?'eg-low':v>=4?'eg-hi':''}">
 const RSRC={school:'المدرسة مباشرة',staff:'مسجّل بواسطة الموظف'};
 const RERR={'already rated':'تم تسجيل تقييم لهذا التواصل من قبل','rating needs a completed contact':'التقييم يحتاج تواصلاً مكتملاً (ليس «لم يتم الرد»)','rating period ended':'انتهت مهلة التسجيل (7 أيام من التواصل)','invalid rating':'اختر درجة لكل بند مطلوب','action required':'سجّل الإجراء المتخذ قبل الإغلاق','not allowed':'لا تملك صلاحية هذا الإجراء'};
 const rerr=e=>RERR[e.message]||e.message;
-function rateUrl(t){return new URL('rate.html?t='+t,location.href).href}
+function rateUrl(t){return new URL('rate.html?t='+t+(window.fmTenantParam?.()||''),location.href).href}
 function rateCell(l){const rs=R.filter(r=>r.log_id===l.id),k=K.find(k=>k.log_id===l.id);
  let h=rs.map(r=>`<span title="${RSRC[r.source]}">${stars(r.q_overall)} <small>${r.source==='school'?'المدرسة':'الموظف'}</small></span>`).join('');
  if(!rs.some(r=>r.source==='school')&&k){h+=k.used_at?'':Date.parse(k.expires_at)<Date.now()?'<small>⌛ انتهى الرابط</small>':'<small>⏳ رابط مُرسل</small>'}
@@ -31825,6 +31826,7 @@ const MANUAL=[
  {id:'v2-nav-fm176-capex',t:'خطة الإحلال والصيانة الرأسمالية',where:'المدارس والأعطال ← «🏗️ خطة الإحلال»',what:'ترتيب الأنظمة في كل مبنى بدرجة 0–100 تجمع البلاغات خلال 12 شهراً وعدد الإصلاحات وتكلفتها خلال 24 شهراً وتقييم FCI، مع التوصية (إحلال / صيانة رأسمالية / متابعة) والأسباب والتكلفة التقديرية.',how:['فلتر بالمنطقة أو النظام أو التوصية، وانقر المبنى لفتح ملفه.','«💵 تقديرات التكلفة»: اكتب تكلفة إحلال كل نظام لمبنى وسط (الكبير × 1.3 والصغير × 0.7) لتظهر الميزانية التقديرية.','«⬇️ Excel طلب الميزانية»: ملف بالأنظمة المرشحة وأسبابها وتقديرها وملخص لكل نظام لرفعه للعميل.'],who:'المديرون والمهندس',tips:['تقييم FCI بالمستوى 4 (الأسوأ) يجعل التوصية «إحلال» مباشرة.','بدون صلاحية التكاليف يُحسب بالبلاغات وتقييم FCI فقط.'],v:'V176'},
  {id:'v2-nav-fm177-pen',t:'أداء المقاولين والغرامات',where:'الكادر والمقاولون ← «⚖️ أداء المقاولين والغرامات»',what:'بطاقة شهرية لكل مقاول (البلاغات والالتزام بالـ SLA ومتوسط الإغلاق وأوامر العمل المتأخرة والمعادة) مع حساب الغرامات وفق بنود العقد وخطاب PDF.',how:['اختر الشهر من أعلى الصفحة.','«⚙️ بنود الغرامات والعقود» (مدير النظام): غرامة البلاغ المتجاوز لكل أولوية، ولكل يوم تأخير أمر، ولكل إرجاع، والحد الأقصى كنسبة من قيمة العقد الشهرية لكل مقاول.','«📄 خطاب» يفتح إشعار الغرامات للمقاول جاهزاً للطباعة والتوقيع، و«⬇️ Excel» بالبطاقة والتفاصيل.'],who:'مدير النظام والمديرون والمحاسب',tips:['المقاول يُعرف من بيانات البلاغ / قاعدة المدارس، ومن اسم المُسند إليه في أوامر العمل.','البلاغ يُحسب في شهر إنشائه.'],v:'V177'},
  {id:'v2-nav-fm178-monthly',t:'التقرير الشهري للعميل',where:'التقارير ← «📑 التقرير الشهري للعميل»',what:'تقرير PDF شهري جاهز للإرسال للعميل: غلاف، الملخص التنفيذي مع المقارنة بالشهر السابق، البلاغات، أوامر العمل والصيانة الوقائية، التكاليف والمواد، رضا المدارس، وخطة الشهر القادم.',how:['اختر الشهر والمنطقة من أعلى الصفحة.','اكتب الملخص التنفيذي (أو اتركه للنص التلقائي) وخطة الشهر القادم — تظهر في المعاينة فوراً.','«🖨️ PDF / طباعة» ثم «حفظ كـ PDF» وأرسله للعميل.'],who:'المديرون والمهندس',tips:['أقسام التكاليف وأوامر العمل والرضا تظهر عند ربط السحابة وحسب صلاحياتك.','الأرقام من البلاغات المرفوعة للمنطقة؛ ارفع ملف الشهر كاملاً قبل إصدار التقرير.'],v:'V178'},
+ {id:'saas-sub',t:'الاشتراك (لعدة شركات)',where:'الإعدادات ← السحابة ← «💳 الاشتراك»',what:'حالة اشتراك الشركة: الباقة وحد المدارس والمستخدم منها وتاريخ الانتهاء، وإدخال كود التفعيل بعد دفع فاتورة التجديد.',how:['عند اقتراب الانتهاء يظهر شريط أسفل الشاشة قبل 15 يوماً.','بعد الدفع يصل كود التفعيل من مزود الخدمة: «🔑 إدخال كود التفعيل» والصقه.','بعد الانتهاء بمهلة 7 أيام يتوقف الدخول للجميع وتبقى البيانات، ويعود العمل فور إدخال الكود.'],who:'مدير النظام',tips:['رابط دخول الشركة: start.html?c=رمز الشركة — أرسله لفريقك.','زيادة المدارس عن حد الباقة تُرفض عند حفظ قاعدة المدارس في السحابة — اطلب ترقية الباقة.'],v:'V179'},
  {id:'v2-nav-fm175-req',t:'طلبات المدارس (بوابة المدرسة)',where:'المدارس والأعطال ← «🏫 طلبات المدارس»',what:'طلبات مديري المدارس من «بوابة المدرسة» (رابط خاص لكل مدرسة بدون حساب)، وروابط البوابة لكل مدرسة.',how:['«🔗 روابط المدارس» ← «إنشاء روابط» ثم «💬 واتساب» لإرسال الرابط لمدير المدرسة (من جوال مدير المدرسة في قاعدة المدارس)، أو «📋 نسخ» أو «▦ QR» للطباعة.','في «📨 الطلبات»: «👍 استلام» للطلب الجديد، أو «🛠️ أمر عمل» لإسناده لأحد فريقك وربطه بالطلب (اعتماد الأمر يجعل الطلب منجزاً تلقائياً)، أو «✅ تم» مع الرد، أو «رفض» مع السبب.','يرى مدير المدرسة الحالة والرد ويقيّم التنفيذ بعد الإنجاز.'],who:'المديرون والمهندس والمشرف لمدارسهم',tips:['«🔁 تجديد» يوقف الرابط القديم إذا انتشر خارج الإدارة.','الرقم بجانب الصفحة في القائمة = الطلبات الجديدة.'],v:'V175'},
  {id:'v2-nav-fm174-dq',t:'جودة البيانات',where:'البيانات والإعداد ← «🧹 جودة البيانات»',what:'فحص قاعدة المدارس: نسبة الاكتمال، والنواقص حسب النوع وحسب المهندس، ومدارس البلاغات غير الموجودة في القاعدة، وأسماء الكادر بدون حساب.',how:['اختر المنطقة أو المهندس أو نوع النقص، وانقر النقص لعرض مدارسه أو المدرسة لفتح ملفها.','«💬 واتساب» بجانب المهندس يفتح رسالة جاهزة بنواقص مدارسه، و«⬇️ ملف» ينزّل مدارسه الناقصة بنفس قالب قاعدة المدارس مع عمود «البيانات الناقصة».','بعد أن يملأ المهندس الملف استورده من «قاعدة بيانات المدارس» ← استيراد (الاستيراد لا يمسح ما لم يُكتب).'],who:'مدير النظام والمديرون (والمهندس لمدارسه)',tips:['الخريطة والتكاليف والمقارنات والإسناد وتطبيق الميدان كلها تعتمد على اكتمال هذه البيانات.'],v:'V174'},
  {id:'v2-nav-fm173-stock',t:'المخزون وقطع الغيار',where:'البيانات والإعداد ← «📦 المخزون»',what:'أرصدة المستودعات لكل صنف معتمد (أصناف المواد) مع القيمة وحد الطلب والتغطية بالأيام، وسجل الحركات، والاستهلاك الشهري، وطلب شراء مقترح. مواد أوامر العمل (من المخزن) تُخصم تلقائياً عند اعتماد الأمر من المستودع الافتراضي لمنطقته.',how:['«🏬 المستودعات»: أنشئ مستودعاً لكل منطقة وحدد الافتراضي.','«⚖️ جرد»: اكتب الرصيد المعدود لكل صنف (أو نزّل ورقة الجرد واملأها وارفعها) — يُسجَّل الفرق فقط.','«📥 توريد»: المورد ورقم الفاتورة والأصناف بالكمية والسعر (ويمكن تحديث سعر الصنف).','«🔁 تحويل» بين مستودعين، واختر مستودعاً لتعديل «حد الطلب» من تبويب الأرصدة.','«🛒 طلب شراء مقترح» يقترح كميات الأصناف تحت حد الطلب، و«⬇️ Excel» يصدّر الأرصدة والطلب والحركات.'],who:'يدير المخزون: مدير النظام ومدير المشروع ومدير العمليات، ومدير المنطقة ومهندس المنطقة لمستودعات مناطقهم؛ والمديرون والمحاسب يطّلعون',tips:['الرصيد قد يصبح بالسالب إذا اعتُمد أمر بمواد أكثر من الموجود — يظهر «بالسالب» حتى يُسجَّل توريد أو جرد.','المشتريات المباشرة (شراء) لا تُخصم من المخزن.'],v:'V173'},
@@ -31892,7 +31894,7 @@ const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;return !!st.pr
 /* V164: each title sees only what concerns it. Sidebar pages follow the portal's hidden pages (fmV157P[title].hide);
    other entries list their titles here. The system admin sees everything and can preview any title. */
 const MGR=['dept_manager','project_manager','ops_manager','area_manager'],ASG=['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'];
-const RMAP={users:['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],'cost-perms':['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
+const RMAP={users:['sysadmin'],'saas-sub':['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],'cost-perms':['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
  'wo-group':ASG,'wo-templates':ASG,'wo-fci':ASG,'wo-repair':ASG.concat('dept_manager'),'gov-stop':['sysadmin','hse_manager','project_manager','ops_manager','dept_manager'],
  'gov-deputy':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'eng-rating':['sysadmin',...MGR,'area_engineer'],
  'v2-nav-fm164-usage':['sysadmin','project_manager'],'v2-nav-fm168-novaro':['sysadmin','dept_manager','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm167-news':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm158-qa':['sysadmin','qa_manager',...MGR],
@@ -32992,7 +32994,7 @@ const SQLMSG='شغّل supabase_setup.sql المحدَّث أولاً (القس�
 const sqlMsg=m=>/does not exist|schema cache|Could not find/i.test(String(m))?SQLMSG:/not allowed/.test(m)?'لا تملك صلاحية على هذه المدرسة':/reason required/.test(m)?'اكتب الرد أو السبب':/action not allowed/.test(m)?'لا يمكن هذا الإجراء في حالة الطلب الحالية':m;
 const RST={new:['new','🆕 جديد'],accepted:['acc','👍 مستلم'],in_progress:['prog','🛠️ قيد التنفيذ'],done:['done','✅ منجز'],rejected:['rej','⛔ مرفوض']};
 const dshow=v=>{const d=new Date(v);return isNaN(d)?'—':d.toLocaleDateString(GREG,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
-const linkOf=t=>{const u=new URL('school.html',location.href);u.search='?k='+t;u.hash='';return u.href};
+const linkOf=t=>{const u=new URL('school.html',location.href);u.search='?k='+t+(window.fmTenantParam?.()||'');u.hash='';return u.href};
 async function rpc(fn,a){const db=await C.engClient();const r=await db.rpc(fn,a||{});if(r.error)throw Error(r.error.message);return r.data}
 let REQ=[],LINKS=null,TAB='req',F={st:'open',q:''},err='';
 function page(){let p=document.getElementById('fm175-page');if(!p){p=document.createElement('section');p.id='fm175-page';p.className='fm103-page';
@@ -33261,7 +33263,7 @@ function letter(o){const [a]=monRange(MON),ml=a.toLocaleDateString(GREG,{month:'
  table{width:100%;border-collapse:collapse;margin-top:4px}th,td{border:1px solid #cbd5e1;padding:5px 7px;text-align:right}th{background:#f1f5f9}
  .tot td{font-weight:900;background:#fef2f2}.sg{display:flex;justify-content:space-between;margin-top:46px}.sg div{width:30%;text-align:center;border-top:1px solid #0f172a;padding-top:6px}
  @media print{button{display:none}}</style></head><body>
- <div class="hd"><div><h1>إشعار غرامات تأخير — ${esc(ml)}</h1><div class="m">RakizoraFM · إدارة المرافق — Shalfa International</div></div><div class="m">التاريخ: ${new Date().toLocaleDateString(GREG)}</div></div>
+ <div class="hd"><div><h1>إشعار غرامات تأخير — ${esc(ml)}</h1><div class="m">RakizoraFM · إدارة المرافق — ${esc(window.fmTenantName?.()||'Shalfa International')}</div></div><div class="m">التاريخ: ${new Date().toLocaleDateString(GREG)}</div></div>
  <p>السادة / <b>${esc(o.n)}</b> المحترمين،<br>نحيطكم علماً بنتائج أدائكم لشهر ${esc(ml)} وما ترتب عليها من غرامات وفق بنود العقد:</p>
  <table><tbody><tr><th>البلاغات</th><td>${num(o.tk)}</td><th>الالتزام بالـ SLA</th><td>${o.sla==null?'—':num(o.sla,1)+'%'}</td></tr><tr><th>أوامر العمل</th><td>${num(o.wos)}</td><th>متأخرة / معادة</th><td>${num(o.late.length)} / ${num(o.ret.length)}</td></tr><tr><th>متوسط زمن الإغلاق</th><td>${o.avgH==null?'—':num(o.avgH,1)+' ساعة'}</td><th>الدرجة</th><td>${o.score} / 100</td></tr></tbody></table>
  <h2>1) بلاغات تجاوزت المهلة (${num(o.br.length)})</h2>${T(['#','رقم البلاغ','المدرسة','الأولوية','ساعات التجاوز','الغرامة'],o.br.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.id)}</td><td>${esc(x.school)}</td><td>${esc(x.pr)}</td><td>${num(x.over)}</td><td>${money(x.fee)}</td></tr>`))}
@@ -33366,7 +33368,7 @@ function html(o,n){const c=o.cur,p=o.prev,ml=o.a.toLocaleDateString(GREG,{month:
  const top=(m,k)=>[...m.entries()].sort((x,y)=>y[1]-x[1]).slice(0,k);
  let sn=1;const H=t=>`<h2>${sn++}) ${t}</h2>`;
  const auto=`خلال ${ml} استُلم ${num(c.rec)} بلاغاً${p.rec?` (${c.rec>=p.rec?'+':''}${num(c.rec-p.rec)} عن الشهر السابق)`:''}، وأُغلق ${num(c.closed)}، وبلغت نسبة الالتزام بالمهلة ${c.sla==null?'—':num(c.sla,1)+'%'}${o.wo?`، ونُفّذ ${num(o.wo.pm)} أمر صيانة وقائية و${num(o.wo.rep)} أمر إصلاح`:''}.`;
- return `<div class="rp"><div class="pg cv"><div class="m">RakizoraFM · إدارة المرافق — Shalfa International</div><div class="t">تقرير أعمال الصيانة الشهري</div><div class="s">${esc(ml)} — منطقة ${esc(reg)}</div><div class="m" style="margin-top:20px">تاريخ الإصدار: ${new Date().toLocaleDateString(GREG)}${n.by?' · إعداد: '+esc(n.by):''}</div></div>
+ return `<div class="rp"><div class="pg cv"><div class="m">RakizoraFM · إدارة المرافق — ${esc(window.fmTenantName?.()||'Shalfa International')}</div><div class="t">تقرير أعمال الصيانة الشهري</div><div class="s">${esc(ml)} — منطقة ${esc(reg)}</div><div class="m" style="margin-top:20px">تاريخ الإصدار: ${new Date().toLocaleDateString(GREG)}${n.by?' · إعداد: '+esc(n.by):''}</div></div>
  <div class="pg">${H('الملخص التنفيذي')}<div class="k">
   <div><span>البلاغات المستلمة</span><b>${num(c.rec)}</b>${delta(c.rec,p.rec,true)}</div><div><span>البلاغات المغلقة</span><b>${num(c.closed)}</b>${delta(c.closed,p.closed,false)}</div><div><span>الالتزام بالـ SLA</span><b>${c.sla==null?'—':num(c.sla,1)+'%'}</b>${delta(c.sla,p.sla,false,true)}</div>
   <div><span>بلاغات متجاوزة</span><b>${num(c.br)}</b>${delta(c.br,p.br,true)}</div><div><span>متوسط زمن الإغلاق</span><b>${c.avgH==null?'—':num(c.avgH,1)+' س'}</b>${delta(c.avgH,p.avgH,true,false)}</div><div><span>مفتوحة من بلاغات الشهر</span><b>${num(c.openEnd)}</b></div></div>
@@ -33404,6 +33406,63 @@ const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;const p=st.pro
 function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm178-monthly');if(!n)return;if(!allowed()){b0?.remove();return}if(b0)return;
  const b=document.createElement('button');b.id='v2-nav-fm178-monthly';b.type='button';b.className='v2-nav-btn';b.title='التقرير الشهري للعميل';b.innerHTML='<i class="fas fa-file-contract"></i><span class="v2-nav-label">📑 التقرير الشهري للعميل</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
 setInterval(()=>{try{nav()}catch(e){}},3000);
+})();
+</script>
+<style id="fm-v179-saas-css">
+#fm179-bar{position:fixed;left:0;right:0;bottom:0;z-index:9000;padding:7px 14px;font:800 13px Cairo,Tahoma,sans-serif;text-align:center;direction:rtl;display:flex;gap:10px;justify-content:center;align-items:center}
+#fm179-bar.warn{background:#fef3c7;color:#92400e;border-top:1px solid #fcd34d}#fm179-bar.grace{background:#b91c1c;color:#fff}
+#fm179-bar button{border:0;border-radius:8px;padding:3px 10px;font:800 12px Cairo,Tahoma,sans-serif;cursor:pointer;background:#fff;color:#0f172a}
+#fm179-lock{position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.92);display:flex;align-items:center;justify-content:center;direction:rtl;font-family:Cairo,Tahoma,sans-serif}
+#fm179-lock .bx{background:#fff;border-radius:18px;padding:22px;width:min(460px,92vw);display:grid;gap:10px;text-align:center}
+#fm179-lock input{font:600 12px ui-monospace,Consolas,monospace;border:1px solid #cbd5e1;border-radius:10px;padding:9px;direction:ltr}
+.fm179-tn{display:flex;align-items:center;gap:6px;margin-top:6px;font:900 12.5px Cairo,Tahoma,sans-serif;color:#0f172a}.fm179-tn img{width:22px;height:22px;object-fit:contain;border-radius:5px}
+</style>
+<script id="fm-v179-saas">(function(){
+'use strict';
+/* V179: SaaS. The company comes from start.html?c=<code> (localStorage fm_tenant: name, logo, colour). Each company has its own
+   Supabase project with a subscription row (section 23: fm_plan_info / fm_plan_activate). Here: the company name in the
+   sidebar and in reports (window.FM_TENANT), a bottom bar when the subscription ends within 15 days or is in its grace
+   period, a lock screen with the activation-code box once it expired, and «💳 الاشتراك» in «الإعدادات» ← السحابة. The
+   school-portal and rating links carry &c=<code> so those public pages reach the right company's project. */
+const C=window.FMCloud;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const GREG='ar-SA-u-ca-gregory';
+const T=window.FM_TENANT=(()=>{try{return JSON.parse(localStorage.getItem('fm_tenant')||'null')}catch(e){return null}})();
+window.fmTenantName=()=>(T&&T.name)||'Shalfa International';
+const dshow=d=>d?new Date(String(d).slice(0,10)+'T12:00:00Z').toLocaleDateString(GREG,{year:'numeric',month:'long',day:'numeric'}):'—';
+const PLN={basic:'الأساسية',pro:'الاحترافية',enterprise:'المؤسسات'};
+const ERR=m=>/invalid code/.test(m)?'الكود غير صحيح':/another company/.test(m)?'الكود لشركة أخرى':/already used/.test(m)?'هذا الكود استُخدم من قبل':/not allowed/.test(m)?'يُدخل الكود مدير النظام فقط':/no subscription/.test(m)?'لا يوجد اشتراك مُعرَّف لهذه الشركة':/does not exist|schema cache|Could not find/i.test(m)?'شغّل supabase_setup.sql المحدَّث (القسم 23)':m;
+const cloudOn=()=>!!(C&&C.state&&C.state.on);
+let INFO=null;
+async function info(){if(!C||!C.engClient)return null;try{const db=await C.engClient();const r=await db.rpc('fm_plan_info');if(r.error)return null;INFO=r.data;return INFO}catch(e){return null}}
+async function activate(code){const db=await C.engClient();const r=await db.rpc('fm_plan_activate',{p_code:S(code)});if(r.error)throw Error(r.error.message);INFO=r.data;return r.data}
+/* company name under the brand */
+function brand(){if(!T||!T.name)return;const lg=document.querySelector('.v2-brand-logo');const host=lg&&lg.parentElement;if(!host||host.querySelector('.fm179-tn'))return;
+ const d=document.createElement('div');d.className='fm179-tn';d.innerHTML=`${T.logo?`<img src="${esc(T.logo)}" alt="">`:''}<span>${esc(T.name)}</span>`;host.appendChild(d)}
+function bar(i){document.getElementById('fm179-bar')?.remove();if(!i||!['warn','grace'].includes(i.state))return;const b=document.createElement('div');b.id='fm179-bar';b.className=i.state;
+ b.innerHTML=i.state==='warn'?`⏳ ينتهي اشتراك ${esc(i.company)} خلال ${i.days_left} يوم (${dshow(i.active_until)}) — جدّد قبل الانتهاء`:`⛔ انتهى اشتراك ${esc(i.company)} — مهلة ${+i.grace_days+ +i.days_left} يوم قبل إيقاف الدخول`;
+ const x=document.createElement('button');x.textContent='💳 إدخال كود';x.onclick=()=>codeDlg();b.appendChild(x);const c=document.createElement('button');c.textContent='✕';c.onclick=()=>b.remove();b.appendChild(c);document.body.appendChild(b)}
+function lock(i){if(document.getElementById('fm179-lock'))return;const d=document.createElement('div');d.id='fm179-lock';
+ d.innerHTML=`<div class="bx"><div style="font-size:42px">🔒</div><b style="font-size:18px">انتهى اشتراك ${esc(i.company)}</b><div style="color:#64748b;font-weight:700;font-size:13px;line-height:1.9">انتهى في ${dshow(i.active_until)}. البيانات محفوظة كما هي — يعود العمل بعد إدخال كود التفعيل الذي يصل مع فاتورة التجديد.</div>
+  <input data-c placeholder="الصق كود التفعيل هنا"><button data-a style="border:0;border-radius:10px;padding:10px;background:#2563eb;color:#fff;font:900 14px Cairo,Tahoma,sans-serif;cursor:pointer">تفعيل</button><div data-e style="color:#b91c1c;font-weight:800;font-size:13px"></div><div style="color:#94a3b8;font-size:12px">يُدخله مدير النظام في الشركة</div></div>`;
+ document.body.appendChild(d);d.querySelector('[data-a]').onclick=async()=>{try{await activate(d.querySelector('[data-c]').value);toast('تم تفعيل الاشتراك');location.reload()}catch(e){d.querySelector('[data-e]').textContent=ERR(e.message)}}}
+function codeDlg(){const d=document.createElement('dialog');d.className='fm171-dlg';d.innerHTML=`<div class="in"><h3>💳 إدخال كود التفعيل</h3><div class="fm125-src">الكود يصل من مزود الخدمة مع الفاتورة المدفوعة، ويُستخدم مرة واحدة.</div><input data-c style="direction:ltr;font-family:ui-monospace,Consolas,monospace" placeholder="eyJ…​.a1b2…"><div data-e style="color:#b91c1c;font-weight:800"></div></div><div class="ft"><button class="fm103-btn primary" type="button" data-a>تفعيل</button><button class="fm103-btn" type="button" data-x>إغلاق</button></div>`;
+ document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();d.querySelector('[data-x]').onclick=()=>d.close();
+ d.querySelector('[data-a]').onclick=async()=>{try{const i=await activate(d.querySelector('[data-c]').value);toast(`تم التفعيل حتى ${dshow(i.active_until)}`);d.close();bar(i);document.querySelectorAll('[data-fm179-card]').forEach(c=>card(c,i))}catch(e){d.querySelector('[data-e]').textContent=ERR(e.message)}}}
+function card(box,i){if(!i||i.state==='none'){box.innerHTML='<h3>💳 الاشتراك</h3><div class="fm122-note">لا يوجد اشتراك مُعرَّف لهذه المنصة (تثبيت مستقل بدون حدود).</div>';return}
+ const col={ok:'#15803d',unlimited:'#15803d',warn:'#c2410c',grace:'#b91c1c',expired:'#b91c1c'}[i.state],lim=+i.schools_limit;
+ box.innerHTML=`<h3>💳 الاشتراك</h3><div class="fm103-kpis"><div class="fm103-kpi"><span>الشركة</span><b style="font-size:17px">${esc(i.company)}</b><small>باقة ${esc(PLN[i.plan]||i.plan)}</small></div>
+  <div class="fm103-kpi"><span>ساري حتى</span><b style="font-size:17px;color:${col}">${i.active_until?dshow(i.active_until):'بدون تاريخ انتهاء'}</b><small>${i.days_left!=null?(i.days_left>=0?`متبقي ${i.days_left} يوم`:`انتهى منذ ${-i.days_left} يوم`):''}</small></div>
+  <div class="fm103-kpi"><span>المدارس</span><b style="font-size:17px">${(+i.schools||0).toLocaleString('en-US')} / ${lim?lim.toLocaleString('en-US'):'بلا حد'}</b><small>${lim&&+i.schools>=lim*.9?'قارب الحد — اطلب ترقية الباقة':'في قاعدة المدارس'}</small></div></div>
+  <div class="row"><button class="fm103-btn primary" type="button" data-code>🔑 إدخال كود التفعيل</button></div>`;
+ box.querySelector('[data-code]').onclick=codeDlg}
+(window.fmHubExtras=window.fmHubExtras||[]).push(function(tab,pane){if(tab!=='cloud'||!cloudOn())return;const box=document.createElement('div');box.className='fm122-card';box.dataset.fm179Card='1';box.style.marginTop='14px';box.innerHTML='<h3>💳 الاشتراك</h3><div class="fm125-src">…</div>';pane.insertBefore(box,pane.firstChild);info().then(i=>card(box,i||{state:'none'}))});
+/* public links carry the company code */
+window.fmTenantParam=()=>T&&T.code?'&c='+encodeURIComponent(T.code):'';
+/* the plan check works even when an expired plan made the account «pending» (fm_plan_info needs only a session) */
+let tries=0;const t=setInterval(async()=>{brand();if(++tries>90){clearInterval(t);return}if(!C||!C.configured||!C.configured())return;const i=await info();if(!i)return;clearInterval(t);bar(i);if(i.state==='expired')lock(i)},2000);
+setInterval(brand,4000);
 })();
 </script>
 </body>

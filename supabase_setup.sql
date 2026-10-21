@@ -2476,4 +2476,91 @@ grant execute on function public.fm_school_portal(text), public.fm_school_reques
 revoke all on function public.fm_school_links_list(), public.fm_school_link_make(text[], boolean), public.fm_school_link_revoke(text), public.fm_school_req_list(int), public.fm_school_req_act(uuid, text, text, jsonb) from public, anon;
 grant execute on function public.fm_school_links_list(), public.fm_school_link_make(text[], boolean), public.fm_school_link_revoke(text), public.fm_school_req_list(int), public.fm_school_req_act(uuid, text, text, jsonb) to authenticated;
 
+-- ---------- 23) SaaS subscription of this company (V179) ----------
+-- Every company has its own Supabase project (this file). The platform owner keeps the companies, invoices and their
+-- secrets in the control project (saas_control.sql). In each company project one row of fm_plan holds the subscription:
+-- plan, school limit and the date it runs until. It is created once by the owner from the SQL editor (fm_plan_init) and
+-- renewed by the company's system admin with an activation code the owner sends with the paid invoice (fm_plan_activate:
+-- HMAC-SHA256 of the code with the secret only the owner and this database know). After active_until + grace_days every
+-- role becomes «pending» (fm_role), so the data stays but nobody can work until the next code. No row = no subscription
+-- control (the original single-company installation keeps working as before).
+do $$ begin execute 'create extension if not exists pgcrypto with schema extensions'; exception when others then null; end $$;
+create table if not exists public.fm_plan (
+  id            int primary key default 1 check (id = 1),
+  company       text not null,
+  plan          text not null default 'basic',
+  schools_limit int  not null default 0,          -- 0 = unlimited
+  active_until  date,
+  grace_days    int  not null default 7,
+  secret        text not null,
+  nonces        text[] not null default '{}',
+  activated_at  timestamptz,
+  updated_at    timestamptz not null default now()
+);
+alter table public.fm_plan enable row level security;
+revoke all on public.fm_plan from anon, authenticated;
+create or replace function public.fm_plan_ok() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select p.active_until is null or current_date <= p.active_until + p.grace_days from public.fm_plan p where p.id = 1), true) $$;
+-- every policy goes through fm_role: an expired subscription turns everyone into «pending»
+create or replace function public.fm_role() returns text language sql stable security definer set search_path = public as $$
+  select case when p.active and public.fm_plan_ok() then p.role else 'pending' end from public.profiles p where p.id = auth.uid() $$;
+-- what the platform shows (no secret)
+create or replace function public.fm_plan_info() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce((select jsonb_build_object('company', p.company, 'plan', p.plan, 'schools_limit', p.schools_limit, 'active_until', p.active_until,
+      'grace_days', p.grace_days, 'days_left', p.active_until - current_date, 'activated_at', p.activated_at,
+      'state', case when p.active_until is null then 'unlimited' when current_date <= p.active_until - 15 then 'ok'
+                    when current_date <= p.active_until then 'warn' when current_date <= p.active_until + p.grace_days then 'grace' else 'expired' end,
+      'schools', (select case when jsonb_typeof(v) = 'array' then jsonb_array_length(v) when jsonb_typeof(v) = 'string' and left(v #>> '{}',1) = '['
+                  then jsonb_array_length((v #>> '{}')::jsonb) else 0 end from (select value v from public.app_kv where key = 'fm_school_master_db_v1') x))
+    from public.fm_plan p where p.id = 1), jsonb_build_object('state','none')) $$;
+-- created once by the owner in the SQL editor of the new company project (the console prints this line)
+create or replace function public.fm_plan_init(p_company text, p_secret text, p_plan text, p_limit int, p_until date) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if exists(select 1 from public.fm_plan) then raise exception 'plan already initialised'; end if;
+  if length(coalesce(p_secret,'')) < 32 then raise exception 'weak secret'; end if;
+  insert into public.fm_plan(company, secret, plan, schools_limit, active_until) values (p_company, p_secret, coalesce(p_plan,'basic'), coalesce(p_limit,0), p_until);
+end $$;
+-- HMAC-SHA256 (pgcrypto lives in the extensions schema on Supabase)
+create or replace function public.fm_plan_hmac(p_data text, p_key text) returns text language plpgsql immutable set search_path = public as $$
+begin
+  begin return encode(extensions.hmac(convert_to(p_data,'utf8'), convert_to(p_key,'utf8'), 'sha256'), 'hex');
+  exception when undefined_function or invalid_schema_name then return encode(public.hmac(convert_to(p_data,'utf8'), convert_to(p_key,'utf8'), 'sha256'), 'hex'); end;
+end $$;
+-- the company's system admin enters the activation code: <base64url payload>.<hex hmac>, payload {c, p, l, u, n}
+create or replace function public.fm_plan_activate(p_code text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare pl public.fm_plan; parts text[]; b64 text; j jsonb;
+begin
+  if not exists(select 1 from public.profiles where id = auth.uid() and active and role = 'admin') then raise exception 'not allowed'; end if;
+  select * into pl from public.fm_plan where id = 1 for update;
+  if not found then raise exception 'no subscription'; end if;
+  parts := regexp_split_to_array(btrim(coalesce(p_code,'')), '\.');
+  if array_length(parts,1) <> 2 or parts[2] !~ '^[0-9a-f]{64}$' then raise exception 'invalid code'; end if;
+  if public.fm_plan_hmac(parts[1], pl.secret) <> parts[2] then raise exception 'invalid code'; end if;
+  b64 := translate(parts[1], '-_', '+/'); b64 := b64 || repeat('=', (4 - length(b64) % 4) % 4);
+  j := convert_from(decode(b64, 'base64'), 'utf8')::jsonb;
+  if j->>'c' is distinct from pl.company then raise exception 'code for another company'; end if;
+  if coalesce(j->>'n','') = '' or (j->>'n') = any(pl.nonces) then raise exception 'code already used'; end if;
+  update public.fm_plan set plan = coalesce(j->>'p', plan), schools_limit = coalesce((j->>'l')::int, schools_limit), active_until = (j->>'u')::date,
+    nonces = (array[j->>'n'] || nonces)[1:100], activated_at = now(), updated_at = now() where id = 1;
+  return public.fm_plan_info();
+end $$;
+-- the school limit of the plan (the shared school DB in app_kv)
+create or replace function public.fm_plan_limit_trg() returns trigger language plpgsql security definer set search_path = public as $$
+declare lim int; v jsonb := new.value; n int;
+begin
+  if new.key <> 'fm_school_master_db_v1' then return new; end if;
+  select schools_limit into lim from public.fm_plan where id = 1;
+  if coalesce(lim,0) <= 0 then return new; end if;
+  if jsonb_typeof(v) = 'string' then begin v := (v #>> '{}')::jsonb; exception when others then return new; end; end if;
+  n := case when jsonb_typeof(v) = 'array' then jsonb_array_length(v) else 0 end;
+  if n > lim then raise exception 'plan school limit: % of %', n, lim; end if;
+  return new;
+end $$;
+drop trigger if exists fm_plan_limit on public.app_kv;
+create trigger fm_plan_limit before insert or update on public.app_kv for each row execute function public.fm_plan_limit_trg();
+revoke all on function public.fm_plan_init(text, text, text, int, date), public.fm_plan_hmac(text, text), public.fm_plan_limit_trg() from public, anon, authenticated;
+revoke all on function public.fm_plan_info(), public.fm_plan_activate(text) from public, anon;
+grant execute on function public.fm_plan_info(), public.fm_plan_activate(text) to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
