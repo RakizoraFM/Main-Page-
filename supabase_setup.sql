@@ -2127,4 +2127,353 @@ revoke all on function public.fm_cost_can(text), public.fm_cost_scope(), public.
 grant execute on function public.fm_cost_can(text), public.fm_cost_scope(), public.fm_cost_schools(), public.fm_cost_me(), public.fm_expense_save(jsonb),
   public.fm_expense_cancel(uuid, text), public.fm_budget_set(int, jsonb), public.fm_bld_costs(date, date, text) to authenticated;
 
+-- ---------- 21) spare-parts inventory (V173, field F26) ----------
+-- Stores (مستودعات) per region hold a balance of each warehouse material (wo_materials). Every change is a move:
+-- in (receipt from a supplier), adjust (stock count), transfer (between stores) and out (an approved work order).
+-- When a work order is closed (approved), its store materials (src store with a material id) are taken out of the
+-- region's default store once (fm_wo_stock_out); a balance may go below zero, it is shown as a shortage.
+-- Managers of the stock: system admin, project / operations managers (all stores), area manager and area engineer
+-- (stores of their regions). Everyone signed in reads the stores and balances (the field app shows what is available);
+-- the moves are read by the managers and the support titles. Writes only through the functions below.
+create table if not exists public.wo_stores (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  region     text,
+  is_default boolean not null default false,
+  active     boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.wo_stock (
+  store_id    uuid not null references public.wo_stores(id) on delete cascade,
+  material_id uuid not null references public.wo_materials(id) on delete cascade,
+  qty         numeric(14,3) not null default 0,
+  min_qty     numeric(14,3) not null default 0,
+  updated_at  timestamptz not null default now(),
+  primary key (store_id, material_id)
+);
+create table if not exists public.wo_stock_moves (
+  id          uuid primary key default gen_random_uuid(),
+  at          timestamptz not null default now(),
+  store_id    uuid not null references public.wo_stores(id) on delete cascade,
+  material_id uuid not null references public.wo_materials(id) on delete cascade,
+  qty         numeric(14,3) not null,               -- + in, - out
+  kind        text not null check (kind in ('in','out','adjust','transfer')),
+  unit_price  numeric(12,2),
+  wo_id       uuid references public.work_orders(id) on delete set null,
+  wo_code     text,
+  school      text,
+  item        text,
+  supplier    text,
+  invoice_no  text,
+  note        text,
+  by_id       uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name     text
+);
+create index if not exists wo_stock_moves_at_idx on public.wo_stock_moves (store_id, at desc);
+create index if not exists wo_stock_moves_wo_idx on public.wo_stock_moves (wo_id);
+create index if not exists wo_stock_moves_mat_idx on public.wo_stock_moves (material_id, at desc);
+alter table public.wo_stores enable row level security;
+alter table public.wo_stock enable row level security;
+alter table public.wo_stock_moves enable row level security;
+-- may the caller manage this store (region)?
+create or replace function public.fm_stock_can(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(coalesce(p_region,''))), false) $$;
+drop policy if exists p_store_read on public.wo_stores;
+create policy p_store_read on public.wo_stores for select using (public.fm_role() in ('admin','manager','staff','engineer','supervisor','contractor','viewer'));
+drop policy if exists p_stock_read on public.wo_stock;
+create policy p_stock_read on public.wo_stock for select using (public.fm_role() in ('admin','manager','staff','engineer','supervisor','contractor','viewer'));
+drop policy if exists p_move_read on public.wo_stock_moves;
+create policy p_move_read on public.wo_stock_moves for select using (public.fm_role() in ('admin','manager','staff','engineer','viewer'));
+revoke insert, update, delete on public.wo_stores, public.wo_stock, public.wo_stock_moves from anon, authenticated;
+
+-- the default store of a region: the one marked default, else the oldest active store of the region, else a store without a region
+create or replace function public.fm_stock_store_for(p_region text) returns uuid language sql stable security definer set search_path = public as $$
+  select id from public.wo_stores where active and (coalesce(region,'') = coalesce(p_region,'') or coalesce(region,'') = '')
+   order by (coalesce(region,'') = coalesce(p_region,'')) desc, is_default desc, created_at limit 1 $$;
+revoke all on function public.fm_stock_store_for(text) from public, anon, authenticated;
+
+-- add or change a store: p {id?, name, region, is_default, active}
+create or replace function public.fm_stock_store_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid := nullif(p->>'id','')::uuid; v_reg text := nullif(btrim(coalesce(p->>'region','')),''); s public.wo_stores;
+begin
+  if auth.uid() is null or not public.fm_stock_can(v_reg) then raise exception 'not allowed'; end if;
+  if btrim(coalesce(p->>'name','')) = '' then raise exception 'name required'; end if;
+  if v_id is null then
+    insert into public.wo_stores(name, region, is_default, active) values (left(btrim(p->>'name'),120), v_reg, coalesce((p->>'is_default')::boolean,false), coalesce((p->>'active')::boolean,true)) returning id into v_id;
+  else
+    select * into s from public.wo_stores where id = v_id;
+    if not found or not public.fm_stock_can(s.region) then raise exception 'not allowed'; end if;
+    update public.wo_stores set name = left(btrim(p->>'name'),120), region = v_reg, is_default = coalesce((p->>'is_default')::boolean,false),
+      active = coalesce((p->>'active')::boolean,true) where id = v_id;
+  end if;
+  if coalesce((p->>'is_default')::boolean,false) then update public.wo_stores set is_default = false where id <> v_id and coalesce(region,'') = coalesce(v_reg,''); end if;
+  return v_id;
+end $$;
+
+-- one stock change: p {kind: in | adjust | transfer, store_id, to_store (transfer), supplier, invoice_no, note, update_price,
+--   lines: [{material_id, qty (in / transfer), count (adjust = the counted balance), price (in)}]}; returns the number of moves
+create or replace function public.fm_stock_move(p jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare k text := p->>'kind'; st public.wo_stores; st2 public.wo_stores; x jsonb; q numeric; cur numeric; n int := 0; m uuid; pr numeric;
+  me uuid := auth.uid(); nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid());
+begin
+  if me is null or k not in ('in','adjust','transfer') then raise exception 'invalid kind'; end if;
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if not found or not public.fm_stock_can(st.region) then raise exception 'not allowed'; end if;
+  if k = 'transfer' then
+    select * into st2 from public.wo_stores where id = nullif(p->>'to_store','')::uuid and active;
+    if not found or st2.id = st.id or not public.fm_stock_can(st2.region) then raise exception 'invalid store'; end if;
+  end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    m := nullif(x->>'material_id','')::uuid;
+    if m is null or not exists(select 1 from public.wo_materials where id = m) then raise exception 'unknown material'; end if;
+    pr := nullif(x->>'price','')::numeric;
+    insert into public.wo_stock(store_id, material_id) values (st.id, m) on conflict do nothing;
+    select qty into cur from public.wo_stock where store_id = st.id and material_id = m for update;
+    if k = 'adjust' then q := nullif(x->>'count','')::numeric; if q is null or q < 0 then raise exception 'invalid count'; end if; q := q - cur;
+    else q := nullif(x->>'qty','')::numeric; if q is null or q <= 0 or q > 1000000 then raise exception 'invalid qty'; end if; end if;
+    if q = 0 then continue; end if;
+    if k = 'transfer' then
+      update public.wo_stock set qty = qty - q, updated_at = now() where store_id = st.id and material_id = m;
+      insert into public.wo_stock(store_id, material_id, qty) values (st2.id, m, q)
+        on conflict (store_id, material_id) do update set qty = public.wo_stock.qty + q, updated_at = now();
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, note, by_id, by_name) values
+        (st.id, m, -q, 'transfer', left(concat_ws(' — ', '← إلى ' || st2.name, nullif(btrim(coalesce(p->>'note','')),'')),300), me, nm),
+        (st2.id, m, q, 'transfer', left(concat_ws(' — ', '→ من ' || st.name, nullif(btrim(coalesce(p->>'note','')),'')),300), me, nm);
+    else
+      update public.wo_stock set qty = qty + q, updated_at = now() where store_id = st.id and material_id = m;
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, supplier, invoice_no, note, by_id, by_name)
+      values (st.id, m, q, k, case when k = 'in' then pr end, left(nullif(btrim(coalesce(p->>'supplier','')),''),200),
+              left(nullif(btrim(coalesce(p->>'invoice_no','')),''),80), left(nullif(btrim(coalesce(p->>'note','')),''),300), me, nm);
+      if k = 'in' and pr is not null and pr >= 0 and coalesce((p->>'update_price')::boolean,false) then
+        update public.wo_materials set price = pr, updated_at = now() where id = m; end if;
+    end if;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+-- the minimum (reorder level) of materials in a store: p_rows [{material_id, min}]
+create or replace function public.fm_stock_min(p_store uuid, p_rows jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; x jsonb; n int := 0;
+begin
+  select * into st from public.wo_stores where id = p_store;
+  if auth.uid() is null or not found or not public.fm_stock_can(st.region) then raise exception 'not allowed'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p_rows,'[]')) loop
+    if coalesce(nullif(x->>'min','')::numeric,0) < 0 then raise exception 'invalid min'; end if;
+    insert into public.wo_stock(store_id, material_id, min_qty) values (st.id, (x->>'material_id')::uuid, coalesce(nullif(x->>'min','')::numeric,0))
+      on conflict (store_id, material_id) do update set min_qty = excluded.min_qty, updated_at = now();
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+-- an approved work order takes its store materials out of the region's default store (once per order)
+create or replace function public.fm_wo_stock_out() returns trigger language plpgsql security definer set search_path = public as $$
+declare st uuid; x record;
+begin
+  if new.status <> 'closed' or old.status = 'closed' then return new; end if;
+  if exists(select 1 from public.wo_stock_moves where wo_id = new.id and kind = 'out') then return new; end if;
+  st := public.fm_stock_store_for(new.region);
+  if st is null then return new; end if;
+  for x in
+    select (mt.m->>'id')::uuid mid, sum(coalesce(nullif(mt.m->>'q','')::numeric,0)) q, max(nullif(mt.m->>'price','')::numeric) pr, string_agg(distinct it.e->>'t', ' • ') items
+      from jsonb_array_elements(case when jsonb_typeof(new.checklist) = 'array' then new.checklist else '[]' end) it(e)
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) mt(m)
+     where jsonb_typeof(mt.m) = 'object' and coalesce(mt.m->>'src','store') = 'store'
+       and coalesce(mt.m->>'id','') ~ '^[0-9a-fA-F-]{36}$' and exists(select 1 from public.wo_materials w where w.id = (mt.m->>'id')::uuid)
+     group by 1 having sum(coalesce(nullif(mt.m->>'q','')::numeric,0)) > 0
+  loop
+    insert into public.wo_stock(store_id, material_id, qty) values (st, x.mid, -x.q)
+      on conflict (store_id, material_id) do update set qty = public.wo_stock.qty - x.q, updated_at = now();
+    insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, wo_id, wo_code, school, item, by_id, by_name)
+    values (st, x.mid, -x.q, 'out', x.pr, new.id, new.code, new.school, left(x.items,300), auth.uid(), (select coalesce(full_name, email) from public.profiles where id = auth.uid()));
+  end loop;
+  return new;
+end $$;
+drop trigger if exists fm_wo_stock_out on public.work_orders;
+create trigger fm_wo_stock_out after update of status on public.work_orders for each row execute function public.fm_wo_stock_out();
+revoke all on function public.fm_stock_can(text), public.fm_stock_store_save(jsonb), public.fm_stock_move(jsonb), public.fm_stock_min(uuid, jsonb) from public, anon;
+grant execute on function public.fm_stock_can(text), public.fm_stock_store_save(jsonb), public.fm_stock_move(jsonb), public.fm_stock_min(uuid, jsonb) to authenticated;
+revoke all on function public.fm_wo_stock_out() from public, anon, authenticated;
+
+-- ---------- 22) school principal portal (V175, school S1) ----------
+-- Every school can get a permanent private link school.html?k=<64 hex> (no account). Its principal sees the school's
+-- open tickets and open work orders (no staff contact data), raises requests (category, description, urgency, up to 3
+-- small photos) and follows / rates them. Staff see the requests of their schools in «🏫 طلبات المدارس», accept,
+-- reject, link a work order (closing that order marks the request done) or close it with a reply.
+-- The schools of the caller: whole DB for the system admin and the titles that see everything, his regions for the area
+-- manager, else his own rows (fm_my_school_db).
+create or replace function public.fm_my_schools() returns table(bkey text, name text, region text, principal text, principal_phone text)
+language plpgsql stable security definer set search_path = public as $$
+declare v jsonb; sc text;
+begin
+  if auth.uid() is null or public.fm_role() not in ('admin','manager','staff','viewer','engineer','supervisor','contractor') then return; end if;
+  sc := case when public.fm_role() = 'admin' or public.fm_scope_all() then 'all' when public.fm_my_pos() = 'area_manager' then 'region' else 'mine' end;
+  if sc = 'mine' then v := public.fm_my_school_db();
+  else select value into v from public.app_kv where key = 'fm_school_master_db_v1'; if jsonb_typeof(v) = 'string' then v := (v #>> '{}')::jsonb; end if; end if;
+  if v is null or jsonb_typeof(v) <> 'array' then return; end if;
+  return query select distinct on (x.k) x.k, x.n, x.r, x.p, x.ph from (
+      select public.fm_bkey(e->>'buildingId', e->>'school') k, nullif(btrim(coalesce(e->>'school','')),'') n, nullif(btrim(coalesce(e->>'region','')),'') r,
+             nullif(btrim(coalesce(e->>'principal','')),'') p, nullif(btrim(coalesce(e->>'principalPhone','')),'') ph
+        from jsonb_array_elements(v) e where jsonb_typeof(e) = 'object' and btrim(coalesce(e->>'school','')) <> '') x
+   where sc <> 'region' or public.fm_region_ok(coalesce(x.r,''))
+   order by x.k, x.n;
+end $$;
+
+create table if not exists public.fm_school_links (
+  token        text primary key check (token ~ '^[0-9a-f]{64}$'),
+  bkey         text not null,
+  school_name  text not null,
+  region       text,
+  active       boolean not null default true,
+  created_by   uuid default auth.uid() references public.profiles(id) on delete set null,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz,
+  revoked_at   timestamptz
+);
+create unique index if not exists fm_school_links_one on public.fm_school_links (bkey) where active;
+create sequence if not exists public.fm_school_req_seq;
+create table if not exists public.fm_school_requests (
+  id              uuid primary key default gen_random_uuid(),
+  code            text unique,
+  token           text references public.fm_school_links(token) on delete set null,
+  bkey            text not null,
+  school_name     text not null,
+  region          text,
+  category        text not null,
+  description     text not null,
+  urgency         text not null default 'normal' check (urgency in ('normal','urgent')),
+  contact_name    text,
+  contact_phone   text,
+  photos          jsonb not null default '[]',
+  status          text not null default 'new' check (status in ('new','accepted','in_progress','done','rejected')),
+  response        text,
+  wo_id           uuid references public.work_orders(id) on delete set null,
+  wo_code         text,
+  handled_by      uuid references public.profiles(id) on delete set null,
+  handled_by_name text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  rating          int check (rating between 1 and 5),
+  rating_comment  text,
+  rated_at        timestamptz
+);
+create index if not exists fm_school_requests_bkey_idx on public.fm_school_requests (bkey, created_at desc);
+alter table public.fm_school_links enable row level security;
+alter table public.fm_school_requests enable row level security;
+revoke all on public.fm_school_links, public.fm_school_requests from anon, authenticated;
+
+-- public (anon): what the portal shows for a link
+create or replace function public.fm_school_portal(p_token text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare k public.fm_school_links;
+begin
+  select * into k from public.fm_school_links where token = p_token and length(p_token) = 64 and active;
+  if not found then return jsonb_build_object('state','invalid'); end if;
+  update public.fm_school_links set last_used_at = now() where token = p_token and (last_used_at is null or last_used_at < now() - interval '10 minutes');
+  return jsonb_build_object('state','ok','school', k.school_name, 'region', k.region,
+    'requests', coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'code', r.code, 'category', r.category, 'description', r.description, 'urgency', r.urgency,
+        'status', r.status, 'response', r.response, 'wo_code', r.wo_code, 'created_at', r.created_at, 'updated_at', r.updated_at, 'rating', r.rating, 'photos', jsonb_array_length(r.photos))
+        order by r.created_at desc) from (select * from public.fm_school_requests where bkey = k.bkey order by created_at desc limit 30) r), '[]'::jsonb),
+    'tickets', coalesce((select jsonb_agg(jsonb_build_object('id', t.ticket_id, 'cat', t.sub_category, 'status', t.status, 'priority', t.priority, 'at', t.created_at) order by t.created_at desc)
+        from (select * from public.tickets t where (public.fm_bkey(t.building_id, null) = k.bkey or btrim(t.school) = k.school_name)
+                and coalesce(t.status,'') !~* '(مغلق|تم الحل|تم حل|محلول|ملغ|مكتمل|closed|resolved|cancel)' order by t.created_at desc limit 50) t), '[]'::jsonb),
+    'orders', coalesce((select jsonb_agg(jsonb_build_object('code', w.code, 'title', w.title, 'type', w.type, 'status', w.status, 'at', w.created_at) order by w.created_at desc)
+        from (select * from public.work_orders w where (public.fm_bkey(w.building_id, null) = k.bkey or btrim(w.school) = k.school_name)
+                and w.status not in ('closed','cancelled','rejected') order by w.created_at desc limit 50) w), '[]'::jsonb));
+end $$;
+-- public (anon): a new request (at most 10 per link a day; photos: up to 3 data URLs of an image, ≤ 600 000 characters each)
+create or replace function public.fm_school_request_new(p_token text, p jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare k public.fm_school_links; v_code text; ph jsonb := coalesce(p->'photos','[]'); x jsonb;
+begin
+  select * into k from public.fm_school_links where token = p_token and length(p_token) = 64 and active;
+  if not found then raise exception 'invalid link'; end if;
+  if (select count(*) from public.fm_school_requests where token = p_token and created_at > now() - interval '1 day') >= 10 then raise exception 'too many requests'; end if;
+  if btrim(coalesce(p->>'category','')) = '' or length(btrim(coalesce(p->>'description',''))) < 5 then raise exception 'description required'; end if;
+  if jsonb_typeof(ph) <> 'array' or jsonb_array_length(ph) > 3 then raise exception 'invalid photos'; end if;
+  for x in select * from jsonb_array_elements(ph) loop
+    if jsonb_typeof(x) <> 'string' or (x #>> '{}') !~ '^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$' or length(x #>> '{}') > 600000 then raise exception 'invalid photos'; end if;
+  end loop;
+  v_code := 'SR-' || to_char(now() at time zone 'Asia/Riyadh', 'YYYY') || '-' || lpad(nextval('public.fm_school_req_seq')::text, 4, '0');
+  insert into public.fm_school_requests(code, token, bkey, school_name, region, category, description, urgency, contact_name, contact_phone, photos)
+  values (v_code, p_token, k.bkey, k.school_name, k.region, left(btrim(p->>'category'),60), left(btrim(p->>'description'),1000),
+          case when p->>'urgency' = 'urgent' then 'urgent' else 'normal' end, left(nullif(btrim(coalesce(p->>'contact_name','')),''),100),
+          left(nullif(btrim(coalesce(p->>'contact_phone','')),''),30), ph);
+  return v_code;
+end $$;
+-- public (anon): rate a finished request once
+create or replace function public.fm_school_request_rate(p_token text, p_id uuid, p_score int, p_comment text) returns void language plpgsql security definer set search_path = public as $$
+declare r public.fm_school_requests;
+begin
+  select * into r from public.fm_school_requests where id = p_id and token = p_token for update;
+  if not found or not exists(select 1 from public.fm_school_links where token = p_token and active) then raise exception 'invalid link'; end if;
+  if r.status <> 'done' then raise exception 'not finished'; end if;
+  if r.rating is not null then raise exception 'already rated'; end if;
+  if p_score is null or p_score not between 1 and 5 then raise exception 'invalid rating'; end if;
+  update public.fm_school_requests set rating = p_score, rating_comment = left(nullif(btrim(coalesce(p_comment,'')),''),500), rated_at = now() where id = p_id;
+end $$;
+
+-- staff: the links of my schools / make (or renew) links
+create or replace function public.fm_school_links_list() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('k', s.bkey, 'name', s.name, 'region', s.region, 'principal', s.principal, 'phone', s.principal_phone,
+      'token', l.token, 'created_at', l.created_at, 'last_used_at', l.last_used_at) order by s.name), '[]'::jsonb)
+    from public.fm_my_schools() s left join public.fm_school_links l on l.bkey = s.bkey and l.active
+   where public.fm_role() in ('admin','manager','engineer','supervisor') $$;
+create or replace function public.fm_school_link_make(p_keys text[], p_renew boolean default false) returns int language plpgsql security definer set search_path = public as $$
+declare s record; n int := 0;
+begin
+  if auth.uid() is null or public.fm_role() not in ('admin','manager','engineer','supervisor') then raise exception 'not allowed'; end if;
+  for s in select * from public.fm_my_schools() m where m.bkey = any(p_keys) loop
+    if p_renew then update public.fm_school_links set active = false, revoked_at = now() where bkey = s.bkey and active; end if;
+    if not exists(select 1 from public.fm_school_links where bkey = s.bkey and active) then
+      insert into public.fm_school_links(token, bkey, school_name, region) values (replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', ''), s.bkey, s.name, s.region);
+      n := n + 1;
+    end if;
+  end loop;
+  return n;
+end $$;
+create or replace function public.fm_school_link_revoke(p_key text) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or public.fm_role() not in ('admin','manager','engineer','supervisor') or not exists(select 1 from public.fm_my_schools() m where m.bkey = p_key) then raise exception 'not allowed'; end if;
+  update public.fm_school_links set active = false, revoked_at = now() where bkey = p_key and active;
+end $$;
+-- staff: the requests of my schools (last p_days days, open ones always)
+create or replace function public.fm_school_req_list(p_days int default 90) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(to_jsonb(r) - 'token' order by r.created_at desc), '[]'::jsonb)
+    from public.fm_school_requests r
+   where public.fm_role() in ('admin','manager','staff','viewer','engineer','supervisor')
+     and r.bkey in (select bkey from public.fm_my_schools())
+     and (r.status in ('new','accepted','in_progress') or r.created_at > now() - make_interval(days => greatest(1, least(coalesce(p_days,90), 730)))) $$;
+-- staff: accept | reject (reply required) | done (reply required) | link {wo_id, wo_code} (→ in progress)
+create or replace function public.fm_school_req_act(p_id uuid, p_action text, p_note text default null, p_wo jsonb default null) returns text language plpgsql security definer set search_path = public as $$
+declare r public.fm_school_requests; me uuid := auth.uid(); nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid()); ns text; note text := nullif(btrim(coalesce(p_note,'')),'');
+begin
+  select * into r from public.fm_school_requests where id = p_id for update;
+  if not found or me is null or public.fm_role() not in ('admin','manager','engineer','supervisor') or r.bkey not in (select bkey from public.fm_my_schools()) then raise exception 'not allowed'; end if;
+  if p_action = 'accept' and r.status = 'new' then ns := 'accepted';
+  elsif p_action = 'reject' and r.status in ('new','accepted') then if note is null then raise exception 'reason required'; end if; ns := 'rejected';
+  elsif p_action = 'done' and r.status in ('new','accepted','in_progress') then if note is null then raise exception 'reason required'; end if; ns := 'done';
+  elsif p_action = 'link' and r.status in ('new','accepted','in_progress') then
+    if not exists(select 1 from public.work_orders where id = nullif(p_wo->>'wo_id','')::uuid) then raise exception 'work order not found'; end if;
+    ns := 'in_progress';
+    update public.fm_school_requests set wo_id = (p_wo->>'wo_id')::uuid, wo_code = (select code from public.work_orders where id = (p_wo->>'wo_id')::uuid) where id = p_id;
+  else raise exception 'action not allowed'; end if;
+  update public.fm_school_requests set status = ns, response = coalesce(left(note,1000), response), handled_by = me, handled_by_name = nm, updated_at = now() where id = p_id;
+  return ns;
+end $$;
+-- a closed work order finishes the requests linked to it
+create or replace function public.fm_school_req_wo_trg() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.status = 'closed' and old.status <> 'closed' then
+    update public.fm_school_requests set status = 'done', response = coalesce(response, 'تم تنفيذ أمر العمل ' || coalesce(new.code,'') || ' واعتماده'), updated_at = now()
+     where wo_id = new.id and status in ('accepted','in_progress','new');
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_school_req_wo on public.work_orders;
+create trigger fm_school_req_wo after update of status on public.work_orders for each row execute function public.fm_school_req_wo_trg();
+revoke all on function public.fm_my_schools(), public.fm_school_req_wo_trg() from public, anon, authenticated;
+revoke all on function public.fm_school_portal(text), public.fm_school_request_new(text, jsonb), public.fm_school_request_rate(text, uuid, int, text) from public;
+grant execute on function public.fm_school_portal(text), public.fm_school_request_new(text, jsonb), public.fm_school_request_rate(text, uuid, int, text) to anon, authenticated;
+revoke all on function public.fm_school_links_list(), public.fm_school_link_make(text[], boolean), public.fm_school_link_revoke(text), public.fm_school_req_list(int), public.fm_school_req_act(uuid, text, text, jsonb) from public, anon;
+grant execute on function public.fm_school_links_list(), public.fm_school_link_make(text[], boolean), public.fm_school_link_revoke(text), public.fm_school_req_list(int), public.fm_school_req_act(uuid, text, text, jsonb) to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
