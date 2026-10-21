@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F24">
+<meta name="fm-version" content="F25">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -162,6 +162,16 @@ textarea.in{min-height:90px;line-height:1.8}
 .cli{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-weight:700;font-size:14px}.cli:last-child{border-bottom:0}.cli input{width:22px;height:22px;flex:none}
 .abar.wo{background:#1e3a8a}.abar.wo button[data-a=go]{color:#1e3a8a}
 .wocard{background:#eef2ff;border-color:#c7d2fe;color:#3730a3;font-weight:800;display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:start}
+.ss-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1200}
+.ss{position:fixed;left:0;right:0;bottom:0;max-height:88vh;overflow:auto;background:var(--bg);border-radius:18px 18px 0 0;z-index:1201;padding:12px 14px 26px;box-shadow:0 -10px 30px rgba(0,0,0,.22);direction:rtl}
+.ss .grab{width:44px;height:5px;border-radius:9px;background:#cbd5e1;margin:0 auto 8px}
+.ss .hd{display:flex;align-items:flex-start;gap:8px}.ss .hd h2{flex:1;margin:0;font-size:17px}.ss .hd button{border:0;background:#e2e8f0;border-radius:50%;width:34px;height:34px;font-size:15px}
+.ss h3{font-size:14px;margin:14px 2px 6px}
+.sp{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin:6px 0}
+.sp>div{flex:1;display:grid;min-width:0}.sp small{color:var(--mut);font-weight:700}.sp b{font-size:14px}.sp span{color:#334155;font-size:13px;text-align:right}
+.cb{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;text-decoration:none;font-size:19px;flex:none}.cb.call{background:#dcfce7}.cb.wa{background:#dbeafe}
+.mbar{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}.mbar button{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 11px;font:800 12.5px Cairo,Tahoma,sans-serif;color:#334155}.mbar button.on{background:var(--pri);border-color:var(--pri);color:#fff}
+.mleg{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);font-weight:700;margin-top:6px}.mleg i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:4px;vertical-align:middle}
 .pop .pb button,.pop .pb a{flex:1;border:0;border-radius:8px;padding:6px;background:#eff6ff;color:#1d4ed8;font:800 12px Cairo,sans-serif;text-align:center;text-decoration:none}
 </style>
 </head>
@@ -269,7 +279,7 @@ const XST={reopened:{k:'reopened',t:'أُعيد فتحه',ic:'↩️'},cancelled
 const stageOf=k=>STAGES.find(s=>s.k===k)||XST[k]||STAGES[0];
 const done=k=>k==='resolved'||k==='closed'||k==='cancelled';
 const CAUSES=['تلف / عطل فني','انتهاء العمر الافتراضي','سوء استخدام','تخريب','نقص صيانة وقائية','عوامل جوية','خطأ تركيب سابق','أخرى'];
-const D={woC:new Map(),mats:null,me:null,tickets:[],work:new Map(),events:new Map(),hours:{'طارئ':24,'عالي':48,'متوسط':72},rules:{desc:true,photo:false,cause:false},db:[],ref:{},rank:{},wo:null,woErr:'',woSeg:'mine',woFlt:'active',curWo:null,myRank:null,plan:{n:5},p:{k:'m',from:'',to:'',cmp:'prev',cfrom:'',cto:''},tab:'open',q:'',cur:null,view:'home',f:{pri:'',stage:'',cat:'',school:'',sort:'sla',ids:null},fOpen:false,s:{mode:'list',sort:'open',openOnly:true},myPos:null,syncAt:null};
+const D={woC:new Map(),mats:null,me:null,tickets:[],work:new Map(),events:new Map(),hours:{'طارئ':24,'عالي':48,'متوسط':72},rules:{desc:true,photo:false,cause:false},db:[],ref:{},rank:{},wo:null,woErr:'',woSeg:'mine',woFlt:'active',curWo:null,myRank:null,plan:{n:5},p:{k:'m',from:'',to:'',cmp:'prev',cfrom:'',cto:''},tab:'open',q:'',cur:null,view:'home',f:{pri:'',stage:'',cat:'',school:'',sort:'sla',ids:null},fOpen:false,s:{mode:'map',sort:'open',openOnly:false,mf:'all'},myPos:null,syncAt:null};
 const key=t=>t.region+':'+t.ticket_id;
 const canClose=()=>['admin','engineer'].includes(D.me?.role);
 const canEdit=()=>['admin','engineer','supervisor','contractor'].includes(D.me?.role);
@@ -483,6 +493,7 @@ function homeView(){
   <div class="card guide">${tip}</div>
   ${woBadge()?`<button class="card wocard" id="h-wo"><span>📋 لديك ${fmt(woBadge())} أمر عمل يحتاج إجراءك</span><span>فتح ←</span></button>`:''}
   ${goalCard()}
+  <button class="big plan-btn" id="h-map" style="background:#1d4ed8!important">🗺️ خريطة مدارسي — بيانات المدرسة وأرقام المدير والحارس والمفتوح عليها</button>
   <button class="big plan-btn" id="h-plan">🗓️ خطة زيارات اليوم — أكثر المدارس إلحاحاً كمسار</button>
   <div class="card"><h3>📈 هذا الشهر</h3><div class="stats">
    <div><b>${fmt(m.n)}</b><span>بلاغ مُنجز</span></div>
@@ -495,7 +506,7 @@ function homeView(){
  document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{if(b.dataset.go==='me')return go('me');D.tab=b.dataset.go;D.f.ids=null;go('list')});
  $('#h-all')&&($('#h-all').onclick=()=>{D.tab='open';D.f.ids=null;go('list')});
  $('#h-wo')&&($('#h-wo').onclick=()=>go('wo'));
- bindGoal();$('#h-plan').onclick=()=>{D.s.mode='plan';go('schools')};
+ bindGoal();$('#h-plan').onclick=()=>{D.s.mode='plan';go('schools')};$('#h-map').onclick=()=>{D.s.mode='map';go('schools')};
 }
 
 const SORTS=[['sla','الأقرب للتأخر'],['new','الأحدث'],['old','الأقدم'],['school','المدرسة']];
@@ -537,17 +548,24 @@ function listView(){
 function openSet(label,keys){D.f.ids={label,keys:new Set(keys)};D.f.school='';D.q='';go('list')}
 
 /* ---------- schools: grouped list + map ---------- */
+const wkey=v=>S(v).toUpperCase().replace(/^S[\s-]*/,'').replace(/[^\dA-Z]/g,'');
+const woOpen=w=>!WO_FINAL(w.status)&&w.status!=='rejected';
 function schoolRows(){
- const m=new Map();
- items().forEach(x=>{const n=S(x.t.school)||'—';let r=m.get(n);if(!r){r={name:n,region:x.t.region,sc:school(x.t),total:0,open:0,late:0,soon:0};m.set(n,r)}
-  r.total++;if(isOpenX(x))r.open++;if(isOpenX(x)&&x.s.late)r.late++;if(isSoon(x))r.soon++});
- const rows=[...m.values()];rows.forEach(r=>{r.xy=hasXY(r.sc)?{lat:+r.sc.lat,lng:+r.sc.lng}:null;r.d=D.myPos&&r.xy?dist(D.myPos,r.xy):null});
+ const m=new Map(),get=(n,sc,region)=>{let r=m.get(n);if(!r){r={name:n,region:region||(sc&&sc.region),sc:sc||null,total:0,open:0,late:0,soon:0,tks:[],wos:[]};m.set(n,r)}if(!r.sc&&sc)r.sc=sc;return r};
+ items().forEach(x=>{const n=S(x.t.school)||'—',r=get(n,school(x.t),x.t.region);r.total++;if(isOpenX(x)){r.open++;r.tks.push(x)}if(isOpenX(x)&&x.s.late)r.late++;if(isSoon(x))r.soon++});
+ /* F25: every school of the caller from the school DB (his own rows), and the open work orders he sees */
+ if(['supervisor','contractor','engineer'].includes(D.me?.role)||D.db.length<=400)D.db.forEach(sc=>{const n=S(sc&&sc.school);if(n&&!m.has(n))get(n,sc,sc.region)});
+ (D.wo||[]).filter(w=>woOpen(w)&&(S(w.school)||S(w.building_id))).forEach(w=>{const b=wkey(w.building_id);
+  let r=(b&&[...m.values()].find(x=>x.sc&&wkey(x.sc.buildingId)===b))||m.get(S(w.school));
+  if(!r){const sc=(b&&D.db.find(x=>wkey(x.buildingId)===b))||D.db.find(x=>S(x.school)===S(w.school))||null;r=get(sc?S(sc.school):S(w.school),sc,w.region)}r.wos.push(w)});
+ const rows=[...m.values()];rows.forEach(r=>{r.tks.sort(urgentSort);r.xy=hasXY(r.sc)?{lat:+r.sc.lat,lng:+r.sc.lng}:null;r.d=D.myPos&&r.xy?dist(D.myPos,r.xy):null});
  return rows}
 const navUrl=r=>r.xy?`https://www.google.com/maps/dir/?api=1&destination=${r.xy.lat},${r.xy.lng}`:`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.name+' '+(RN[r.region]||''))}`;
 const distTxt=m=>m==null?'':m<1000?fmt(m)+' م':fmt(m/1000,1)+' كم';
 function schoolsView(){
  const s=D.s;let rows=schoolRows();const all=rows.length;
- if(s.openOnly)rows=rows.filter(r=>r.open);
+ if(s.openOnly)rows=rows.filter(r=>r.open||r.wos.length);
+ if(s.mode==='map'&&s.mf==='tk')rows=rows.filter(r=>r.open);else if(s.mode==='map'&&s.mf==='wo')rows=rows.filter(r=>r.wos.length);
  const by={open:(a,b)=>b.late-a.late||b.open-a.open,near:(a,b)=>(a.d??1e12)-(b.d??1e12),name:(a,b)=>a.name.localeCompare(b.name,'ar')}[s.sort]||((a,b)=>b.late-a.late||b.open-a.open);
  rows.sort(by);
  const noXY=rows.filter(r=>!r.xy).length;
@@ -555,11 +573,11 @@ function schoolsView(){
   <div class="tabs"><button data-m="list" class="${s.mode==='list'?'on':''}">📋 قائمة</button><button data-m="map" class="${s.mode==='map'?'on':''}">🗺️ خريطة</button><button data-m="plan" class="${s.mode==='plan'?'on':''}">🗓️ خطة اليوم</button></div>
   ${s.mode==='plan'?planHtml():`<div class="srow"><select class="in" id="s-so"><option value="open" ${s.sort==='open'?'selected':''}>الأكثر تأخراً وبلاغات مفتوحة</option><option value="near" ${s.sort==='near'?'selected':''}>الأقرب لموقعي</option><option value="name" ${s.sort==='name'?'selected':''}>الاسم</option></select>
    <button class="fbtn ${D.myPos?'on':''}" id="s-me" title="تحديد موقعي">📍</button></div>
-  <label class="chk"><input type="checkbox" id="s-oo" ${s.openOnly?'checked':''}> المدارس التي بها بلاغات مفتوحة فقط <span class="muted">(${fmt(rows.length)} من ${fmt(all)})</span></label>
-  ${s.mode==='map'?`<div id="smap" class="smap"></div>${noXY?`<div class="muted" style="margin-top:6px">${fmt(noXY)} مدرسة بدون إحداثيات لا تظهر على الخريطة — تظهر في القائمة.</div>`:''}`
+  ${s.mode==='map'?`<div class="mbar">${[['all','الكل'],['tk','📂 بها بلاغات مفتوحة'],['wo','🛠️ بها أوامر مفتوحة']].map(([k,t])=>`<button data-mf="${k}" class="${s.mf===k?'on':''}">${t}</button>`).join('')}</div><div class="srow"><input class="search" id="s-find" list="s-findl" placeholder="🔎 ابحث عن مدرسة على الخريطة"><datalist id="s-findl">${rows.map(r=>`<option value="${esc(r.name)}">`).join('')}</datalist></div>`:`<label class="chk"><input type="checkbox" id="s-oo" ${s.openOnly?'checked':''}> المدارس التي بها بلاغات أو أوامر مفتوحة فقط <span class="muted">(${fmt(rows.length)} من ${fmt(all)})</span></label>`}
+  ${s.mode==='map'?`<div id="smap" class="smap"></div><div class="mleg"><span><i style="background:#dc2626"></i>بلاغ متأخر</span><span><i style="background:#f59e0b"></i>بلاغات مفتوحة</span><span><i style="background:#7c3aed"></i>أوامر عمل مفتوحة</span><span><i style="background:#16a34a"></i>لا يوجد مفتوح</span><span>• اضغط المدرسة لبطاقتها</span></div>${noXY?`<div class="muted" style="margin-top:6px">${fmt(noXY)} مدرسة بدون إحداثيات لا تظهر على الخريطة — تظهر في القائمة.</div>`:''}`
    :rows.length?rows.map(r=>`<div class="card sc"><div class="r1"><b>${esc(r.name)}</b>${r.d!=null?`<span class="chip">📍 ${distTxt(r.d)}</span>`:''}</div>
-    <div class="chips">${r.late?`<span class="chip c-bad">⛔ ${fmt(r.late)} متأخر</span>`:''}${r.soon?`<span class="chip c-warn">⏰ ${fmt(r.soon)} خلال 24 س</span>`:''}<span class="chip ${r.open?'c-pri':'c-ok'}">📂 ${fmt(r.open)} مفتوح</span><span class="chip">الكل ${fmt(r.total)}</span></div>
-    <div class="btns" style="margin-top:10px"><button class="big" data-sch="${esc(r.name)}">📋 البلاغات</button><a class="big" href="${navUrl(r)}" target="_blank" rel="noopener">🗺️ الاتجاهات</a></div></div>`).join('')
+    <div class="chips">${r.late?`<span class="chip c-bad">⛔ ${fmt(r.late)} متأخر</span>`:''}${r.soon?`<span class="chip c-warn">⏰ ${fmt(r.soon)} خلال 24 س</span>`:''}<span class="chip ${r.open?'c-pri':'c-ok'}">📂 ${fmt(r.open)} مفتوح</span>${r.wos.length?`<span class="chip c-pri">🛠️ ${fmt(r.wos.length)} أمر مفتوح</span>`:''}<span class="chip">الكل ${fmt(r.total)}</span></div>
+    <div class="btns" style="margin-top:10px"><button class="big" data-card="${esc(r.name)}">📇 بطاقة المدرسة</button><button class="big" data-sch="${esc(r.name)}">📋 البلاغات</button><a class="big" href="${navUrl(r)}" target="_blank" rel="noopener">🗺️ الاتجاهات</a></div></div>`).join('')
    :'<div class="empty">لا توجد مدارس مطابقة</div>'}`}`
  +navHtml(),'المدارس',`${fmt(all)} مدرسة`);
  qBanner();bindTop();
@@ -567,7 +585,10 @@ function schoolsView(){
  document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{s.mode=b.dataset.m;schoolsView()});
  if(s.mode==='plan'){$('#pl-n').onchange=e=>{D.plan.n=+e.target.value;schoolsView()};$('#pl-me').onclick=async()=>{if(await locate())schoolsView()};document.querySelectorAll('[data-sch]').forEach(b=>b.onclick=()=>openSchool(b.dataset.sch));return}
  $('#s-so').onchange=async e=>{s.sort=e.target.value;if(s.sort==='near'&&!D.myPos)await locate();schoolsView()};
- $('#s-oo').onchange=e=>{s.openOnly=e.target.checked;schoolsView()};
+ $('#s-oo')&&($('#s-oo').onchange=e=>{s.openOnly=e.target.checked;schoolsView()});
+ document.querySelectorAll('[data-mf]').forEach(b=>b.onclick=()=>{s.mf=b.dataset.mf;schoolsView()});
+ document.querySelectorAll('[data-card]').forEach(b=>b.onclick=()=>schoolSheet(b.dataset.card));
+ const fd=$('#s-find');if(fd)fd.onchange=()=>{const r=rows.find(x=>x.name===S(fd.value));if(!r)return;fd.value='';fd.blur();const mk=D.mk&&D.mk.get(r.name);if(mk&&D.map){D.map.setView(mk.getLatLng(),16)}schoolSheet(r.name)};
  $('#s-me').onclick=async()=>{if(await locate()){s.sort='near'};schoolsView()};
  document.querySelectorAll('[data-sch]').forEach(b=>b.onclick=()=>openSchool(b.dataset.sch));
  if(s.mode==='map')drawMap(rows,openSchool);
@@ -585,15 +606,47 @@ async function drawMap(rows,openSchool){
  box.innerHTML='';const pts=rows.filter(r=>r.xy);
  const map=L.map(box,{zoomControl:true,attributionControl:true});
  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(map);
- const col=r=>r.late?'#dc2626':r.open?'#f59e0b':'#16a34a',bounds=[];
+ const col=r=>r.late?'#dc2626':r.open?'#f59e0b':r.wos&&r.wos.length?'#7c3aed':'#16a34a',bounds=[];D.map=map;D.mk=new Map();
  pts.forEach(r=>{const ll=[r.xy.lat,r.xy.lng];bounds.push(ll);
-  L.circleMarker(ll,{radius:7+Math.min(10,Math.sqrt(r.open)*2.5),color:'#fff',weight:2,fillColor:col(r),fillOpacity:.9}).addTo(map)
-   .bindPopup(`<div class="pop"><b>${esc(r.name)}</b><div>📂 ${fmt(r.open)} مفتوح${r.late?` • ⛔ ${fmt(r.late)} متأخر`:''}${r.d!=null?` • 📍 ${distTxt(r.d)}`:''}</div><div class="pb"><button data-psch="${esc(r.name)}">📋 البلاغات</button><a href="${navUrl(r)}" target="_blank" rel="noopener">🗺️ الاتجاهات</a></div></div>`)});
+  const mk=L.circleMarker(ll,{radius:8+Math.min(10,Math.sqrt(r.open+(r.wos?r.wos.length:0))*2.5),color:'#fff',weight:2,fillColor:col(r),fillOpacity:.92}).addTo(map)
+   .bindTooltip(`${esc(r.name)}${r.open?` · 📂 ${fmt(r.open)}`:''}${r.wos&&r.wos.length?` · 🛠️ ${fmt(r.wos.length)}`:''}`,{direction:'top',offset:[0,-6]});
+  mk.on('click',()=>schoolSheet(r.name));D.mk.set(r.name,mk)});
  if(D.myPos){const ll=[D.myPos.lat,D.myPos.lng];bounds.push(ll);L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).addTo(map).bindTooltip('موقعي')}
  if(bounds.length)map.fitBounds(bounds,{padding:[30,30],maxZoom:15});else map.setView([24.71,46.68],10);
  box.addEventListener('click',e=>{const b=e.target.closest('[data-psch]');if(b)openSchool(b.dataset.psch)});
  setTimeout(()=>map.invalidateSize(),200);
 }
+
+/* ---------- F25: school card (bottom sheet): data, principal / guard / staff phones, open tickets and work orders ---------- */
+const telH=v=>S(v).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d+]/g,'');
+const waH=v=>{let d=telH(v).replace(/^\+/,'').replace(/^00/,'');if(/^05\d{8}$/.test(d))d='966'+d.slice(1);else if(/^5\d{8}$/.test(d))d='966'+d;return d};
+function person(ic,label,name,ph){if(!S(name)&&!S(ph))return '';return `<div class="sp"><div><small>${ic} ${label}</small><b>${esc(S(name)||'—')}</b>${S(ph)?`<span dir="ltr">${esc(ph)}</span>`:''}</div>${telH(ph)?`<a class="cb call" href="tel:${telH(ph)}" title="اتصال">📞</a><a class="cb wa" href="https://wa.me/${waH(ph)}" target="_blank" rel="noopener" title="واتساب">💬</a>`:''}</div>`}
+/* principal from the engagement assignments when the school DB has no phone (cached per session) */
+let engA=null;
+async function engPrincipal(sc,name){try{if(!engA){engA=[];const db=await C.engClient?.();if(db){const r=await db.from('fm_eng_assignments').select('school_code,school_name,principal,phone,active');if(!r.error)engA=(r.data||[]).filter(a=>a.active!==false&&(S(a.principal)||S(a.phone)))}}
+ const b=wkey(sc&&sc.buildingId);return engA.find(a=>b&&wkey(a.school_code)===b)||engA.find(a=>S(a.school_name)===S(name))||null}catch(e){return null}}
+function closeSheet(){document.getElementById('fmf-ss')?.remove();document.getElementById('fmf-ssbg')?.remove()}
+async function schoolSheet(name){const r=schoolRows().find(x=>x.name===name);if(!r)return;const sc=r.sc||{};closeSheet();
+ const bg=document.createElement('div');bg.id='fmf-ssbg';bg.className='ss-bg';bg.onclick=closeSheet;const el=document.createElement('div');el.id='fmf-ss';el.className='ss';document.body.append(bg,el);
+ const draw=pr=>{const meta=[sc.buildingId,RN[r.region]||r.region,sc.office].filter(x=>S(x)).map(esc).join(' • ');
+  const tags=[sc.gender,sc.size,sc.operation].filter(x=>S(x));
+  const people=person('👤','مدير المدرسة',pr.n,pr.p)+person('🛡️','الحارس',sc.guard,sc.guardPhone);
+  el.innerHTML=`<div class="grab"></div><div class="hd"><h2>🏫 ${esc(r.name)}</h2><button type="button" data-x>✕</button></div>
+   ${meta?`<div class="muted" style="margin-top:2px">${meta}</div>`:''}
+   <div class="chips" style="margin-top:8px">${tags.map(t=>`<span class="chip">${esc(t)}</span>`).join('')}${r.d!=null?`<span class="chip">📍 ${distTxt(r.d)}</span>`:''}${r.late?`<span class="chip c-bad">⛔ ${fmt(r.late)} متأخر</span>`:''}<span class="chip ${r.open?'c-pri':'c-ok'}">📂 ${fmt(r.open)} بلاغ مفتوح</span><span class="chip ${r.wos.length?'c-pri':'c-ok'}">🛠️ ${fmt(r.wos.length)} أمر مفتوح</span></div>
+   <h3>📞 جهات الاتصال</h3>${people||'<div class="muted">لا يوجد رقم لمدير المدرسة أو الحارس — يضيفه مدير النظام في قاعدة المدارس.</div>'}
+   ${person('🧰','مشرف الصيانة',sc.supervisor,sc.supervisorPhone)}${person('👷','مهندس الصيانة',sc.engineer,sc.engineerPhone)}
+   <div class="btns" style="margin-top:10px"><a class="big" href="${navUrl(r)}" target="_blank" rel="noopener">🗺️ الاتجاهات</a>${r.total?`<button class="big" data-all>📋 كل بلاغات المدرسة</button>`:''}</div>
+   <h3>📂 البلاغات المفتوحة (${fmt(r.open)})</h3>${r.tks.length?r.tks.slice(0,15).map(tkCard).join('')+(r.tks.length>15?`<div class="muted">و${fmt(r.tks.length-15)} أخرى — «كل بلاغات المدرسة»</div>`:''):'<div class="muted">لا توجد بلاغات مفتوحة ✅</div>'}
+   <h3>🛠️ أوامر العمل المفتوحة (${fmt(r.wos.length)})</h3>${r.wos.length?r.wos.slice(0,15).map(woCard).join(''):'<div class="muted">لا توجد أوامر عمل مفتوحة ✅</div>'}`;
+  el.querySelector('[data-x]').onclick=closeSheet;
+  el.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{closeSheet();D.view='list';ticketView(b.dataset.k)});
+  el.querySelectorAll('[data-wo]').forEach(b=>b.onclick=()=>{closeSheet();openWo(b.dataset.wo)});
+  const all=el.querySelector('[data-all]');if(all)all.onclick=()=>{closeSheet();D.f.school=r.name;D.f.ids=null;D.tab=r.open?'open':'all';go('list')}};
+ const pr={n:sc.principal,p:sc.principalPhone};draw(pr);
+ if(!telH(pr.p)){const a=await engPrincipal(sc,name);if(a&&el.isConnected){pr.n=S(pr.n)||a.principal;pr.p=a.phone;draw(pr)}}}
+window.fmfSchoolSheet=schoolSheet;
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet()});
 
 /* ---------- profile: rating, period review, comparison, daily chart, top schools, contact ---------- */
 const DAY=864e5;

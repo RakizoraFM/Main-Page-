@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V171">
+<meta name="fm-version" content="V172">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -21782,7 +21782,12 @@ function rowObj(x){
   'التشغيل':x.operation||'',
   'اسم المقاول':x.contractor||'',
   'رقم تليفون المقاول':x.contractorPhone||'',
-  'بريد المقاول':x.contractorEmail||''
+  'بريد المقاول':x.contractorEmail||'',
+  /* V172: contacts at the school (shown on the field app map) */
+  'اسم مدير المدرسة':x.principal||'',
+  'جوال مدير المدرسة':x.principalPhone||'',
+  'اسم الحارس':x.guard||'',
+  'جوال الحارس':x.guardPhone||''
  };
 }
 window.fmSchoolDbRowObj=rowObj;
@@ -21795,7 +21800,7 @@ window.fmSchoolDbDownloadTemplate=function(){
  // Keep headers but remove the dummy data row.
  Object.keys(blank).forEach((_,i)=>{const c=XLSX.utils.encode_cell({r:1,c:i});delete ws[c]});
  ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:0,c:Object.keys(blank).length-1}});
- ws['!cols']=[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26].map(w=>({wch:w}));
+ ws['!cols']=[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26,22,18,18,16].map(w=>({wch:w}));
  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'قاعدة بيانات المدارس');
  XLSX.writeFile(wb,'School_Database_Template_Full.xlsx');
 };
@@ -21987,7 +21992,8 @@ const cols=[
  ['engineer','اسم مهندس الصيانة'],['engineerPhone','تليفون مهندس الصيانة'],['engineerEmail','بريد مهندس الصيانة'],
  ['lightSupervisor','اسم مشرف الخدمات الخفيفة'],['lightSupervisorPhone','تليفون مشرف الخدمات الخفيفة'],['lightSupervisorEmail','بريد مشرف الخدمات الخفيفة'],
  ['lightEngineer','اسم مهندس الخدمات الخفيفة'],['lightEngineerPhone','تليفون مهندس الخدمات الخفيفة'],['lightEngineerEmail','بريد مهندس الخدمات الخفيفة'],
- ['operation','التشغيل'],['contractor','المقاول'],['contractorPhone','تليفون المقاول'],['contractorEmail','بريد المقاول']
+ ['operation','التشغيل'],['contractor','المقاول'],['contractorPhone','تليفون المقاول'],['contractorEmail','بريد المقاول'],
+ ['principal','مدير المدرسة'],['principalPhone','جوال مدير المدرسة'],['guard','الحارس'],['guardPhone','جوال الحارس']
 ];
 let sortF='school',sortD=1;
 const filterValue=f=>(document.querySelector('[data-final-filter="'+f+'"]')?.value||'').trim().toLowerCase();
@@ -22037,7 +22043,8 @@ window.fmSchoolDbExportExcel=async function(){
     'اسم مهندس الصيانة','رقم تليفون مهندس الصيانة','بريد مهندس الصيانة',
     'اسم مشرف الخدمات الخفيفة','رقم تليفون مشرف الخدمات الخفيفة','بريد مشرف الخدمات الخفيفة',
     'اسم مهندس الخدمات الخفيفة','رقم تليفون مهندس الخدمات الخفيفة','بريد مهندس الخدمات الخفيفة',
-    'التشغيل','اسم المقاول','رقم تليفون المقاول','بريد المقاول'
+    'التشغيل','اسم المقاول','رقم تليفون المقاول','بريد المقاول',
+    'اسم مدير المدرسة','جوال مدير المدرسة','اسم الحارس','جوال الحارس'
    ]];
 
    // Build a compact array only; do not inspect/render the table.
@@ -22051,14 +22058,15 @@ window.fmSchoolDbExportExcel=async function(){
       text(x.engineer),text(x.engineerPhone),text(x.engineerEmail),
       text(x.lightSupervisor),text(x.lightSupervisorPhone),text(x.lightSupervisorEmail),
       text(x.lightEngineer),text(x.lightEngineerPhone),text(x.lightEngineerEmail),
-      text(x.operation),text(x.contractor),text(x.contractorPhone),text(x.contractorEmail)
+      text(x.operation),text(x.contractor),text(x.contractorPhone),text(x.contractorEmail),
+      text(x.principal),text(x.principalPhone),text(x.guard),text(x.guardPhone)
      ]);
      // Yield occasionally on large databases to keep UI responsive.
      if(i>0 && i%750===0) await new Promise(r=>setTimeout(r,0));
    }
 
    const ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:false});
-   ws['!cols']=[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26].map(w=>({wch:w}));
+   ws['!cols']=[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26,22,18,18,16].map(w=>({wch:w}));
    const wb=XLSX.utils.book_new();
    XLSX.utils.book_append_sheet(wb,ws,'قاعدة بيانات المدارس');
 
@@ -22094,7 +22102,8 @@ const cols=[
  ['engineer','اسم مهندس الصيانة'],['engineerPhone','تليفون مهندس الصيانة'],['engineerEmail','بريد مهندس الصيانة'],
  ['lightSupervisor','اسم مشرف الخدمات الخفيفة'],['lightSupervisorPhone','تليفون مشرف الخدمات الخفيفة'],['lightSupervisorEmail','بريد مشرف الخدمات الخفيفة'],
  ['lightEngineer','اسم مهندس الخدمات الخفيفة'],['lightEngineerPhone','تليفون مهندس الخدمات الخفيفة'],['lightEngineerEmail','بريد مهندس الخدمات الخفيفة'],
- ['operation','التشغيل'],['contractor','المقاول'],['contractorPhone','تليفون المقاول'],['contractorEmail','بريد المقاول']
+ ['operation','التشغيل'],['contractor','المقاول'],['contractorPhone','تليفون المقاول'],['contractorEmail','بريد المقاول'],
+ ['principal','مدير المدرسة'],['principalPhone','جوال مدير المدرسة'],['guard','الحارس'],['guardPhone','جوال الحارس']
 ];
 function fv(f){return String(filters[f]??'').toLowerCase()}
 function filtered(){
@@ -25584,10 +25593,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V171',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V172',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V172',d:'2026-10-21',t:'خريطة المدارس التفاعلية في تطبيق الميدان',i:['تطبيق الميدان ← «المدارس» يفتح على خريطة تفاعلية لكل مدارس المشرف / الفني (حتى بدون بلاغات): لون كل مدرسة حسب البلاغات المتأخرة والمفتوحة وأوامر العمل المفتوحة، بحث وفلاتر','بطاقة المدرسة عند الضغط عليها: بياناتها، مدير المدرسة والحارس بزر اتصال وواتساب، المشرف والمهندس، البلاغات وأوامر العمل المفتوحة (تفتح بالضغط) والاتجاهات','قاعدة المدارس: 4 أعمدة جديدة في آخر القالب (28 عموداً): «اسم مدير المدرسة» و«جوال مدير المدرسة» و«اسم الحارس» و«جوال الحارس»، وتظهر في ملف المدرسة']},
  {v:'V171',d:'2026-10-21',t:'بروفايل المبنى وتكاليفه',i:['«ملف المدرسة» صار بروفايلاً لكل مبنى في قاعدة المدارس (حتى بدون بلاغات): بيانات المبنى كاملة (النوع والحجم والتشغيل والجوالات والموقع) وتبويبات «📋 البلاغات» و«💰 المصاريف وقطع الغيار» و«🛠️ أوامر العمل»','«💰 المصاريف وقطع الغيار» لفترة تختارها: مواد المخزن والمشتريات من أوامر العمل المنجزة + الفواتير والمصروفات الشهرية، حسب البند وشهرياً، وأكثر القطع صرفاً، وسجل التكاليف، والمقارنة بالمباني من نفس النوع والحجم، وتصدير Excel','«🔧 الإصلاحات المنفذة» في تكاليف المبنى: البنود المُصلَحة في أوامر العمل وأوامر الإصلاح مع تكلفة موادها، وفواتير بتصنيف «إصلاحات»، حسب النظام، وعمود وترتيب وورقة Excel في «تكاليف المباني»','إدخال فاتورة أو مصروف شهري ثابت لمبنى أو مجموعة مبانٍ أو منطقة كاملة، يُقسم بالتساوي أو بنفس المبلغ لكل مبنى','ميزانية سنوية لكل مبنى (يدوياً أو من Excel) مع تنبيه عند 80% وعند التجاوز','صفحة «💰 تكاليف المباني»: كل المباني والمصروفات في الفترة مع الفلاتر والتصدير','صلاحيات التكاليف لكل مسمى من «الإعدادات» ← السحابة، ومسمى جديد «المحاسب»','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 20)']},
 {v:'V170',d:'2026-10-18',t:'نوع المبنى وحجمه',i:['فلتران جديدان في شريط الفلاتر: «نوع المبنى» (بنين / بنات / بنين وبنات) و«حجم المبنى» (كبير / وسط / صغير) — كل الصفحات والمؤشرات تتبعهما','قاعدة بيانات المدارس: عمودان جديدان في القالب والتصدير والجدول (24 عموداً)، والاستيراد من Excel يقبلهما ويحوّل الصيغ المشابهة (مثل «بنين & بنات») ولا يمسح القيمة إن لم يوجد العمود في الملف','إصلاح: صفحة «دليل المنصة» كانت لا تفتح بعد V168 (بطاقة Solvix أُضيفت خارج مجموعتها)']},
 {v:'V169',d:'2026-10-13',t:'تصحيح رابط Solvix',i:['زر «📦 جرد الأصول (Solvix)» يفتح الرابط الصحيح rakizorafm.github.io/Solvix (بحرف S كبير كما في اسم المستودع؛ الرابط السابق كان يفتح صفحة غير موجودة).']},
@@ -28545,7 +28555,7 @@ window.fmV131CoordsTemplate=async function(onlyMissing){
  const RO=window.fmSchoolDbRowObj,hd=Object.keys(RO({}));
  const aoa=[hd].concat(L.map(x=>{const o=RO(Object.assign({},x,{region:regOf(x),lat:hasXY(x)?+x.lat:'',lng:hasXY(x)?+x.lng:''}));return hd.map(h=>o[h])}));
  const help=[['طريقة التعبئة'],['• نفس أعمدة القالب المعتمد لقاعدة المدارس — لا تغيّر أسماء الأعمدة'],['• اكتب خط العرض وخط الطول كأرقام عشرية، مثل: 26.3592 و 43.9818'],['• أو الصق في خانة «خط العرض» النص "26.3592, 43.9818" أو رابط الموقع من خرائط جوجل واترك «خط الطول» فارغاً'],['• إذا كُتب خط الطول مكان خط العرض تُصحَّح تلقائياً'],['• البريد يُكتب كاملاً مثل name@company.com — البريد غير الصحيح يُتجاهل'],['• ارفع الملف من «قاعدة بيانات المدارس ← استيراد Excel». الأعمدة غير الموجودة في الملف لا تُغيّر البيانات الحالية'],['• المطابقة بالرقم الوزاري، وإن لم يوجد فباسم المدرسة']];
- saveXlsx([['قاعدة بيانات المدارس',aoa,[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26]],['طريقة التعبئة',help,[90]]],(onlyMissing?'مدارس بدون إحداثيات':'إحداثيات وبريد المدارس')+' - '+(region()||'كل المناطق'));
+ saveXlsx([['قاعدة بيانات المدارس',aoa,[28,20,12,20,14,12,12,12,24,22,26,24,22,26,28,27,28,28,27,28,12,24,18,26,22,18,18,16]],['طريقة التعبئة',help,[90]]],(onlyMissing?'مدارس بدون إحداثيات':'إحداثيات وبريد المدارس')+' - '+(region()||'كل المناطق'));
  toast('تم تنزيل الملف — عبّئه ثم ارفعه من «قاعدة بيانات المدارس ← استيراد Excel»');
 };
 
@@ -31842,7 +31852,7 @@ const MANUAL=[
 ]},
 {g:'البيانات والإعداد',icon:'🗂️',items:[
  {id:'v2-nav-fm168-novaro',t:'جرد الأصول (Solvix)',where:'البيانات والإعداد ← «📦 جرد الأصول (Solvix)»',what:'يفتح Solvix: تطبيق مستقل لجرد أصول المدارس (المدارس، الغرف، الأصول بالصور والموقع، وتقارير Excel) بقاعدة بيانات وحسابات خاصة به، منفصلة عن المنصة.',how:['اضغط الزر ليفتح Solvix في تبويب جديد.','ادخل بحساب Solvix (البريد وكلمة المرور الخاصين بـ Solvix، وليس حساب المنصة).','الفنيون يدخلون Solvix برقمهم الوظيفي وكلمة مرور يحددها مدير Solvix.'],who:'مدير النظام، مدير الإدارة، مدير المشروع، مدير العمليات، مدير المنطقة، مهندس المنطقة، مدير الأمن والسلامة، مدير الجودة',tips:['صلاحيات Solvix تُدار من داخله (Users)، ولا ترتبط بصلاحيات المنصة.'],v:'V169'},
- {id:'v2-nav-school-db',t:'قاعدة بيانات المدارس',where:'البيانات والإعداد ← «قاعدة بيانات المدارس»',what:'كل مدرسة ورقمها ومكتبها ونوع المبنى (بنين / بنات / بنين وبنات) وحجمه (كبير / وسط / صغير) ومشرفها ومهندسها ومقاولها وإحداثياتها (قالب معتمد من 24 عموداً)، والنسخ الاحتياطي.',how:['«تنزيل القالب» ثم املأه وارفعه؛ الاستيراد لا يمسح عموداً غير موجود في الملف.','عمودا «نوع المبنى» و«حجم المبنى» يقبلان: بنين / بنات / بنين وبنات، وكبير / وسط / صغير؛ ويمكن تعديلهما من الجدول مباشرة.','«نسخة احتياطية» أسبوعياً (يُنبَّه بعد أسبوع بدونها).'],who:'مدير النظام',tips:['هذه القاعدة مصدر إسناد التواصل وأوامر الحملات والمسؤولين، وفلتري «نوع المبنى» و«حجم المبنى» في لوحة القيادة.'],v:'V170'},
+ {id:'v2-nav-school-db',t:'قاعدة بيانات المدارس',where:'البيانات والإعداد ← «قاعدة بيانات المدارس»',what:'كل مدرسة ورقمها ومكتبها ونوع المبنى (بنين / بنات / بنين وبنات) وحجمه (كبير / وسط / صغير) ومشرفها ومهندسها ومقاولها وإحداثياتها ومدير المدرسة والحارس وجوالاتهما (قالب معتمد من 28 عموداً)، والنسخ الاحتياطي.',how:['«تنزيل القالب» ثم املأه وارفعه؛ الاستيراد لا يمسح عموداً غير موجود في الملف.','آخر 4 أعمدة: «اسم مدير المدرسة» و«جوال مدير المدرسة» و«اسم الحارس» و«جوال الحارس» — تظهر للمشرف والفني في خريطة تطبيق الميدان بزر اتصال وواتساب.','عمودا «نوع المبنى» و«حجم المبنى» يقبلان: بنين / بنات / بنين وبنات، وكبير / وسط / صغير؛ ويمكن تعديلهما من الجدول مباشرة.','«نسخة احتياطية» أسبوعياً (يُنبَّه بعد أسبوع بدونها).'],who:'مدير النظام',tips:['هذه القاعدة مصدر إسناد التواصل وأوامر الحملات والمسؤولين، وفلتري «نوع المبنى» و«حجم المبنى» في لوحة القيادة، وخريطة المدارس في تطبيق الميدان.'],v:'V172'},
  {id:'v2-nav-fm125-contacts',t:'جهات الاتصال',where:'البيانات والإعداد ← «جهات الاتصال»',what:'جوال وبريد كل مشرف ومهندس ومقاول والإدارة، مع آخر رسالة لكل شخص.',how:['تُعبّأ من قاعدة المدارس أو يدوياً أو باستيراد Excel.'],who:'المديرون',v:'V127'},
  {id:'v2-nav-workforce',t:'إدارة القوى العاملة',where:'البيانات والإعداد ← «إدارة القوى العاملة»',what:'الفنيون والقوى العاملة لكل مقاول ومنطقة.',how:['أضف أو استورد ثم راجع التوزيع.'],who:'مدير النظام'},
  {id:'v2-nav-bulk-assignment',t:'الإسناد الجماعي للمناطق',where:'البيانات والإعداد ← «الإسناد الجماعي للمناطق»',what:'تعديل مسؤولي مجموعة مدارس دفعة واحدة.',how:['حدد المدارس ثم المسؤول الجديد.'],who:'مدير النظام'},
@@ -32459,7 +32469,8 @@ window.fmV171SchoolAfter=function(p,name,row){
  /* building data */
  let idc=body.querySelector('.fm118-id'),card=idc&&idc.closest('.fm103-card');
  const geo=+rec.lat&&+rec.lng?`<div><span>الموقع</span><b><a href="https://www.google.com/maps?q=${+rec.lat},${+rec.lng}" target="_blank" rel="noopener">خرائط جوجل ↗</a></b></div>`:'';
- const extra=idf('نوع المبنى',rec.gender)+idf('حجم المبنى',rec.size)+idf('التشغيل',rec.operation)+(rec.supervisorPhone?idf('جوال مشرف الصيانة',rec.supervisorPhone):'')+(rec.engineerPhone?idf('جوال مهندس الصيانة',rec.engineerPhone):'')+(rec.contractorPhone?idf('جوال المقاول',rec.contractorPhone):'')+geo;
+ const tel=(l,n,ph)=>n||ph?`<div><span>${esc(l)}</span><b>${esc(S(n)||'—')}${S(ph)?` · <a href="tel:${esc(S(ph).replace(/[^\d+]/g,''))}" dir="ltr">${esc(ph)}</a>`:''}</b></div>`:'';
+ const extra=idf('نوع المبنى',rec.gender)+idf('حجم المبنى',rec.size)+idf('التشغيل',rec.operation)+tel('مدير المدرسة',rec.principal,rec.principalPhone)+tel('الحارس',rec.guard,rec.guardPhone)+(rec.supervisorPhone?idf('جوال مشرف الصيانة',rec.supervisorPhone):'')+(rec.engineerPhone?idf('جوال مهندس الصيانة',rec.engineerPhone):'')+(rec.contractorPhone?idf('جوال المقاول',rec.contractorPhone):'')+geo;
  if(idc)idc.insertAdjacentHTML('beforeend',extra);
  else{card=document.createElement('div');card.className='fm103-card';card.style.marginBottom='14px';
   card.innerHTML=`<h3 style="font-size:18px;margin-bottom:10px">${esc(name)}</h3><div class="fm118-id">${idf('الرقم الوزاري / المبنى',rec.buildingId)}${idf('المنطقة',rn(rec.region))}${idf('مكتب التعليم',rec.office)}${idf('المقاول',rec.contractor)}${idf('مشرف الصيانة',rec.supervisor)}${idf('مهندس الصيانة',rec.engineer)}${idf('مشرف الخدمات الخفيفة',rec.lightSupervisor)}${idf('مهندس الخدمات الخفيفة',rec.lightEngineer)}${extra}</div>`;
@@ -32636,6 +32647,25 @@ const PDEF={view:['dept_manager','project_manager','ops_manager','area_manager',
    const b=ev.currentTarget;b.disabled=true;try{const db=await C.engClient();const r=await db.from('fm_settings').upsert([{key:'cost_perms',value:val}],{onConflict:'key'});if(r.error)throw Error(r.error.message);toast('تم حفظ صلاحيات التكاليف');ME=null;flush()}catch(e){toast(sqlMsg(e.message),'error')}b.disabled=false}})()});
 
 let tries=0;const t0=setInterval(()=>{if(cloudOn()){clearInterval(t0);me().catch(()=>{})}else if(++tries>60)clearInterval(t0)},1000);
+})();
+</script>
+<script id="fm-v172-school-contacts">(function(){
+'use strict';
+/* V172: the school DB gets the principal and the guard (name + mobile), four columns at the end of the template.
+   The Excel import reads them through the V131 extra-columns hook; a missing column keeps the stored value.
+   The field app shows them on the schools map (call / WhatsApp). */
+const S=v=>String(v??'').replace(/\s+/g,' ').trim();
+const H={principal:['اسم مدير المدرسة','مدير المدرسة','اسم المدير','قائد المدرسة','اسم قائد المدرسة'],
+ principalPhone:['جوال مدير المدرسة','رقم جوال مدير المدرسة','تليفون مدير المدرسة','رقم تليفون مدير المدرسة','جوال المدير','جوال قائد المدرسة'],
+ guard:['اسم الحارس','الحارس','اسم حارس المدرسة'],guardPhone:['جوال الحارس','رقم جوال الحارس','تليفون الحارس','رقم تليفون الحارس','رقم الحارس']};
+const phone=v=>{v=S(v).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\.0$/,'');if(/^(NA|N\/A|NULL|-|—)$/i.test(v))return '';if(/^5\d{8}$/.test(v))v='0'+v;return v};
+function col(r,names){const keys=Object.keys(r);for(const n of names){const k=keys.find(k=>S(k)===n);if(k!=null)return {k,v:r[k]}}return null}
+function hook(){const base=window.fmV131DbExtra;if(typeof base!=='function'||base.__v172)return;
+ const f=function(r){const o=base.apply(this,arguments)||{};if(!r||typeof r!=='object')return o;
+  for(const [k,names] of Object.entries(H)){const c=col(r,names);if(!c)continue;o[k]=/Phone$/.test(k)?phone(c.v):S(c.v).replace(/^(NA|N\/A|NULL|-|—)$/i,'')}
+  return o};f.__v172=1;f.__v170=base.__v170;window.fmV131DbExtra=f;
+ const kh=window.fmV131KnownHeaders;if(typeof kh==='function'&&!kh.__v172){const k=function(){const s=kh.apply(this,arguments);Object.values(H).flat().forEach(h=>s.add(h));return s};k.__v172=1;k.__v170=kh.__v170;window.fmV131KnownHeaders=k}}
+hook();addEventListener('load',hook);setTimeout(hook,1600);
 })();
 </script>
 </body>
