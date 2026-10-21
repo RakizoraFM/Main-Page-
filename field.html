@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F25">
+<meta name="fm-version" content="F26">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1095,7 +1095,11 @@ function ciRich(x,i,on,open){const r=ciRes(x),no=`<span class="no">${esc(x.no||S
    :`<input class="in" data-tx="${i}" ${dis} value="${esc(x.v||'')}" placeholder="${esc(x.ph||'')}" ${x.num?'inputmode="numeric"':''}>`}
   ${sug?`<div class="muted" style="margin-top:4px">المقترح حسب تقييم العناصر: <b>${sug}</b>${on&&S(x.v)!==sug?` <button type="button" class="shph" data-tv="${i}" data-val="${sug}">اعتماد المقترح</button>`:''}</div>`:''}</div>`}
 async function woPhotosNow(id){let P=[];try{P=await C.api.woPhotos(id);const c=D.woC.get(id);if(c)c.ph=P}catch(e){P=(D.woC.get(id)||{}).ph||[]}return P.concat(await woPending(id))}
-async function woMats(){D.mats=lsGet('fmf_mats',null)||[];try{D.mats=await C.api.woMaterials();try{localStorage.setItem('fmf_mats',JSON.stringify(D.mats))}catch(_){}}catch(e){}return D.mats}
+async function woMats(){D.mats=lsGet('fmf_mats',null)||[];try{D.mats=await C.api.woMaterials();try{localStorage.setItem('fmf_mats',JSON.stringify(D.mats))}catch(_){}}catch(e){}woStock();return D.mats}
+/* F26: the balance of each material in the stores of the caller's regions (shown in the picker; read-only) */
+async function woStock(){try{const db=await C.engClient?.();if(!db)return;const [a,b]=await Promise.all([db.from('wo_stores').select('id,region,active'),db.from('wo_stock').select('store_id,material_id,qty')]);if(a.error||b.error)return;
+ const R=D.me?.regions||[],ok=new Set((a.data||[]).filter(x=>x.active&&(!R.length||!x.region||R.includes(x.region))).map(x=>x.id));if(!ok.size)return;
+ const m=new Map();for(const x of b.data||[])if(ok.has(x.store_id))m.set(x.material_id,(m.get(x.material_id)||0)+(+x.qty||0));D.stock=m}catch(e){}}
 async function woRepair(w,F){if(!navigator.onLine){toast('إنشاء أمر الإصلاح يحتاج اتصالاً بالإنترنت','w');return}
  let L=[];try{L=await C.api.woAssignable()}catch(e){toast(woSql(e.message),'e');return}if(!L.length){toast('لا يوجد موظفون تحت إشرافك يمكن الإسناد لهم','w');return}
  const def=Math.max(0,L.findIndex(p=>p.id===w.assignee));
@@ -1124,7 +1128,8 @@ const ciCatIn=(c,G)=>{const n=ciN(c);return MG_GEN.some(g=>n.includes(ciN(g)))||
 function ciList(box,q,i,all){const A=ciFind(q),G=i==null?[]:ciGroups(i),scoped=G.length&&!all,L=scoped?A.filter(x=>ciCatIn(x.category||'',G)):A,O=scoped&&S(q)?A.filter(x=>!L.includes(x)):[],w=ciN(q).split(/\s+/).filter(Boolean)[0]||'',e=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  /* highlight the first typed word (same length in the normalised text, so the indexes line up) */
  const hl=t=>{const k=w?ciN(t).indexOf(w):-1;return k<0||ciN(t).length!==t.length?e(t):e(t.slice(0,k))+'<b>'+e(t.slice(k,k+w.length))+'</b>'+e(t.slice(k+w.length))};
- const it=x=>`<button type="button" data-pick="${esc(x.id)}">${hl(x.name)}<small>${esc([x.unit,x.category].filter(Boolean).join(' • '))}</small></button>`;
+ const sq=x=>D.stock&&D.stock.has(x.id)?(D.stock.get(x.id)>0?` • 📦 متاح ${fmt(D.stock.get(x.id))}`:' • ⚠️ غير متوفر بالمخزن'):'';
+ const it=x=>`<button type="button" data-pick="${esc(x.id)}">${hl(x.name)}<small>${esc([x.unit,x.category].filter(Boolean).join(' • ')+sq(x))}</small></button>`;
  box.innerHTML=(scoped?`<div class="cbh">🔎 مواد ${esc(G.map(k=>MG[k].l).join(' و'))} والمواد العامة <button type="button" data-allm="${i}">عرض كل الأصناف (${fmt((D.mats||[]).length)})</button></div>`:G.length&&all?`<div class="cbh">كل الأصناف <button type="button" data-allm="${i}" data-off="1">مواد البند فقط</button></div>`:'')
   +(L.slice(0,40).map(it).join('')||`<div class="cbn">${O.length?'لا يوجد في مواد هذا البند':'لا يوجد صنف بهذا الاسم'}</div>`)
   +(L.length>40?`<div class="cbn">${fmt(L.length-40)} صنف آخر — اكتب أكثر لتضييق البحث</div>`:'')

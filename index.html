@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V172">
+<meta name="fm-version" content="V173">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25593,10 +25593,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V172',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V173',date:'2026-10-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V173',d:'2026-10-21',t:'المخزون وقطع الغيار',i:['صفحة «📦 المخزون»: مستودع لكل منطقة، رصيد كل صنف وقيمته وحد الطلب والتغطية بالأيام','توريد من مورد (مع تحديث سعر الصنف اختيارياً)، جرد (يدوي أو من Excel)، وتحويل بين المستودعات — كل تغيير حركة مسجلة','عند اعتماد أمر العمل (الإغلاق) تُخصم مواده من المخزن تلقائياً من مستودع منطقته، مرة واحدة','الاستهلاك الشهري لآخر 6 أشهر، وطلب شراء مقترح للأصناف تحت حد الطلب، وتصدير Excel','تطبيق الميدان: الرصيد المتاح يظهر بجانب الصنف عند اختياره','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 21)']},
  {v:'V172',d:'2026-10-21',t:'خريطة المدارس التفاعلية في تطبيق الميدان',i:['تطبيق الميدان ← «المدارس» يفتح على خريطة تفاعلية لكل مدارس المشرف / الفني (حتى بدون بلاغات): لون كل مدرسة حسب البلاغات المتأخرة والمفتوحة وأوامر العمل المفتوحة، بحث وفلاتر','بطاقة المدرسة عند الضغط عليها: بياناتها، مدير المدرسة والحارس بزر اتصال وواتساب، المشرف والمهندس، البلاغات وأوامر العمل المفتوحة (تفتح بالضغط) والاتجاهات','قاعدة المدارس: 4 أعمدة جديدة في آخر القالب (28 عموداً): «اسم مدير المدرسة» و«جوال مدير المدرسة» و«اسم الحارس» و«جوال الحارس»، وتظهر في ملف المدرسة']},
  {v:'V171',d:'2026-10-21',t:'بروفايل المبنى وتكاليفه',i:['«ملف المدرسة» صار بروفايلاً لكل مبنى في قاعدة المدارس (حتى بدون بلاغات): بيانات المبنى كاملة (النوع والحجم والتشغيل والجوالات والموقع) وتبويبات «📋 البلاغات» و«💰 المصاريف وقطع الغيار» و«🛠️ أوامر العمل»','«💰 المصاريف وقطع الغيار» لفترة تختارها: مواد المخزن والمشتريات من أوامر العمل المنجزة + الفواتير والمصروفات الشهرية، حسب البند وشهرياً، وأكثر القطع صرفاً، وسجل التكاليف، والمقارنة بالمباني من نفس النوع والحجم، وتصدير Excel','«🔧 الإصلاحات المنفذة» في تكاليف المبنى: البنود المُصلَحة في أوامر العمل وأوامر الإصلاح مع تكلفة موادها، وفواتير بتصنيف «إصلاحات»، حسب النظام، وعمود وترتيب وورقة Excel في «تكاليف المباني»','إدخال فاتورة أو مصروف شهري ثابت لمبنى أو مجموعة مبانٍ أو منطقة كاملة، يُقسم بالتساوي أو بنفس المبلغ لكل مبنى','ميزانية سنوية لكل مبنى (يدوياً أو من Excel) مع تنبيه عند 80% وعند التجاوز','صفحة «💰 تكاليف المباني»: كل المباني والمصروفات في الفترة مع الفلاتر والتصدير','صلاحيات التكاليف لكل مسمى من «الإعدادات» ← السحابة، ومسمى جديد «المحاسب»','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 20)']},
 {v:'V170',d:'2026-10-18',t:'نوع المبنى وحجمه',i:['فلتران جديدان في شريط الفلاتر: «نوع المبنى» (بنين / بنات / بنين وبنات) و«حجم المبنى» (كبير / وسط / صغير) — كل الصفحات والمؤشرات تتبعهما','قاعدة بيانات المدارس: عمودان جديدان في القالب والتصدير والجدول (24 عموداً)، والاستيراد من Excel يقبلهما ويحوّل الصيغ المشابهة (مثل «بنين & بنات») ولا يمسح القيمة إن لم يوجد العمود في الملف','إصلاح: صفحة «دليل المنصة» كانت لا تفتح بعد V168 (بطاقة Solvix أُضيفت خارج مجموعتها)']},
@@ -27070,7 +27071,7 @@ const GROUPS=[
  {k:'staff',icon:'👷',t:'الكادر والمقاولون',ids:['v2-nav-staff','v2-nav-staff-performance','v2-nav-eng','v2-nav-fm124-visits','v2-nav-fm124-load','v2-nav-contractors','v2-nav-fm122-score']},
  {k:'analysis',icon:'📊',t:'التحليل والمقارنات',ids:['v2-nav-charts','v2-nav-period','v2-nav-fm103-periods','v2-nav-fm131-season','v2-nav-compare','v2-nav-pivot','v2-nav-saved']},
  {k:'reports',icon:'📄',t:'التقارير',ids:['v2-nav-fm127-today','v2-nav-fm125-send','v2-nav-fm126-log','v2-nav-fm118-weekly','v2-nav-report','v2-nav-fm123-weekfu','v2-nav-fm158-qa']},
- {k:'data',icon:'🗂️',t:'البيانات والإعداد',ids:['v2-nav-fm168-novaro','v2-nav-school-db','v2-nav-fm125-contacts','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-quality','v2-nav-refresh']},
+ {k:'data',icon:'🗂️',t:'البيانات والإعداد',ids:['v2-nav-fm173-stock','v2-nav-fm168-novaro','v2-nav-school-db','v2-nav-fm125-contacts','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-quality','v2-nav-refresh']},
  {k:'system',icon:'⚙️',t:'النظام',ids:['v2-nav-fm122-settings','v2-nav-fm116','v2-nav-fm162-manual','v2-nav-fm164-usage','v2-nav-fm167-news']}
 ];
 const TOP=['v2-nav-portal','v2-nav-solution','v2-nav-actions','v2-nav-fm145-wo'],DANGER='fm-v38-clear-all-nav';
@@ -31816,6 +31817,7 @@ const MANUAL=[
 ]},
 {g:'المدارس والأعطال',icon:'🏫',items:[
  {id:'v2-nav-fm118-school',t:'ملف المدرسة (بروفايل المبنى)',where:'المدارس والأعطال ← «ملف المدرسة»، أو بالضغط على مبنى في «💰 تكاليف المباني»',what:'بروفايل لكل مبنى في قاعدة المدارس (حتى بدون بلاغات): بيانات المبنى (النوع والحجم والتشغيل والكادر والجوالات والموقع) وتبويبات: «📋 البلاغات» (الشهرية والأعطال المتكررة والسجل)، «💰 المصاريف وقطع الغيار» لفترة تختارها، و«🛠️ أوامر العمل».',how:['ابحث عن المدرسة بالاسم أو الرقم.','«💰 المصاريف وقطع الغيار»: اختر الفترة (هذا الشهر / الربع / السنة / مخصصة) لترى الإجمالي (مخزن · مشتريات · مصروفات)، والتكلفة حسب البند وشهرياً، و«🔧 الإصلاحات المنفذة» (البنود المُصلَحة في أوامر العمل وأوامر الإصلاح وتكلفة موادها، وفواتير الإصلاحات) حسب النظام، وأكثر القطع صرفاً، وسجل التكاليف.','«➕ مصروف / فاتورة لهذا المبنى» و«🎯 ميزانية المبنى» حسب صلاحيتك، و«⬇️ Excel» لسجل التكاليف.','«🛠️ أوامر العمل»: كل أوامر المبنى في نطاقك؛ اضغط الأمر لفتحه.'],who:'المديرون والمهندس (التكاليف حسب صلاحيات التكاليف)',tips:['المواد تُحسب من أوامر العمل المنجزة (بانتظار الاعتماد أو مغلقة) بسعر الصنف وقت الصرف؛ الصنف بدون سعر لا يُحسب ويظهر تنبيه.','فاتورة إصلاح من مقاول تُسجَّل بتصنيف «إصلاحات» لتظهر مع الإصلاحات.','المقارنة بالمباني المشابهة تظهر عند تعبئة «نوع المبنى» و«حجم المبنى» ووجود 3 مبانٍ مشابهة أو أكثر.'],v:'V171'},
+ {id:'v2-nav-fm173-stock',t:'المخزون وقطع الغيار',where:'البيانات والإعداد ← «📦 المخزون»',what:'أرصدة المستودعات لكل صنف معتمد (أصناف المواد) مع القيمة وحد الطلب والتغطية بالأيام، وسجل الحركات، والاستهلاك الشهري، وطلب شراء مقترح. مواد أوامر العمل (من المخزن) تُخصم تلقائياً عند اعتماد الأمر من المستودع الافتراضي لمنطقته.',how:['«🏬 المستودعات»: أنشئ مستودعاً لكل منطقة وحدد الافتراضي.','«⚖️ جرد»: اكتب الرصيد المعدود لكل صنف (أو نزّل ورقة الجرد واملأها وارفعها) — يُسجَّل الفرق فقط.','«📥 توريد»: المورد ورقم الفاتورة والأصناف بالكمية والسعر (ويمكن تحديث سعر الصنف).','«🔁 تحويل» بين مستودعين، واختر مستودعاً لتعديل «حد الطلب» من تبويب الأرصدة.','«🛒 طلب شراء مقترح» يقترح كميات الأصناف تحت حد الطلب، و«⬇️ Excel» يصدّر الأرصدة والطلب والحركات.'],who:'يدير المخزون: مدير النظام ومدير المشروع ومدير العمليات، ومدير المنطقة ومهندس المنطقة لمستودعات مناطقهم؛ والمديرون والمحاسب يطّلعون',tips:['الرصيد قد يصبح بالسالب إذا اعتُمد أمر بمواد أكثر من الموجود — يظهر «بالسالب» حتى يُسجَّل توريد أو جرد.','المشتريات المباشرة (شراء) لا تُخصم من المخزن.'],v:'V173'},
  {id:'v2-nav-fm171-costs',t:'تكاليف المباني',where:'المدارس والأعطال ← «💰 تكاليف المباني»',what:'كل المباني في نطاقك مع تكلفتها في الفترة (مواد المخزن · المشتريات · المصروفات) والمصروف منذ بداية السنة مقابل الميزانية السنوية، وقائمة الفواتير والمصروفات المسجلة.',how:['اختر الفترة، وفلتر بالمنطقة أو النوع أو الحجم أو بالبحث، ورتّب حسب التكلفة أو استهلاك الميزانية.','«➕ مصروف / فاتورة»: البيان والتصنيف والمبلغ والمورد ورقم الفاتورة؛ مرة واحدة أو شهري ثابت (من شهر إلى شهر أو مستمر)؛ لمبنى واحد أو مجموعة مبانٍ (بحث وفلاتر وتحديد) أو منطقة كاملة، ويُقسم المبلغ بالتساوي أو يُحمَّل كاملاً على كل مبنى.','«🎯 الميزانيات»: اختر السنة واكتب ميزانية كل مبنى، أو «تطبيق على الظاهر»، أو استورد من Excel (رقم المبنى / اسم المدرسة / الميزانية).','اضغط المبنى لفتح بروفايله على تبويب التكاليف، و«⬇️ Excel» لتصدير المباني والتفاصيل والمصروفات.'],who:'حسب صلاحيات التكاليف: افتراضياً مهندس المنطقة فما فوق والمحاسب',tips:['المصروف الشهري يُحسب مرة لكل شهر يقع في الفترة.','يعدّل المصروف أو يلغيه من أدخله، أو مدير المشروع ومدير النظام.','النطاق: مديرو المشروع والعمليات والإدارة ← كل المباني، مدير المنطقة والمحاسب ← مناطقهم، مهندس المنطقة ← مدارسه.'],v:'V171'},
  {id:'v2-nav-fm131-map',t:'خريطة المدارس',where:'المدارس والأعطال ← «خريطة المدارس»',what:'نقطة لكل مدرسة ملونة حسب المفتوح أو المتجاوز، وتحديد المواقع تلقائياً من OpenStreetMap.',how:['اختر «العرض» و«اللون حسب».','«تحديد المواقع تلقائياً» ثم راجع النتائج قبل الحفظ، أو الصق رابط خرائط جوجل للمدرسة.'],who:'المديرون والمهندس',v:'V134'},
  {id:'v2-nav-school-analysis',t:'تحليل بلاغات المدارس',where:'المدارس والأعطال ← «تحليل بلاغات المدارس»',what:'ترتيب المدارس بعدد البلاغات وأنواعها والتزامها بالمهلة.',how:['استخدم الفلاتر، واضغط المدرسة للتفاصيل.'],who:'المديرون والمهندس'},
@@ -32666,6 +32668,193 @@ function hook(){const base=window.fmV131DbExtra;if(typeof base!=='function'||bas
   return o};f.__v172=1;f.__v170=base.__v170;window.fmV131DbExtra=f;
  const kh=window.fmV131KnownHeaders;if(typeof kh==='function'&&!kh.__v172){const k=function(){const s=kh.apply(this,arguments);Object.values(H).flat().forEach(h=>s.add(h));return s};k.__v172=1;k.__v170=kh.__v170;window.fmV131KnownHeaders=k}}
 hook();addEventListener('load',hook);setTimeout(hook,1600);
+})();
+</script>
+<style id="fm-v173-stock-css">
+.fm173-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.fm173-tabs button{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:6px 14px;font:800 13px Cairo,Tahoma,sans-serif;cursor:pointer;color:#334155}
+.fm173-tabs button.on{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+.fm173-st{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:800}
+.fm173-st.ok{background:#dcfce7;color:#166534}.fm173-st.low{background:#fef3c7;color:#92400e}.fm173-st.out{background:#fee2e2;color:#b91c1c}.fm173-st.neg{background:#b91c1c;color:#fff}
+.fm173-min{width:80px;font:700 12.5px Cairo,Tahoma,sans-serif;border:1px solid #cbd5e1;border-radius:8px;padding:3px 6px}
+.fm173-lines{display:grid;gap:6px;max-height:320px;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;padding:8px}
+.fm173-line{display:grid;grid-template-columns:1fr 90px 100px 30px;gap:6px;align-items:center}
+.fm173-line.nop{grid-template-columns:1fr 90px 30px}
+.fm173-line button{border:0;background:#fee2e2;color:#b91c1c;border-radius:8px;height:30px;cursor:pointer}
+.fm173-cnt{display:grid;grid-template-columns:1fr 90px 100px;gap:6px;align-items:center;font-size:12.5px}
+</style>
+<script id="fm-v173-stock">(function(){
+'use strict';
+/* V173: spare-parts inventory. Page «📦 المخزون» (#v2-nav-fm173-stock): stores per region, the balance of each warehouse
+   material (wo_materials) with a reorder level, receipts / stock counts / transfers, the moves log, monthly consumption
+   and a suggested purchase list. A closed (approved) work order takes its store materials out of the region's default
+   store (database trigger fm_wo_stock_out). Section 21 of supabase_setup.sql; writes only through fm_stock_store_save,
+   fm_stock_move and fm_stock_min (managers: system admin, project / ops managers, area manager / engineer in their regions). */
+const C=window.FMCloud;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const GREG='ar-SA-u-ca-gregory',RN={riyadh:'الرياض',qassim:'القصيم'},rn=r=>RN[r]||r||'كل المناطق';
+const num=(v,d)=>(Math.round((+v||0)*1000)/1000).toLocaleString('en-US',{maximumFractionDigits:d??2});
+const money=v=>num(v,2)+' ر.س';
+const n0=v=>{const t=S(v).replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/,/g,'');return t===''?NaN:+t};
+const cloudOn=()=>!!(C&&C.state&&C.state.on&&C.state.profile);
+const prof=()=>C.state.profile;
+const SQLMSG='شغّل supabase_setup.sql المحدَّث أولاً (القسم 21).';
+const sqlMsg=m=>/does not exist|schema cache|Could not find/i.test(String(m))?SQLMSG:/not allowed/.test(m)?'لا تملك صلاحية هذا المستودع':/invalid qty/.test(m)?'كمية غير صحيحة':/invalid count/.test(m)?'رصيد الجرد غير صحيح':/invalid store/.test(m)?'اختر مستودعاً آخر للتحويل':/name required/.test(m)?'اكتب اسم المستودع':m;
+const canRead=()=>cloudOn()&&['admin','manager','staff','engineer','viewer'].includes(prof().role);
+function canManage(region){if(!cloudOn())return false;const p=prof(),t=C.posOf(p);if(p.role==='admin'||['sysadmin','project_manager','ops_manager'].includes(t))return true;
+ if(['area_manager','area_engineer'].includes(t)){const R=p.regions||[];return !R.length||R.includes(S(region))}return false}
+const anyManage=()=>{if(!cloudOn())return false;const t=C.posOf(prof());return prof().role==='admin'||['sysadmin','project_manager','ops_manager','area_manager','area_engineer'].includes(t)};
+const KIND={in:['📥','توريد'],out:['🛠️','صرف لأمر عمل'],adjust:['⚖️','جرد'],transfer:['🔁','تحويل']};
+const dshow=s=>{const d=new Date(s);return isNaN(d)?'—':d.toLocaleDateString(GREG,{year:'numeric',month:'short',day:'numeric'})};
+
+/* ---------- data ---------- */
+let M={mats:[],stores:[],stock:[],moves:[],err:''},TAB='bal',F={store:'',cat:'',q:'',st:''};
+async function load(){const db=await C.engClient();const since=new Date(Date.now()-200*864e5).toISOString();
+ const [a,b,c,d]=await Promise.all([db.from('wo_materials').select('*').order('category').order('name'),db.from('wo_stores').select('*').order('created_at'),db.from('wo_stock').select('*'),
+  db.from('wo_stock_moves').select('*').gte('at',since).order('at',{ascending:false}).limit(5000)]);
+ for(const r of [a,b,c,d])if(r.error)throw Error(r.error.message);
+ M={mats:a.data||[],stores:(b.data||[]),stock:c.data||[],moves:d.data||[],err:''}}
+const mat=id=>M.mats.find(x=>x.id===id)||{name:'(صنف محذوف)'};
+const store=id=>M.stores.find(x=>x.id===id)||{name:'—'};
+const activeStores=()=>M.stores.filter(s=>s.active);
+/* out moves in the last n days per material (and store) */
+function usage(days,storeId){const t=Date.now()-days*864e5,m=new Map();for(const x of M.moves){if(x.kind!=='out'||Date.parse(x.at)<t)continue;if(storeId&&x.store_id!==storeId)continue;
+ const o=m.get(x.material_id)||{q:0,v:0};o.q+=-x.qty;o.v+=-x.qty*(+x.unit_price||+mat(x.material_id).price||0);m.set(x.material_id,o)}return m}
+function rows(){const sid=F.store,u=usage(30,sid);const by=new Map();
+ for(const s of M.stock){if(sid&&s.store_id!==sid)continue;if(!sid&&!(store(s.store_id).active))continue;const k=sid?s.material_id+'|'+s.store_id:s.material_id;
+  let o=by.get(k);if(!o)by.set(k,o={mid:s.material_id,store_id:sid?s.store_id:'',qty:0,min:0,stores:[],w:3});o.qty+=+s.qty;o.min+=+s.min_qty;o.w=Math.min(o.w,stOf(+s.qty,+s.min_qty));if(!sid)o.stores.push(`${store(s.store_id).name}: ${num(s.qty)}`)}
+ return [...by.values()].map(o=>{const m=mat(o.mid),us=u.get(o.mid)||{q:0,v:0},daily=us.q/30;
+  /* the worst store decides (a shortage in one store is not hidden by another store's balance) */
+  const st=['neg','out','low','ok'][o.w];
+  return {...o,m,price:+m.price||0,val:Math.max(0,o.qty)*(+m.price||0),use:us.q,useV:us.v,cover:daily>0?Math.max(0,o.qty)/daily:null,st}})
+  .filter(r=>(!F.cat||S(r.m.category)===F.cat)&&(!F.q||S(r.m.name).toLowerCase().includes(F.q.toLowerCase())||S(r.m.code).toLowerCase().includes(F.q.toLowerCase()))&&(!F.st||(F.st==='low'?['low','out','neg'].includes(r.st):r.st===F.st)))
+  .sort((a,b)=>({neg:0,out:1,low:2,ok:3}[a.st]-{neg:0,out:1,low:2,ok:3}[b.st])||S(a.m.name).localeCompare(S(b.m.name),'ar'))}
+const stOf=(q,mn)=>q<0?0:q<=0?1:mn>0&&q<=mn?2:3;
+const STL={ok:['ok','متوفر'],low:['low','تحت حد الطلب'],out:['out','نفد'],neg:['neg','بالسالب']};
+
+/* ---------- page ---------- */
+function page(){let p=document.getElementById('fm173-page');if(!p){p=document.createElement('section');p.id='fm173-page';p.className='fm103-page';
+ p.innerHTML=`<div class="fm103-wrap"><div class="fm103-head"><div><h2>📦 المخزون وقطع الغيار</h2><p class="sub">أرصدة المستودعات، التوريد والجرد والتحويل، والصرف التلقائي عند اعتماد أوامر العمل</p></div><div class="fm103-actions"><span class="extra"></span><button class="fm103-btn" type="button" onclick="fmV103ClosePages?.()">إغلاق</button></div></div><div class="body"></div></div>`;document.body.appendChild(p)}return p}
+async function refresh(){const p=page(),b=p.querySelector('.body');b.innerHTML='<div class="fm125-src">جارٍ التحميل…</div>';
+ try{await load()}catch(e){M.err=e.message}render()}
+function render(){const p=page(),b=p.querySelector('.body'),x=p.querySelector('.extra');const man=anyManage();
+ if(M.err){x.innerHTML='';b.innerHTML=`<div class="fm103-card fm103-empty">${esc(sqlMsg(M.err))}</div>`;return}
+ x.innerHTML=(man?`<button class="fm103-btn primary" type="button" data-a="in">📥 توريد</button><button class="fm103-btn" type="button" data-a="adjust">⚖️ جرد</button><button class="fm103-btn" type="button" data-a="transfer">🔁 تحويل</button><button class="fm103-btn" type="button" data-a="stores">🏬 المستودعات</button>`:'')+`<button class="fm103-btn" type="button" data-a="xl">⬇️ Excel</button>`;
+ x.querySelectorAll('[data-a]').forEach(btn=>btn.onclick=()=>({in:()=>moveDlg('in'),adjust:countDlg,transfer:()=>moveDlg('transfer'),stores:storesDlg,xl:excel})[btn.dataset.a]());
+ if(!M.stores.length){b.innerHTML=`<div class="fm103-card fm103-empty">لا يوجد مستودع بعد.${man?' اضغط «🏬 المستودعات» وأنشئ مستودعاً لكل منطقة، ثم سجّل أرصدة البداية من «⚖️ جرد». بعدها تُخصم مواد أوامر العمل المعتمدة تلقائياً.':''}</div>`;return}
+ const R=rows(),all=(()=>{const f=F.st;F.st='';const r=rows();F.st=f;return r})(),u30=usage(30,F.store);
+ const val=all.reduce((t,r)=>t+r.val,0),low=all.filter(r=>r.st!=='ok').length,useV=[...u30.values()].reduce((t,o)=>t+o.v,0);
+ const cats=[...new Set(M.mats.map(m=>S(m.category)).filter(Boolean))].sort((a,c)=>a.localeCompare(c,'ar'));
+ b.innerHTML=`<div class="fm171-per"><select data-f="store"><option value="">كل المستودعات</option>${activeStores().map(s=>`<option value="${esc(s.id)}" ${F.store===s.id?'selected':''}>${esc(s.name)} — ${esc(rn(s.region))}</option>`).join('')}</select>
+  <select data-f="cat"><option value="">كل الفئات</option>${cats.map(c=>`<option ${F.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select>
+  <input data-f="q" placeholder="🔎 بحث بالصنف أو الكود" value="${esc(F.q)}">
+  <select data-f="st">${[['','كل الحالات'],['low','تحت حد الطلب أو نفد'],['out','نفد'],['neg','بالسالب']].map(([k,v])=>`<option value="${k}" ${F.st===k?'selected':''}>${v}</option>`).join('')}</select></div>
+ <div class="fm103-kpis"><div class="fm103-kpi"><span>أصناف بالمستودع</span><b>${num(all.filter(r=>r.qty>0).length)}</b><small>من ${num(M.mats.length)} صنف معتمد</small></div>
+  <div class="fm103-kpi"><span>قيمة المخزون</span><b>${money(val)}</b><small>بسعر الصنف الحالي</small></div>
+  <div class="fm103-kpi"><span>تحتاج طلب</span><b style="color:${low?'#b91c1c':'#15803d'}">${num(low)}</b><small>تحت حد الطلب أو نفدت</small></div>
+  <div class="fm103-kpi"><span>صرف آخر 30 يوماً</span><b>${money(useV)}</b><small>${num(u30.size)} صنف لأوامر العمل</small></div></div>
+ <div class="fm173-tabs">${[['bal','📦 الأرصدة'],['moves','🧾 الحركات'],['month','📅 الاستهلاك الشهري'],['po','🛒 طلب شراء مقترح']].map(([k,l])=>`<button type="button" data-t="${k}" class="${TAB===k?'on':''}">${l}</button>`).join('')}</div>
+ <div class="fm103-card" data-pane></div>`;
+ b.querySelectorAll('[data-f]').forEach(i=>i.onchange=()=>{F[i.dataset.f]=i.value;render()});
+ b.querySelectorAll('[data-t]').forEach(t=>t.onclick=()=>{TAB=t.dataset.t;render()});
+ const pane=b.querySelector('[data-pane]');
+ if(TAB==='bal'){const one=F.store&&canManage(store(F.store).region);
+  pane.innerHTML=`<div class="q">${F.store?'':'اختر مستودعاً لتعديل حد الطلب • '}التغطية = الأيام التي يكفيها الرصيد بمعدل صرف آخر 30 يوماً</div>${R.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>الصنف</th><th>الفئة</th><th>الرصيد</th><th>حد الطلب</th><th>سعر الوحدة</th><th>القيمة</th><th>صرف 30 يوماً</th><th>التغطية</th><th>الحالة</th></tr></thead><tbody>
+  ${R.slice(0,1500).map(r=>`<tr><td><b>${esc(r.m.name)}</b>${r.m.code?`<div class="fm125-src">${esc(r.m.code)}</div>`:''}${r.stores.length>1?`<div class="fm125-src">${esc(r.stores.join(' · '))}</div>`:''}</td><td>${esc(r.m.category||'')}</td><td><b>${num(r.qty)}</b> ${esc(r.m.unit||'')}</td>
+   <td>${one?`<input class="fm173-min" data-min="${esc(r.mid)}" value="${r.min||''}" inputmode="decimal" placeholder="0">`:num(r.min)}</td><td>${money(r.price)}</td><td>${money(r.val)}</td><td>${num(r.use)}</td><td>${r.cover==null?'—':num(r.cover,0)+' يوم'}</td><td><span class="fm173-st ${STL[r.st][0]}">${STL[r.st][1]}</span></td></tr>`).join('')}</tbody></table></div>
+  ${one?'<div class="row" style="margin-top:8px"><button class="fm103-btn primary" type="button" data-savemin>💾 حفظ حدود الطلب</button></div>':''}`:'<div class="fm103-empty">لا توجد أرصدة مطابقة</div>'}`;
+  const sm=pane.querySelector('[data-savemin]');if(sm)sm.onclick=async()=>{const rowsMin=[...pane.querySelectorAll('[data-min]')].filter(i=>{const r=R.find(x=>x.mid===i.dataset.min);return r&&n0(i.value||'0')!==r.min}).map(i=>({material_id:i.dataset.min,min:n0(i.value||'0')}));
+   if(rowsMin.some(r=>isNaN(r.min)||r.min<0)){toast('حد طلب غير صحيح','warning');return}if(!rowsMin.length){toast('لا توجد تعديلات','warning');return}
+   try{const db=await C.engClient();const r=await db.rpc('fm_stock_min',{p_store:F.store,p_rows:rowsMin});if(r.error)throw Error(r.error.message);toast(`تم حفظ ${num(rowsMin.length)} حد طلب`);refresh()}catch(e){toast(sqlMsg(e.message),'error')}}}
+ else if(TAB==='moves'){const L=M.moves.filter(m=>(!F.store||m.store_id===F.store)&&(!F.cat||S(mat(m.material_id).category)===F.cat)&&(!F.q||S(mat(m.material_id).name).toLowerCase().includes(F.q.toLowerCase())||S(m.wo_code).toLowerCase().includes(F.q.toLowerCase())));
+  pane.innerHTML=`<div class="q">آخر 200 يوم • الأحدث أولاً</div>${L.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>التاريخ</th><th>الحركة</th><th>الصنف</th><th>الكمية</th><th>المستودع</th><th>المرجع</th><th>بواسطة</th></tr></thead><tbody>${L.slice(0,800).map(m=>`<tr><td>${dshow(m.at)}</td><td>${KIND[m.kind][0]} ${KIND[m.kind][1]}</td><td><b>${esc(mat(m.material_id).name)}</b></td><td style="color:${m.qty<0?'#b91c1c':'#15803d'};font-weight:800" dir="ltr">${m.qty>0?'+':''}${num(m.qty)}</td><td>${esc(store(m.store_id).name)}</td><td class="wrap">${m.wo_code?`<b>${esc(m.wo_code)}</b> · ${esc(m.school||'')}`:''}${m.supplier?esc(m.supplier):''}${m.invoice_no?' · فاتورة '+esc(m.invoice_no):''}${m.note?`<div class="fm125-src">${esc(m.note)}</div>`:''}</td><td>${esc(m.by_name||'')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد حركات</div>'}`}
+ else if(TAB==='month'){const ms=[];const d=new Date();for(let i=5;i>=0;i--){const x=new Date(d.getFullYear(),d.getMonth()-i,1);ms.push({k:x.getFullYear()*12+x.getMonth(),l:x.toLocaleDateString(GREG,{month:'short',year:'2-digit'})})}
+  const by=new Map();for(const m of M.moves){if(m.kind!=='out'||(F.store&&m.store_id!==F.store))continue;const t=new Date(m.at),k=t.getFullYear()*12+t.getMonth();let o=by.get(m.material_id);if(!o)by.set(m.material_id,o={});o[k]=(o[k]||0)+(-m.qty)}
+  const L=[...by.entries()].map(([id,o])=>({m:mat(id),o,t:ms.reduce((s,x)=>s+(o[x.k]||0),0)})).filter(r=>!F.cat||S(r.m.category)===F.cat).sort((a,c)=>c.t-a.t);
+  pane.innerHTML=`<div class="q">الكميات المصروفة لأوامر العمل المعتمدة • آخر 6 أشهر</div>${L.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>الصنف</th>${ms.map(x=>`<th>${x.l}</th>`).join('')}<th>الإجمالي</th><th>المتوسط الشهري</th></tr></thead><tbody>${L.map(r=>`<tr><td><b>${esc(r.m.name)}</b> <span class="fm125-src">${esc(r.m.unit||'')}</span></td>${ms.map(x=>`<td>${r.o[x.k]?num(r.o[x.k]):'—'}</td>`).join('')}<td><b>${num(r.t)}</b></td><td>${num(r.t/6,1)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا يوجد صرف بعد</div>'}`}
+ else{const L=po();pane.innerHTML=`<div class="q">الأصناف تحت حد الطلب أو النافدة • الكمية المقترحة = ما يرفع الرصيد إلى ضعف حد الطلب (أو استهلاك شهرين إن كان أكبر)</div>${L.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>الصنف</th><th>المستودع</th><th>الرصيد</th><th>حد الطلب</th><th>صرف 30 يوماً</th><th>الكمية المقترحة</th><th>التكلفة التقديرية</th></tr></thead><tbody>${L.map(r=>`<tr><td><b>${esc(r.m.name)}</b></td><td>${esc(r.sn)}</td><td>${num(r.qty)}</td><td>${num(r.min)}</td><td>${num(r.use)}</td><td><b>${num(r.sug)}</b> ${esc(r.m.unit||'')}</td><td>${money(r.sug*(+r.m.price||0))}</td></tr>`).join('')}</tbody></table></div><div class="q" style="margin-top:6px">الإجمالي التقديري: <b>${money(L.reduce((t,r)=>t+r.sug*(+r.m.price||0),0))}</b> • التصدير في «⬇️ Excel»</div>`:'<div class="fm103-empty">لا توجد أصناف تحتاج طلباً ✅ (حدّد «حد الطلب» للأصناف من تبويب الأرصدة)</div>'}`}}
+function po(){const out=[];for(const s of M.stock){const st=store(s.store_id);if(!st.active||(F.store&&s.store_id!==F.store))continue;const m=mat(s.material_id);if(F.cat&&S(m.category)!==F.cat)continue;
+  const q=+s.qty,mn=+s.min_qty,use=(usage(30,s.store_id).get(s.material_id)||{q:0}).q;if(!(q<=0&&use>0)&&!(mn>0&&q<=mn))continue;
+  const sug=Math.max(0,Math.ceil(Math.max(mn*2,use*2)-q));if(sug>0)out.push({m,sn:st.name,qty:q,min:mn,use,sug})}
+ return out.sort((a,b)=>b.sug*(+b.m.price||0)-a.sug*(+a.m.price||0))}
+
+/* ---------- dialogs ---------- */
+function dlg(html){const d=document.createElement('dialog');d.className='fm171-dlg';d.innerHTML=html;document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();return d}
+const storeOpts=(sel,man)=>activeStores().filter(s=>!man||canManage(s.region)).map(s=>`<option value="${esc(s.id)}" ${sel===s.id?'selected':''}>${esc(s.name)} — ${esc(rn(s.region))}</option>`).join('');
+async function rpc(fn,args){const db=await C.engClient();const r=await db.rpc(fn,args);if(r.error)throw Error(r.error.message);return r.data}
+/* receipt or transfer: several lines picked by search */
+function moveDlg(kind){if(!activeStores().some(s=>canManage(s.region))){toast('أنشئ مستودعاً في منطقتك أولاً','warning');return}
+ const isIn=kind==='in',lines=[{}];
+ const d=dlg(`<div class="in"><h3>${isIn?'📥 توريد مواد للمستودع':'🔁 تحويل بين مستودعين'}</h3>
+  <div class="fm171-two"><label class="f">${isIn?'المستودع':'من مستودع'}<select data-k="store">${storeOpts(F.store,true)}</select></label>${isIn?`<label class="f">المورد (اختياري)<input data-k="supplier" maxlength="200"></label>`:`<label class="f">إلى مستودع<select data-k="to">${storeOpts('',true)}</select></label>`}</div>
+  ${isIn?'<div class="fm171-two"><label class="f">رقم الفاتورة (اختياري)<input data-k="inv" maxlength="80"></label><label class="f" style="display:flex;gap:6px;align-items:center;margin-top:18px"><input type="checkbox" data-k="up" checked style="width:auto"> تحديث سعر الصنف بسعر هذا التوريد</label></div>':''}
+  <datalist id="fm173-dl">${M.mats.filter(m=>m.active!==false).map(m=>`<option value="${esc(m.name)}">${esc([m.unit,m.category].filter(Boolean).join(' • '))}</option>`).join('')}</datalist>
+  <div><b>الأصناف</b> <small class="fm125-src">اكتب اسم الصنف واختره من القائمة</small></div><div class="fm173-lines" data-lines></div>
+  <button type="button" class="fm122-mini" data-addl>➕ صنف آخر</button>
+  <label class="f">ملاحظة (اختياري)<input data-k="note" maxlength="300"></label></div>
+  <div class="ft"><button class="fm103-btn primary" type="button" data-save>💾 حفظ</button><button class="fm103-btn" type="button" data-x>إلغاء</button></div>`);
+ const q=s=>d.querySelector(s);
+ const draw=()=>{q('[data-lines]').innerHTML=lines.map((l,i)=>`<div class="fm173-line ${isIn?'':'nop'}"><input list="fm173-dl" data-i="${i}" data-c="n" placeholder="الصنف" value="${esc(l.n||'')}"><input data-i="${i}" data-c="qty" inputmode="decimal" placeholder="الكمية" value="${esc(l.qty??'')}">${isIn?`<input data-i="${i}" data-c="price" inputmode="decimal" placeholder="سعر الوحدة" value="${esc(l.price??'')}">`:''}<button type="button" data-del="${i}">✕</button></div>`).join('');
+  q('[data-lines]').querySelectorAll('input').forEach(inp=>inp.oninput=inp.onchange=()=>{const l=lines[+inp.dataset.i];l[inp.dataset.c]=inp.value;if(inp.dataset.c==='n'&&isIn){const m=M.mats.find(m=>m.name===S(inp.value));if(m&&!S(l.price)&&m.price!=null){l.price=String(m.price);const pi=inp.parentNode.querySelector('[data-c=price]');if(pi)pi.value=l.price}}});
+  q('[data-lines]').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.del,1);if(!lines.length)lines.push({});draw()})};
+ draw();q('[data-addl]').onclick=()=>{lines.push({});draw();q('[data-lines]').lastElementChild?.querySelector('input')?.focus()};q('[data-x]').onclick=()=>d.close();
+ q('[data-save]').onclick=async ev=>{const L=[];for(const l of lines){if(!S(l.n)&&!S(l.qty))continue;const m=M.mats.find(m=>m.name===S(l.n));if(!m){toast('اختر الصنف من القائمة: '+S(l.n),'warning');return}
+   const qt=n0(l.qty),pr=n0(l.price);if(isNaN(qt)||qt<=0){toast('كمية غير صحيحة: '+m.name,'warning');return}if(isIn&&S(l.price)&&(isNaN(pr)||pr<0)){toast('سعر غير صحيح: '+m.name,'warning');return}
+   L.push({material_id:m.id,qty:qt,price:isIn&&S(l.price)?pr:null})}
+  if(!L.length){toast('أضف صنفاً واحداً على الأقل','warning');return}
+  const body={kind,store_id:q('[data-k=store]').value,lines:L,note:S(q('[data-k=note]').value)};
+  if(isIn)Object.assign(body,{supplier:S(q('[data-k=supplier]').value),invoice_no:S(q('[data-k=inv]').value),update_price:q('[data-k=up]').checked});else body.to_store=q('[data-k=to]').value;
+  const b=ev.currentTarget;b.disabled=true;try{const n=await rpc('fm_stock_move',{p:body});toast(`تم تسجيل ${num(n)} صنف`);d.close();refresh()}catch(e){toast(sqlMsg(e.message),'error');b.disabled=false}}}
+/* stock count: the counted balance of every material of one store (or import an Excel count sheet) */
+function countDlg(){const S0=activeStores().filter(s=>canManage(s.region));if(!S0.length){toast('أنشئ مستودعاً في منطقتك أولاً','warning');return}
+ let sid=F.store&&S0.some(s=>s.id===F.store)?F.store:S0[0].id,cnt=new Map(),fq='';
+ const d=dlg(`<div class="in"><h3>⚖️ جرد المستودع</h3><div class="fm125-src">اكتب الرصيد الفعلي المعدود؛ يُسجَّل الفرق كحركة «جرد». الصنف الذي تتركه فارغاً لا يتغير.</div>
+  <div class="fm171-row"><select data-k="store" style="flex:1">${storeOpts(sid,true)}</select><input data-k="q" placeholder="🔎 بحث" style="flex:1"><button type="button" class="fm122-mini" data-tpl>⬇️ ورقة جرد Excel</button><label class="fm122-mini" style="cursor:pointer">⬆️ استيراد<input type="file" accept=".xlsx,.xls,.csv" data-imp hidden></label></div>
+  <div class="fm173-cnt" style="font-weight:800;color:#475569"><span>الصنف</span><span>الرصيد بالنظام</span><span>المعدود فعلاً</span></div><div class="fm173-lines" data-list></div><label class="f">ملاحظة (اختياري)<input data-k="note" maxlength="300" placeholder="مثال: جرد نهاية الشهر"></label></div>
+  <div class="ft"><button class="fm103-btn primary" type="button" data-save>💾 حفظ الجرد</button><button class="fm103-btn" type="button" data-x>إلغاء</button><span class="fm125-src" data-n></span></div>`);
+ const q=s=>d.querySelector(s),bal=id=>+(M.stock.find(s=>s.store_id===sid&&s.material_id===id)||{qty:0}).qty;
+ const draw=()=>{const L=M.mats.filter(m=>m.active!==false&&(!fq||S(m.name).includes(fq)));q('[data-list]').innerHTML=L.slice(0,1500).map(m=>`<div class="fm173-cnt"><span>${esc(m.name)} <small class="fm125-src">${esc(m.unit||'')}</small></span><span>${num(bal(m.id))}</span><input data-c="${esc(m.id)}" inputmode="decimal" value="${esc(cnt.get(m.id)??'')}" class="fm173-min" style="width:auto"></div>`).join('');
+  q('[data-list]').querySelectorAll('[data-c]').forEach(i=>i.oninput=()=>{S(i.value)===''?cnt.delete(i.dataset.c):cnt.set(i.dataset.c,i.value);q('[data-n]').textContent=cnt.size?`${num(cnt.size)} صنف معدود`:''})};
+ draw();q('[data-k=store]').onchange=e=>{if(cnt.size&&!confirm('تجاهل الأرقام المكتوبة لهذا المستودع؟')){e.target.value=sid;return}sid=e.target.value;cnt.clear();draw()};q('[data-k=q]').oninput=e=>{fq=S(e.target.value);draw()};q('[data-x]').onclick=()=>d.close();
+ q('[data-tpl]').onclick=()=>xl([{n:'جرد',rows:M.mats.filter(m=>m.active!==false).map(m=>({'الكود':m.code||'','الصنف':m.name,'الوحدة':m.unit||'','الفئة':m.category||'','الرصيد بالنظام':bal(m.id),'المعدود فعلاً':''}))}],'ورقة جرد - '+store(sid).name);
+ q('[data-imp]').onchange=async ev=>{const f=ev.target.files[0];ev.target.value='';if(!f)return;try{try{await window.fmEnsureLibraries?.()}catch(e){}const wb=XLSX.read(await f.arrayBuffer());const R=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});let ok=0,miss=0;
+  for(const r of R){const v=S(r['المعدود فعلاً']??r['الرصيد الفعلي']??r['الكمية']);if(v==='')continue;const m=M.mats.find(m=>(S(r['الكود'])&&S(m.code)===S(r['الكود']))||S(m.name)===S(r['الصنف']));if(!m){miss++;continue}cnt.set(m.id,v);ok++}
+  draw();q('[data-n]').textContent=`${num(cnt.size)} صنف معدود`;toast(`قُرئ ${num(ok)} صنف${miss?` — ${num(miss)} صف لصنف غير موجود`:''}`,miss?'warning':'success')}catch(e){toast('تعذر قراءة الملف: '+e.message,'error')}};
+ q('[data-save]').onclick=async ev=>{const L=[];for(const [id,v] of cnt){const c=n0(v);if(isNaN(c)||c<0){toast('رصيد غير صحيح: '+mat(id).name,'warning');return}if(c!==bal(id)||!M.stock.some(s=>s.store_id===sid&&s.material_id===id))L.push({material_id:id,count:c})}
+  if(!L.length){toast('لا توجد فروق لتسجيلها','warning');return}const b=ev.currentTarget;b.disabled=true;
+  try{let n=0;for(let i=0;i<L.length;i+=300)n+=await rpc('fm_stock_move',{p:{kind:'adjust',store_id:sid,lines:L.slice(i,i+300),note:S(q('[data-k=note]').value)}});toast(`تم تسجيل الجرد — ${num(n)} فرق`);d.close();refresh()}catch(e){toast(sqlMsg(e.message),'error');b.disabled=false}}}
+function storesDlg(){const regs=[...new Set(['riyadh','qassim',...M.stores.map(s=>S(s.region))].filter(Boolean))];
+ const d=dlg(`<div class="in"><h3>🏬 المستودعات</h3><div class="fm125-src">المستودع «الافتراضي» لمنطقة هو الذي تُخصم منه مواد أوامر العمل المعتمدة في تلك المنطقة.</div><div data-list></div>
+  <b>➕ مستودع جديد</b><div class="fm171-two"><label class="f">الاسم<input data-k="name" maxlength="120"></label><label class="f">المنطقة<select data-k="region"><option value="">كل المناطق</option>${regs.map(r=>`<option value="${esc(r)}">${esc(rn(r))}</option>`).join('')}</select></label></div>
+  <label class="f" style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-k="def" style="width:auto"> افتراضي لمنطقته</label></div>
+  <div class="ft"><button class="fm103-btn primary" type="button" data-save>➕ إضافة</button><button class="fm103-btn" type="button" data-x>إغلاق</button></div>`);
+ const q=s=>d.querySelector(s);
+ const draw=()=>{q('[data-list]').innerHTML=`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>المستودع</th><th>المنطقة</th><th>افتراضي</th><th>نشط</th></tr></thead><tbody>${M.stores.map(s=>`<tr><td><input data-n="${esc(s.id)}" value="${esc(s.name)}" ${canManage(s.region)?'':'disabled'}></td><td>${esc(rn(s.region))}</td><td><input type="checkbox" data-d="${esc(s.id)}" ${s.is_default?'checked':''} ${canManage(s.region)?'':'disabled'} style="width:auto"></td><td><input type="checkbox" data-a="${esc(s.id)}" ${s.active?'checked':''} ${canManage(s.region)?'':'disabled'} style="width:auto"></td></tr>`).join('')||'<tr><td colspan="4">لا يوجد مستودع بعد</td></tr>'}</tbody></table></div>${M.stores.some(s=>canManage(s.region))?'<button type="button" class="fm122-mini" data-upd style="margin-top:6px">💾 حفظ التعديلات</button>':''}`;
+  const u=q('[data-upd]');if(u)u.onclick=async()=>{try{for(const s of M.stores.filter(s=>canManage(s.region))){const n=S(q(`[data-n="${s.id}"]`).value),df=q(`[data-d="${s.id}"]`).checked,ac=q(`[data-a="${s.id}"]`).checked;
+     if(n!==s.name||df!==s.is_default||ac!==s.active)await rpc('fm_stock_store_save',{p:{id:s.id,name:n,region:s.region,is_default:df,active:ac}})}toast('تم الحفظ');await load();draw();render()}catch(e){toast(sqlMsg(e.message),'error')}}};
+ draw();q('[data-x]').onclick=()=>d.close();
+ q('[data-save]').onclick=async()=>{const name=S(q('[data-k=name]').value),region=q('[data-k=region]').value;if(!name){toast('اكتب اسم المستودع','warning');return}if(!canManage(region)){toast('المنطقة خارج نطاقك','warning');return}
+  try{await rpc('fm_stock_store_save',{p:{name,region,is_default:q('[data-k=def]').checked||!M.stores.some(s=>s.active&&S(s.region)===region),active:true}});toast('تمت إضافة المستودع');q('[data-k=name]').value='';await load();draw();render()}catch(e){toast(sqlMsg(e.message),'error')}}}
+
+/* ---------- Excel ---------- */
+async function xl(sheets,name){try{try{await window.fmEnsureLibraries?.()}catch(e){}if(typeof XLSX==='undefined')throw Error('مكتبة Excel غير متاحة');
+ const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};
+ for(const s of sheets){const ws=XLSX.utils.json_to_sheet(s.rows.length?s.rows:[{'—':'لا توجد بيانات'}]);ws['!views']=[{RTL:true}];ws['!cols']=Object.keys(s.rows[0]||{}).map(k=>({wch:Math.max(10,Math.min(40,k.length+8))}));XLSX.utils.book_append_sheet(wb,ws,s.n.slice(0,31))}
+ XLSX.writeFile(wb,name.replace(/[\\/:*?"<>|]/g,'-')+'.xlsx');toast('تم التصدير')}catch(e){toast('تعذر التصدير: '+e.message,'error')}}
+function excel(){const f=F.st;F.st='';const R=rows();F.st=f;
+ xl([{n:'الأرصدة',rows:R.map(r=>({'الكود':r.m.code||'','الصنف':r.m.name,'الفئة':r.m.category||'','الوحدة':r.m.unit||'','المستودع':r.store_id?store(r.store_id).name:'كل المستودعات','الرصيد':+r.qty,'حد الطلب':+r.min,'سعر الوحدة':r.price,'القيمة':Math.round(r.val*100)/100,'صرف 30 يوماً':r.use,'التغطية بالأيام':r.cover==null?'':Math.round(r.cover),'الحالة':STL[r.st][1]}))},
+  {n:'طلب شراء مقترح',rows:po().map(r=>({'الصنف':r.m.name,'الوحدة':r.m.unit||'','المستودع':r.sn,'الرصيد':r.qty,'حد الطلب':r.min,'صرف 30 يوماً':r.use,'الكمية المقترحة':r.sug,'سعر الوحدة':+r.m.price||0,'التكلفة التقديرية':Math.round(r.sug*(+r.m.price||0)*100)/100}))},
+  {n:'الحركات',rows:M.moves.filter(m=>!F.store||m.store_id===F.store).map(m=>({'التاريخ':S(m.at).slice(0,10),'الحركة':KIND[m.kind][1],'الصنف':mat(m.material_id).name,'الكمية':+m.qty,'سعر الوحدة':m.unit_price==null?'':+m.unit_price,'المستودع':store(m.store_id).name,'أمر العمل':m.wo_code||'','المدرسة':m.school||'','المورد':m.supplier||'','رقم الفاتورة':m.invoice_no||'','ملاحظة':m.note||'','بواسطة':m.by_name||''}))}],
+  'المخزون '+new Date().toISOString().slice(0,10))}
+
+/* ---------- open, nav ---------- */
+function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.getElementById('fm116-page')?.classList.remove('open');document.body.classList.remove('v2-mobile-nav');
+ try{window.v2SetActive?.(btn)}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;refresh()}
+window.fmV173Stock=()=>openPage(document.getElementById('v2-nav-fm173-stock'));
+function nav(){const n=document.querySelector('nav.v2-nav'),b0=document.getElementById('v2-nav-fm173-stock');if(!n)return;if(!canRead()){b0?.remove();return}if(b0)return;
+ const b=document.createElement('button');b.id='v2-nav-fm173-stock';b.type='button';b.className='v2-nav-btn';b.title='المخزون وقطع الغيار';b.innerHTML='<i class="fas fa-warehouse"></i><span class="v2-nav-label">📦 المخزون</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
+setInterval(()=>{try{nav()}catch(e){}},3000);
 })();
 </script>
 </body>
