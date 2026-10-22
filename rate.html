@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="R1">
+<meta name="fm-version" content="R2">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -41,7 +41,11 @@ textarea{min-height:90px}
 (function(){
 'use strict';
 // same project as start.html DEFAULT_CFG (publishable / anon key only)
-const CFG={url:'https://hjumfnwabrtexyenshkg.supabase.co',key:'sb_publishable_g8_N3wEdQ7_fM9VKGan2iw_7xfcrByg'};
+const CTRL={url:'https://hjumfnwabrtexyenshkg.supabase.co',key:'sb_publishable_g8_N3wEdQ7_fM9VKGan2iw_7xfcrByg'};
+/* V179 (SaaS): &c=<company code> selects that company's project through the control project (saas_tenant) */
+let CFG=CTRL;const CO=(new URLSearchParams(location.search).get('c')||'').trim().toLowerCase();
+async function tenantCfg(){if(!CO)return true;try{const r=await fetch(CTRL.url+'/rest/v1/rpc/saas_tenant',{method:'POST',headers:{apikey:CTRL.key,Authorization:'Bearer '+CTRL.key,'Content-Type':'application/json'},body:JSON.stringify({p_code:CO})});const t=await r.json();
+ if(!r.ok||!t||t.status==='unknown'||!t.url)return false;CFG={url:t.url,key:t.key};try{if(t.name)document.title='RakizoraFM | '+t.name}catch(e){}return true}catch(e){return false}}
 const app=document.getElementById('app');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const token=(new URLSearchParams(location.search).get('t')||'').trim();
@@ -53,6 +57,7 @@ function fail(t){app.innerHTML='<div class="brand">RakizoraFM · إدارة ال
 function date(v){try{return new Date(v).toLocaleDateString('ar-SA-u-ca-gregory',{timeZone:'Asia/Riyadh',year:'numeric',month:'long',day:'numeric'})}catch(e){return ''}}
 function q(k,title,hint,optional){return '<div class="q" data-q="'+k+'"><b>'+title+'</b>'+(hint?'<small>'+esc(hint)+'</small>':'')+'<div class="stars">'+[1,2,3,4,5].map(n=>'<button type="button" data-v="'+n+'" aria-label="'+n+' من 5">★</button>').join('')+'</div><div class="lv"></div>'+(optional?'<label class="na"><input type="checkbox" data-na> لم أتعامل معه</label>':'')+'</div>'}
 async function start(){
+ if(!(await tenantCfg()))return fail('رمز الشركة في الرابط غير صحيح أو تعذّر الاتصال.');
  if(!/^[0-9a-f]{64}$/.test(token))return fail('رابط التقييم غير صحيح.');
  let i;try{i=await rpc('fm_eng_rate_info',{p_token:token})}catch(e){return fail('تعذّر الاتصال. تحقق من الإنترنت ثم أعد فتح الرابط.')}
  if(!i||i.state==='invalid')return fail('رابط التقييم غير صحيح.');

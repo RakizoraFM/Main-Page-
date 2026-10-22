@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S5">
+<meta name="fm-version" content="S6">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <title>RakizoraFM | تسجيل الدخول</title>
@@ -37,6 +37,7 @@ input:focus{outline:2px solid #93c5fd;border-color:#60a5fa}
 .spin{width:30px;height:30px;border:3px solid #dbeafe;border-top-color:var(--pri);border-radius:50%;margin:18px auto;animation:r .8s linear infinite}
 @keyframes r{to{transform:rotate(360deg)}}
 .foot{text-align:center;color:#94a3b8;font-size:11.5px;margin-top:14px}
+.tn{display:flex;align-items:center;justify-content:center;gap:8px;margin:-2px 0 10px;font-weight:900;font-size:15px}.tn img{width:34px;height:34px;object-fit:contain;border-radius:8px}
 </style>
 </head>
 <body>
@@ -74,6 +75,12 @@ const valid=o=>!!(o&&/^https:\/\//.test(S(o.url))&&S(o.key).length>=30);
  try{const m=location.hash.match(/cfg=([^&]+)/);if(m){const o=JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1])))));if(valid(o))saveCfg(o);history.replaceState(null,'',location.pathname+location.search)}}catch(e){}
  if(!valid(readCfg())&&valid(DEFAULT_CFG))saveCfg(DEFAULT_CFG);
 })();
+/* S6 (V179, SaaS): each company has its own Supabase project. start.html?c=<code> asks the control project (DEFAULT_CFG,
+   saas_control.sql → saas_tenant) for the company's public connection and branding, keeps it in localStorage fm_tenant
+   and uses it as the cloud config of the platform and the field app. Without a code the site default is used as before. */
+const TKEY='fm_tenant';
+const readT=()=>{try{return JSON.parse(localStorage.getItem(TKEY)||'null')}catch(e){return null}};
+function applyBrand(t){try{if(t&&/^#[0-9a-f]{6}$/i.test(S(t.color)))document.documentElement.style.setProperty('--pri',t.color);if(t&&t.name)document.title='RakizoraFM | '+t.name}catch(e){}}
 let libP=null,client=null;
 function ensureLib(){if(window.supabase&&window.supabase.createClient)return Promise.resolve();if(libP)return libP;
  libP=new Promise((res,rej)=>{const s=document.createElement('script');s.src=LIB;s.onload=()=>window.supabase?.createClient?res():rej(new Error('lib'));s.onerror=()=>{libP=null;rej(new Error('Failed to fetch'))};document.head.appendChild(s)});return libP}
@@ -90,6 +97,8 @@ const ARmsg=m=>{m=String(m||'');
  if(/Failed to fetch|NetworkError|network|lib/i.test(m))return 'تعذر الاتصال بالخادم — تحقق من الإنترنت';
  return m};
 /* every network call goes through API so tests can replace it */
+async function ctlTenant(code){const r=await fetch(DEFAULT_CFG.url+'/rest/v1/rpc/saas_tenant',{method:'POST',headers:{apikey:DEFAULT_CFG.key,Authorization:'Bearer '+DEFAULT_CFG.key,'Content-Type':'application/json'},body:JSON.stringify({p_code:code})});
+ if(!r.ok)throw new Error('control '+r.status);return r.json()}
 const API=window.FMStartAPI=window.FMStartAPI||{
  async session(){const c=await sb();const {data}=await c.auth.getSession();return data?.session||null},
  async me(){const c=await sb();const {data:{user}}=await c.auth.getUser();if(!user)return null;const p=chk(await c.from('profiles').select('*').eq('id',user.id).maybeSingle());return p?Object.assign({},p,{email:p.email||user.email}):{id:user.id,email:user.email,role:'pending',regions:[]}},
@@ -101,7 +110,20 @@ const API=window.FMStartAPI=window.FMStartAPI||{
 };
 
 /* ---------- views ---------- */
-const frame=(inner)=>{app.innerHTML=`<img class="logo" src="${LOGO}" alt="RakizoraFM">${inner}<div class="foot">RakizoraFM • إدارة المرافق والأصول الذكية</div>`};
+const frame=(inner)=>{const t=readT();app.innerHTML=`<img class="logo" src="${LOGO}" alt="RakizoraFM">${t&&t.name?`<div class="tn">${t.logo?`<img src="${esc(t.logo)}" alt="">`:''}<span>${esc(t.name)}</span></div>`:''}${inner}<div class="foot">RakizoraFM • إدارة المرافق والأصول الذكية</div>`};
+function tenantError(t){frame(`<h2>الدخول للشركة</h2>${msg(esc(t))}<button class="go" id="t-ch">إدخال رمز الشركة</button>`);$('#t-ch').onclick=changeCompany}
+function changeCompany(e){if(e&&e.preventDefault)e.preventDefault();const c=prompt('رمز الشركة (كما في الرابط الذي أرسله مزود الخدمة) — اتركه فارغاً للدخول الافتراضي:',(readT()||{}).code||'');if(c===null)return;
+ const v=S(c).toLowerCase();if(!v){try{localStorage.removeItem(TKEY);localStorage.removeItem('fm-cloud-auth')}catch(_){}saveCfg(DEFAULT_CFG);location.href=location.pathname;return}location.href=location.pathname+'?c='+encodeURIComponent(v)}
+/* resolve the company: ?c=code, else the one saved on this device; a change signs the old session out */
+async function tenantStep(){const qc=S(new URLSearchParams(location.search).get('c')).toLowerCase(),cur=readT(),code=qc||(cur&&cur.code)||'';if(!code)return true;
+ let t=null;try{t=await (API.tenant||ctlTenant)(code)}catch(e){if(!qc&&cur){applyBrand(cur);return true}tenantError('تعذّر التحقق من الشركة — تحقق من الاتصال ثم أعد المحاولة');return false}
+ if(!t||t.status==='unknown'){if(qc){tenantError('رمز الشركة غير صحيح: '+code);return false}try{localStorage.removeItem(TKEY)}catch(e){}return true}
+ if(t.status==='suspended'){try{localStorage.setItem(TKEY,JSON.stringify({code:t.code,name:t.name,logo:t.logo,color:t.color,status:t.status}))}catch(e){}tenantError(`حساب ${t.name} موقوف حالياً — تواصل مع مزود الخدمة.`);return false}
+ const changed=!cur||cur.code!==t.code||readCfg().url!==S(t.url).replace(/\/+$/,'');
+ if(changed){try{localStorage.removeItem('fm-cloud-auth')}catch(e){}client=null}
+ saveCfg({url:t.url,key:t.key});try{localStorage.setItem(TKEY,JSON.stringify({code:t.code,name:t.name,logo:t.logo,color:t.color,status:t.status,active_until:t.active_until}))}catch(e){}
+ applyBrand(t);return true}
+window.fmStartChangeCompany=changeCompany;
 const msg=(t,k)=>t?`<div class="msg ${k||'err'}">${t}</div>`:'';
 function busy(b,on,txt){b.disabled=on;if(txt)b.textContent=txt}
 
@@ -124,8 +146,9 @@ function loginView(mode,info,err){
   ${mode==='reset'?'':`<label>كلمة المرور</label><input id="l-p" type="password" dir="ltr" autocomplete="${mode==='up'?'new-password':'current-password'}">`}
   ${msg(err)}
   <button class="go" id="l-go">${{in:'دخول',up:'إنشاء الحساب',reset:'إرسال رابط الاستعادة'}[mode]}</button>
-  <div class="links">${mode==='in'?'<a href="#" data-m="up">مستخدم جديد؟ إنشاء حساب</a><a href="#" class="mut" data-m="reset">نسيت كلمة المرور؟</a>':'<a href="#" data-m="in">لدي حساب — تسجيل الدخول</a>'}</div>`);
+  <div class="links">${mode==='in'?'<a href="#" data-m="up">مستخدم جديد؟ إنشاء حساب</a><a href="#" class="mut" data-m="reset">نسيت كلمة المرور؟</a>':'<a href="#" data-m="in">لدي حساب — تسجيل الدخول</a>'}${mode==='in'?'<a href="#" class="mut" id="l-co">🏢 '+(readT()?'شركة أخرى':'رمز الشركة')+'</a>':''}</div>`);
  app.querySelectorAll('[data-m]').forEach(a=>a.onclick=e=>{e.preventDefault();loginView(a.dataset.m)});
+ $('#l-co')&&($('#l-co').onclick=changeCompany);
  const go=async()=>{const b=$('#l-go'),em=S($('#l-e').value),pw=$('#l-p')?.value||'',nm=S($('#l-n')?.value);
   if(!em||(mode!=='reset'&&!pw))return loginView(mode,'', 'اكتب البريد'+(mode==='reset'?'':' وكلمة المرور'));
   if(mode==='up'&&!nm)return loginView(mode,'','اكتب اسمك');
@@ -185,6 +208,7 @@ async function route(){
 }
 
 async function boot(){
+ if(!(await tenantStep()))return;
  if(!valid(readCfg()))return setupView();
  try{
   if(/type=recovery/.test(location.hash)){await sb();return} /* the auth listener opens the new-password view */
