@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V186">
+<meta name="fm-version" content="V187">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25593,10 +25593,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V186',date:'2026-10-23',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V187',date:'2026-10-23',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V187',d:'2026-10-23',t:'إشعارات فورية على الجوال والكمبيوتر',i:['تصلك إشعارات حتى والتطبيق مغلق: أمر عمل جديد، أمر بانتظار اعتمادك، أمر أُعيد إليك أو اعتُمد، تصعيد أمر متأخر، إيقاف عمل، طلب صرف لأمين المستودع، صرف قطع لعهدتك، تالف متأخر، صنف أو طلب شراء بانتظار الاعتماد، والمستخلصات.','كل شخص يفعّلها على جهازه من «🔔 إعدادات الإشعارات» (في الإعدادات ← السحابة، أو الشريط الذي يظهر أسفل الشاشة، أو الزر في تطبيق الميدان) ويختار الأنواع التي تصله ويرسل لنفسه تجربة.','الضغط على الإشعار يفتح الأمر أو الصفحة المعنية مباشرة.','مدير النظام يجهّز الإرسال مرة واحدة من «🔔 إعداد الإشعارات» (المفاتيح، رابط الدالة، الأنواع المفعّلة للجميع) ويرى عدد الأجهزة وما أُرسل.','على iPhone تعمل الإشعارات بعد إضافة التطبيق للشاشة الرئيسية.']},
  {v:'V186',d:'2026-10-23',t:'مركز التكلفة: الإيراد والتكلفة والربح',i:['صفحة «💹 مركز التكلفة» في مجموعة جديدة «💹 المالية والتكاليف» (مع المستخلصات وتكاليف المباني).','مراكز للمناطق وأقسام تحتها (صيانة المباني، السيارات، الإدارة…) مع تفصيل التكلفة حسب المبنى.','التكاليف تُجمع تلقائياً: المستخلصات المعتمدة، مواد المستودع والمشتريات في أوامر العمل المعتمدة، مصروفات المباني، ورواتب الموظفين (محسوبة بأيام العمل في الشهر)؛ وقيود يدوية للسيارات والوقود والسكن وغيرها.','الإيراد: قيمة العقد الشهرية لكل مركز أو فاتورة العميل، والأعمال الإضافية، وخصومات العميل — والربح والهامش لكل مركز وشهر.','الميزانية الشهرية لكل مركز وبند، ونسبة المستهلك، والتوقع لنهاية السنة، وتنبيه عند 80% و100%، وتقرير PDF وExcel.','صلاحيات مركز التكلفة (الرؤية، القيود، الميزانية، الرواتب، الإيراد) يحددها مدير النظام لكل مسمى من الإعدادات.']},
  {v:'V185',d:'2026-10-23',t:'التسويق ومتابعة الشركات',i:['صفحة تعريفية عامة try.html: الأجزاء والباقات وأسعارها، زر الدخول لنسخة العرض، ونموذج «اطلب تجربة» يصل مباشرة للوحة مالك المنصة.','لوحة مالك المنصة: «📥 طلبات التجربة» بحالاتها وتحويل الطلب إلى شركة بضغطة، وجدول استخدام كل شركة (المستخدمون النشطون، الميدان، المدارس، أوامر العمل) مع تنبيه الاستخدام المنخفض وقرب حد المدارس.','تذكير التجديد بالواتساب قبل 30 و15 و7 أيام وبعد الانتهاء، مع تسجيل ما أُرسل.','المنصة ترسل لمزود الخدمة مرة يومياً أرقام الاستخدام فقط (بدون أسماء أو بيانات مدارس أو بلاغات)، موقّعة بسر الشركة.']},
  {v:'V184',d:'2026-10-23',t:'مستخلصات المقاولين',i:['صفحة «🧾 مستخلصات المقاولين»: عقود بمبلغ شهري ثابت وسعر لكل نوع أمر عمل ومواد الشراء بنسبة إضافة، ومحتجزات وضريبة وسقف للغرامات.','المستخلص الشهري يقترح بنوده تلقائياً من أوامر عمل المقاول المعتمدة في الشهر (لا يُدرج الأمر في مستخلصين)، مع إضافات وخصومات وغرامات (تُجلب من صفحة الغرامات).','مسار الاعتماد: إعداد ← تقديم ← مراجعة المهندس / مدير المنطقة ← اعتماد مدير المشروع ← صرف المحاسب، مع الإعادة للتعديل وسجل كامل.','طباعة المستخلص بالتوقيعات وتصدير Excel، والمقاول يرى مستخلصاته؛ والمستخلصات جزء مستقل في الاشتراك.']},
@@ -31836,6 +31837,8 @@ const MANUAL=[
  {id:'v2-nav-fm177-pen',t:'أداء المقاولين والغرامات',where:'الكادر والمقاولون ← «⚖️ أداء المقاولين والغرامات»',what:'بطاقة شهرية لكل مقاول (البلاغات والالتزام بالـ SLA ومتوسط الإغلاق وأوامر العمل المتأخرة والمعادة) مع حساب الغرامات وفق بنود العقد وخطاب PDF.',how:['اختر الشهر من أعلى الصفحة.','«⚙️ بنود الغرامات والعقود» (مدير النظام): غرامة البلاغ المتجاوز لكل أولوية، ولكل يوم تأخير أمر، ولكل إرجاع، والحد الأقصى كنسبة من قيمة العقد الشهرية لكل مقاول.','«📄 خطاب» يفتح إشعار الغرامات للمقاول جاهزاً للطباعة والتوقيع، و«⬇️ Excel» بالبطاقة والتفاصيل.'],who:'مدير النظام والمديرون والمحاسب',tips:['المقاول يُعرف من بيانات البلاغ / قاعدة المدارس، ومن اسم المُسند إليه في أوامر العمل.','البلاغ يُحسب في شهر إنشائه.'],v:'V177'},
  {id:'v2-nav-fm178-monthly',t:'التقرير الشهري للعميل',where:'التقارير ← «📑 التقرير الشهري للعميل»',what:'تقرير PDF شهري جاهز للإرسال للعميل: غلاف، الملخص التنفيذي مع المقارنة بالشهر السابق، البلاغات، أوامر العمل والصيانة الوقائية، التكاليف والمواد، رضا المدارس، وخطة الشهر القادم.',how:['اختر الشهر والمنطقة من أعلى الصفحة.','اكتب الملخص التنفيذي (أو اتركه للنص التلقائي) وخطة الشهر القادم — تظهر في المعاينة فوراً.','«🖨️ PDF / طباعة» ثم «حفظ كـ PDF» وأرسله للعميل.'],who:'المديرون والمهندس',tips:['أقسام التكاليف وأوامر العمل والرضا تظهر عند ربط السحابة وحسب صلاحياتك.','الأرقام من البلاغات المرفوعة للمنطقة؛ ارفع ملف الشهر كاملاً قبل إصدار التقرير.'],v:'V178'},
  {id:'saas-sub',t:'الاشتراك (لعدة شركات)',where:'الإعدادات ← السحابة ← «💳 الاشتراك»',what:'حالة اشتراك الشركة: الباقة وحد المدارس والمستخدم منها وتاريخ الانتهاء، وإدخال كود التفعيل بعد دفع فاتورة التجديد.',how:['عند اقتراب الانتهاء يظهر شريط أسفل الشاشة قبل 15 يوماً.','بعد الدفع يصل كود التفعيل من مزود الخدمة: «🔑 إدخال كود التفعيل» والصقه.','بعد الانتهاء بمهلة 7 أيام يتوقف الدخول للجميع وتبقى البيانات، ويعود العمل فور إدخال الكود.'],who:'مدير النظام',tips:['رابط دخول الشركة: start.html?c=رمز الشركة — أرسله لفريقك.','زيادة المدارس عن حد الباقة تُرفض عند حفظ قاعدة المدارس في السحابة — اطلب ترقية الباقة.'],v:'V179'},
+ {id:'push',t:'الإشعارات على الجوال والكمبيوتر',where:'الإعدادات ← السحابة ← «🔔 الإشعارات على هذا الجهاز»، أو الشريط أسفل الشاشة «🔔 فعّل الإشعارات»، وفي تطبيق الميدان زر «🔔» في الصفحة الرئيسية',what:'إشعار فوري يصلك حتى والتطبيق مغلق عند حدث يخصك: أمر عمل جديد، أمر بانتظار اعتمادك، إعادة أو اعتماد أمر، تصعيد، إيقاف عمل، طلب صرف، صرف لعهدتك، تالف متأخر، اعتماد صنف أو شراء، المستخلصات. الضغط عليه يفتح الأمر أو الصفحة.',how:['افتح «🔔 إعدادات الإشعارات» واضغط «🔔 تفعيل على هذا الجهاز» واسمح للمتصفح بالإشعارات.','اختر الأنواع التي تريدها ثم «💾 حفظ اختياراتي».','«📨 أرسل لي تجربة» للتأكد أن الجهاز يستقبل.','فعّلها على كل جهاز تستخدمه (الجوال والكمبيوتر).'],who:'كل المستخدمين (بعد أن يجهّزها مدير النظام)',tips:['على iPhone / iPad: أضف التطبيق للشاشة الرئيسية من زر المشاركة أولاً، ثم افتحه من الأيقونة وفعّل الإشعارات (iOS 16.4 أو أحدث).','لا يصلك إشعار عن عمل قمت به بنفسك، والحملة الكبيرة تصلك بإشعار واحد.','إذا رفضت الإذن بالخطأ: افتح إعدادات الموقع في المتصفح واسمح بالإشعارات.'],v:'V187'},
+ {id:'push-setup',t:'إعداد الإشعارات (مدير النظام)',where:'الإعدادات ← السحابة ← «🔔 إعداد الإشعارات (مدير النظام)»',what:'تجهيز إرسال الإشعارات مرة واحدة: مفاتيح الإرسال، ربط دالة fm-push على Supabase، الأنواع المفعّلة للشركة، ومتابعة عدد الأجهزة وما أُرسل وآخر خطأ.',how:['«🔑 توليد المفاتيح» وانسخ المفتاح الخاص إلى أسرار الدالة باسم VAPID_PRIVATE.','أنشئ الدالة fm-push في Supabase ← Edge Functions والصق ملف supabase/functions/fm-push/index.ts، وأوقف Verify JWT.','اكتب رابط الدالة و«🔐 حفظ الربط وتوليد السر» وانسخ السر إلى أسرار الدالة باسم FM_PUSH_HOOK.','فعّل pg_net و pg_cron من Database ← Extensions.','فعّل «الإشعارات مفعّلة للشركة» واحفظ، ثم جرّب على جهازك.'],who:'مدير النظام',tips:['المفتاح الخاص والسر لا يُحفظان في المنصة؛ يظهران مرة واحدة للنسخ.','توليد مفاتيح جديدة يلغي تفعيل كل الأجهزة.'],v:'V187'},
  {id:'v2-nav-fm186-cc',t:'مركز التكلفة',where:'المالية والتكاليف ← «💹 مركز التكلفة»',what:'الإيراد والتكلفة والربح للمشروع لكل مركز تكلفة (المنطقة ثم أقسامها) ولكل شهر، مقابل الميزانية، مع التفصيل حسب البند والمبنى. معظم التكاليف تُجمع تلقائياً من المنصة.',how:['«⚙️ المراكز»: «⚡ إنشاء مراكز المناطق» ثم أضف الأقسام تحت كل منطقة واختر ما تستقبله تلقائياً (المستخلصات، مواد المستودع، المشتريات، مصروفات المباني)، وقيمة العقد الشهرية للمنطقة.','«👥 الموظفون والرواتب»: أضف الموظفين أو ارفع القائمة من Excel بمراكزهم ورواتبهم وبدلاتهم ونسبة التأمينات.','«✍️ القيود اليدوية» ← «➕ قيد»: السيارات والوقود والسكن وغيرها، وفاتورة العميل الشهرية وخصوماته.','«🎯 الميزانية»: ميزانية كل مركز لكل بند وشهر (و«⇉» لنسخ يناير على السنة).','«📊 لوحة المتابعة»: الإيراد والتكلفة والربح حتى الآن، المستهلك من الميزانية، التوقع لنهاية السنة، والتنبيهات؛ ثم «🏢 حسب المركز» للتفاصيل، و«🖨️ تقرير» أو «⬇️ Excel».'],who:'حسب الصلاحيات التي يحددها مدير النظام في «الإعدادات» ← السحابة ← «💹 صلاحيات مركز التكلفة»',tips:['التوريد للمستودع والصرف للعهدة لا يُحسبان تكلفة حتى تُستخدم المادة في أمر عمل معتمد.','المستخلص يُحسب بصافيه قبل الضريبة عند اعتماده، ولا تتكرر المواد التي يحملها المستخلص.','مدير المنطقة ومهندس المنطقة يرون مراكز مناطقهم فقط، والرواتب والإيراد لا تظهر إلا لمن له صلاحيتها.'],v:'V186'},
  {id:'v2-nav-fm184-bills',t:'مستخلصات المقاولين',where:'المالية والتكاليف ← «🧾 مستخلصات المقاولين»',what:'مستخلص شهري لكل عقد مقاول: المبلغ الثابت، وأوامر العمل المعتمدة في الشهر بسعر نوعها، ومواد الشراء، والإضافات والخصومات والغرامات، ثم الضريبة والمحتجزات وصافي المستحق.',how:['«📄 العقود وأسعارها» ← «➕ عقد»: المقاول (حساب أو اسم)، المنطقة، المبلغ الشهري، سعر كل نوع أمر عمل، المواد ونسبة الإضافة، المحتجزات والضريبة وسقف الغرامات.','«➕ مستخلص جديد» ← العقد والشهر ← «📋 اقتراح البنود»، ثم عدّل وأضف (➕ إضافة / ➖ خصم / ⚖️ غرامة أو «جلب الغرامات من صفحة الغرامات») و«💾 حفظ المسودة» أو «📤 حفظ وتقديم».','المراجعة: مهندس أو مدير المنطقة «✔ مراجعة» أو «↩️ إعادة» بسبب؛ الاعتماد: مدير المشروع؛ الصرف: المحاسب «💳 تم الصرف» مع رقم الحوالة.','«🖨️» يطبع المستخلص بالتوقيعات، و«⬇️ Excel» يصدّر المستخلصات وبنودها.'],who:'يُعدّه المحاسب ومدير المنطقة ومدير المشروع؛ يراجعه مهندس / مدير المنطقة؛ يعتمده مدير المشروع؛ يصرفه المحاسب',tips:['أمر العمل لا يُدرج في مستخلصين؛ إلغاء المستخلص يعيده متاحاً.','الإجماليات يعيد حسابها الخادم دائماً، والغرامات لا تتجاوز سقف العقد.'],v:'V184'},
  {id:'v2-nav-fm183-setup',t:'خطوات البداية',where:'النظام ← «🚀 خطوات البداية»',what:'قائمة تجهيز المنصة لشركة جديدة بالترتيب، مع نسبة التجهيز. كل خطوة تتحقق من البيانات تلقائياً (المدارس، الحسابات، خط الإشراف، البلاغات، المستودعات، الأصناف، أوامر العمل…) وتظهر حسب أجزاء الاشتراك.',how:['ابدأ من الأعلى: زر كل خطوة يفتح الصفحة المطلوبة.','الخطوات التي لا يمكن فحصها آلياً (مراجعة القواعد، رسائل الترحيب) تُعلَّم «✔ تم» يدوياً.','«⏰ لاحقاً» يؤجل الفتح التلقائي لبقية اليوم.'],who:'مدير النظام',v:'V183'},
@@ -31912,7 +31915,7 @@ const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;return !!st.pr
 /* V164: each title sees only what concerns it. Sidebar pages follow the portal's hidden pages (fmV157P[title].hide);
    other entries list their titles here. The system admin sees everything and can preview any title. */
 const MGR=['dept_manager','project_manager','ops_manager','area_manager'],ASG=['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'];
-const RMAP={users:['sysadmin'],'v2-nav-fm186-cc':['sysadmin','dept_manager','project_manager','accountant'],'v2-nav-fm184-bills':['sysadmin','dept_manager','project_manager','ops_manager','accountant','qa_manager','area_manager','area_engineer'],'v2-nav-fm183-setup':['sysadmin'],mods:['sysadmin'],demo:['sysadmin'],'saas-sub':['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],'cost-perms':['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
+const RMAP={users:['sysadmin'],'push-setup':['sysadmin'],'v2-nav-fm186-cc':['sysadmin','dept_manager','project_manager','accountant'],'v2-nav-fm184-bills':['sysadmin','dept_manager','project_manager','ops_manager','accountant','qa_manager','area_manager','area_engineer'],'v2-nav-fm183-setup':['sysadmin'],mods:['sysadmin'],demo:['sysadmin'],'saas-sub':['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],'cost-perms':['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
  'wo-group':ASG,'wo-templates':ASG,'wo-fci':ASG,'wo-repair':ASG.concat('dept_manager'),'gov-stop':['sysadmin','hse_manager','project_manager','ops_manager','dept_manager'],
  'gov-deputy':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'eng-rating':['sysadmin',...MGR,'area_engineer'],
  'v2-nav-fm164-usage':['sysadmin','project_manager'],'v2-nav-fm168-novaro':['sysadmin','dept_manager','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm167-news':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm158-qa':['sysadmin','qa_manager',...MGR],
@@ -34536,6 +34539,168 @@ let asked=0;async function nav(){const n=document.querySelector('nav.v2-nav');if
  if(!CAN){b?.remove();return}if(b)return;b=document.createElement('button');b.id='v2-nav-fm186-cc';b.type='button';b.className='v2-nav-btn';b.title='مركز التكلفة';b.innerHTML='<i class="fas fa-chart-pie"></i><span class="v2-nav-label">💹 مركز التكلفة</span>';b.onclick=()=>openPage(b);n.appendChild(b)}
 setInterval(()=>{nav().catch(()=>{})},3000);
 if(window.FM_MODS)window.FM_MODS.cc={n:'💹 مركز التكلفة',ids:['v2-nav-fm186-cc']};
+})();
+</script>
+<script id="fm-v187-push">(function(){
+'use strict';
+/* V187 (field F32): push notifications on this device — Web Push through sw.js (section 29 of supabase_setup.sql, Edge Function
+   supabase/functions/fm-push). Same module in both apps (APP below). The person turns them on per device (the browser asks for
+   permission), chooses the kinds he wants, and can send himself a test. A device follows the account signed in on it.
+   window.fmPushOpen() opens the settings window. A tapped notification opens its page: «#wo=<id>», «#cus», «#wh=…», «#bill». */
+const APP='platform';
+const C=window.FMCloud;if(!C)return;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const say=(m,k)=>{try{if(window.showToast)return window.showToast(m,k==='e'?'error':k==='w'?'warning':'success');const t=document.getElementById('toast');if(t){t.textContent=m;t.className='toast'+(k==='e'?' e':k==='w'?' w':'');t.style.display='block';t.style.zIndex='2000';clearTimeout(say.t);say.t=setTimeout(()=>t.style.display='none',3500);return}alert(m)}catch(e){}};
+const SUP='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window&&window.isSecureContext;
+const IOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const STANDALONE=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
+const KINDS=[['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
+ ['wo_esc','⏫ تصعيد أمر متأخر إليّ'],['wo_stop','⛔ إيقاف عمل'],['wh_req','📦 طلب صرف جديد (أمين المستودع)'],['wh_issued','🧰 صُرفت قطع لعهدتي أو رُفض طلبي'],
+ ['wh_scrap','⏰ تالف متأخر عليّ'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات']];
+const b64u=buf=>{let s='';const b=new Uint8Array(buf);for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
+const unb64u=s=>{s=S(s);const t=atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4));const b=new Uint8Array(t.length);for(let i=0;i<t.length;i++)b[i]=t.charCodeAt(i);return b};
+let SET=null,SETAT=0;
+const db=()=>C.engClient();
+async function settings(force){if(SET&&!force&&Date.now()-SETAT<5*60e3)return SET;const d=await db();const r=await d.from('fm_settings').select('value').eq('key','push').limit(1);
+ if(r.error)throw Error(r.error.message);SET=((r.data||[])[0]||{}).value||{};SETAT=Date.now();return SET}
+const ready=s=>!!(s&&s.enabled&&s.vapid_public);
+async function reg(){const r=await navigator.serviceWorker.register('sw.js');await navigator.serviceWorker.ready;return r}
+async function current(){if(!SUP)return null;try{const r=await navigator.serviceWorker.getRegistration();return r?await r.pushManager.getSubscription():null}catch(e){return null}}
+async function send(s){const j=s.toJSON();const d=await db();const x=await d.rpc('fm_push_subscribe',{p:{endpoint:j.endpoint,p256dh:j.keys&&j.keys.p256dh,auth:j.keys&&j.keys.auth,app:APP,ua:navigator.userAgent.slice(0,200)}});
+ if(x.error)throw Error(x.error.message)}
+const why=e=>{const m=String(e&&e.message||e);return /does not exist|schema cache|Could not find/i.test(m)?'الإشعارات غير مفعّلة بعد على السحابة':m==='denied'?'رفض المتصفح الإذن. افتح إعدادات الموقع في المتصفح واسمح بالإشعارات.':
+ m==='off'?'الإشعارات غير مفعّلة من مدير النظام بعد':m==='unsupported'?(IOS&&!STANDALONE?'على iPhone: أضف التطبيق للشاشة الرئيسية (مشاركة ← «إضافة إلى الشاشة الرئيسية») ثم افتحه من الأيقونة وفعّل الإشعارات':'هذا المتصفح لا يدعم الإشعارات'):m};
+async function enable(){if(!SUP)throw Error('unsupported');const s=await settings(true);if(!ready(s))throw Error('off');
+ const perm=await Notification.requestPermission();if(perm!=='granted')throw Error('denied');
+ const r=await reg();let sub=await r.pushManager.getSubscription();
+ if(sub&&sub.options&&sub.options.applicationServerKey&&b64u(sub.options.applicationServerKey)!==s.vapid_public){try{await sub.unsubscribe()}catch(e){}sub=null}
+ if(!sub)sub=await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:unb64u(s.vapid_public)});
+ await send(sub);try{localStorage.removeItem('fm187_later')}catch(e){}return true}
+async function disable(){const sub=await current();if(!sub)return;try{const d=await db();await d.rpc('fm_push_unsubscribe',{p_endpoint:sub.endpoint})}catch(e){}try{await sub.unsubscribe()}catch(e){}}
+// the device follows the account signed in on it (and a renewed subscription reaches the server)
+async function sync(){if(!SUP||Notification.permission!=='granted')return;const sub=await current();if(!sub)return;const s=await settings();if(!ready(s))return;
+ if(sub.options&&sub.options.applicationServerKey&&b64u(sub.options.applicationServerKey)!==s.vapid_public){try{await sub.unsubscribe()}catch(e){}return enable().catch(()=>{})}
+ await send(sub)}
+async function state(){const sub=await current();return {sup:SUP,perm:SUP?Notification.permission:'—',on:!!sub&&SUP&&Notification.permission==='granted'}}
+
+function box(){let m=document.getElementById('fm187');if(!m){m=document.createElement('div');m.id='fm187';m.dir='rtl';document.body.appendChild(m);m.onclick=e=>{if(e.target===m)m.remove()}}return m}
+async function open(){const m=box();m.innerHTML='<div class="fm187-in"><div class="fm187-hd"><b>🔔 الإشعارات</b><button type="button" data-x>✕</button></div><div class="fm187-bd">جارٍ التحميل…</div></div>';
+ m.querySelector('[data-x]').onclick=()=>m.remove();let s={},me={},st=await state();
+ try{s=await settings(true);const d=await db();const r=await d.rpc('fm_push_me');if(!r.error&&r.data)me=r.data}catch(e){m.querySelector('.fm187-bd').innerHTML=`<div class="fm187-al">${esc(why(e))}</div>`;return}
+ const off=new Set(me.off||[]),gOff=new Set(s.off||[]);
+ m.querySelector('.fm187-bd').innerHTML=`
+  ${!ready(s)?`<div class="fm187-al">الإشعارات غير مفعّلة من مدير النظام بعد.</div>`:''}
+  ${IOS&&!STANDALONE?`<div class="fm187-al warn">على iPhone / iPad تعمل الإشعارات فقط بعد إضافة التطبيق للشاشة الرئيسية: زر المشاركة ⬆️ ← «إضافة إلى الشاشة الرئيسية»، ثم افتحه من الأيقونة وفعّلها من هنا (iOS 16.4 أو أحدث).</div>`:''}
+  <div class="fm187-st ${st.on?'on':''}">${st.on?'✅ مفعّلة على هذا الجهاز':st.perm==='denied'?'⛔ المتصفح يمنع الإشعارات لهذا الموقع — اسمح بها من إعدادات الموقع':'⚪ غير مفعّلة على هذا الجهاز'}
+   <small>أجهزتك المفعّلة: ${+me.devices||0}${me.last?' • آخر إشعار: '+esc(new Date(me.last).toLocaleString('ar-SA-u-ca-gregory',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):''}</small></div>
+  <div class="fm187-row">${st.on?`<button type="button" data-test class="p">📨 أرسل لي تجربة</button><button type="button" data-off>🔕 إيقاف على هذا الجهاز</button>`:`<button type="button" data-on class="p" ${ready(s)&&SUP?'':'disabled'}>🔔 تفعيل على هذا الجهاز</button>`}</div>
+  <h4>ما يصلني</h4><div class="fm187-k">${KINDS.filter(([k])=>!gOff.has(k)).map(([k,t])=>`<label><input type="checkbox" data-k="${k}" ${off.has(k)?'':'checked'}> ${esc(t)}</label>`).join('')}</div>
+  <div class="fm187-row"><button type="button" data-save>💾 حفظ اختياراتي</button></div>
+  <p class="fm187-n">يصلك الإشعار على كل جهاز فعّلته، ولا يصلك إشعار عن عمل قمت به أنت. الإشعار لا يحتوي إلا عنواناً قصيراً؛ التفاصيل تفتح في التطبيق.</p>`;
+ const q=x=>m.querySelector(x);
+ q('[data-on]')&&(q('[data-on]').onclick=async ev=>{ev.currentTarget.disabled=true;try{await enable();say('تم تفعيل الإشعارات على هذا الجهاز');refreshHome();open()}catch(e){say(why(e),'e');ev.currentTarget.disabled=false}});
+ q('[data-off]')&&(q('[data-off]').onclick=async()=>{await disable();say('أُوقفت الإشعارات على هذا الجهاز');refreshHome();open()});
+ q('[data-test]')&&(q('[data-test]').onclick=async ev=>{ev.currentTarget.disabled=true;try{const d=await db();const r=await d.rpc('fm_push_test');if(r.error)throw Error(r.error.message);
+  say(r.data?'أُرسلت التجربة — تصلك خلال ثوانٍ':'لم تُرسل: لا يوجد جهاز مفعّل لحسابك أو الإشعارات متوقفة',r.data?'':'w')}catch(e){say(why(e),'e')}ev.currentTarget.disabled=false});
+ q('[data-save]').onclick=async()=>{const o=[...m.querySelectorAll('[data-k]')].filter(i=>!i.checked).map(i=>i.dataset.k);try{const d=await db();const r=await d.rpc('fm_push_prefs_set',{p_off:o});if(r.error)throw Error(r.error.message);say('تم الحفظ')}catch(e){say(why(e),'e')}}}
+window.fmPushOpen=open;
+window.fmPush={enable,disable,state,settings,sync,KINDS,b64u};
+
+const css=document.createElement('style');css.id='fm187-css';css.textContent=`
+#fm187{position:fixed;inset:0;z-index:3000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:12px;font-family:Cairo,Tahoma,sans-serif}
+#fm187 .fm187-in{background:#fff;color:#0f172a;border-radius:16px;max-width:460px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+#fm187 .fm187-hd{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-size:16px}
+#fm187 .fm187-hd button{border:0;background:#f1f5f9;border-radius:8px;padding:4px 10px;cursor:pointer}
+#fm187 .fm187-bd{padding:12px 14px;font-size:13.5px}
+#fm187 h4{margin:12px 0 6px;font-size:14px}
+#fm187 .fm187-al{background:#fef2f2;color:#991b1b;border-radius:10px;padding:8px 10px;margin-bottom:8px}
+#fm187 .fm187-al.warn{background:#fffbeb;color:#92400e}
+#fm187 .fm187-st{background:#f1f5f9;border-radius:10px;padding:10px;font-weight:800}
+#fm187 .fm187-st.on{background:#ecfdf5;color:#065f46}
+#fm187 .fm187-st small{display:block;font-weight:600;color:#64748b;margin-top:2px}
+#fm187 .fm187-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+#fm187 .fm187-row button{flex:1;min-width:140px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;padding:9px;font:800 13px Cairo,Tahoma,sans-serif;cursor:pointer}
+#fm187 .fm187-row button.p{background:#0f766e;border-color:#0f766e;color:#fff}
+#fm187 .fm187-row button:disabled{opacity:.5}
+#fm187 .fm187-k label{display:flex;gap:6px;align-items:center;padding:5px 0;border-bottom:1px dashed #e2e8f0}
+#fm187 .fm187-k input{width:auto}
+#fm187 .fm187-n{color:#64748b;font-size:12px;margin:10px 0 0}
+#fm187-ask{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:99990;background:#0f172a;color:#fff;border-radius:14px;padding:10px 12px;max-width:340px;font:600 13px Cairo,Tahoma,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.3);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#fm187-ask button{border:0;border-radius:8px;padding:6px 10px;font:800 12.5px Cairo,Tahoma,sans-serif;cursor:pointer}
+#fm187-ask .p{background:#14b8a6;color:#04201d}
+`;document.head.appendChild(css);
+
+// open what a notification points to
+function go(h){h=S(h).replace(/^#/,'');if(!h)return false;if(h.startsWith('wo=')){const id=h.slice(3);window.fmV145OpenWorkOrders?.();let k=0;const t=setInterval(()=>{const X=window.fmV145X;try{if(X&&X.list().some(w=>w.id===id)){clearInterval(t);X.detail(id)}else if(++k>80)clearInterval(t)}catch(e){clearInterval(t)}},250)}
+ else if(h==='wo')window.fmV145OpenWorkOrders?.();
+ else if(h==='wh=req'||h==='cus')window.fmV180Open?.('custody');
+ else if(h==='wh=appr')window.fmV180Open?.('items');
+ else if(h==='wh=po')window.fmV180Open?.('po');
+ else if(h==='bill')document.getElementById('v2-nav-fm184-bills')?.click();
+ else return false;return true}
+navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.fmPush)go(e.data.hash)});
+function refreshHome(){if(!ready(SET)||!SUP||Notification.permission!=='default'||document.getElementById('fm187-ask')||refreshHome.shown)return;
+ let later=0;try{later=+localStorage.getItem('fm187_later')||0}catch(e){}if(Date.now()-later<7*864e5)return;
+ refreshHome.shown=1;const a=document.createElement('div');a.id='fm187-ask';a.dir='rtl';
+ a.innerHTML='<span>🔔 فعّل الإشعارات لتصلك الأوامر والاعتمادات والتنبيهات فوراً على هذا الجهاز</span><button type="button" class="p" data-y>تفعيل</button><button type="button" data-n>لاحقاً</button>';
+ document.body.appendChild(a);a.querySelector('[data-n]').onclick=()=>{try{localStorage.setItem('fm187_later',String(Date.now()))}catch(e){}a.remove()};
+ a.querySelector('[data-y]').onclick=async()=>{a.remove();try{await enable();say('تم تفعيل الإشعارات على هذا الجهاز')}catch(e){say(why(e),'e')}}}
+const isAdmin=()=>!!(C.state&&C.state.on&&C.state.profile&&C.state.profile.role==='admin');
+const rnd=n=>[...crypto.getRandomValues(new Uint8Array(n))].map(x=>x.toString(16).padStart(2,'0')).join('');
+// every user: this device; the system admin: the setup
+(window.fmHubExtras=window.fmHubExtras||[]).push(function(tab,pane){if(tab!=='cloud'||!(C.state&&C.state.on))return;
+ const u=document.createElement('div');u.className='fm122-card';u.style.marginTop='14px';pane.appendChild(u);
+ u.innerHTML='<h3>🔔 الإشعارات على هذا الجهاز</h3><div class="fm125-src">تصلك الأوامر الجديدة والاعتمادات والتصعيد وطلبات الصرف كإشعار على الجوال أو الكمبيوتر، حتى والتطبيق مغلق.</div><div class="row"><button class="fm103-btn primary" type="button" data-o>🔔 إعدادات الإشعارات</button></div>';
+ u.querySelector('[data-o]').onclick=open;
+ if(!isAdmin())return;const box=document.createElement('div');box.className='fm122-card';box.style.marginTop='14px';pane.appendChild(box);draw();
+ async function draw(){box.innerHTML='<h3>🔔 إعداد الإشعارات (مدير النظام)</h3><div class="fm125-src">جارٍ التحميل…</div>';let s={},st=null,err='';
+  try{s=await settings(true)}catch(e){err=e.message}try{const d=await db();const r=await d.rpc('fm_push_status');if(r.error)throw Error(r.error.message);st=r.data}catch(e){err=err||e.message}
+  if(!st){box.innerHTML=`<h3>🔔 إعداد الإشعارات</h3><div class="fm125-src">${esc(why(err))} — شغّل supabase_setup.sql (القسم 29).</div>`;return}
+  const cf=(C.cfg&&C.cfg())||{},fn=st.fn_url||(cf.url?cf.url+'/functions/v1/fm-push':''),gOff=new Set(s.off||[]);
+  const ok=(c,t)=>`<li>${c?'✅':'⬜'} ${t}</li>`;
+  box.innerHTML=`<h3>🔔 إعداد الإشعارات (مدير النظام)</h3>
+   <div class="fm125-src">الإشعارات تُرسَل من دالة على Supabase اسمها <b>fm-push</b>. الإعداد مرة واحدة: </div>
+   <ol style="margin:6px 0;line-height:1.9">
+    ${ok(!!s.vapid_public,'المفاتيح: «🔑 توليد المفاتيح» ثم انسخ المفتاح الخاص إلى أسرار الدالة باسم <code>VAPID_PRIVATE</code>.')}
+    ${ok(!!st.fn_url&&st.has_secret,'الربط: اكتب رابط الدالة واضغط «🔐 حفظ الربط وتوليد السر»، ثم انسخ السر إلى أسرار الدالة باسم <code>FM_PUSH_HOOK</code>.')}
+    <li>⬜ في Supabase ← Edge Functions ← <b>Deploy a new function</b> ← «Via Editor»: الاسم <code>fm-push</code>، والصق محتوى الملف <a href="https://github.com/RakizoraFM/Main-Page-/blob/main/supabase/functions/fm-push/index.ts" target="_blank" rel="noopener">supabase/functions/fm-push/index.ts</a>، ثم أوقف «Verify JWT» في إعدادات الدالة.</li>
+    ${ok(st.pg_net,'Database ← Extensions: فعّل <b>pg_net</b> (للإرسال الفوري)'+(st.pg_cron?'':' و<b>pg_cron</b> (لتذكير التالف المتأخر كل صباح، ثم أعد تشغيل supabase_setup.sql)')+'.')}
+    ${ok(!!s.enabled,'فعّل الإشعارات من الخيار أدناه، ثم «🔔 إعدادات الإشعارات» ← تفعيل على جهازك ← «📨 أرسل لي تجربة».')}
+   </ol>
+   <div class="row" style="align-items:center;gap:10px;flex-wrap:wrap"><label style="display:flex;gap:6px;align-items:center;font-weight:800"><input type="checkbox" data-en ${s.enabled?'checked':''} style="width:auto"> الإشعارات مفعّلة للشركة</label>
+    <label>بريد التواصل (يطلبه مزوّد الإشعارات)<input data-sub value="${esc(s.subject||'')}" placeholder="mailto:admin@company.com" style="min-width:240px"></label></div>
+   <div style="margin:8px 0 4px;font-weight:800">الأنواع المفعّلة للجميع</div>
+   <div style="display:flex;flex-wrap:wrap;gap:4px 14px">${KINDS.map(([k,t])=>`<label style="display:flex;gap:5px;align-items:center"><input type="checkbox" data-gk="${k}" ${gOff.has(k)?'':'checked'} style="width:auto">${esc(t)}</label>`).join('')}</div>
+   <div class="row"><button class="fm103-btn primary" type="button" data-save>💾 حفظ</button></div>
+   <hr style="border:0;border-top:1px dashed #cbd5e1;margin:12px 0">
+   <div><b>المفتاح العام:</b> <code style="word-break:break-all;font-size:11px">${esc(s.vapid_public||'— لم يُولَّد بعد —')}</code></div>
+   <div class="row"><button class="fm103-btn" type="button" data-keys>🔑 ${s.vapid_public?'توليد مفاتيح جديدة':'توليد المفاتيح'}</button></div>
+   <div data-out></div>
+   <label style="display:block;margin-top:8px">رابط الدالة<input data-fn value="${esc(fn)}" placeholder="https://xxxx.supabase.co/functions/v1/fm-push" style="width:100%"></label>
+   <div class="row"><button class="fm103-btn" type="button" data-hook>🔐 حفظ الربط وتوليد السر</button><button class="fm103-btn" type="button" data-url>💾 حفظ الرابط فقط</button></div>
+   <div data-out2></div>
+   <hr style="border:0;border-top:1px dashed #cbd5e1;margin:12px 0">
+   <div class="fm125-src">الحالة: ${+st.devices} جهاز مفعّل لـ ${+st.people} شخص • أُرسل آخر 24 ساعة: ${+st.sent24} • ينتظر: ${+st.waiting} • فشل: ${+st.failed24}${st.last_sent?' • آخر إرسال '+esc(new Date(st.last_sent).toLocaleString('ar-SA-u-ca-gregory')):''}${st.last_err?`<br>آخر خطأ: <code>${esc(st.last_err)}</code>`:''}</div>
+   <div class="row"><button class="fm103-btn" type="button" data-rf>🔄 تحديث الحالة</button></div>`;
+  const q=x=>box.querySelector(x);
+  const save=async v=>{const d=await db();const r=await d.from('fm_settings').upsert([{key:'push',value:v}],{onConflict:'key'});if(r.error)throw Error(r.error.message);SET=v;SETAT=Date.now()};
+  const show=(el,html)=>{q(el).innerHTML=`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px;margin-top:8px">${html}</div>`};
+  const copyBtn=(id,val)=>{const b=q('#'+id);if(b)b.onclick=()=>{try{navigator.clipboard.writeText(val);say('نُسخ')}catch(e){prompt('انسخ:',val)}}};
+  q('[data-rf]').onclick=draw;
+  q('[data-save]').onclick=async ev=>{const b=ev.currentTarget;b.disabled=true;try{let sub=S(q('[data-sub]').value);if(sub&&!/^mailto:|^https:/.test(sub))sub='mailto:'+sub;
+   await save(Object.assign({},s,{enabled:q('[data-en]').checked,subject:sub,off:KINDS.map(k=>k[0]).filter(k=>!q(`[data-gk="${k}"]`).checked)}));say('تم الحفظ');draw()}catch(e){say(e.message,'e')}b.disabled=false};
+  q('[data-keys]').onclick=async()=>{if(s.vapid_public&&!confirm('مفاتيح جديدة تُلغي تفعيل الإشعارات على كل الأجهزة (يعيد كل شخص التفعيل)، ويجب تحديث VAPID_PRIVATE في أسرار الدالة. متابعة؟'))return;
+   try{const kp=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);const pub=b64u(await crypto.subtle.exportKey('raw',kp.publicKey)),priv=(await crypto.subtle.exportKey('jwk',kp.privateKey)).d;
+    await save(Object.assign({},s,{vapid_public:pub}));s.vapid_public=pub;
+    show('[data-out]',`<b>🔐 المفتاح الخاص — انسخه الآن إلى أسرار الدالة fm-push باسم <code>VAPID_PRIVATE</code>.</b> لا يُحفظ في المنصة ولن يظهر مرة أخرى، ولا ترسله لأحد.<br><code style="word-break:break-all;display:block;margin:6px 0;font-size:12px" dir="ltr">${esc(priv)}</code><button class="fm103-btn" type="button" id="fm187-cp1">📋 نسخ</button>`);copyBtn('fm187-cp1',priv)}catch(e){say(e.message,'e')}};
+  q('[data-url]').onclick=async()=>{try{const d=await db();const r=await d.rpc('fm_push_config',{p:{fn_url:S(q('[data-fn]').value),anon_key:cf.key||null}});if(r.error)throw Error(r.error.message);say('تم حفظ الرابط')}catch(e){say(why(e),'e')}};
+  q('[data-hook]').onclick=async()=>{if(st.has_secret&&!confirm('سر جديد يوقف الإرسال حتى تحدّث FM_PUSH_HOOK في أسرار الدالة. متابعة؟'))return;const sec=rnd(32);
+   try{const d=await db();const r=await d.rpc('fm_push_config',{p:{fn_url:S(q('[data-fn]').value),hook_secret:sec,anon_key:cf.key||null}});if(r.error)throw Error(r.error.message);
+    show('[data-out2]',`<b>🔐 سر الربط — انسخه الآن إلى أسرار الدالة fm-push باسم <code>FM_PUSH_HOOK</code>.</b> لن يظهر مرة أخرى.<br><code style="word-break:break-all;display:block;margin:6px 0;font-size:12px" dir="ltr">${esc(sec)}</code><button class="fm103-btn" type="button" id="fm187-cp2">📋 نسخ</button>`);copyBtn('fm187-cp2',sec)}catch(e){say(why(e),'e')}};
+ }});
+let n=0;const t=setInterval(async()=>{try{if(++n>120){clearInterval(t);return}if(!C.engClient)return;const d=await db();const u=d.auth&&d.auth.getSession?((await d.auth.getSession()).data||{}).session:true;if(!u)return;clearInterval(t);
+ if(/^#(wo=|cus|wh=|bill)/.test(location.hash))setTimeout(()=>{go(location.hash);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}},1500);
+ await settings().catch(()=>null);sync().catch(()=>{});refreshHome();setInterval(refreshHome,3000);}catch(e){}},1500);
 })();
 </script>
 </body>

@@ -4014,4 +4014,352 @@ create or replace function public.fm_mods_on() returns jsonb language sql stable
 drop trigger if exists fm_mod_guard on public.fm_cc_entries;
 create trigger fm_mod_guard before insert on public.fm_cc_entries for each row execute function public.fm_mod_guard('cc');
 
+-- ---------- 29) push notifications on the phone / computer (V187) ----------
+-- An event (a new work order, «done» waiting for approval, a return, an escalation, a parts request, parts issued, an item waiting
+-- for approval, a bill to review / approve / pay, overdue scrap) adds one row per person to fm_push_queue. The Edge Function
+-- «fm-push» (supabase/functions/fm-push/index.ts) sends the rows with Web Push to every device the person turned on.
+-- fm_settings.push = {enabled, vapid_public, subject, off:[kinds]} (read by all; only the PUBLIC key is here). The function URL
+-- and its shared secret are in fm_push_cfg (no policies: only the system admin through fm_push_config). The private VAPID key is
+-- only in the function's secrets (VAPID_PRIVATE), never in the database or the repository.
+create table if not exists public.fm_push_subs (
+  endpoint   text primary key,
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  p256dh     text not null,
+  auth       text not null,
+  app        text,
+  ua         text,
+  created_at timestamptz not null default now(),
+  last_ok    timestamptz,
+  fails      int not null default 0
+);
+create index if not exists fm_push_subs_user_idx on public.fm_push_subs (user_id);
+create table if not exists public.fm_push_prefs (user_id uuid primary key references public.profiles(id) on delete cascade, off text[] not null default '{}');
+create table if not exists public.fm_push_queue (
+  id         bigserial primary key,
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  kind       text not null,
+  title      text not null,
+  body       text,
+  url        text,
+  tag        text,
+  created_at timestamptz not null default now(),
+  claimed_at timestamptz,
+  sent_at    timestamptz,
+  tries      int not null default 0,
+  err        text
+);
+create index if not exists fm_push_queue_open_idx on public.fm_push_queue (id) where sent_at is null;
+create table if not exists public.fm_push_cfg (id int primary key default 1 check (id = 1), fn_url text, hook_secret text, anon_key text, kicked_at timestamptz);
+alter table public.fm_push_subs  enable row level security;
+alter table public.fm_push_prefs enable row level security;
+alter table public.fm_push_queue enable row level security;
+alter table public.fm_push_cfg   enable row level security;
+revoke all on public.fm_push_subs, public.fm_push_prefs, public.fm_push_queue, public.fm_push_cfg from anon, authenticated;
+do $do$ begin execute 'create extension if not exists pg_net'; exception when others then raise notice 'pg_net is not available: notifications go out every minute (pg_cron) or when the function is called'; end $do$;
+
+-- the page a notification opens: the field app for supervisors / contractors, the platform for the others
+create or replace function public.fm_push_url(p_user uuid, p_hash text) returns text language sql stable security definer set search_path = public as $$
+  select case when (select public.fm_posx(role, job_title) from public.profiles where id = p_user) in ('supervisor','contractor') then 'field.html' else 'index.html' end
+         || coalesce('#' || nullif(p_hash,''), '') $$;
+-- active people with these titles (and the region, when given)
+create or replace function public.fm_push_people(p_titles text[], p_region text) returns setof uuid language sql stable security definer set search_path = public as $$
+  select p.id from public.profiles p where p.active and public.fm_posx(p.role, p.job_title) = any(p_titles)
+     and (p_region is null or cardinality(coalesce(p.regions,'{}')) = 0 or p_region = any(p.regions)) $$;
+
+-- call the Edge Function (at most every 3 seconds; pg_cron runs fm_push_flush every minute for what is left)
+create or replace function public.fm_push_kick() returns void language plpgsql security definer set search_path = public as $$
+declare c public.fm_push_cfg;
+begin
+  update public.fm_push_cfg set kicked_at = now() where id = 1 and fn_url is not null and coalesce(kicked_at, 'epoch') < now() - interval '3 seconds' returning * into c;
+  if not found then return; end if;
+  begin
+    execute 'select net.http_post(url := $1, body := ''{}''::jsonb, headers := $2, timeout_milliseconds := 20000)'
+      using c.fn_url, jsonb_build_object('Content-Type','application/json','x-fm-hook', c.hook_secret)
+                     || case when c.anon_key is not null then jsonb_build_object('Authorization','Bearer ' || c.anon_key, 'apikey', c.anon_key) else '{}'::jsonb end;
+  exception when others then null;
+  end;
+end $$;
+create or replace function public.fm_push_flush() returns void language plpgsql security definer set search_path = public as $$
+begin
+  if exists(select 1 from public.fm_push_queue where sent_at is null and tries < 5 and created_at > now() - interval '1 day') then
+    update public.fm_push_cfg set kicked_at = null where id = 1;
+    perform public.fm_push_kick();
+  end if;
+  delete from public.fm_push_queue where created_at < now() - interval '30 days';
+end $$;
+create or replace function public.fm_push_q_kick() returns trigger language plpgsql security definer set search_path = public as $$
+begin perform public.fm_push_kick(); return null; end $$;
+drop trigger if exists fm_push_q_kick on public.fm_push_queue;
+create trigger fm_push_q_kick after insert on public.fm_push_queue for each statement execute function public.fm_push_q_kick();
+
+-- add one notification (internal). Skipped when notifications are off, the kind is off for everyone or for that person, the
+-- person has no device turned on, or he did it himself.
+create or replace function public.fm_push_add(p_user uuid, p_kind text, p_title text, p_body text, p_hash text, p_tag text, p_self boolean default false)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare s jsonb := coalesce(public.fm_setting('push'), '{}');
+begin
+  if p_user is null or not coalesce((s->>'enabled')::boolean, false) then return false; end if;
+  if not p_self and (p_user = auth.uid()
+      or p_kind = any(array(select jsonb_array_elements_text(case when jsonb_typeof(s->'off') = 'array' then s->'off' else '[]' end)))
+      or exists(select 1 from public.fm_push_prefs where user_id = p_user and p_kind = any(off))) then return false; end if;
+  if not exists(select 1 from public.fm_push_subs where user_id = p_user)
+     or not exists(select 1 from public.profiles where id = p_user and active) then return false; end if;
+  -- a campaign / approvals / scrap: one notification per person in 10 minutes
+  if (p_tag like 'batch-%' or p_tag in ('appr','scrap')) and exists(select 1 from public.fm_push_queue where user_id = p_user and tag = p_tag and created_at > now() - interval '10 minutes') then
+    return false; end if;
+  insert into public.fm_push_queue(user_id, kind, title, body, url, tag)
+  values (p_user, p_kind, left(coalesce(p_title,''),120), left(coalesce(p_body,''),300), public.fm_push_url(p_user, p_hash), left(p_tag,80));
+  return true;
+end $$;
+
+-- ---- what each person does on his own devices ----
+create or replace function public.fm_push_subscribe(p jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+declare e text := btrim(coalesce(p->>'endpoint',''));
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  if e !~ '^https://' or length(e) > 1000 or coalesce(p->>'p256dh','') !~ '^[A-Za-z0-9_-]{40,200}$' or coalesce(p->>'auth','') !~ '^[A-Za-z0-9_-]{10,60}$' then
+    raise exception 'invalid subscription'; end if;
+  if (select count(*) from public.fm_push_subs where user_id = auth.uid() and endpoint <> e) >= 10 then
+    delete from public.fm_push_subs where endpoint = (select endpoint from public.fm_push_subs where user_id = auth.uid() order by coalesce(last_ok, created_at) limit 1);
+  end if;
+  insert into public.fm_push_subs(endpoint, user_id, p256dh, auth, app, ua) values (e, auth.uid(), p->>'p256dh', p->>'auth', left(p->>'app',20), left(p->>'ua',200))
+  on conflict (endpoint) do update set user_id = auth.uid(), p256dh = excluded.p256dh, auth = excluded.auth, app = excluded.app, ua = excluded.ua, fails = 0;
+  return true;
+end $$;
+create or replace function public.fm_push_unsubscribe(p_endpoint text) returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.fm_push_subs where endpoint = p_endpoint and user_id = auth.uid();
+  return found;
+end $$;
+create or replace function public.fm_push_prefs_set(p_off text[]) returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'not allowed'; end if;
+  insert into public.fm_push_prefs(user_id, off) values (auth.uid(), coalesce(p_off,'{}')) on conflict (user_id) do update set off = excluded.off;
+  return true;
+end $$;
+create or replace function public.fm_push_me() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('devices', (select count(*) from public.fm_push_subs where user_id = auth.uid()),
+    'endpoints', coalesce((select jsonb_agg(endpoint) from public.fm_push_subs where user_id = auth.uid()), '[]'),
+    'off', coalesce((select to_jsonb(off) from public.fm_push_prefs where user_id = auth.uid()), '[]'),
+    'last', (select max(sent_at) from public.fm_push_queue where user_id = auth.uid())) where auth.uid() is not null $$;
+-- a test notification to my own devices
+create or replace function public.fm_push_test() returns boolean language plpgsql security definer set search_path = public as $$
+declare ok boolean;
+begin
+  if auth.uid() is null then raise exception 'not allowed'; end if;
+  ok := public.fm_push_add(auth.uid(), 'test', '🔔 تجربة الإشعارات', 'وصلك هذا الإشعار، فالإشعارات تعمل على هذا الجهاز.', null, 'test', true);
+  if ok then update public.fm_push_cfg set kicked_at = null where id = 1; perform public.fm_push_kick(); end if;
+  return ok;
+end $$;
+
+-- ---- system admin ----
+create or replace function public.fm_push_config(p jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed'; end if;
+  if nullif(p->>'fn_url','') is not null and p->>'fn_url' !~ '^https://[^ ]+$' then raise exception 'invalid url'; end if;
+  if nullif(p->>'hook_secret','') is not null and length(p->>'hook_secret') < 24 then raise exception 'secret too short'; end if;
+  insert into public.fm_push_cfg(id) values (1) on conflict do nothing;
+  update public.fm_push_cfg set fn_url = case when p ? 'fn_url' then nullif(btrim(p->>'fn_url'),'') else fn_url end,
+    hook_secret = case when nullif(p->>'hook_secret','') is not null then p->>'hook_secret' else hook_secret end,
+    anon_key = case when p ? 'anon_key' then nullif(btrim(p->>'anon_key'),'') else anon_key end, kicked_at = null where id = 1;
+  return true;
+end $$;
+create or replace function public.fm_push_status() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed'; end if;
+  return jsonb_build_object(
+    'fn_url', (select fn_url from public.fm_push_cfg where id = 1), 'has_secret', (select hook_secret is not null from public.fm_push_cfg where id = 1),
+    'has_anon', (select anon_key is not null from public.fm_push_cfg where id = 1),
+    'pg_net', exists(select 1 from pg_extension where extname = 'pg_net'), 'pg_cron', exists(select 1 from pg_extension where extname = 'pg_cron'),
+    'devices', (select count(*) from public.fm_push_subs), 'people', (select count(distinct user_id) from public.fm_push_subs),
+    'waiting', (select count(*) from public.fm_push_queue where sent_at is null and tries < 5 and created_at > now() - interval '1 day'),
+    'sent24', (select count(*) from public.fm_push_queue where sent_at > now() - interval '1 day'),
+    'failed24', (select count(*) from public.fm_push_queue where sent_at is null and err is not null and created_at > now() - interval '1 day'),
+    'last_err', (select err from public.fm_push_queue where err is not null order by id desc limit 1),
+    'last_sent', (select max(sent_at) from public.fm_push_queue),
+    'by_kind', coalesce((select jsonb_object_agg(kind, n) from (select kind, count(*) n from public.fm_push_queue where created_at > now() - interval '30 days' group by kind) k), '{}'));
+end $$;
+
+-- ---- the Edge Function (service role only) ----
+-- take up to n rows to send, with the devices of each person
+create or replace function public.fm_push_claim(n int) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r jsonb;
+begin
+  with c as (
+    update public.fm_push_queue q set claimed_at = now(), tries = q.tries + 1
+     where q.id in (select id from public.fm_push_queue where sent_at is null and tries < 5 and created_at > now() - interval '1 day'
+                      and (claimed_at is null or claimed_at < now() - interval '2 minutes') order by id limit greatest(1, least(coalesce(n,100), 500)) for update skip locked)
+    returning q.*)
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'title', c.title, 'body', c.body, 'url', c.url, 'tag', c.tag, 'kind', c.kind,
+           'subs', coalesce((select jsonb_agg(jsonb_build_object('endpoint', s.endpoint, 'p256dh', s.p256dh, 'auth', s.auth)) from public.fm_push_subs s where s.user_id = c.user_id), '[]'))), '[]')
+    into r from c;
+  return r;
+end $$;
+-- the result: p [{id, ok, err, sent:[endpoints], gone:[endpoints]}]
+create or replace function public.fm_push_result(p jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare x jsonb; n int := 0;
+begin
+  for x in select * from jsonb_array_elements(coalesce(p,'[]')) loop
+    update public.fm_push_queue set sent_at = case when (x->>'ok')::boolean then now() end, err = left(nullif(x->>'err',''),300), claimed_at = null where id = (x->>'id')::bigint;
+    delete from public.fm_push_subs where endpoint in (select jsonb_array_elements_text(coalesce(x->'gone','[]')));
+    update public.fm_push_subs set last_ok = now(), fails = 0 where endpoint in (select jsonb_array_elements_text(coalesce(x->'sent','[]')));
+    update public.fm_push_subs set fails = fails + 1 where endpoint in (select jsonb_array_elements_text(coalesce(x->'failed','[]')));
+    n := n + 1;
+  end loop;
+  delete from public.fm_push_subs where fails >= 20;
+  return n;
+end $$;
+
+revoke all on function public.fm_push_url(uuid, text), public.fm_push_people(text[], text), public.fm_push_kick(), public.fm_push_flush(), public.fm_push_q_kick(),
+  public.fm_push_add(uuid, text, text, text, text, text, boolean), public.fm_push_claim(int), public.fm_push_result(jsonb) from public, anon, authenticated;
+revoke all on function public.fm_push_subscribe(jsonb), public.fm_push_unsubscribe(text), public.fm_push_prefs_set(text[]), public.fm_push_me(), public.fm_push_test(),
+  public.fm_push_config(jsonb), public.fm_push_status() from public, anon;
+grant execute on function public.fm_push_subscribe(jsonb), public.fm_push_unsubscribe(text), public.fm_push_prefs_set(text[]), public.fm_push_me(), public.fm_push_test(),
+  public.fm_push_config(jsonb), public.fm_push_status() to authenticated;
+do $do$ begin
+  execute 'grant execute on function public.fm_push_claim(int), public.fm_push_result(jsonb) to service_role';
+exception when undefined_object then null; end $do$;
+
+-- ---- the events ----
+-- work orders (one trigger on the order's events)
+create or replace function public.fm_push_wo_ev() returns trigger language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; h text; t text; b text;
+begin
+  select * into w from public.work_orders where id = new.wo_id;
+  if not found then return null; end if;
+  h := 'wo=' || w.id; t := coalesce(w.code,'');
+  b := w.title || coalesce(' — ' || w.school, '');
+  if new.type in ('create','reassign','deputy') then
+    if w.batch_id is not null and new.type = 'create' then
+      perform public.fm_push_add(w.assignee, 'wo_new', '🛠️ أوامر عمل جديدة: ' || coalesce(w.batch_title, 'حملة'), 'أُسندت إليك أوامر في الحملة — افتح «الأوامر»', 'wo', 'batch-' || w.batch_id);
+    else
+      perform public.fm_push_add(w.assignee, 'wo_new', '🛠️ أمر عمل جديد ' || t, b, h, 'wo-' || w.id);
+    end if;
+  elsif new.type = 'done' then
+    perform public.fm_push_add(w.created_by, 'wo_done', '✅ أمر بانتظار اعتمادك ' || t, b || ' — ' || coalesce(w.assignee_name,''), h, 'wo-' || w.id);
+  elsif new.type = 'reject' then
+    perform public.fm_push_add(w.created_by, 'wo_done', '❌ رُفض أمر العمل ' || t, coalesce(new.text, b), h, 'wo-' || w.id);
+  elsif new.type = 'return' then
+    perform public.fm_push_add(w.assignee, 'wo_return', '↩️ أُعيد إليك أمر العمل ' || t, coalesce(new.text, b), h, 'wo-' || w.id);
+  elsif new.type = 'close' then
+    perform public.fm_push_add(w.assignee, 'wo_closed', '🎉 اعتُمد أمر العمل ' || t, b, h, 'wo-' || w.id);
+  elsif new.type = 'escalate' then
+    perform public.fm_push_add(w.esc_to, 'wo_esc', '⏫ تصعيد أمر متأخر ' || t, coalesce(new.text, b), h, 'esc-' || w.id);
+  elsif new.type = 'stop' then
+    perform public.fm_push_add(w.assignee, 'wo_stop', '⛔ إيقاف العمل في ' || t, coalesce(new.text, b), h, 'wo-' || w.id);
+    perform public.fm_push_add(w.created_by, 'wo_stop', '⛔ إيقاف العمل في ' || t, coalesce(new.text, b), h, 'wo-' || w.id);
+  end if;
+  return null;
+exception when others then return null;   -- a notification never blocks the work
+end $$;
+drop trigger if exists fm_push_wo_ev on public.wo_events;
+create trigger fm_push_wo_ev after insert on public.wo_events for each row execute function public.fm_push_wo_ev();
+
+-- parts requests: the storekeeper gets a new request; the holder gets what was issued or rejected
+create or replace function public.fm_push_ir() returns trigger language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; u uuid; n int := jsonb_array_length(coalesce(new.lines,'[]'));
+begin
+  if tg_op = 'INSERT' then
+    select * into st from public.wo_stores where id = new.store_id;
+    for u in select id from public.profiles p where p.active and public.fm_posx(p.role, p.job_title) = 'storekeeper'
+               and (p.id = st.keeper or (st.keeper is null and (cardinality(coalesce(p.regions,'{}')) = 0 or st.region = any(p.regions)))) loop
+      perform public.fm_push_add(u, 'wh_req', '📦 طلب صرف ' || new.code, coalesce(new.holder_name,'') || ' — ' || n || ' صنف' || coalesce(' — ' || new.wo_code, '') || coalesce(' — ' || st.name, ''), 'wh=req', 'ir-' || new.id);
+    end loop;
+  elsif new.status is distinct from old.status then
+    if new.status in ('issued','partial') then
+      perform public.fm_push_add(new.holder, 'wh_issued', '🧰 صُرفت قطع لعهدتك ' || new.code, 'أكّد الاستلام من «عهدتي»' || coalesce(' — ' || new.wo_code, ''), 'cus', 'ir-' || new.id);
+    elsif new.status = 'rejected' then
+      perform public.fm_push_add(new.holder, 'wh_issued', '❌ رُفض طلب الصرف ' || new.code, coalesce(new.response, ''), 'cus', 'ir-' || new.id);
+    end if;
+  end if;
+  return null;
+exception when others then return null;
+end $$;
+do $do$ begin
+  execute 'drop trigger if exists fm_push_ir on public.wo_issue_requests';
+  execute 'create trigger fm_push_ir after insert or update of status on public.wo_issue_requests for each row execute function public.fm_push_ir()';
+exception when undefined_table then null; end $do$;
+
+-- items / prices waiting for the owner's representative; purchase requests waiting for approval
+create or replace function public.fm_push_appr() returns trigger language plpgsql security definer set search_path = public as $$
+declare u uuid; st public.wo_stores;
+begin
+  if tg_table_name = 'wo_materials' then
+    if new.approval = 'nominated' and old.approval is distinct from 'nominated' then
+      for u in select * from public.fm_push_people(array['owner_rep'], null) loop
+        perform public.fm_push_add(u, 'appr', '🟡 صنف بانتظار اعتمادك', new.name || coalesce(' — ' || new.code, ''), 'wh=appr', 'appr');
+      end loop;
+    end if;
+  elsif tg_table_name = 'wo_purchase_requests' and tg_op = 'INSERT' and new.status = 'requested' then
+    select * into st from public.wo_stores where id = new.store_id;
+    for u in select * from public.fm_push_people(array['project_manager','ops_manager'], null)
+             union select * from public.fm_push_people(array['area_manager'], st.region) loop
+      perform public.fm_push_add(u, 'appr', '🛒 طلب شراء بانتظار الاعتماد ' || coalesce(new.code,''), coalesce(st.name,'') || ' — ' || coalesce(round(new.total)::text,'') || ' ر.س', 'wh=po', 'po-' || new.id);
+    end loop;
+  end if;
+  return null;
+exception when others then return null;
+end $$;
+do $do$ begin
+  execute 'drop trigger if exists fm_push_appr on public.wo_materials';
+  execute 'create trigger fm_push_appr after update of approval on public.wo_materials for each row execute function public.fm_push_appr()';
+  execute 'drop trigger if exists fm_push_appr on public.wo_purchase_requests';
+  execute 'create trigger fm_push_appr after insert on public.wo_purchase_requests for each row execute function public.fm_push_appr()';
+exception when undefined_table then null; end $do$;
+
+-- contractor bills: to review, to approve, to pay, paid
+create or replace function public.fm_push_bill() returns trigger language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts; u uuid; t text; b text;
+begin
+  if new.status is not distinct from old.status then return null; end if;
+  select * into c from public.fm_contracts where id = new.contract_id;
+  t := coalesce(new.code,'') ; b := c.contractor_name || ' — ' || new.month || ' — ' || round(new.total) || ' ر.س';
+  if new.status = 'submitted' then
+    for u in select * from public.fm_push_people(array['ops_manager'], null) union select * from public.fm_push_people(array['area_manager','area_engineer'], c.region) loop
+      perform public.fm_push_add(u, 'bill', '🧾 مستخلص للمراجعة ' || t, b, 'bill', 'bill-' || new.id); end loop;
+  elsif new.status = 'reviewed' then
+    for u in select * from public.fm_push_people(array['project_manager','ops_manager'], null) loop
+      perform public.fm_push_add(u, 'bill', '🧾 مستخلص بانتظار الاعتماد ' || t, b, 'bill', 'bill-' || new.id); end loop;
+  elsif new.status = 'approved' then
+    for u in select * from public.fm_push_people(array['accountant'], null) loop
+      perform public.fm_push_add(u, 'bill', '💳 مستخلص معتمد للصرف ' || t, b, 'bill', 'bill-' || new.id); end loop;
+  elsif new.status = 'paid' and c.contractor_id is not null then
+    perform public.fm_push_add(c.contractor_id, 'bill', '💰 صُرف مستخلصك ' || t, b, 'bill', 'bill-' || new.id);
+  end if;
+  return null;
+exception when others then return null;
+end $$;
+do $do$ begin
+  execute 'drop trigger if exists fm_push_bill on public.fm_bills';
+  execute 'create trigger fm_push_bill after update of status on public.fm_bills for each row execute function public.fm_push_bill()';
+exception when undefined_table then null; end $do$;
+
+-- every morning: scrap that should have been returned (one notification per person) and what is left in the queue
+create or replace function public.fm_push_daily() returns int language plpgsql security definer set search_path = public as $$
+declare r record; n int := 0;
+begin
+  begin
+    for r in select u.holder, count(*) c, min(u.scrap_due) d from public.wo_custody_moves u
+              where u.kind = 'use' and u.scrap_open > 0 and u.scrap_due < current_date group by u.holder loop
+      if public.fm_push_add(r.holder, 'wh_scrap', '⏰ تالف لم يُسلَّم بعد', r.c || ' صنف — متأخر منذ ' || to_char(r.d, 'YYYY-MM-DD') || '. سلّمه لأمين المستودع.', 'cus', 'scrap') then n := n + 1; end if;
+    end loop;
+  exception when undefined_table then null; end;
+  perform public.fm_push_flush();
+  return n;
+end $$;
+revoke all on function public.fm_push_daily() from public, anon, authenticated;
+do $do$ begin
+  begin execute 'create extension if not exists pg_cron'; exception when others then null; end;
+  begin
+    execute 'select cron.unschedule(''fm-push-flush'')';
+  exception when others then null; end;
+  begin
+    execute 'select cron.unschedule(''fm-push-daily'')';
+  exception when others then null; end;
+  begin
+    execute 'select cron.schedule(''fm-push-flush'', ''* * * * *'', ''select public.fm_push_flush()'')';
+    execute 'select cron.schedule(''fm-push-daily'', ''0 5 * * *'', ''select public.fm_push_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: overdue-scrap reminders are not sent; notifications go out when the events happen'; end;
+end $do$;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.

@@ -1,4 +1,4 @@
-// Live test of V179–V186 on the real Supabase project: parts / subscription, warehouse and custody, contractor bills,
+// Live test of V179–V187 on the real Supabase project: parts / subscription, warehouse and custody, contractor bills,
 // cost centers, usage. Uses the fm.test.* accounts plus fm.test.storekeeper (created by the test admin when missing,
 // limited to the region «test» so it can act only on the test store). Every row it makes is named «[اختبار]…» or has
 // the code TEST-CC; reset.sql removes them. Nothing here approves or pays a bill, so the cost-center numbers are untouched.
@@ -32,6 +32,23 @@ const no=(r,re)=>!r.ok&&(!re||re.test(msg(r)));
  r=await rpc('admin','fm_plan_usage');check('الاستخدام','fm_plan_usage: لا يُرسل شيء بدون اشتراك، وموقَّع معه',r.ok&&(plan.state==='none'?r.j===null:!!(r.j&&r.j.p&&r.j.s)),plan.state==='none'?'لا اشتراك':'');
  if(r.ok&&r.j&&r.j.p){const p=JSON.parse(r.j.p);check('الاستخدام','الإرسال أرقام فقط بدون أسماء',!/@|full_name|school/.test(r.j.p)&&typeof p.users==='number')}
  r=await req(null,'POST','/rest/v1/rpc/fm_plan_usage',{});check('الاستخدام','الزائر لا يقرأ أرقام الاستخدام',!r.ok||r.j===null,r.s+'');
+
+ /* V187: push notifications (a fake device on push.invalid, removed at the end of this block) */
+ r=await rpc('admin','fm_push_me');
+ if(r.s===404)skip('الإشعارات','فحوص الإشعارات','القسم 29 (V187) غير مشغّل بعد');
+ else{const ep='https://push.invalid/fm-test-'+ID.supervisor;
+  r=await rpc('supervisor','fm_push_subscribe',{p:{endpoint:'http://x',p256dh:'a',auth:'b'}});check('الإشعارات','رفض اشتراك غير صالح',no(r,/invalid subscription/),msg(r));
+  r=await rpc('supervisor','fm_push_subscribe',{p:{endpoint:ep,p256dh:'B'+'x'.repeat(86),auth:'a'.repeat(22),app:'test'}});check('الإشعارات','المشرف يفعّل جهازاً',r.j===true,msg(r));
+  r=await rpc('supervisor','fm_push_me');check('الإشعارات','fm_push_me يعدّ أجهزته',r.ok&&r.j.devices>=1&&r.j.endpoints.includes(ep),r.ok?String(r.j.devices):msg(r));
+  r=await rpc('supervisor','fm_push_prefs_set',{p_off:['wo_closed']});check('الإشعارات','حفظ اختياراته',r.j===true,msg(r));
+  r=await rpc('supervisor','fm_push_status');check('الإشعارات','المشرف لا يرى حالة الإرسال',no(r,/not allowed/),msg(r));
+  r=await rpc('supervisor','fm_push_config',{p:{fn_url:'https://evil.example'}});check('الإشعارات','المشرف لا يغيّر الربط',no(r,/not allowed/),msg(r));
+  r=await rpc('supervisor','fm_push_claim',{n:1});check('الإشعارات','المستخدم لا يسحب طابور الإرسال',!r.ok,r.s+'');
+  r=await get('supervisor','fm_push_subs?select=endpoint');check('الإشعارات','جدول الأجهزة مغلق أمام القراءة المباشرة',!r.ok||r.j.length===0,r.s+'');
+  r=await req(null,'POST','/rest/v1/rpc/fm_push_subscribe',{p:{endpoint:ep}});check('الإشعارات','الزائر لا يفعّل جهازاً',!r.ok,r.s+'');
+  r=await rpc('admin','fm_push_status');check('الإشعارات','مدير النظام يرى حالة الإرسال',r.ok&&typeof r.j.devices==='number',r.ok?`${r.j.devices} جهاز • pg_net ${r.j.pg_net} • الدالة ${r.j.fn_url?'مربوطة':'غير مربوطة'}`:msg(r));
+  await rpc('supervisor','fm_push_prefs_set',{p_off:[]});
+  r=await rpc('supervisor','fm_push_unsubscribe',{p_endpoint:ep});check('الإشعارات','إيقاف الجهاز التجريبي',r.j===true,msg(r))}
 
  /* V180: the test storekeeper */
  try{const x=await login('storekeeper').catch(async()=>{

@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F31">
+<meta name="fm-version" content="F32">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -924,6 +924,7 @@ function woAlerts(first){const k=uidKey('fmf_wo_seen'),seen=lsGet(k,null)||{},fr
  b.querySelector('[data-a=go]').onclick=()=>{b.remove();openWo(w.id)};b.querySelector('[data-a=x]').onclick=()=>b.remove()}
 setInterval(()=>{if(navigator.onLine&&D.me&&!document.hidden)woPull()},120000);
 function openWo(id){D.view='wo';D.curWo=id;D.cur=null;woDetail(id)}
+window.fmfOpenWo=async id=>{if(!(D.wo||[]).some(x=>x.id===id))await woPull().catch(()=>{});if((D.wo||[]).some(x=>x.id===id))openWo(id);else{D.view='wo';woView()}};
 
 function woCard(w){const t=WO_T[w.type]||WO_T.task,me=woMine(w);
  return `<button class="card tk wo-c" data-wo="${esc(w.id)}"><div class="r1"><span class="id">${esc(w.code||'')}</span>${woChip(w)}</div>
@@ -1697,6 +1698,112 @@ setInterval(apply,3000);
 let T=null;try{T=JSON.parse(localStorage.getItem('fm_tenant')||'null')}catch(e){}if(!T||!T.demo)return;
 const r=document.createElement('div');r.textContent='🧪 نسخة عرض — بيانات وهمية';r.style.cssText='position:fixed;left:8px;bottom:74px;z-index:1400;background:#7c3aed;color:#fff;border-radius:999px;padding:4px 12px;font:800 11.5px Cairo,Tahoma,sans-serif;pointer-events:none';
 document.body.appendChild(r)})();
+</script>
+<script id="fmf-32-push">(function(){
+'use strict';
+/* F32 (V187): push notifications on this device — Web Push through sw.js (section 29 of supabase_setup.sql, Edge Function
+   supabase/functions/fm-push). Same module in both apps (APP below). The person turns them on per device (the browser asks for
+   permission), chooses the kinds he wants, and can send himself a test. A device follows the account signed in on it.
+   window.fmPushOpen() opens the settings window. A tapped notification opens its page: «#wo=<id>», «#cus», «#wh=…», «#bill». */
+const APP='field';
+const C=window.FMCloud;if(!C)return;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const say=(m,k)=>{try{if(window.showToast)return window.showToast(m,k==='e'?'error':k==='w'?'warning':'success');const t=document.getElementById('toast');if(t){t.textContent=m;t.className='toast'+(k==='e'?' e':k==='w'?' w':'');t.style.display='block';t.style.zIndex='2000';clearTimeout(say.t);say.t=setTimeout(()=>t.style.display='none',3500);return}alert(m)}catch(e){}};
+const SUP='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window&&window.isSecureContext;
+const IOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const STANDALONE=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
+const KINDS=[['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
+ ['wo_esc','⏫ تصعيد أمر متأخر إليّ'],['wo_stop','⛔ إيقاف عمل'],['wh_req','📦 طلب صرف جديد (أمين المستودع)'],['wh_issued','🧰 صُرفت قطع لعهدتي أو رُفض طلبي'],
+ ['wh_scrap','⏰ تالف متأخر عليّ'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات']];
+const b64u=buf=>{let s='';const b=new Uint8Array(buf);for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
+const unb64u=s=>{s=S(s);const t=atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4));const b=new Uint8Array(t.length);for(let i=0;i<t.length;i++)b[i]=t.charCodeAt(i);return b};
+let SET=null,SETAT=0;
+const db=()=>C.engClient();
+async function settings(force){if(SET&&!force&&Date.now()-SETAT<5*60e3)return SET;const d=await db();const r=await d.from('fm_settings').select('value').eq('key','push').limit(1);
+ if(r.error)throw Error(r.error.message);SET=((r.data||[])[0]||{}).value||{};SETAT=Date.now();return SET}
+const ready=s=>!!(s&&s.enabled&&s.vapid_public);
+async function reg(){const r=await navigator.serviceWorker.register('sw.js');await navigator.serviceWorker.ready;return r}
+async function current(){if(!SUP)return null;try{const r=await navigator.serviceWorker.getRegistration();return r?await r.pushManager.getSubscription():null}catch(e){return null}}
+async function send(s){const j=s.toJSON();const d=await db();const x=await d.rpc('fm_push_subscribe',{p:{endpoint:j.endpoint,p256dh:j.keys&&j.keys.p256dh,auth:j.keys&&j.keys.auth,app:APP,ua:navigator.userAgent.slice(0,200)}});
+ if(x.error)throw Error(x.error.message)}
+const why=e=>{const m=String(e&&e.message||e);return /does not exist|schema cache|Could not find/i.test(m)?'الإشعارات غير مفعّلة بعد على السحابة':m==='denied'?'رفض المتصفح الإذن. افتح إعدادات الموقع في المتصفح واسمح بالإشعارات.':
+ m==='off'?'الإشعارات غير مفعّلة من مدير النظام بعد':m==='unsupported'?(IOS&&!STANDALONE?'على iPhone: أضف التطبيق للشاشة الرئيسية (مشاركة ← «إضافة إلى الشاشة الرئيسية») ثم افتحه من الأيقونة وفعّل الإشعارات':'هذا المتصفح لا يدعم الإشعارات'):m};
+async function enable(){if(!SUP)throw Error('unsupported');const s=await settings(true);if(!ready(s))throw Error('off');
+ const perm=await Notification.requestPermission();if(perm!=='granted')throw Error('denied');
+ const r=await reg();let sub=await r.pushManager.getSubscription();
+ if(sub&&sub.options&&sub.options.applicationServerKey&&b64u(sub.options.applicationServerKey)!==s.vapid_public){try{await sub.unsubscribe()}catch(e){}sub=null}
+ if(!sub)sub=await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:unb64u(s.vapid_public)});
+ await send(sub);try{localStorage.removeItem('fm187_later')}catch(e){}return true}
+async function disable(){const sub=await current();if(!sub)return;try{const d=await db();await d.rpc('fm_push_unsubscribe',{p_endpoint:sub.endpoint})}catch(e){}try{await sub.unsubscribe()}catch(e){}}
+// the device follows the account signed in on it (and a renewed subscription reaches the server)
+async function sync(){if(!SUP||Notification.permission!=='granted')return;const sub=await current();if(!sub)return;const s=await settings();if(!ready(s))return;
+ if(sub.options&&sub.options.applicationServerKey&&b64u(sub.options.applicationServerKey)!==s.vapid_public){try{await sub.unsubscribe()}catch(e){}return enable().catch(()=>{})}
+ await send(sub)}
+async function state(){const sub=await current();return {sup:SUP,perm:SUP?Notification.permission:'—',on:!!sub&&SUP&&Notification.permission==='granted'}}
+
+function box(){let m=document.getElementById('fm187');if(!m){m=document.createElement('div');m.id='fm187';m.dir='rtl';document.body.appendChild(m);m.onclick=e=>{if(e.target===m)m.remove()}}return m}
+async function open(){const m=box();m.innerHTML='<div class="fm187-in"><div class="fm187-hd"><b>🔔 الإشعارات</b><button type="button" data-x>✕</button></div><div class="fm187-bd">جارٍ التحميل…</div></div>';
+ m.querySelector('[data-x]').onclick=()=>m.remove();let s={},me={},st=await state();
+ try{s=await settings(true);const d=await db();const r=await d.rpc('fm_push_me');if(!r.error&&r.data)me=r.data}catch(e){m.querySelector('.fm187-bd').innerHTML=`<div class="fm187-al">${esc(why(e))}</div>`;return}
+ const off=new Set(me.off||[]),gOff=new Set(s.off||[]);
+ m.querySelector('.fm187-bd').innerHTML=`
+  ${!ready(s)?`<div class="fm187-al">الإشعارات غير مفعّلة من مدير النظام بعد.</div>`:''}
+  ${IOS&&!STANDALONE?`<div class="fm187-al warn">على iPhone / iPad تعمل الإشعارات فقط بعد إضافة التطبيق للشاشة الرئيسية: زر المشاركة ⬆️ ← «إضافة إلى الشاشة الرئيسية»، ثم افتحه من الأيقونة وفعّلها من هنا (iOS 16.4 أو أحدث).</div>`:''}
+  <div class="fm187-st ${st.on?'on':''}">${st.on?'✅ مفعّلة على هذا الجهاز':st.perm==='denied'?'⛔ المتصفح يمنع الإشعارات لهذا الموقع — اسمح بها من إعدادات الموقع':'⚪ غير مفعّلة على هذا الجهاز'}
+   <small>أجهزتك المفعّلة: ${+me.devices||0}${me.last?' • آخر إشعار: '+esc(new Date(me.last).toLocaleString('ar-SA-u-ca-gregory',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):''}</small></div>
+  <div class="fm187-row">${st.on?`<button type="button" data-test class="p">📨 أرسل لي تجربة</button><button type="button" data-off>🔕 إيقاف على هذا الجهاز</button>`:`<button type="button" data-on class="p" ${ready(s)&&SUP?'':'disabled'}>🔔 تفعيل على هذا الجهاز</button>`}</div>
+  <h4>ما يصلني</h4><div class="fm187-k">${KINDS.filter(([k])=>!gOff.has(k)).map(([k,t])=>`<label><input type="checkbox" data-k="${k}" ${off.has(k)?'':'checked'}> ${esc(t)}</label>`).join('')}</div>
+  <div class="fm187-row"><button type="button" data-save>💾 حفظ اختياراتي</button></div>
+  <p class="fm187-n">يصلك الإشعار على كل جهاز فعّلته، ولا يصلك إشعار عن عمل قمت به أنت. الإشعار لا يحتوي إلا عنواناً قصيراً؛ التفاصيل تفتح في التطبيق.</p>`;
+ const q=x=>m.querySelector(x);
+ q('[data-on]')&&(q('[data-on]').onclick=async ev=>{ev.currentTarget.disabled=true;try{await enable();say('تم تفعيل الإشعارات على هذا الجهاز');refreshHome();open()}catch(e){say(why(e),'e');ev.currentTarget.disabled=false}});
+ q('[data-off]')&&(q('[data-off]').onclick=async()=>{await disable();say('أُوقفت الإشعارات على هذا الجهاز');refreshHome();open()});
+ q('[data-test]')&&(q('[data-test]').onclick=async ev=>{ev.currentTarget.disabled=true;try{const d=await db();const r=await d.rpc('fm_push_test');if(r.error)throw Error(r.error.message);
+  say(r.data?'أُرسلت التجربة — تصلك خلال ثوانٍ':'لم تُرسل: لا يوجد جهاز مفعّل لحسابك أو الإشعارات متوقفة',r.data?'':'w')}catch(e){say(why(e),'e')}ev.currentTarget.disabled=false});
+ q('[data-save]').onclick=async()=>{const o=[...m.querySelectorAll('[data-k]')].filter(i=>!i.checked).map(i=>i.dataset.k);try{const d=await db();const r=await d.rpc('fm_push_prefs_set',{p_off:o});if(r.error)throw Error(r.error.message);say('تم الحفظ')}catch(e){say(why(e),'e')}}}
+window.fmPushOpen=open;
+window.fmPush={enable,disable,state,settings,sync,KINDS,b64u};
+
+const css=document.createElement('style');css.id='fm187-css';css.textContent=`
+#fm187{position:fixed;inset:0;z-index:3000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:12px;font-family:Cairo,Tahoma,sans-serif}
+#fm187 .fm187-in{background:#fff;color:#0f172a;border-radius:16px;max-width:460px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+#fm187 .fm187-hd{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-size:16px}
+#fm187 .fm187-hd button{border:0;background:#f1f5f9;border-radius:8px;padding:4px 10px;cursor:pointer}
+#fm187 .fm187-bd{padding:12px 14px;font-size:13.5px}
+#fm187 h4{margin:12px 0 6px;font-size:14px}
+#fm187 .fm187-al{background:#fef2f2;color:#991b1b;border-radius:10px;padding:8px 10px;margin-bottom:8px}
+#fm187 .fm187-al.warn{background:#fffbeb;color:#92400e}
+#fm187 .fm187-st{background:#f1f5f9;border-radius:10px;padding:10px;font-weight:800}
+#fm187 .fm187-st.on{background:#ecfdf5;color:#065f46}
+#fm187 .fm187-st small{display:block;font-weight:600;color:#64748b;margin-top:2px}
+#fm187 .fm187-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+#fm187 .fm187-row button{flex:1;min-width:140px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;padding:9px;font:800 13px Cairo,Tahoma,sans-serif;cursor:pointer}
+#fm187 .fm187-row button.p{background:#0f766e;border-color:#0f766e;color:#fff}
+#fm187 .fm187-row button:disabled{opacity:.5}
+#fm187 .fm187-k label{display:flex;gap:6px;align-items:center;padding:5px 0;border-bottom:1px dashed #e2e8f0}
+#fm187 .fm187-k input{width:auto}
+#fm187 .fm187-n{color:#64748b;font-size:12px;margin:10px 0 0}
+#fm187-ask{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:99990;background:#0f172a;color:#fff;border-radius:14px;padding:10px 12px;max-width:340px;font:600 13px Cairo,Tahoma,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.3);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#fm187-ask button{border:0;border-radius:8px;padding:6px 10px;font:800 12.5px Cairo,Tahoma,sans-serif;cursor:pointer}
+#fm187-ask .p{background:#14b8a6;color:#04201d}
+`;document.head.appendChild(css);
+
+// open what a notification points to
+function go(h){h=S(h).replace(/^#/,'');if(!h)return false;if(h.startsWith('wo=')){const id=h.slice(3);if(window.fmfOpenWo)window.fmfOpenWo(id);else document.querySelector('.bnav button[data-v="wo"]')?.click()}
+ else if(h==='wo')document.querySelector('.bnav button[data-v="wo"]')?.click();
+ else if(h==='cus'||h.startsWith('wh='))window.fmfCustody?.();
+ else return false;return true}
+navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.fmPush)go(e.data.hash)});
+function refreshHome(){const h=document.querySelector('#app .card.hello');let b=document.getElementById('f32-h');
+ if(!h||!ready(SET)){b?.remove();return}
+ if(!b||!b.isConnected){b=document.createElement('button');b.id='f32-h';b.type='button';b.onclick=open;const a=document.getElementById('f29-h');(a&&a.isConnected?a:h).after(b)}
+ state().then(st=>{const k=st.on?'on':'off';if(b.dataset.k===k)return;b.dataset.k=k;b.className=st.on?'':'ask';
+  b.innerHTML=st.on?'<span>🔔 الإشعارات مفعّلة على هذا الجهاز</span><span>الإعدادات ←</span>':'<span>🔔 فعّل الإشعارات لتصلك الأوامر فوراً</span><span>تفعيل ←</span>'}).catch(()=>{})}
+const fcss=document.createElement('style');fcss.textContent='#f32-h{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid #99f6e4;background:#f0fdfa;color:#134e4a;border-radius:16px;padding:12px 14px;font:800 14px Cairo,Tahoma,sans-serif;margin:10px 0;text-align:right}#f32-h.ask{background:#fefce8;border-color:#fde047;color:#713f12}';document.head.appendChild(fcss);
+let n=0;const t=setInterval(async()=>{try{if(++n>120){clearInterval(t);return}if(!C.engClient)return;const d=await db();const u=d.auth&&d.auth.getSession?((await d.auth.getSession()).data||{}).session:true;if(!u)return;clearInterval(t);
+ if(/^#(wo=|cus|wh=|bill)/.test(location.hash))setTimeout(()=>{go(location.hash);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}},1500);
+ await settings().catch(()=>null);sync().catch(()=>{});refreshHome();setInterval(refreshHome,3000);}catch(e){}},1500);
+})();
 </script>
 </body>
 </html>

@@ -15,6 +15,11 @@ begin
     delete from storage.objects where bucket_id='wo-photos' and split_part(name,'/',1) in (select id::text from public.work_orders where created_by=any(t) or assignee=any(t));
   exception when others then raise notice 'الملفات لم تُحذف من التخزين (صور اختبار صغيرة جداً تبقى): %', sqlerrm;
   end;
+  begin
+    delete from public.fm_push_queue where user_id=any(t);
+    delete from public.fm_push_subs where user_id=any(t);
+    delete from public.fm_push_prefs where user_id=any(t);
+  exception when undefined_table then null; end;
   -- V180–V186 test rows (tables missing on an older project are skipped)
   begin
     delete from public.fm_cc_entries where center_id in (select id from public.fm_cc_centers where code='TEST-CC');
