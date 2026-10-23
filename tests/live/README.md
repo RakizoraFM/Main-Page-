@@ -23,6 +23,19 @@ NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt node api_test.
 NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt node ui_test.js
 ```
 
+**فحص V179–V186** (الاشتراك والأجزاء، المستودع والعهد، المستخلصات، مركز التكلفة، أرقام الاستخدام):
+
+```bash
+NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt node v180_test.js
+```
+
+- يحتاج حساب المدير التجريبي. يتوقف دون أي كتابة إذا لم يُشغَّل `supabase_setup.sql` الجديد (الأقسام 23–28).
+- ينشئ حساب `fm.test.storekeeper@rakizora.test` (أمين مستودع، بنفس كلمة المرور) إن لم يوجد. منطقته «test»، فلا يتصرف إلا في مستودع الاختبار.
+- كل ما ينشئه اسمه يبدأ بـ «[اختبار]» أو رمزه `TEST-CC`: صنف، مستودع، عقد، مسودة مستخلص، مركز تكلفة.
+- لا يعتمد مستخلصاً ولا يصرفه، ويلغي قيد مركز التكلفة الذي يضيفه، فلا تتأثر أرقام مركز التكلفة.
+- إذا وُجد ممثل للجهة المالكة، يبقى الصنف التجريبي بانتظار اعتماده، فتُتخطّى فحوص الصرف والعهدة.
+- النتائج في `v180_results.json`. بعده شغّل `reset.sql` كالعادة، فهو يحذف بيانات هذا الفحص أيضاً.
+
 - **النتائج:** ✅ ناجح، ❌ فاشل، ⏭️ متخطّى. تُحفظ في `api_results.json` و`ui_results.json`، وصور الشاشات في `out/`.
 - **بعد الفحص:** شغّل `reset.sql` في Supabase. يحذف أوامر وسجلات الاختبار فقط، حتى لا تظهر في مؤشراتك، ويُبقي الحسابات. تقييمات المدارس وروابطها (V160) تُحذف تلقائياً مع سجلات التواصل.
 - **لحذف الحسابات نهائياً:** شغّل `remove_users.sql`.
@@ -36,6 +49,7 @@ NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt node ui_test.j
 | fm.test.supervisor | مشرف | المهندس |
 | fm.test.contractor | مقاول | المشرف |
 | fm.test.viewer | مشاهد | — |
+| fm.test.storekeeper | أمين مستودع (يُنشئه `v180_test.js`) | — |
 
 إن لم يوجد حساب المدير، تُتخطّى فحوصه دون أن يفشل الفحص.
 

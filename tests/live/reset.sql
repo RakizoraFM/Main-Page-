@@ -15,6 +15,32 @@ begin
     delete from storage.objects where bucket_id='wo-photos' and split_part(name,'/',1) in (select id::text from public.work_orders where created_by=any(t) or assignee=any(t));
   exception when others then raise notice 'الملفات لم تُحذف من التخزين (صور اختبار صغيرة جداً تبقى): %', sqlerrm;
   end;
+  -- V180–V186 test rows (tables missing on an older project are skipped)
+  begin
+    delete from public.fm_cc_entries where center_id in (select id from public.fm_cc_centers where code='TEST-CC');
+    delete from public.fm_cc_budget where center_id in (select id from public.fm_cc_centers where code='TEST-CC');
+    delete from public.fm_cc_staff where center_id in (select id from public.fm_cc_centers where code='TEST-CC');
+    delete from public.fm_cc_centers where code='TEST-CC';
+  exception when undefined_table then null; end;
+  begin
+    delete from public.fm_bill_wos where bill_id in (select b.id from public.fm_bills b join public.fm_contracts c on c.id=b.contract_id where c.name like '[اختبار]%');
+    delete from public.fm_bills where contract_id in (select id from public.fm_contracts where name like '[اختبار]%');
+    delete from public.fm_contracts where name like '[اختبار]%';
+  exception when undefined_table then null; end;
+  begin
+    delete from public.wo_custody_counts where holder=any(t);
+    delete from public.wo_custody_moves where holder=any(t);
+    delete from public.wo_custody where holder=any(t);
+    delete from public.wo_issue_requests where holder=any(t) or requested_by=any(t);
+    delete from public.wo_stock_moves where store_id in (select id from public.wo_stores where name like '[اختبار]%')
+       or material_id in (select id from public.wo_materials where name like '[اختبار]%');
+    delete from public.wo_stock where store_id in (select id from public.wo_stores where name like '[اختبار]%')
+       or material_id in (select id from public.wo_materials where name like '[اختبار]%');
+    delete from public.wo_stores where name like '[اختبار]%';
+    delete from public.wo_material_photos where material_id in (select id from public.wo_materials where name like '[اختبار]%');
+    delete from public.wo_supplier_prices where material_id in (select id from public.wo_materials where name like '[اختبار]%');
+    delete from public.wo_materials where name like '[اختبار]%';
+  exception when undefined_table then null; end;
   update public.work_orders set source_wo=null where source_wo in (select id from public.work_orders where created_by=any(t) or assignee=any(t));
   delete from public.work_orders where created_by=any(t) or assignee=any(t);
   get diagnostics n = row_count; raise notice 'أوامر اختبار محذوفة: %', n;
