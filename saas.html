@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SA4">
+<meta name="fm-version" content="SA5">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -102,7 +102,7 @@ const plans=()=>Array.isArray(SET.plans)?SET.plans:[];
 const planOf=k=>plans().find(p=>p.k===k)||{k,name:k,max:0,price:0};
 /* SA2 (V181): the parts of the platform. A plan (باقة) lists its parts; other parts are add-ons priced per month
    (base + per school × the school limit). The company's parts {key: until-date | null} travel in the activation code (m). */
-const MODS=[['tickets','🎫 البلاغات والـ SLA'],['wo','🛠️ أوامر العمل'],['wh','📦 المستودعات وقطع الغيار'],['eng','💬 التواصل مع المدارس والرضا'],['portal','🏫 بوابة مدير المدرسة'],['costs','💰 تكاليف المباني'],['bill','🧾 مستخلصات المقاولين']];
+const MODS=[['tickets','🎫 البلاغات والـ SLA'],['wo','🛠️ أوامر العمل'],['wh','📦 المستودعات وقطع الغيار'],['eng','💬 التواصل مع المدارس والرضا'],['portal','🏫 بوابة مدير المدرسة'],['costs','💰 تكاليف المباني'],['bill','🧾 مستخلصات المقاولين'],['cc','💹 مركز التكلفة']];
 const MODN=k=>(MODS.find(m=>m[0]===k)||[k,k])[1];
 const planMods=k=>{const p=planOf(k);return Array.isArray(p.modules)?p.modules:MODS.map(m=>m[0])};
 const addons=()=>Array.isArray(SET.addons)?SET.addons:[];

@@ -3759,4 +3759,259 @@ end $$;
 revoke all on function public.fm_plan_usage() from public, anon;
 grant execute on function public.fm_plan_usage() to authenticated;
 
+-- ---------- 28) cost centers — مركز التكلفة (V186, part «cc») ----------
+-- Revenue, cost and profit of the project per cost center and month, against a budget.
+-- Centers: one per region (kind region) with sub-centers (kind dept) such as building maintenance, vehicles, admin, store.
+-- A sub-center lists the automatic categories it receives (auto); what no sub-center of the region claims goes to the
+-- region center. Costs are read where they already live:
+--   sub   = contractor bills (fm_bills approved / paid; net before VAT), to the contract's cc_id or by its region
+--   mat   = store materials used in closed work orders, buy = direct purchases of closed orders — both by building (bkey),
+--           without what a contractor bill already charges (contract mat_mode buy / all)
+--   exp   = building expenses (fm_expenses, once / monthly, split per school)
+--   labour = the staff list (fm_cc_staff: salary + allowances + employer insurance %, prorated by the days in the month)
+--   manual entries (fm_cc_entries): vehicles, fuel, housing, telecom, tools, rent, overhead, other, extra labour,
+--   and revenue: contract (the monthly client invoice; otherwise the center's rev_monthly), extra works, client deductions.
+-- Purchases into the store and issues to custody are not costs until the material is used in a closed order.
+-- Who sees / enters what is set by the system admin in fm_settings.cc_perms {view, entry, budget, salaries, revenue}
+-- (titles); the area manager / area engineer see only the centers of their regions. Tables have RLS on and no policies:
+-- everything goes through the functions below.
+insert into public.fm_settings(key, value) values ('cc_perms',
+  '{"view":["dept_manager","project_manager","accountant"],"entry":["accountant"],"budget":["project_manager"],"salaries":["accountant"],"revenue":["dept_manager","project_manager","accountant"]}')
+on conflict (key) do nothing;
+create table if not exists public.fm_cc_centers (
+  id          uuid primary key default gen_random_uuid(),
+  code        text not null unique,
+  name        text not null,
+  parent_id   uuid references public.fm_cc_centers(id) on delete restrict,
+  kind        text not null default 'dept' check (kind in ('project','region','dept')),
+  region      text,
+  auto        text[] not null default '{}',         -- automatic categories it receives: sub, mat, buy, exp
+  rev_monthly numeric(14,2) not null default 0,     -- monthly contract value (revenue) when no «contract» entry is made
+  rev_from    date,
+  rev_to      date,
+  active      boolean not null default true,
+  notes       text,
+  created_at  timestamptz not null default now()
+);
+create table if not exists public.fm_cc_budget (
+  center_id uuid not null references public.fm_cc_centers(id) on delete cascade,
+  year      int not null,
+  month     int not null check (month between 1 and 12),
+  cat       text not null,
+  amount    numeric(14,2) not null default 0,
+  primary key (center_id, year, month, cat)
+);
+create table if not exists public.fm_cc_entries (
+  id              uuid primary key default gen_random_uuid(),
+  center_id       uuid not null references public.fm_cc_centers(id) on delete restrict,
+  month           text not null check (month ~ '^\d{4}-\d{2}$'),
+  kind            text not null check (kind in ('cost','rev')),
+  cat             text not null,
+  amount          numeric(14,2) not null,
+  bkey            text,
+  ref             text,
+  note            text,
+  cancelled       boolean not null default false,
+  cancel_reason   text,
+  created_by_name text,
+  created_at      timestamptz not null default now()
+);
+create index if not exists fm_cc_entries_idx on public.fm_cc_entries (month, center_id);
+create table if not exists public.fm_cc_staff (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  emp_no      text,
+  job         text,
+  profile_id  uuid references public.profiles(id) on delete set null,
+  center_id   uuid not null references public.fm_cc_centers(id) on delete restrict,
+  salary      numeric(12,2) not null default 0,
+  housing     numeric(12,2) not null default 0,
+  transport   numeric(12,2) not null default 0,
+  other       numeric(12,2) not null default 0,
+  gosi_pct    numeric(5,2) not null default 0,       -- employer social insurance and other on-costs %
+  start_date  date,
+  end_date    date,
+  active      boolean not null default true,
+  updated_at  timestamptz not null default now()
+);
+alter table public.fm_contracts add column if not exists cc_id uuid references public.fm_cc_centers(id) on delete set null;
+alter table public.fm_cc_centers enable row level security;
+alter table public.fm_cc_budget enable row level security;
+alter table public.fm_cc_entries enable row level security;
+alter table public.fm_cc_staff enable row level security;
+revoke all on public.fm_cc_centers, public.fm_cc_budget, public.fm_cc_entries, public.fm_cc_staff from anon, authenticated;
+
+-- may the caller … (view | entry | budget | salaries | revenue)? the system admin always
+create or replace function public.fm_cc_can(k text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin'
+    or (public.fm_my_pos() = any(array(select jsonb_array_elements_text(coalesce(public.fm_setting('cc_perms')->k, '[]'))))
+        and (k = 'view' or public.fm_my_pos() = any(array(select jsonb_array_elements_text(coalesce(public.fm_setting('cc_perms')->'view', '[]')))))), false) $$;
+-- the centers the caller sees: all, or those of his regions for the area manager / engineer
+create or replace function public.fm_cc_sees(c public.fm_cc_centers) returns boolean language sql stable security definer set search_path = public as $$
+  select public.fm_cc_can('view') and (public.fm_my_pos() not in ('area_manager','area_engineer') or (c.region is not null and public.fm_region_ok(c.region))) $$;
+-- the center that receives an automatic category in a region
+create or replace function public.fm_cc_route(p_region text, p_cat text) returns uuid language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select id from public.fm_cc_centers where active and kind = 'dept' and region is not distinct from p_region and p_cat = any(auto) order by code limit 1),
+    (select id from public.fm_cc_centers where active and kind = 'region' and region is not distinct from p_region order by code limit 1),
+    (select id from public.fm_cc_centers where active and kind = 'project' order by code limit 1)) $$;
+
+-- actual revenue and cost of a year: (center, month, category, source, building, amount)
+create or replace function public.fm_cc_actuals(p_year int) returns table(center_id uuid, m int, cat text, src text, bkey text, amount numeric)
+language plpgsql stable security definer set search_path = public as $$
+declare a date := make_date(p_year,1,1); b date := make_date(p_year+1,1,1); cur int := case when extract(year from current_date) = p_year then extract(month from current_date)::int when p_year < extract(year from current_date) then 12 else 0 end;
+begin
+  if auth.uid() is not null and not public.fm_cc_can('view') then return; end if;
+  return query
+  with sdb as (   -- building key → region, from the school DB
+    select public.fm_bkey(x->>'buildingId', x->>'school') bk, x->>'region' reg
+      from public.app_kv k, jsonb_array_elements(case when jsonb_typeof(k.value) = 'array' then k.value when jsonb_typeof(k.value) = 'string' and left(k.value #>> '{}',1) = '[' then (k.value #>> '{}')::jsonb else '[]' end) x
+     where k.key = 'fm_school_master_db_v1'),
+  billed as (select bw.wo_id, ct.mat_mode from public.fm_bill_wos bw join public.fm_bills bl on bl.id = bw.bill_id join public.fm_contracts ct on ct.id = bl.contract_id where bl.status <> 'cancelled'),
+  mats as (     -- materials of orders closed in the year
+    select o.region, public.fm_bkey(o.building_id, o.school) bk, extract(month from (coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh'))::int mm,
+           coalesce(mt.m->>'src','store') srcm, coalesce(nullif(mt.m->>'q','')::numeric,0) * coalesce(nullif(mt.m->>'price','')::numeric,0) v, bd.mat_mode
+      from public.work_orders o
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(o.checklist) = 'array' then o.checklist else '[]' end) it(e)
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) mt(m)
+      left join billed bd on bd.wo_id = o.id
+     where o.status = 'closed' and coalesce(o.closed_at, o.updated_at) >= a and coalesce(o.closed_at, o.updated_at) < b and jsonb_typeof(mt.m) = 'object'),
+  exps as (     -- expenses spread over the months of the year and their schools
+    select e.*, gs::date mon from public.fm_expenses e
+      cross join lateral generate_series(date_trunc('month', greatest(e.start_on, a))::date, date_trunc('month', least(coalesce(e.end_on, b - 1), b - 1))::date, interval '1 month') gs
+     where e.active and e.cancelled_by is null and e.start_on < b and coalesce(e.end_on, b) >= a and (e.kind = 'monthly' or date_trunc('month', e.start_on) = gs)),
+  exp_rows as (
+    select x.region reg, null::text bk, extract(month from x.mon)::int mm, x.amount v from exps x where x.scope = 'region'
+    union all
+    select coalesce(s.reg, x.region), k.bk, extract(month from x.mon)::int, case when x.split = 'each' then x.amount else x.amount / greatest(cardinality(x.schools),1) end
+      from exps x cross join lateral unnest(x.schools) k(bk) left join sdb s on s.bk = k.bk where x.scope <> 'region'),
+  staff_rows as (
+    select s.center_id cid, mm, round((s.salary + s.housing + s.transport + s.other) * (1 + s.gosi_pct / 100)
+           * greatest(0, (least(coalesce(s.end_date, make_date(p_year,mm,1) + interval '1 month' - interval '1 day')::date, (make_date(p_year,mm,1) + interval '1 month' - interval '1 day')::date)
+                        - greatest(coalesce(s.start_date, make_date(p_year,mm,1)), make_date(p_year,mm,1)) + 1))::numeric
+           / extract(day from make_date(p_year,mm,1) + interval '1 month' - interval '1 day'), 2) v
+      from public.fm_cc_staff s cross join generate_series(1, greatest(cur,0)) mm where s.active),
+  ent as (select e.* from public.fm_cc_entries e where not e.cancelled and e.month like p_year || '-%'),
+  allrows as (
+    select coalesce(ct.cc_id, public.fm_cc_route(ct.region, 'sub')) cid, substr(bl.month,6,2)::int mm, 'sub'::text c, 'bill'::text s, null::text bk, (bl.gross - bl.deductions) v
+      from public.fm_bills bl join public.fm_contracts ct on ct.id = bl.contract_id where bl.status in ('approved','paid') and bl.month like p_year || '-%'
+    union all
+    select public.fm_cc_route(x.region, case when x.srcm = 'buy' then 'buy' else 'mat' end), x.mm, case when x.srcm = 'buy' then 'buy' else 'mat' end, 'wo', x.bk, x.v
+      from mats x where x.v > 0 and not (x.srcm = 'buy' and coalesce(x.mat_mode,'') in ('buy','all')) and not (x.srcm <> 'buy' and coalesce(x.mat_mode,'') = 'all')
+    union all
+    select public.fm_cc_route(r.reg, 'exp'), r.mm, 'exp', 'exp', r.bk, r.v from exp_rows r
+    union all
+    select sr.cid, sr.mm, 'labour', 'staff', null, sr.v from staff_rows sr where sr.v > 0
+    union all
+    select e.center_id, substr(e.month,6,2)::int, e.cat, 'entry', e.bkey, case when e.kind = 'rev' and e.cat = 'client_ded' then -abs(e.amount) when e.kind = 'rev' then e.amount else e.amount end from ent e
+    union all     -- the monthly contract value when no «contract» entry was made for that center and month
+    select c.id, mm, 'contract', 'auto', null, c.rev_monthly from public.fm_cc_centers c cross join generate_series(1, greatest(cur,0)) mm
+     where c.active and c.rev_monthly > 0 and (c.rev_from is null or make_date(p_year,mm,1) >= date_trunc('month', c.rev_from)) and (c.rev_to is null or make_date(p_year,mm,1) <= c.rev_to)
+       and not exists(select 1 from ent e where e.center_id = c.id and e.kind = 'rev' and e.cat = 'contract' and substr(e.month,6,2)::int = mm))
+  select r.cid, r.mm, r.c, r.s, r.bk, round(sum(r.v),2) from allrows r group by 1,2,3,4,5;
+end $$;
+
+-- everything the page needs for a year, filtered by the caller's permissions
+create or replace function public.fm_cc_data(p_year int) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare rv boolean := public.fm_cc_can('revenue'); sal boolean := public.fm_cc_can('salaries'); vis uuid[];
+begin
+  if auth.uid() is null or not public.fm_cc_can('view') then raise exception 'not allowed'; end if;
+  select coalesce(array_agg(c.id),'{}') into vis from public.fm_cc_centers c where public.fm_cc_sees(c);
+  return jsonb_build_object(
+    'me', jsonb_build_object('entry', public.fm_cc_can('entry'), 'budget', public.fm_cc_can('budget'), 'salaries', sal, 'revenue', rv,
+                             'scope', case when public.fm_my_pos() in ('area_manager','area_engineer') then 'region' else 'all' end),
+    'centers', coalesce((select jsonb_agg(to_jsonb(c) - case when rv then 'x' else 'rev_monthly' end order by c.code) from public.fm_cc_centers c where c.id = any(vis)), '[]'),
+    'budget', coalesce((select jsonb_agg(to_jsonb(x)) from public.fm_cc_budget x where x.year = p_year and x.center_id = any(vis) and (rv or x.cat not in ('rev','contract','extra','client_ded'))), '[]'),
+    'entries', coalesce((select jsonb_agg(to_jsonb(e) order by e.month desc, e.created_at desc) from public.fm_cc_entries e where e.month like p_year || '-%' and e.center_id = any(vis) and (rv or e.kind = 'cost')), '[]'),
+    'staff', case when sal then coalesce((select jsonb_agg(to_jsonb(s) order by s.name) from public.fm_cc_staff s where s.center_id = any(vis)), '[]') else '[]' end,
+    'actuals', coalesce((select jsonb_agg(jsonb_build_object('c', a.center_id, 'm', a.m, 'cat', a.cat, 'src', a.src, 'b', a.bkey, 'v', a.amount))
+                         from public.fm_cc_actuals(p_year) a where (a.center_id = any(vis) or (a.center_id is null and public.fm_my_pos() not in ('area_manager','area_engineer')))
+                           and (rv or a.cat not in ('contract','extra','client_ded'))), '[]'));
+end $$;
+
+create or replace function public.fm_cc_center_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid := nullif(p->>'id','')::uuid; k text := coalesce(nullif(p->>'kind',''),'dept');
+begin
+  if auth.uid() is null or not public.fm_cc_can('budget') then raise exception 'not allowed'; end if;
+  if btrim(coalesce(p->>'name','')) = '' or btrim(coalesce(p->>'code','')) = '' then raise exception 'name required'; end if;
+  if exists(select 1 from public.fm_cc_centers where lower(code) = lower(btrim(p->>'code')) and id is distinct from v_id) then raise exception 'duplicate code'; end if;
+  if nullif(p->>'parent_id','')::uuid = v_id then raise exception 'invalid parent'; end if;
+  if v_id is null then insert into public.fm_cc_centers(code, name, kind) values (upper(btrim(p->>'code')), btrim(p->>'name'), k) returning id into v_id; end if;
+  update public.fm_cc_centers set code = upper(left(btrim(p->>'code'),30)), name = left(btrim(p->>'name'),150), kind = k, parent_id = nullif(p->>'parent_id','')::uuid,
+    region = nullif(btrim(coalesce(p->>'region','')),''),
+    auto = coalesce((select array_agg(x) from jsonb_array_elements_text(case when jsonb_typeof(p->'auto') = 'array' then p->'auto' else '[]' end) x where x in ('sub','mat','buy','exp')), '{}'),
+    rev_monthly = case when public.fm_cc_can('revenue') then coalesce(nullif(p->>'rev_monthly','')::numeric, 0) else rev_monthly end,
+    rev_from = case when public.fm_cc_can('revenue') then nullif(p->>'rev_from','')::date else rev_from end,
+    rev_to = case when public.fm_cc_can('revenue') then nullif(p->>'rev_to','')::date else rev_to end,
+    active = coalesce((p->>'active')::boolean, true), notes = left(nullif(btrim(coalesce(p->>'notes','')),''),500)
+   where id = v_id;
+  return v_id;
+end $$;
+-- the budget of a center for a year: p_rows [{m, cat, amount}] (replaces those cells)
+create or replace function public.fm_cc_budget_set(p_center uuid, p_year int, p_rows jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare x jsonb; n int := 0; v numeric;
+begin
+  if auth.uid() is null or not public.fm_cc_can('budget') then raise exception 'not allowed'; end if;
+  if not exists(select 1 from public.fm_cc_centers c where c.id = p_center and public.fm_cc_sees(c)) then raise exception 'not allowed'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p_rows,'[]')) loop
+    if x->>'cat' in ('rev','contract','extra','client_ded') and not public.fm_cc_can('revenue') then raise exception 'not allowed'; end if;
+    v := coalesce(nullif(x->>'amount','')::numeric, 0);
+    if v < 0 or (x->>'m')::int not between 1 and 12 then raise exception 'invalid'; end if;
+    insert into public.fm_cc_budget(center_id, year, month, cat, amount) values (p_center, p_year, (x->>'m')::int, left(x->>'cat',20), v)
+      on conflict (center_id, year, month, cat) do update set amount = excluded.amount;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+-- a manual entry: p {center_id, month, kind cost | rev, cat, amount, bkey, ref, note}
+create or replace function public.fm_cc_entry_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid; k text := p->>'kind'; c public.fm_cc_centers;
+begin
+  select * into c from public.fm_cc_centers where id = nullif(p->>'center_id','')::uuid and active;
+  if auth.uid() is null or not found or not public.fm_cc_can('entry') or not public.fm_cc_sees(c) then raise exception 'not allowed'; end if;
+  if k = 'rev' and not public.fm_cc_can('revenue') then raise exception 'not allowed'; end if;
+  if k not in ('cost','rev') or coalesce(p->>'month','') !~ '^\d{4}-\d{2}$' or coalesce(nullif(p->>'amount','')::numeric, 0) <= 0 then raise exception 'invalid'; end if;
+  insert into public.fm_cc_entries(center_id, month, kind, cat, amount, bkey, ref, note, created_by_name)
+  values (c.id, p->>'month', k, left(coalesce(nullif(p->>'cat',''),'other'),20), (p->>'amount')::numeric, nullif(btrim(coalesce(p->>'bkey','')),''),
+          left(nullif(btrim(coalesce(p->>'ref','')),''),80), left(nullif(btrim(coalesce(p->>'note','')),''),500), public.fm_me_name()) returning id into v_id;
+  return v_id;
+end $$;
+create or replace function public.fm_cc_entry_cancel(p_id uuid, p_reason text) returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_cc_can('entry') then raise exception 'not allowed'; end if;
+  if btrim(coalesce(p_reason,'')) = '' then raise exception 'reason required'; end if;
+  update public.fm_cc_entries set cancelled = true, cancel_reason = left(btrim(p_reason),300) || ' — ' || public.fm_me_name() where id = p_id and not cancelled;
+  return found;
+end $$;
+-- a person on the staff list: p {id?, name, emp_no, job, profile_id, center_id, salary, housing, transport, other, gosi_pct, start_date, end_date, active, delete}
+create or replace function public.fm_cc_staff_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid := nullif(p->>'id','')::uuid; c public.fm_cc_centers;
+begin
+  if auth.uid() is null or not public.fm_cc_can('salaries') then raise exception 'not allowed'; end if;
+  if coalesce((p->>'delete')::boolean,false) then delete from public.fm_cc_staff where id = v_id; return v_id; end if;
+  select * into c from public.fm_cc_centers where id = nullif(p->>'center_id','')::uuid;
+  if not found or not public.fm_cc_sees(c) then raise exception 'unknown center'; end if;
+  if btrim(coalesce(p->>'name','')) = '' then raise exception 'name required'; end if;
+  if v_id is null then insert into public.fm_cc_staff(name, center_id) values (btrim(p->>'name'), c.id) returning id into v_id; end if;
+  update public.fm_cc_staff set name = left(btrim(p->>'name'),150), emp_no = left(nullif(btrim(coalesce(p->>'emp_no','')),''),40), job = left(nullif(btrim(coalesce(p->>'job','')),''),80),
+    profile_id = nullif(p->>'profile_id','')::uuid, center_id = c.id,
+    salary = greatest(0, coalesce(nullif(p->>'salary','')::numeric,0)), housing = greatest(0, coalesce(nullif(p->>'housing','')::numeric,0)),
+    transport = greatest(0, coalesce(nullif(p->>'transport','')::numeric,0)), other = greatest(0, coalesce(nullif(p->>'other','')::numeric,0)),
+    gosi_pct = least(100, greatest(0, coalesce(nullif(p->>'gosi_pct','')::numeric,0))), start_date = nullif(p->>'start_date','')::date, end_date = nullif(p->>'end_date','')::date,
+    active = coalesce((p->>'active')::boolean, true), updated_at = now()
+   where id = v_id;
+  return v_id;
+end $$;
+revoke all on function public.fm_cc_route(text, text), public.fm_cc_sees(public.fm_cc_centers) from public, anon, authenticated;
+revoke all on function public.fm_cc_can(text), public.fm_cc_actuals(int), public.fm_cc_data(int), public.fm_cc_center_save(jsonb), public.fm_cc_budget_set(uuid, int, jsonb),
+  public.fm_cc_entry_save(jsonb), public.fm_cc_entry_cancel(uuid, text), public.fm_cc_staff_save(jsonb) from public, anon;
+grant execute on function public.fm_cc_can(text), public.fm_cc_data(int), public.fm_cc_center_save(jsonb), public.fm_cc_budget_set(uuid, int, jsonb),
+  public.fm_cc_entry_save(jsonb), public.fm_cc_entry_cancel(uuid, text), public.fm_cc_staff_save(jsonb) to authenticated;
+revoke all on function public.fm_cc_actuals(int) from authenticated;
+-- the cost centers are a part sold separately (key «cc»)
+create or replace function public.fm_mods_on() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(k), '[]') from unnest(array['tickets','wo','wh','eng','portal','costs','bill','cc']) k where public.fm_mod(k) $$;
+drop trigger if exists fm_mod_guard on public.fm_cc_entries;
+create trigger fm_mod_guard before insert on public.fm_cc_entries for each row execute function public.fm_mod_guard('cc');
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.

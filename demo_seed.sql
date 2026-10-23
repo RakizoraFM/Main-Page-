@@ -189,6 +189,22 @@ begin
   insert into public.fm_contracts(name, contractor_id, contractor_name, region, start_date, end_date, monthly_fixed, rates, mat_mode, mat_markup, retention_pct, vat_pct, penalty_cap_pct)
   values ('عقد صيانة مدارس الرياض (تجريبي)', case when exists(select 1 from public.profiles where id = P_C1) then P_C1 end, 'مؤسسة الإتقان للصيانة', 'riyadh', date_trunc('year', now())::date,
           (date_trunc('year', now()) + interval '2 years - 1 day')::date, 25000, '{"preventive":150,"repair":250,"inspection":100,"handover":300}', 'buy', 10, 5, 15, 10);
+  -- cost centers: two regions, a building-maintenance department, a monthly contract value, budget, staff, fuel
+  if to_regclass('public.fm_cc_centers') is not null then
+    insert into public.fm_cc_centers(code, name, kind, region, rev_monthly, rev_from) values ('CC-RIY', 'منطقة الرياض', 'region', 'riyadh', 420000, date_trunc('year', now())),
+      ('CC-QSM', 'منطقة القصيم', 'region', 'qassim', 180000, date_trunc('year', now()));
+    insert into public.fm_cc_centers(code, name, kind, region, parent_id, auto) select 'CC-RIY-MNT', 'صيانة مباني الرياض', 'dept', 'riyadh', id, '{sub,mat,buy,exp}' from public.fm_cc_centers where code = 'CC-RIY';
+    insert into public.fm_cc_budget(center_id, year, month, cat, amount)
+      select c.id, extract(year from now())::int, gm.mm, b.cat, b.amt from public.fm_cc_centers c cross join generate_series(1,12) gm(mm)
+        cross join (values ('CC-RIY','labour',95000),('CC-RIY','fuel',9000),('CC-RIY','vehicles',14000),('CC-RIY','rev',420000),('CC-RIY-MNT','sub',30000),('CC-RIY-MNT','mat',6000),('CC-QSM','labour',45000),('CC-QSM','rev',180000)) b(code,cat,amt) where b.code = c.code;
+    insert into public.fm_cc_staff(name, job, center_id, salary, housing, transport, gosi_pct, start_date)
+      select x.n, x.j, c.id, x.s, x.h, x.t, 12, date_trunc('year', now()) - interval '1 year' from (values ('CC-RIY','مدير منطقة (تجريبي)','مدير منطقة',18000,4500,1500),('CC-RIY','مهندس 1 (تجريبي)','مهندس',12000,3000,1000),
+        ('CC-RIY','مشرف 1 (تجريبي)','مشرف',7000,1750,800),('CC-RIY','مشرف 2 (تجريبي)','مشرف',7000,1750,800),('CC-RIY-MNT','فني 1 (تجريبي)','فني',3500,875,400),('CC-RIY-MNT','فني 2 (تجريبي)','فني',3500,875,400),
+        ('CC-QSM','مهندس 2 (تجريبي)','مهندس',12000,3000,1000),('CC-QSM','مشرف 3 (تجريبي)','مشرف',7000,1750,800)) x(code,n,j,s,h,t) join public.fm_cc_centers c on c.code = x.code;
+    insert into public.fm_cc_entries(center_id, month, kind, cat, amount, note, created_by_name)
+      select c.id, to_char(now() - make_interval(months => gm.mm), 'YYYY-MM'), 'cost', 'fuel', 7600 + gm.mm * 450, 'وقود السيارات (تجريبي)', 'هند العمري (المحاسبة)'
+        from public.fm_cc_centers c cross join generate_series(0, 2) gm(mm) where c.code = 'CC-RIY';
+  end if;
   -- engagement: the supervisors' schools
   insert into public.fm_eng_assignments(school_code, school_name, region, user_id, principal, phone, active)
   select x->>'buildingId', x->>'school', x->>'region', case when x->>'region' = 'qassim' then P_S3 when (x->>'supervisor') = 'ماجد السبيعي' then P_S1 else P_S2 end, x->>'principal', x->>'principalPhone', true
@@ -205,6 +221,7 @@ begin
   delete from public.wo_issue_requests where true; delete from public.wo_purchase_requests where true; delete from public.wo_serials where true;
   delete from public.wo_stock_moves where true; delete from public.wo_stock where true; delete from public.wo_supplier_prices where true;
   delete from public.wo_material_photos where true; delete from public.wo_suppliers where true; delete from public.wo_materials where true; delete from public.wo_stores where true;
+  if to_regclass('public.fm_cc_centers') is not null then delete from public.fm_cc_entries where true; delete from public.fm_cc_staff where true; delete from public.fm_cc_budget where true; update public.fm_contracts set cc_id = null where true; delete from public.fm_cc_centers where parent_id is not null; delete from public.fm_cc_centers where true; end if;
   delete from public.fm_bills where true; delete from public.fm_contracts where true;
   delete from public.work_orders where true; delete from public.tickets where true; delete from public.fm_eng_assignments where true;
   return public.fm_demo_seed();
