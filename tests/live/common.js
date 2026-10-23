@@ -9,6 +9,8 @@ const U=html.match(/https:\/\/[a-z0-9]+\.supabase\.co/)[0],K=html.match(/key:'([
 const ROLES=['admin','engineer','supervisor','contractor','viewer'];
 const NAMES={admin:'مدير اختبار',engineer:'مهندس اختبار',supervisor:'مشرف اختبار',contractor:'مقاول اختبار',viewer:'مشاهد اختبار'};
 const C={};for(const k of ROLES)C[k]={email:`fm.test.${k}@rakizora.test`,password:process.env[`FM_TEST_${k.toUpperCase()}_PASS`]||process.env.FM_TEST_PASS||'',name:NAMES[k]};
+// V180: an extra storekeeper account (not in ROLES; the test admin creates it when missing, region «test» only)
+C.storekeeper={email:'fm.test.storekeeper@rakizora.test',password:process.env.FM_TEST_STOREKEEPER_PASS||process.env.FM_TEST_PASS||'',name:'أمين مستودع اختبار'};
 const SCHOOL='مدرسة اختبار RakizoraFM',CODE='TEST-RKZ-001';
 async function req(tok,method,p,body,h={}){const bin=body instanceof Buffer;
  const r=await fetch(U+p,{method,headers:Object.assign({apikey:K,Authorization:'Bearer '+(tok||K)},body!==undefined&&!bin?{'Content-Type':'application/json'}:{},h),body:body===undefined?undefined:bin?body:JSON.stringify(body)});
