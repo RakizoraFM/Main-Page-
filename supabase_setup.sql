@@ -3453,7 +3453,7 @@ revoke all on function public.fm_mat_code() from authenticated;
 -- fm_plan.modules = the parts this company bought: {"tickets": null, "wo": null, "wh": "2026-11-30", …} (a date = until then,
 -- e.g. a trial; null = for the whole subscription). The column empty (null) = every part, as before V181 — so a company
 -- without a modules list and the single-company installation keep everything. Keys: tickets (البلاغات والـ SLA), wo (أوامر
--- العمل), wh (المستودعات وقطع الغيار), eng (التواصل مع المدارس والرضا), portal (بوابة مدير المدرسة), costs (تكاليف المباني);
+-- العمل), wh (المستودعات وقطع الغيار), eng (التواصل مع المدارس والرضا), portal (بوابة مدير المدرسة), costs (تكاليف المباني), bill (V184 مستخلصات المقاولين);
 -- «core» (users, school DB, settings) is always on. The activation code carries the list (key m); a code without it keeps
 -- the current list. A part that is off: its pages disappear and the database refuses new rows in its tables (the data stays
 -- and comes back when the part is bought again).
@@ -3509,5 +3509,228 @@ end $$;
 revoke all on function public.fm_mod_guard() from public, anon, authenticated;
 revoke all on function public.fm_mod(text), public.fm_mods_on() from public, anon;
 grant execute on function public.fm_mod(text), public.fm_mods_on() to authenticated;
+
+-- ---------- 26) contractor bills — المستخلصات (V184) ----------
+-- A contract (fm_contracts) holds the contractor (an account or just a name), its region, a fixed monthly amount, a price per
+-- closed work order by type (rates), which materials are billed (none / purchases / all, with a markup), the retention and
+-- VAT rates and the penalty cap. A bill (fm_bills, BL-YYYY-####) is one month of one contract: fm_bill_build proposes its
+-- lines (fixed amount, the contractor's work orders closed in that month that no other bill holds, their materials), the
+-- preparer edits them (additions, deductions, penalties), and it moves draft → submitted → reviewed → approved → paid
+-- (returned with a note goes back to the preparer). A work order is billed once (fm_bill_wos). The server always
+-- recomputes the totals: gross − deductions (penalties capped at penalty_cap_pct of gross) = net; VAT on net;
+-- retention on net; total = net + VAT − retention.
+-- Preparers: system admin, project / operations managers, accountant, area manager (his regions). Reviewers: area engineer /
+-- area manager of the region, operations manager. Approvers: project / operations managers, system admin. Payment: accountant,
+-- system admin. Readers: those plus the department manager, QA and the contractor himself (his own bills).
+create sequence if not exists public.fm_contract_seq;
+create table if not exists public.fm_contracts (
+  id              uuid primary key default gen_random_uuid(),
+  code            text unique not null default ('CT-' || lpad(nextval('public.fm_contract_seq')::text, 3, '0')),
+  name            text not null,
+  contractor_id   uuid references public.profiles(id) on delete set null,
+  contractor_name text not null,
+  region          text,
+  start_date      date,
+  end_date        date,
+  monthly_fixed   numeric(14,2) not null default 0,
+  rates           jsonb not null default '{}',          -- {preventive: 150, repair: 250, inspection: 100, handover: 300, visit: 0, task: 0, data: 0}
+  mat_mode        text not null default 'buy' check (mat_mode in ('none','buy','all')),
+  mat_markup      numeric(6,2) not null default 0,
+  retention_pct   numeric(5,2) not null default 0,
+  vat_pct         numeric(5,2) not null default 15,
+  penalty_cap_pct numeric(5,2) not null default 10,
+  notes           text,
+  active          boolean not null default true,
+  created_at      timestamptz not null default now()
+);
+create sequence if not exists public.fm_bill_seq;
+create table if not exists public.fm_bills (
+  id              uuid primary key default gen_random_uuid(),
+  code            text unique not null default ('BL-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_bill_seq')::text, 4, '0')),
+  contract_id     uuid not null references public.fm_contracts(id) on delete restrict,
+  month           text not null check (month ~ '^\d{4}-\d{2}$'),
+  lines           jsonb not null default '[]',          -- [{k: fixed | wo | mat | add | ded | pen, t, q, p, a, wo_id?, ref?}]
+  gross           numeric(14,2) not null default 0,
+  deductions      numeric(14,2) not null default 0,
+  net             numeric(14,2) not null default 0,
+  vat             numeric(14,2) not null default 0,
+  retention       numeric(14,2) not null default 0,
+  total           numeric(14,2) not null default 0,
+  status          text not null default 'draft' check (status in ('draft','submitted','reviewed','approved','paid','returned','cancelled')),
+  history         jsonb not null default '[]',
+  note            text,
+  pay_ref         text,
+  created_by      uuid default auth.uid() references public.profiles(id) on delete set null,
+  created_by_name text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  paid_at         timestamptz
+);
+create unique index if not exists fm_bills_month_uq on public.fm_bills (contract_id, month) where status <> 'cancelled';
+create table if not exists public.fm_bill_wos (
+  wo_id   uuid primary key references public.work_orders(id) on delete cascade,
+  bill_id uuid not null references public.fm_bills(id) on delete cascade
+);
+alter table public.fm_contracts enable row level security;
+alter table public.fm_bills enable row level security;
+alter table public.fm_bill_wos enable row level security;
+create or replace function public.fm_bill_can(p_kind text, p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(case p_kind
+    when 'prep'    then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager','accountant')
+                        or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,'')))
+    when 'review'  then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','ops_manager')
+                        or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(coalesce(p_region,'')))
+    when 'approve' then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    when 'pay'     then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant')
+    when 'read'    then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','accountant','qa_manager')
+                        or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(coalesce(p_region,'')))
+    when 'contract' then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','accountant')
+  end, false) $$;
+drop policy if exists p_ct_read on public.fm_contracts;
+create policy p_ct_read on public.fm_contracts for select using (public.fm_bill_can('read', region) or contractor_id = auth.uid());
+drop policy if exists p_bl_read on public.fm_bills;
+create policy p_bl_read on public.fm_bills for select using (exists(select 1 from public.fm_contracts c where c.id = contract_id and (public.fm_bill_can('read', c.region) or c.contractor_id = auth.uid())));
+drop policy if exists p_blw_read on public.fm_bill_wos;
+create policy p_blw_read on public.fm_bill_wos for select using (exists(select 1 from public.fm_bills b join public.fm_contracts c on c.id = b.contract_id where b.id = bill_id and public.fm_bill_can('read', c.region)));
+revoke insert, update, delete on public.fm_contracts, public.fm_bills, public.fm_bill_wos from anon, authenticated;
+
+-- the contractors (accounts with the contractor title) for the contract form
+create or replace function public.fm_bill_contractors() returns table(id uuid, name text, regions text[]) language sql stable security definer set search_path = public as $$
+  select p.id, coalesce(p.full_name, p.email), p.regions from public.profiles p
+   where public.fm_bill_can('contract', null) and p.active and public.fm_posx(p.role, p.job_title) = 'contractor' order by 2 $$;
+-- add or change a contract
+create or replace function public.fm_contract_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid := nullif(p->>'id','')::uuid; cid uuid := nullif(p->>'contractor_id','')::uuid; cn text;
+begin
+  if auth.uid() is null or not public.fm_bill_can('contract', null) then raise exception 'not allowed'; end if;
+  if btrim(coalesce(p->>'name','')) = '' then raise exception 'name required'; end if;
+  cn := coalesce(nullif(btrim(coalesce(p->>'contractor_name','')),''), (select coalesce(full_name, email) from public.profiles where id = cid));
+  if cn is null then raise exception 'contractor required'; end if;
+  if v_id is null then insert into public.fm_contracts(name, contractor_name) values (left(btrim(p->>'name'),200), cn) returning id into v_id; end if;
+  update public.fm_contracts set name = left(btrim(p->>'name'),200), contractor_id = cid, contractor_name = left(cn,200), region = nullif(btrim(coalesce(p->>'region','')),''),
+    start_date = nullif(p->>'start_date','')::date, end_date = nullif(p->>'end_date','')::date, monthly_fixed = coalesce(nullif(p->>'monthly_fixed','')::numeric,0),
+    rates = case when jsonb_typeof(p->'rates') = 'object' then p->'rates' else '{}' end, mat_mode = coalesce(nullif(p->>'mat_mode',''),'buy'),
+    mat_markup = coalesce(nullif(p->>'mat_markup','')::numeric,0), retention_pct = coalesce(nullif(p->>'retention_pct','')::numeric,0),
+    vat_pct = coalesce(nullif(p->>'vat_pct','')::numeric,15), penalty_cap_pct = coalesce(nullif(p->>'penalty_cap_pct','')::numeric,10),
+    notes = left(nullif(btrim(coalesce(p->>'notes','')),''),1000), active = coalesce((p->>'active')::boolean,true)
+   where id = v_id;
+  return v_id;
+end $$;
+-- proposed lines of a month (nothing is saved)
+create or replace function public.fm_bill_build(p_contract uuid, p_month text, p_bill uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c public.fm_contracts; a timestamptz; b timestamptz; w record; m record; L jsonb := '[]'; pr numeric; fac numeric;
+begin
+  select * into c from public.fm_contracts where id = p_contract;
+  if auth.uid() is null or not found or not public.fm_bill_can('prep', c.region) then raise exception 'not allowed'; end if;
+  if coalesce(p_month,'') !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  a := (p_month || '-01')::date::timestamp at time zone 'Asia/Riyadh'; b := ((p_month || '-01')::date + interval '1 month')::timestamp at time zone 'Asia/Riyadh';
+  if c.monthly_fixed > 0 then L := L || jsonb_build_object('k','fixed','t','المبلغ الشهري الثابت — ' || c.name,'q',1,'p',c.monthly_fixed,'a',c.monthly_fixed); end if;
+  fac := 1 + coalesce(c.mat_markup,0) / 100;
+  for w in select * from public.work_orders o
+            where o.status = 'closed' and coalesce(o.closed_at, o.updated_at) >= a and coalesce(o.closed_at, o.updated_at) < b
+              and (o.assignee = c.contractor_id or (c.contractor_id is null and o.assignee_name = c.contractor_name))
+              and (c.region is null or o.region = c.region)
+              and not exists(select 1 from public.fm_bill_wos x where x.wo_id = o.id and x.bill_id is distinct from p_bill)
+            order by coalesce(o.closed_at, o.updated_at) loop
+    pr := coalesce(nullif(c.rates->>w.type,'')::numeric, 0);
+    L := L || jsonb_build_object('k','wo','t', coalesce(w.code,'') || ' — ' || w.title,'q',1,'p',pr,'a',pr,'wo_id',w.id,'ref',w.code,'school',w.school);
+    if c.mat_mode <> 'none' then
+      for m in select mt.m->>'n' n, coalesce(nullif(mt.m->>'q','')::numeric,0) q, coalesce(nullif(mt.m->>'price','')::numeric,0) p, coalesce(mt.m->>'src','store') src
+                 from jsonb_array_elements(case when jsonb_typeof(w.checklist) = 'array' then w.checklist else '[]' end) it(e)
+                 cross join lateral jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) mt(m)
+                where jsonb_typeof(mt.m) = 'object' and (c.mat_mode = 'all' or coalesce(mt.m->>'src','store') = 'buy') loop
+        if m.q > 0 and m.p > 0 then
+          L := L || jsonb_build_object('k','mat','t', 'مواد: ' || coalesce(m.n,'') || ' (' || coalesce(w.code,'') || ')' || case when m.src = 'buy' then ' — شراء' else '' end,
+                                       'q', m.q, 'p', round(m.p * fac, 2), 'a', round(m.q * m.p * fac, 2), 'ref', w.code);
+        end if;
+      end loop;
+    end if;
+  end loop;
+  return L;
+end $$;
+-- totals from the lines (penalties capped)
+create or replace function public.fm_bill_totals(p_lines jsonb, c public.fm_contracts) returns jsonb language plpgsql immutable as $$
+declare g numeric := 0; d numeric := 0; pn numeric := 0; x jsonb; a numeric; net numeric; v numeric; r numeric; cap numeric;
+begin
+  for x in select * from jsonb_array_elements(coalesce(p_lines,'[]')) loop
+    a := abs(coalesce(nullif(x->>'a','')::numeric, 0));
+    if x->>'k' in ('fixed','wo','mat','add') then g := g + a; elsif x->>'k' = 'pen' then pn := pn + a; else d := d + a; end if;
+  end loop;
+  cap := case when coalesce(c.penalty_cap_pct,0) > 0 then g * c.penalty_cap_pct / 100 end;
+  if cap is not null and pn > cap then pn := cap; end if;
+  d := d + pn; net := g - d; v := round(net * coalesce(c.vat_pct,0) / 100, 2); r := round(net * coalesce(c.retention_pct,0) / 100, 2);
+  return jsonb_build_object('gross', round(g,2), 'deductions', round(d,2), 'pen', round(pn,2), 'net', round(net,2), 'vat', v, 'retention', r, 'total', round(net + v - r, 2));
+end $$;
+-- save a draft (or a returned bill): p {id?, contract_id, month, lines, note}
+create or replace function public.fm_bill_save(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_id uuid := nullif(p->>'id','')::uuid; bl public.fm_bills; c public.fm_contracts; L jsonb := '[]'; x jsonb; q numeric; pr numeric; t jsonb; w uuid; nm text := public.fm_me_name();
+begin
+  if v_id is not null then
+    select * into bl from public.fm_bills where id = v_id for update;
+    if not found or bl.status not in ('draft','returned') then raise exception 'invalid status'; end if;
+    select * into c from public.fm_contracts where id = bl.contract_id;
+  else
+    select * into c from public.fm_contracts where id = nullif(p->>'contract_id','')::uuid and active;
+    if not found then raise exception 'unknown contract'; end if;
+  end if;
+  if auth.uid() is null or not public.fm_bill_can('prep', c.region) then raise exception 'not allowed'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    if coalesce(x->>'k','') not in ('fixed','wo','mat','add','ded','pen') then raise exception 'invalid line'; end if;
+    q := coalesce(nullif(x->>'q','')::numeric, 1); pr := coalesce(nullif(x->>'p','')::numeric, 0);
+    if q < 0 or pr < 0 or pr > 100000000 then raise exception 'invalid line'; end if;
+    L := L || (x - 'a' || jsonb_build_object('t', left(coalesce(x->>'t',''),300), 'q', q, 'p', pr, 'a', round(q * pr, 2)));
+  end loop;
+  if jsonb_array_length(L) > 2000 then raise exception 'too many lines'; end if;
+  t := public.fm_bill_totals(L, c);
+  if v_id is null then
+    if coalesce(p->>'month','') !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+    if exists(select 1 from public.fm_bills where contract_id = c.id and month = p->>'month' and status <> 'cancelled') then raise exception 'bill exists for this month'; end if;
+    insert into public.fm_bills(contract_id, month, created_by_name, history) values (c.id, p->>'month', nm,
+      jsonb_build_array(jsonb_build_object('at', now(), 'by', nm, 'a', 'create'))) returning id into v_id;
+  end if;
+  update public.fm_bills set lines = L, gross = (t->>'gross')::numeric, deductions = (t->>'deductions')::numeric, net = (t->>'net')::numeric, vat = (t->>'vat')::numeric,
+    retention = (t->>'retention')::numeric, total = (t->>'total')::numeric, note = left(nullif(btrim(coalesce(p->>'note','')),''),1000), updated_at = now() where id = v_id;
+  delete from public.fm_bill_wos where bill_id = v_id;
+  for x in select * from jsonb_array_elements(L) loop
+    w := nullif(x->>'wo_id','')::uuid;
+    if x->>'k' = 'wo' and w is not null then
+      if exists(select 1 from public.fm_bill_wos where wo_id = w) then raise exception 'order already billed: %', x->>'ref'; end if;
+      insert into public.fm_bill_wos(wo_id, bill_id) values (w, v_id);
+    end if;
+  end loop;
+  return jsonb_build_object('id', v_id) || t;
+end $$;
+-- move a bill: submit | review | approve | return | pay | cancel
+create or replace function public.fm_bill_act(p_id uuid, p_action text, p_note text) returns text language plpgsql security definer set search_path = public as $$
+declare bl public.fm_bills; c public.fm_contracts; nx text; nm text := public.fm_me_name();
+begin
+  select * into bl from public.fm_bills where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  select * into c from public.fm_contracts where id = bl.contract_id;
+  if p_action = 'submit' and bl.status in ('draft','returned') and public.fm_bill_can('prep', c.region) then nx := 'submitted';
+  elsif p_action = 'review' and bl.status = 'submitted' and public.fm_bill_can('review', c.region) then nx := 'reviewed';
+  elsif p_action = 'approve' and bl.status in ('submitted','reviewed') and public.fm_bill_can('approve', c.region) then nx := 'approved';
+  elsif p_action = 'return' and bl.status in ('submitted','reviewed') and (public.fm_bill_can('review', c.region) or public.fm_bill_can('approve', c.region)) then
+    if btrim(coalesce(p_note,'')) = '' then raise exception 'note required'; end if; nx := 'returned';
+  elsif p_action = 'pay' and bl.status = 'approved' and public.fm_bill_can('pay', c.region) then nx := 'paid';
+  elsif p_action = 'cancel' and bl.status in ('draft','returned') and public.fm_bill_can('prep', c.region) then nx := 'cancelled';
+  else raise exception 'not allowed'; end if;
+  update public.fm_bills set status = nx, updated_at = now(), paid_at = case when nx = 'paid' then now() else paid_at end,
+    pay_ref = case when nx = 'paid' then left(nullif(btrim(coalesce(p_note,'')),''),120) else pay_ref end,
+    history = history || jsonb_build_array(jsonb_build_object('at', now(), 'by', nm, 'a', p_action, 'note', nullif(btrim(coalesce(p_note,'')),'')))
+   where id = p_id;
+  if nx = 'cancelled' then delete from public.fm_bill_wos where bill_id = p_id; end if;
+  return nx;
+end $$;
+revoke all on function public.fm_bill_totals(jsonb, public.fm_contracts) from public, anon, authenticated;
+revoke all on function public.fm_bill_can(text, text), public.fm_bill_contractors(), public.fm_contract_save(jsonb), public.fm_bill_build(uuid, text, uuid),
+  public.fm_bill_save(jsonb), public.fm_bill_act(uuid, text, text) from public, anon;
+grant execute on function public.fm_bill_can(text, text), public.fm_bill_contractors(), public.fm_contract_save(jsonb), public.fm_bill_build(uuid, text, uuid),
+  public.fm_bill_save(jsonb), public.fm_bill_act(uuid, text, text) to authenticated;
+-- V184: the bills are a part sold separately (key «bill»)
+create or replace function public.fm_mods_on() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(k), '[]') from unnest(array['tickets','wo','wh','eng','portal','costs','bill']) k where public.fm_mod(k) $$;
+drop trigger if exists fm_mod_guard on public.fm_bills;
+create trigger fm_mod_guard before insert on public.fm_bills for each row execute function public.fm_mod_guard('bill');
 
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.

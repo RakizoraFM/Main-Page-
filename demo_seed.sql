@@ -185,6 +185,10 @@ begin
   values (P_S2, 'تركي المطيري', P_S2, 'تركي المطيري', 'ticket', 'DM-00012', sch->2->>'school', st1, jsonb_build_array(jsonb_build_object('material_id', mats[6], 'qty', 6, 'issued', 0)), 'requested');
   insert into public.wo_purchase_requests(store_id, supplier_id, supplier_name, lines, total, status, requested_by_name)
   values (st1, sp1, 'مؤسسة التبريد المتقدم (تجريبي)', jsonb_build_array(jsonb_build_object('material_id', mats[2], 'qty', 10, 'price', 420, 'recv', 0)), 4200, 'requested', 'يوسف الزهراني (أمين المستودع)');
+  -- a contract of the demo contractor (bills are made from the page)
+  insert into public.fm_contracts(name, contractor_id, contractor_name, region, start_date, end_date, monthly_fixed, rates, mat_mode, mat_markup, retention_pct, vat_pct, penalty_cap_pct)
+  values ('عقد صيانة مدارس الرياض (تجريبي)', case when exists(select 1 from public.profiles where id = P_C1) then P_C1 end, 'مؤسسة الإتقان للصيانة', 'riyadh', date_trunc('year', now())::date,
+          (date_trunc('year', now()) + interval '2 years - 1 day')::date, 25000, '{"preventive":150,"repair":250,"inspection":100,"handover":300}', 'buy', 10, 5, 15, 10);
   -- engagement: the supervisors' schools
   insert into public.fm_eng_assignments(school_code, school_name, region, user_id, principal, phone, active)
   select x->>'buildingId', x->>'school', x->>'region', case when x->>'region' = 'qassim' then P_S3 when (x->>'supervisor') = 'ماجد السبيعي' then P_S1 else P_S2 end, x->>'principal', x->>'principalPhone', true
@@ -201,6 +205,7 @@ begin
   delete from public.wo_issue_requests where true; delete from public.wo_purchase_requests where true; delete from public.wo_serials where true;
   delete from public.wo_stock_moves where true; delete from public.wo_stock where true; delete from public.wo_supplier_prices where true;
   delete from public.wo_material_photos where true; delete from public.wo_suppliers where true; delete from public.wo_materials where true; delete from public.wo_stores where true;
+  delete from public.fm_bills where true; delete from public.fm_contracts where true;
   delete from public.work_orders where true; delete from public.tickets where true; delete from public.fm_eng_assignments where true;
   return public.fm_demo_seed();
 end $$;
