@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V180">
+<meta name="fm-version" content="V181">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25593,10 +25593,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V180',date:'2026-10-22',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V181',date:'2026-10-23',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V181',d:'2026-10-23',t:'بيع المنصة على أجزاء',i:['المنصة مقسمة إلى أجزاء تُشترى منفصلة: البلاغات والـ SLA، أوامر العمل، المستودعات وقطع الغيار، التواصل مع المدارس، بوابة مدير المدرسة، تكاليف المباني (والأساسي دائماً).','الجزء غير المشترى يختفي من القائمة والدليل والبورتال، وقاعدة البيانات ترفض إنشاء بيانات جديدة فيه؛ بياناته السابقة محفوظة.','إذا لم تشترِ الشركة البلاغات تفتح المنصة على أول جزء مشترى (أوامر العمل أو المستودع).','«الإعدادات» ← السحابة: بطاقة «🧩 أجزاء المنصة في اشتراككم» بما هو مفعّل وما ينتهي (التجربة).','لوحة مالك المنصة: باقات بأجزائها + أجزاء إضافية بسعرها، وفاتورة مفصّلة، وكود التفعيل يحمل الأجزاء وتواريخ التجربة.']},
  {v:'V180',d:'2026-10-22',t:'المستودعات وقطع الغيار: الأصناف المعتمدة والعهد والتوالف',i:['قسم مستقل في القائمة «📦 المستودعات وقطع الغيار»: المخزون، الأصناف والموردون، العهد وطلبات الصرف، المشتريات والضمان، وتقارير المستودع.','بطاقة الصنف: كود تلقائي، مواصفات، ملاحظات، حتى 3 صور، «يتطلب إرجاع التالف»، الضمان والرقم التسلسلي، وأسعار كل مورد.','الاعتماد على مرحلتين: مدير المشروع يرشّح ثم «ممثل الجهة المالكة» يعتمد الصنف أو السعر الجديد؛ لا يُصرف إلا المعتمد.','رفع قائمة المواد من Excel بالأسعار والكميات: كل رفع يُسجَّل توريداً بتاريخه واسم المورد.','العهدة: المشرف يطلب لأمر عمل أو بلاغ، أو بتوجيه من المهندس / المدير، و«أمين المستودع» (مسمى جديد) يصرف على عهدته.','عند اعتماد أمر العمل تُخصم المواد من عهدة المنفذ أولاً، والصنف الذي له تالف يبقى عليه حتى يؤكد أمين المستودع وحده استلام التالف.','مهلة إرجاع التالف مع تصعيد للمدير ثم للمشروع، ومنع صرف نفس الصنف له حتى يُرجعه، وسقف لقيمة العهدة، وجرد شهري يوقّعه المستلم.','طلبات شراء تُعتمد حسب حدود الصرف، والاستلام بفاتورة المورد مع تنبيه فرق السعر، وتسجيل الأرقام التسلسلية وضمانها.','تقارير: حركة صنف، حسب المشرف أو المهندس أو المبنى أو المورد، الموجود بالمستودع، وفروق الأسعار — Excel وطباعة.']},
  {v:'V179',d:'2026-10-21',t:'المنصة كاشتراك لعدة شركات (SaaS)',i:['كل شركة لها قاعدة بيانات (مشروع Supabase) منفصلة تماماً، والمنصة نفسها تخدم الجميع: الدخول من start.html?c=رمز الشركة مع اسمها وشعارها ولونها','الاشتراك داخل قاعدة كل شركة: الباقة وحد المدارس وتاريخ الانتهاء — تنبيه قبل 15 يوماً، ومهلة 7 أيام، ثم إيقاف الدخول حتى إدخال كود التفعيل (البيانات محفوظة)','«💳 الاشتراك» في الإعدادات ← السحابة: حالة الاشتراك وعدد المدارس من الحد وإدخال كود التفعيل','لوحة مالك المنصة saas.html: الشركات والتجهيز والباقات والفواتير الضريبية وأكواد التفعيل','اسم الشركة في التقارير والخطابات، ورمزها في روابط بوابة المدرسة والتقييم','يتطلب تشغيل supabase_setup.sql المحدَّث (القسم 23) في كل شركة، وsaas_control.sql مرة واحدة في مشروع التحكم']},
  {v:'V178',d:'2026-10-21',t:'التقرير الشهري للعميل',i:['صفحة «📑 التقرير الشهري للعميل»: تقرير PDF من عدة صفحات لكل شهر ومنطقة — الملخص التنفيذي ومقارنة بالشهر السابق، البلاغات حسب النوع والأولوية والمدرسة، أوامر العمل والصيانة الوقائية، التكاليف والمواد، ورضا المدارس','ملخص تنفيذي تلقائي قابل للتعديل، وخطة الشهر القادم والتوصيات']},
@@ -31509,7 +31510,7 @@ const P={
 window.fmV157P=P;
 const prof=()=>C.state&&C.state.on&&C.state.profile;
 const pos=p=>C.posOf(p)||p.role;
-function label(id){const b=document.getElementById(id);if(!b)return null;return S(b.querySelector('.v2-nav-label')?.textContent||b.textContent)}
+function label(id){const b=document.getElementById(id);if(!b||(window.fmModOff&&window.fmModOff(id)))return null;return S(b.querySelector('.v2-nav-label')?.textContent||b.textContent)}
 function root(){let r=document.getElementById('fm157-portal');if(!r){r=document.createElement('section');r.id='fm157-portal';r.hidden=true;document.body.appendChild(r)}return r}
 async function kpis(p){const out=[];
  try{const T=(window.state&&state.filteredTickets)||[];if(T.length&&typeof normalizeStatus==='function'){const cm=state.columnsMap||{};let open=0,late=0;
@@ -31829,6 +31830,7 @@ const MANUAL=[
  {id:'v2-nav-fm177-pen',t:'أداء المقاولين والغرامات',where:'الكادر والمقاولون ← «⚖️ أداء المقاولين والغرامات»',what:'بطاقة شهرية لكل مقاول (البلاغات والالتزام بالـ SLA ومتوسط الإغلاق وأوامر العمل المتأخرة والمعادة) مع حساب الغرامات وفق بنود العقد وخطاب PDF.',how:['اختر الشهر من أعلى الصفحة.','«⚙️ بنود الغرامات والعقود» (مدير النظام): غرامة البلاغ المتجاوز لكل أولوية، ولكل يوم تأخير أمر، ولكل إرجاع، والحد الأقصى كنسبة من قيمة العقد الشهرية لكل مقاول.','«📄 خطاب» يفتح إشعار الغرامات للمقاول جاهزاً للطباعة والتوقيع، و«⬇️ Excel» بالبطاقة والتفاصيل.'],who:'مدير النظام والمديرون والمحاسب',tips:['المقاول يُعرف من بيانات البلاغ / قاعدة المدارس، ومن اسم المُسند إليه في أوامر العمل.','البلاغ يُحسب في شهر إنشائه.'],v:'V177'},
  {id:'v2-nav-fm178-monthly',t:'التقرير الشهري للعميل',where:'التقارير ← «📑 التقرير الشهري للعميل»',what:'تقرير PDF شهري جاهز للإرسال للعميل: غلاف، الملخص التنفيذي مع المقارنة بالشهر السابق، البلاغات، أوامر العمل والصيانة الوقائية، التكاليف والمواد، رضا المدارس، وخطة الشهر القادم.',how:['اختر الشهر والمنطقة من أعلى الصفحة.','اكتب الملخص التنفيذي (أو اتركه للنص التلقائي) وخطة الشهر القادم — تظهر في المعاينة فوراً.','«🖨️ PDF / طباعة» ثم «حفظ كـ PDF» وأرسله للعميل.'],who:'المديرون والمهندس',tips:['أقسام التكاليف وأوامر العمل والرضا تظهر عند ربط السحابة وحسب صلاحياتك.','الأرقام من البلاغات المرفوعة للمنطقة؛ ارفع ملف الشهر كاملاً قبل إصدار التقرير.'],v:'V178'},
  {id:'saas-sub',t:'الاشتراك (لعدة شركات)',where:'الإعدادات ← السحابة ← «💳 الاشتراك»',what:'حالة اشتراك الشركة: الباقة وحد المدارس والمستخدم منها وتاريخ الانتهاء، وإدخال كود التفعيل بعد دفع فاتورة التجديد.',how:['عند اقتراب الانتهاء يظهر شريط أسفل الشاشة قبل 15 يوماً.','بعد الدفع يصل كود التفعيل من مزود الخدمة: «🔑 إدخال كود التفعيل» والصقه.','بعد الانتهاء بمهلة 7 أيام يتوقف الدخول للجميع وتبقى البيانات، ويعود العمل فور إدخال الكود.'],who:'مدير النظام',tips:['رابط دخول الشركة: start.html?c=رمز الشركة — أرسله لفريقك.','زيادة المدارس عن حد الباقة تُرفض عند حفظ قاعدة المدارس في السحابة — اطلب ترقية الباقة.'],v:'V179'},
+ {id:'mods',t:'أجزاء المنصة في الاشتراك',where:'الإعدادات ← السحابة ← «🧩 أجزاء المنصة في اشتراككم»',what:'المنصة تُباع على أجزاء: البلاغات والـ SLA، أوامر العمل، المستودعات وقطع الغيار، التواصل مع المدارس والرضا، بوابة مدير المدرسة، تكاليف المباني؛ والأساسي (المستخدمون وقاعدة المدارس والإعدادات) دائماً. البطاقة تبيّن ما هو مفعّل وما ينتهي في تاريخ (تجربة).',how:['الجزء غير المشمول لا يظهر في القائمة ولا في الدليل، ولا يمكن إنشاء بيانات فيه.','لإضافة جزء: يصل كود تفعيل جديد من مزوّد الخدمة ويُدخل من «💳 الاشتراك» ← «إدخال كود التفعيل»، فتظهر صفحاته فوراً بعد إعادة التحميل.'],who:'مدير النظام',tips:['بيانات أي جزء أُوقف تبقى محفوظة وتعود كما هي عند تفعيله.'],v:'V181'},
  {id:'v2-nav-fm180-items',t:'الأصناف والموردون والاعتماد',where:'المستودعات وقطع الغيار ← «🏷️ الأصناف والموردون»',what:'بطاقة كل صنف (كود، فئة، وحدة، سعر متفق عليه، مواصفات، ملاحظات، حتى 3 صور، «يتطلب إرجاع التالف»، الضمان والرقم التسلسلي) وأسعار الموردين، والاعتماد على مرحلتين، ورفع قائمة المواد من Excel.',how:['«➕ صنف جديد» أو اضغط صنفاً لفتح بطاقته؛ الكود الفارغ يُعطى تلقائياً (SP-00001).','الصور وأسعار الموردين من داخل البطاقة بعد الحفظ؛ الموردون من تبويب «🚚 الموردون».','«⬆️ رفع قائمة المواد»: نزّل القالب واملأه (الصنف، السعر المتفق عليه، المورد، الكمية…) واختر المستودع والتاريخ — الكمية تُسجَّل توريداً بتاريخها واسم المورد، والرفع الجديد يضيف حركة ولا يمسح.','تبويب «✅ الاعتمادات»: مدير المشروع يحدد ويضغط «ترشيح»، ثم ممثل الجهة المالكة «اعتماد نهائي» (أو «رفض» مع السبب).'],who:'يضيف ويعدّل: أمين المستودع ومهندس / مدير المنطقة والمديرون؛ يرشّح: مدير المشروع ومن أعلى؛ يعتمد نهائياً: ممثل الجهة المالكة',tips:['لا يظهر للصرف ولا في تطبيق الميدان إلا الصنف المعتمد.','السعر الجديد ينتظر الاعتماد ويبقى القديم مستخدماً حتى يُعتمد.','إن لم يوجد حساب «ممثل الجهة المالكة» يكون ترشيح مدير المشروع نهائياً.'],v:'V180'},
  {id:'v2-nav-fm180-custody',t:'العهد وطلبات الصرف والتالف',where:'المستودعات وقطع الغيار ← «🧾 العهد وطلبات الصرف»',what:'طلبات صرف القطع وعهدة كل مشرف وفني ومهندس: ما في يده، والتالف المطلوب إرجاعه، والمتأخر منه، والجرد الشهري.',how:['المشرف يطلب من تطبيق الميدان لأمر عمل أو بلاغ؛ المهندس أو المدير يطلب لأحد فريقه «توجيهاً مباشراً» من «➕ طلب صرف».','أمين المستودع يضغط «📤 صرف» (يمكن صرف جزء) فتُسجَّل الكميات على عهدة المستلم، ويؤكد المستلم الاستلام من جواله.','عند اعتماد أمر العمل تُخصم مواده من عهدة المنفذ أولاً (والباقي من المستودع). الصنف «يتطلب إرجاع التالف» يبقى تالفه عليه.','من بطاقة الشخص في «🧰 العهد»: «📥 استلام رجيع / تالف» (أمين المستودع فقط)، «📋 جرد العهدة» ليوقّعه المستلم، «⚖️ تسوية» للفقد مع السبب (مدير النظام / المشروع / العمليات)، و«🖨️ كشف عهدة» للتوقيع.'],who:'أمين المستودع يصرف ويستلم؛ المديرون والمهندس يرون عهد فريقهم ويطلبون لهم؛ مدير النظام والمشروع ومن أعلى يرون الكل',tips:['مهلة إرجاع التالف وأيام التصعيد وسقف العهدة لكل مسمى ومنع الصرف مع وجود تالف متأخر: «الإعدادات» ← السحابة ← «📦 قواعد المستودع والعهد» (مدير النظام).','حدّد أمين كل مستودع من «🏷️ الأصناف والموردون» ← «🏬 أمناء المستودعات».','الطلب يرفض الصرف إن لم يكفِ رصيد المستودع أو تجاوزت العهدة السقف.'],v:'V180'},
  {id:'v2-nav-fm180-po',t:'المشتريات والضمان',where:'المستودعات وقطع الغيار ← «🛒 المشتريات والضمان»',what:'طلبات الشراء من المستودع واعتمادها، والاستلام بفاتورة المورد مع فرق السعر عن المعتمد، والأرقام التسلسلية وتواريخ الضمان.',how:['«➕ طلب شراء» أو «🧮 من الأصناف تحت حد الطلب» لملء الكميات تلقائياً.','يعتمد: مدير المنطقة حتى حدّه في منطقته، مدير العمليات حتى حدّه، مدير المشروع ومدير النظام بلا حد (حدود الصرف في الإعدادات).','«📥 استلام»: الكمية وسعر الفاتورة ورقمها؛ يظهر الفرق ⚠️ إذا تجاوز النسبة المسموحة، ولصنف «له رقم تسلسلي» تُكتب الأرقام فيُسجَّل ضمانها.','تبويب «🔖 الأرقام التسلسلية والضمان»: المكان (مدرسة / أمر عمل) والحالة ومطالبات الضمان.'],who:'أمين المستودع ومديرو المخزون ينشئون ويستلمون؛ المديرون يعتمدون',tips:['فلتر «ينتهي خلال 30 يوماً» يساعد على مطالبة المورد قبل انتهاء الضمان.'],v:'V180'},
@@ -31900,14 +31902,14 @@ const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;return !!st.pr
 /* V164: each title sees only what concerns it. Sidebar pages follow the portal's hidden pages (fmV157P[title].hide);
    other entries list their titles here. The system admin sees everything and can preview any title. */
 const MGR=['dept_manager','project_manager','ops_manager','area_manager'],ASG=['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'];
-const RMAP={users:['sysadmin'],'saas-sub':['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],'cost-perms':['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
+const RMAP={users:['sysadmin'],mods:['sysadmin'],'saas-sub':['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],'cost-perms':['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
  'wo-group':ASG,'wo-templates':ASG,'wo-fci':ASG,'wo-repair':ASG.concat('dept_manager'),'gov-stop':['sysadmin','hse_manager','project_manager','ops_manager','dept_manager'],
  'gov-deputy':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'eng-rating':['sysadmin',...MGR,'area_engineer'],
  'v2-nav-fm164-usage':['sysadmin','project_manager'],'v2-nav-fm168-novaro':['sysadmin','dept_manager','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm167-news':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm158-qa':['sysadmin','qa_manager',...MGR],
  'field-tickets':['sysadmin','area_engineer'],'field-wo':['sysadmin','area_engineer'],'field-me':['sysadmin','area_engineer']};
 const myTitle=()=>{const p=C&&C.state&&C.state.on&&C.state.profile;return p?C.posOf(p):'sysadmin'};
 let asT='';const viewT=()=>myTitle()==='sysadmin'?(asT||'sysadmin'):myTitle();
-function sees(x,t){if(t==='sysadmin')return true;if(RMAP[x.id])return RMAP[x.id].includes(t);if(/^v2-nav-/.test(x.id)){const P=window.fmV157P;const h=P&&(P[t]||P.viewer)?(P[t]||P.viewer).hide:[];return !h.includes(x.id)}return true}
+function sees(x,t){if(window.fmModOff&&(window.fmModOff(x.id)||(/^wo-|^gov-stop/.test(x.id)&&!window.fmModOn('wo'))||(/^eng-/.test(x.id)&&!window.fmModOn('eng'))||(x.id==='cost-perms'&&!window.fmModOn('costs'))))return false;if(t==='sysadmin')return true;if(RMAP[x.id])return RMAP[x.id].includes(t);if(/^v2-nav-/.test(x.id)){const P=window.fmV157P;const h=P&&(P[t]||P.viewer)?(P[t]||P.viewer).hide:[];return !h.includes(x.id)}return true}
 const vnum=v=>+(String(v||'').match(/\d+/)||[0])[0];
 const log=()=>{try{return Array.isArray(window.FM_CHANGELOG)?window.FM_CHANGELOG:[]}catch(e){return []}};
 function isNew(v){const L=log().map(x=>vnum(x.v)).filter(Boolean),top=L.length?Math.max(...L):vnum(window.FM_APP_VERSION);return v&&vnum(v)>top-3}
@@ -33983,6 +33985,49 @@ if(C&&C.api){C.api.woMaterialSave=async rows=>{const out=[];for(const r of rows)
 const PP=window.fmV157P;if(PP){const RO=['v2-nav-refresh','fm-v38-clear-all-nav','v2-nav-bulk-assignment','v2-nav-workforce','v2-nav-fm116'];
  PP.storekeeper={d:'المستودع وقطع الغيار: الاستلام من الموردين، صرف القطع لعهد المشرفين والفنيين، واستلام الرجيع والتالف.',can:['يصرف طلبات القطع على عهدة المستلم','وحده يؤكد استلام الرجيع السليم والتالف','يسجل التوريد والجرد والتحويل في مستودعات منطقته','يرفع قائمة المواد ويقترح الأصناف والأسعار للاعتماد','يستخرج تقارير الموجود وحركة المستودع'],go:['v2-nav-fm180-custody','v2-nav-fm173-stock','v2-nav-fm180-items','v2-nav-fm180-po','v2-nav-fm180-rep'],hide:RO};
  PP.owner_rep={d:'ممثل الجهة المالكة: الاعتماد النهائي للأصناف وأسعار الموردين، ومتابعة التقارير (قراءة).',can:['يعتمد نهائياً الأصناف والأسعار التي رشّحها مدير المشروع','يرى المخزون والعهد والتقارير — قراءة فقط'],go:['v2-nav-fm180-items','v2-nav-fm180-rep','v2-nav-fm173-stock'],hide:RO};}
+})();
+</script>
+<script id="fm-v181-modules">(function(){
+'use strict';
+/* V181: parts of the platform sold separately (section 25: fm_plan.modules, fm_plan_info().on). A part that the company
+   did not buy disappears: its sidebar pages (and a group left empty), its manual entries and portal shortcuts (added to
+   every title's hidden pages), the tickets upload section, and the first page opens on a bought part. The list is kept in
+   localStorage fm181_mods so the menu is right before the cloud answers. Without a subscription list = every part. */
+const C=window.FMCloud;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const N=id=>'v2-nav-'+id;
+const MODS={
+ tickets:{n:'🎫 البلاغات والـ SLA',ids:['solution','actions','fm103-alerts','fm122-risk','sla','fm122-follow','fm135-work','fm118-breach','risk','fm176-capex','school-analysis','recurring','fm131-cost','table','staff','staff-performance','fm124-visits','fm124-load','contractors','fm177-pen','fm122-score','charts','period','fm103-periods','fm131-season','compare','pivot','saved','fm127-today','fm125-send','fm126-log','fm118-weekly','report','fm123-weekfu','quality','refresh','bulk-assignment'].map(N)},
+ wo:{n:'🛠️ أوامر العمل',ids:['fm145-wo','fm158-qa'].map(N)},
+ wh:{n:'📦 المستودعات وقطع الغيار',ids:['fm173-stock','fm180-items','fm180-custody','fm180-po','fm180-rep'].map(N)},
+ eng:{n:'💬 التواصل مع المدارس والرضا',ids:['eng'].map(N)},
+ portal:{n:'🏫 بوابة مدير المدرسة',ids:['fm175-req'].map(N)},
+ costs:{n:'💰 تكاليف المباني',ids:['fm171-costs'].map(N)}};
+window.FM_MODS=MODS;
+const KEY='fm181_mods';let ON=null;try{ON=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){}
+const off=k=>Array.isArray(ON)&&!ON.includes(k);
+window.fmModOn=k=>!off(k);
+window.fmModOff=id=>Object.keys(MODS).some(k=>off(k)&&MODS[k].ids.includes(id));
+const hidden=()=>Object.keys(MODS).filter(off).flatMap(k=>MODS[k].ids);
+let landed=false;
+function apply(){const H=hidden();let st=document.getElementById('fm181-hide');if(!st){st=document.createElement('style');st.id='fm181-hide';document.head.appendChild(st)}
+ const css=(H.length?H.map(id=>'#'+id).join(',')+'{display:none!important}':'')+(off('tickets')?'section.table-card:has(#tab-btn-upload){display:none!important}':'');if(st.textContent!==css)st.textContent=css;
+ for(const k of Object.keys(MODS))document.body.classList.toggle('fm181-no-'+k,off(k));
+ /* a group whose pages are all hidden disappears too */
+ document.querySelectorAll('nav.v2-nav .fm123-grp').forEach(g=>{const any=[...g.querySelectorAll('.v2-nav-btn')].some(b=>getComputedStyle(b).display!=='none');g.style.display=any?'':'none'});
+ /* manual + portal: every title also hides the pages of parts that are off */
+ const P=window.fmV157P;if(P)for(const t of Object.keys(P)){const base=P[t].__base||(P[t].__base=P[t].hide.slice());P[t].hide=[...new Set(base.concat(H))]}
+ if(!landed&&off('tickets')&&Array.isArray(ON)){const open=document.querySelector('.fm103-page.open,#fm157-portal:not([hidden])');if(!open){const b=['fm145-wo','fm180-custody','fm173-stock','eng','fm118-school'].map(N).map(id=>document.getElementById(id)).find(b=>b&&getComputedStyle(b).display!=='none');if(b){landed=true;try{b.click()}catch(e){}}}else landed=true}}
+async function sync(){if(!C||!C.engClient||!(C.state&&C.state.on))return false;try{const db=await C.engClient();const r=await db.rpc('fm_plan_info');if(r.error||!r.data)return false;
+ const on=Array.isArray(r.data.on)?r.data.on:null;const was=JSON.stringify(ON);ON=r.data.modules?on:null;try{localStorage.setItem(KEY,JSON.stringify(ON))}catch(e){}window.FM_PLAN_INFO=r.data;if(JSON.stringify(ON)!==was)apply();return true}catch(e){return false}}
+apply();let n=0;const t=setInterval(async()=>{if(++n>60||await sync())clearInterval(t)},2500);
+setInterval(apply,3000);
+/* «الإعدادات» ← السحابة: the parts of this subscription */
+(window.fmHubExtras=window.fmHubExtras||[]).push(function(tab,pane){if(tab!=='cloud'||!(C&&C.state&&C.state.on))return;const box=document.createElement('div');box.className='fm122-card';box.style.marginTop='14px';pane.appendChild(box);
+ const draw=()=>{const i=window.FM_PLAN_INFO||{},m=i.modules&&typeof i.modules==='object'?i.modules:null;
+  box.innerHTML=`<h3>🧩 أجزاء المنصة في اشتراككم</h3><div class="fm103-tw"><table class="fm103-t"><thead><tr><th>الجزء</th><th>الحالة</th></tr></thead><tbody><tr><td>🧱 الأساسي (المستخدمون، قاعدة المدارس، الإعدادات)</td><td>✅ مفعّل دائماً</td></tr>
+  ${Object.entries(MODS).map(([k,x])=>`<tr><td>${esc(x.n)}</td><td>${off(k)?'— غير مشمول':m&&m[k]?`⏳ مفعّل حتى ${esc(m[k])}`:'✅ مفعّل'}</td></tr>`).join('')}</tbody></table></div><div class="fm125-src" style="margin-top:6px">لإضافة جزء تواصل مع مزوّد الخدمة؛ يصل الجزء الجديد بكود تفعيل يُدخل من «💳 الاشتراك». بيانات الجزء غير المشمول محفوظة وتعود عند تفعيله.</div>`};
+ draw();sync().then(draw)});
 })();
 </script>
 </body>

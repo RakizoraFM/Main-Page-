@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F29">
+<meta name="fm-version" content="F30">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1672,6 +1672,24 @@ window.fmfCustody=open;
 let n=0;const t=setInterval(async()=>{try{if(!ME){if(++n>90){clearInterval(t);return}if(!C.engClient||!C.api||!C.api.me)return;const p=await C.api.me();if(!p||!['supervisor','contractor','engineer'].includes(p.role))return;ME=p;try{await load();on=true}catch(e){X=null}}
  if(on)homeCard()}catch(e){}},1500);
 setInterval(()=>{if(on&&!document.hidden&&!document.getElementById('f29')?.classList.contains('open'))load().catch(()=>{})},5*60e3);
+})();
+</script>
+<style id="fmf-30-modules-css">
+body.fmm-no-tickets .bnav button[data-v="list"],body.fmm-no-tickets #app .kpis,body.fmm-no-tickets #app .card.guide,body.fmm-no-tickets #app .card:has(.urg),body.fmm-no-tickets #app .card:has(.stats),body.fmm-no-tickets #h-plan,body.fmm-no-tickets #h-all{display:none!important}
+body.fmm-no-wo .bnav button[data-v="wo"],body.fmm-no-wo #h-wo{display:none!important}
+body.fmm-no-eng .bnav button[data-v="eng"]{display:none!important}
+body.fmm-no-wh #f29-h{display:none!important}
+</style>
+<script id="fmf-30-modules">(function(){
+'use strict';
+/* F30 (V181): parts of the platform sold separately — the field app hides the tabs and home blocks of a part the company
+   did not buy (fm_plan_info().on; cached in localStorage fmf_mods). No list = every part. */
+const C=window.FMCloud;let ON=null;try{ON=JSON.parse(localStorage.getItem('fmf_mods')||'null')}catch(e){}
+const apply=()=>{for(const k of ['tickets','wo','wh','eng'])document.body.classList.toggle('fmm-no-'+k,Array.isArray(ON)&&!ON.includes(k));
+ if(Array.isArray(ON)&&!ON.includes('tickets')&&ON.includes('wo')&&!apply.go){const b=document.querySelector('.bnav button[data-v="wo"]');if(b){apply.go=1;b.click()}}};
+apply();let n=0;const t=setInterval(async()=>{if(++n>60){clearInterval(t);return}try{if(!C||!C.engClient)return;const db=await C.engClient();const r=await db.rpc('fm_plan_info');if(r.error||!r.data)return;clearInterval(t);
+ ON=r.data.modules&&Array.isArray(r.data.on)?r.data.on:null;try{localStorage.setItem('fmf_mods',JSON.stringify(ON))}catch(e){}apply()}catch(e){}},2000);
+setInterval(apply,3000);
 })();
 </script>
 </body>

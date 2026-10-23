@@ -36,7 +36,8 @@ create table if not exists public.saas_tenants (
 );
 create table if not exists public.saas_settings (key text primary key, value jsonb not null, updated_at timestamptz not null default now());
 insert into public.saas_settings(key, value) values
-  ('plans', '[{"k":"basic","name":"الأساسية","max":50,"price":1500},{"k":"pro","name":"الاحترافية","max":300,"price":5000},{"k":"enterprise","name":"المؤسسات","max":0,"price":12000}]'),
+  ('plans', '[{"k":"basic","name":"البلاغات","max":50,"price":1500,"modules":["tickets"]},{"k":"pro","name":"التشغيل","max":300,"price":5000,"modules":["tickets","wo","eng","portal"]},{"k":"enterprise","name":"الشاملة","max":0,"price":12000,"modules":["tickets","wo","wh","eng","portal","costs"]}]'),
+  ('addons', '[{"k":"tickets","base":800,"per_school":0},{"k":"wo","base":1500,"per_school":0},{"k":"wh","base":1500,"per_school":0},{"k":"eng","base":500,"per_school":0},{"k":"portal","base":500,"per_school":0},{"k":"costs","base":500,"per_school":0}]'),
   ('seller', '{"name":"RakizoraFM","vat_no":"","address":"","iban":"","vat_pct":15}')
 on conflict (key) do nothing;
 create sequence if not exists public.saas_invoice_seq;
@@ -60,6 +61,13 @@ create table if not exists public.saas_invoices (
   created_at      timestamptz not null default now()
 );
 grant usage, select on sequence public.saas_invoice_seq to authenticated;
+-- V181: the parts of the platform a company bought {key: until-date | null} (null = every part), and the invoice lines
+alter table public.saas_tenants  add column if not exists modules jsonb;
+alter table public.saas_invoices add column if not exists modules jsonb;
+alter table public.saas_invoices add column if not exists lines   jsonb;
+insert into public.saas_settings(key, value) values
+  ('addons', '[{"k":"tickets","base":800,"per_school":0},{"k":"wo","base":1500,"per_school":0},{"k":"wh","base":1500,"per_school":0},{"k":"eng","base":500,"per_school":0},{"k":"portal","base":500,"per_school":0},{"k":"costs","base":500,"per_school":0}]')
+on conflict (key) do nothing;
 create index if not exists saas_invoices_tenant_idx on public.saas_invoices (tenant, issued_at desc);
 
 alter table public.saas_owners   enable row level security;

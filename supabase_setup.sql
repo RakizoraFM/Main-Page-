@@ -835,6 +835,7 @@ language plpgsql security definer set search_path = public as $$
 declare r record; n int := 0;
 begin
   if auth.uid() is not null and public.fm_role() not in ('admin','manager','staff','engineer','supervisor') then return 0; end if;
+  if not public.fm_mod('wo') then return 0; end if;     -- V181: the work-orders part is off
   perform public.fm_wo_escalate();   -- V158
   for r in select id from public.wo_schedules where active and next_run_at <= now() order by next_run_at limit 25 loop
     perform public.fm_wo_run_schedule(r.id, false); n := n + 1;
@@ -3188,6 +3189,7 @@ declare st uuid; x record; c numeric; sc boolean; days int := coalesce((public.f
   hn text := (select coalesce(full_name, email) from public.profiles where id = new.assignee); nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid());
 begin
   if new.status <> 'closed' or old.status = 'closed' then return new; end if;
+  if not public.fm_mod('wh') then return new; end if;     -- V181: the warehouse part is off
   if exists(select 1 from public.wo_stock_moves where wo_id = new.id and kind = 'out') or exists(select 1 from public.wo_custody_moves where wo_id = new.id and kind = 'use') then return new; end if;
   st := public.fm_stock_store_for(new.region);
   for x in
@@ -3446,5 +3448,66 @@ grant execute on function public.fm_mat_save(jsonb), public.fm_mat_delete(uuid),
   public.fm_custody_count_new(jsonb), public.fm_custody_count_sign(uuid, boolean, text), public.fm_custody_overdue(), public.fm_custody_value(uuid),
   public.fm_po_save(jsonb), public.fm_po_act(uuid, text, jsonb), public.fm_serial_save(jsonb), public.fm_wh_import(jsonb) to authenticated;
 revoke all on function public.fm_mat_code() from authenticated;
+
+-- ---------- 25) parts of the platform sold separately (V181) ----------
+-- fm_plan.modules = the parts this company bought: {"tickets": null, "wo": null, "wh": "2026-11-30", …} (a date = until then,
+-- e.g. a trial; null = for the whole subscription). The column empty (null) = every part, as before V181 — so a company
+-- without a modules list and the single-company installation keep everything. Keys: tickets (البلاغات والـ SLA), wo (أوامر
+-- العمل), wh (المستودعات وقطع الغيار), eng (التواصل مع المدارس والرضا), portal (بوابة مدير المدرسة), costs (تكاليف المباني);
+-- «core» (users, school DB, settings) is always on. The activation code carries the list (key m); a code without it keeps
+-- the current list. A part that is off: its pages disappear and the database refuses new rows in its tables (the data stays
+-- and comes back when the part is bought again).
+alter table public.fm_plan add column if not exists modules jsonb;
+create or replace function public.fm_mod(k text) returns boolean language sql stable security definer set search_path = public as $$
+  select k = 'core' or coalesce((select p.modules is null or jsonb_typeof(p.modules) <> 'object'
+      or (p.modules ? k and (jsonb_typeof(p.modules->k) = 'null' or current_date <= (p.modules->>k)::date))
+    from public.fm_plan p where p.id = 1), true) $$;
+create or replace function public.fm_mods_on() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(k), '[]') from unnest(array['tickets','wo','wh','eng','portal','costs']) k where public.fm_mod(k) $$;
+create or replace function public.fm_plan_info() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce((select jsonb_build_object('company', p.company, 'plan', p.plan, 'schools_limit', p.schools_limit, 'active_until', p.active_until,
+      'grace_days', p.grace_days, 'days_left', p.active_until - current_date, 'activated_at', p.activated_at, 'modules', p.modules, 'on', public.fm_mods_on(),
+      'state', case when p.active_until is null then 'unlimited' when current_date <= p.active_until - 15 then 'ok'
+                    when current_date <= p.active_until then 'warn' when current_date <= p.active_until + p.grace_days then 'grace' else 'expired' end,
+      'schools', (select case when jsonb_typeof(v) = 'array' then jsonb_array_length(v) when jsonb_typeof(v) = 'string' and left(v #>> '{}',1) = '['
+                  then jsonb_array_length((v #>> '{}')::jsonb) else 0 end from (select value v from public.app_kv where key = 'fm_school_master_db_v1') x))
+    from public.fm_plan p where p.id = 1), jsonb_build_object('state','none','on',public.fm_mods_on())) $$;
+create or replace function public.fm_plan_activate(p_code text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare pl public.fm_plan; parts text[]; b64 text; j jsonb;
+begin
+  if not exists(select 1 from public.profiles where id = auth.uid() and active and role = 'admin') then raise exception 'not allowed'; end if;
+  select * into pl from public.fm_plan where id = 1 for update;
+  if not found then raise exception 'no subscription'; end if;
+  parts := regexp_split_to_array(btrim(coalesce(p_code,'')), '\.');
+  if array_length(parts,1) <> 2 or parts[2] !~ '^[0-9a-f]{64}$' then raise exception 'invalid code'; end if;
+  if public.fm_plan_hmac(parts[1], pl.secret) <> parts[2] then raise exception 'invalid code'; end if;
+  b64 := translate(parts[1], '-_', '+/'); b64 := b64 || repeat('=', (4 - length(b64) % 4) % 4);
+  j := convert_from(decode(b64, 'base64'), 'utf8')::jsonb;
+  if j->>'c' is distinct from pl.company then raise exception 'code for another company'; end if;
+  if coalesce(j->>'n','') = '' or (j->>'n') = any(pl.nonces) then raise exception 'code already used'; end if;
+  if j ? 'm' and jsonb_typeof(j->'m') <> 'object' then raise exception 'invalid code'; end if;
+  update public.fm_plan set plan = coalesce(j->>'p', plan), schools_limit = coalesce((j->>'l')::int, schools_limit), active_until = (j->>'u')::date,
+    modules = case when j ? 'm' then j->'m' else modules end,
+    nonces = (array[j->>'n'] || nonces)[1:100], activated_at = now(), updated_at = now() where id = 1;
+  return public.fm_plan_info();
+end $$;
+-- new rows in the tables of a part that is off are refused
+create or replace function public.fm_mod_guard() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_mod(tg_argv[0]) then raise exception 'module disabled: %', tg_argv[0]; end if;
+  return new;
+end $$;
+do $$ declare x text[]; begin
+  foreach x slice 1 in array array[['tickets','tickets'],['work_orders','wo'],['wo_schedules','wo'],['wo_issue_requests','wh'],['wo_purchase_requests','wh'],
+      ['wo_stock_moves','wh'],['wo_custody_moves','wh'],['fm_eng_logs','eng'],['fm_school_links','portal'],['fm_school_requests','portal'],['fm_expenses','costs'],['fm_budgets','costs']] loop
+    if to_regclass('public.' || x[1]) is not null then
+      execute format('drop trigger if exists fm_mod_guard on public.%I', x[1]);
+      execute format('create trigger fm_mod_guard before insert on public.%I for each row execute function public.fm_mod_guard(%L)', x[1], x[2]);
+    end if;
+  end loop;
+end $$;
+revoke all on function public.fm_mod_guard() from public, anon, authenticated;
+revoke all on function public.fm_mod(text), public.fm_mods_on() from public, anon;
+grant execute on function public.fm_mod(text), public.fm_mods_on() to authenticated;
 
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
