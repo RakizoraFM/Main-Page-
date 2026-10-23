@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S8">
+<meta name="fm-version" content="S9">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <title>RakizoraFM | تسجيل الدخول</title>
@@ -121,7 +121,7 @@ async function tenantStep(){const qc=S(new URLSearchParams(location.search).get(
  if(t.status==='suspended'){try{localStorage.setItem(TKEY,JSON.stringify({code:t.code,name:t.name,logo:t.logo,color:t.color,status:t.status}))}catch(e){}tenantError(`حساب ${t.name} موقوف حالياً — تواصل مع مزود الخدمة.`);return false}
  const changed=!cur||cur.code!==t.code||readCfg().url!==S(t.url).replace(/\/+$/,'');
  if(changed){try{localStorage.removeItem('fm-cloud-auth')}catch(e){}client=null}
- saveCfg({url:t.url,key:t.key});try{localStorage.setItem(TKEY,JSON.stringify({code:t.code,name:t.name,logo:t.logo,color:t.color,status:t.status,active_until:t.active_until,demo:!!t.demo,demo_pass:t.demo?t.demo_pass||'':undefined}))}catch(e){}
+ saveCfg({url:t.url,key:t.key});try{localStorage.setItem(TKEY,JSON.stringify({code:t.code,name:t.name,logo:t.logo,color:t.color,status:t.status,active_until:t.active_until,demo:!!t.demo,demo_pass:t.demo?t.demo_pass||'':undefined,ctl:DEFAULT_CFG}))}catch(e){}
  applyBrand(t);return true}
 window.fmStartChangeCompany=changeCompany;
 const msg=(t,k)=>t?`<div class="msg ${k||'err'}">${t}</div>`:'';

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V184">
+<meta name="fm-version" content="V185">
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25593,10 +25593,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V184',date:'2026-10-23',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V185',date:'2026-10-23',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V185',d:'2026-10-23',t:'التسويق ومتابعة الشركات',i:['صفحة تعريفية عامة try.html: الأجزاء والباقات وأسعارها، زر الدخول لنسخة العرض، ونموذج «اطلب تجربة» يصل مباشرة للوحة مالك المنصة.','لوحة مالك المنصة: «📥 طلبات التجربة» بحالاتها وتحويل الطلب إلى شركة بضغطة، وجدول استخدام كل شركة (المستخدمون النشطون، الميدان، المدارس، أوامر العمل) مع تنبيه الاستخدام المنخفض وقرب حد المدارس.','تذكير التجديد بالواتساب قبل 30 و15 و7 أيام وبعد الانتهاء، مع تسجيل ما أُرسل.','المنصة ترسل لمزود الخدمة مرة يومياً أرقام الاستخدام فقط (بدون أسماء أو بيانات مدارس أو بلاغات)، موقّعة بسر الشركة.']},
  {v:'V184',d:'2026-10-23',t:'مستخلصات المقاولين',i:['صفحة «🧾 مستخلصات المقاولين»: عقود بمبلغ شهري ثابت وسعر لكل نوع أمر عمل ومواد الشراء بنسبة إضافة، ومحتجزات وضريبة وسقف للغرامات.','المستخلص الشهري يقترح بنوده تلقائياً من أوامر عمل المقاول المعتمدة في الشهر (لا يُدرج الأمر في مستخلصين)، مع إضافات وخصومات وغرامات (تُجلب من صفحة الغرامات).','مسار الاعتماد: إعداد ← تقديم ← مراجعة المهندس / مدير المنطقة ← اعتماد مدير المشروع ← صرف المحاسب، مع الإعادة للتعديل وسجل كامل.','طباعة المستخلص بالتوقيعات وتصدير Excel، والمقاول يرى مستخلصاته؛ والمستخلصات جزء مستقل في الاشتراك.']},
  {v:'V183',d:'2026-10-23',t:'خطوات البداية لشركة جديدة',i:['صفحة «🚀 خطوات البداية» لمدير النظام: قاعدة المدارس، حسابات الفريق والمسميات، خط الإشراف، رفع البلاغات، إسناد التواصل، المستودعات وأمناؤها، قائمة المواد، قواعد العمل، أول أمر عمل، روابط بوابة المدارس، رسائل الترحيب.','كل خطوة تتحقق من البيانات تلقائياً وفيها زر يفتح الصفحة المطلوبة، مع نسبة التجهيز.','تظهر الخطوات حسب أجزاء الاشتراك فقط، وتفتح الصفحة تلقائياً مرة في كل جلسة حتى يكتمل التجهيز (أو «لاحقاً»).']},
  {v:'V182',d:'2026-10-23',t:'شركة العرض التجريبية',i:['شركة عرض ببيانات وهمية بالكامل (60 مدرسة، نحو 800 بلاغ، أوامر عمل بكل الحالات، مستودع وعهد وطلبات) لعرض المنصة على العملاء دون كشف بيانات حقيقية.','صفحة البداية لشركة العرض تعرض أزرار الأدوار (مدير النظام، مدير المشروع، المهندس، المشرف، المقاول، أمين المستودع، ممثل المالك، المحاسبة) للدخول بضغطة.','شريط «🧪 نسخة عرض» في المنصة وتطبيق الميدان، وزر «🔄 إعادة بيانات العرض» لمدير النظام؛ وتُعاد البيانات تلقائياً كل ليلة.','ملف demo_seed.sql يُشغَّل في مشروع شركة العرض فقط، وخيار «🧪 شركة عرض» في لوحة مالك المنصة.']},
@@ -34311,6 +34312,21 @@ function nav(){const n=document.querySelector('nav.v2-nav');if(!n)return;let b=d
 setInterval(()=>{try{nav()}catch(e){}},3000);
 /* the bills are a part of their own (V181 parts) */
 if(window.FM_MODS)window.FM_MODS.bill={n:'🧾 مستخلصات المقاولين',ids:['v2-nav-fm184-bills']};
+})();
+</script>
+<script id="fm-v185-ping">(function(){
+'use strict';
+/* V185: once a day a signed-in manager's platform sends the company's usage numbers to the platform owner: fm_plan_usage()
+   (section 27) returns them signed with the company secret, and the owner's control project (fm_tenant.ctl, saved by
+   start.html) checks the signature in saas_ping. Only counts — no names and no data of schools or tickets. */
+const C=window.FMCloud,T=window.FM_TENANT;if(!C||!T||!T.code||!T.ctl||!T.ctl.url||T.demo)return;
+const KEY='fm185_ping';
+let n=0;const t=setInterval(async()=>{if(++n>40){clearInterval(t);return}
+ if(!(C.state&&C.state.on&&C.state.profile)||!['admin','manager','staff','viewer','engineer'].includes(C.state.profile.role))return;clearInterval(t);
+ const day=new Date().toISOString().slice(0,10);try{if(localStorage.getItem(KEY)===day+'|'+T.code)return}catch(e){}
+ try{const db=await C.engClient();const r=await db.rpc('fm_plan_usage');if(r.error||!r.data||!r.data.p)return;
+  const x=await fetch(String(T.ctl.url).replace(/\/+$/,'')+'/rest/v1/rpc/saas_ping',{method:'POST',headers:{apikey:T.ctl.key,Authorization:'Bearer '+T.ctl.key,'Content-Type':'application/json'},body:JSON.stringify({p_code:T.code,p_payload:r.data.p,p_sig:r.data.s})});
+  if(x.ok)try{localStorage.setItem(KEY,day+'|'+T.code)}catch(e){}}catch(e){}},3000);
 })();
 </script>
 </body>

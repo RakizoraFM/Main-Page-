@@ -3733,4 +3733,30 @@ create or replace function public.fm_mods_on() returns jsonb language sql stable
 drop trigger if exists fm_mod_guard on public.fm_bills;
 create trigger fm_mod_guard before insert on public.fm_bills for each row execute function public.fm_mod_guard('bill');
 
+-- ---------- 27) daily usage sent to the platform owner (V185) ----------
+-- fm_plan_usage() returns today's numbers of this company (no names, no data of schools or tickets) signed with the company
+-- secret; the platform of a signed-in manager posts it once a day to the owner's control project (saas_ping), which checks
+-- the signature. No subscription row = nothing to send.
+create or replace function public.fm_plan_usage() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare pl public.fm_plan; j jsonb; t text;
+begin
+  if auth.uid() is null or public.fm_role() not in ('admin','manager','staff','engineer','viewer') then return null; end if;
+  select * into pl from public.fm_plan where id = 1;
+  if not found then return null; end if;
+  j := jsonb_build_object('c', pl.company, 'd', current_date,
+    'users', (select count(*) from public.profiles where active and role <> 'pending'),
+    'active7', (select count(distinct user_id) from public.fm_activity where day > current_date - 7),
+    'active30', (select count(distinct user_id) from public.fm_activity where day > current_date - 30),
+    'field7', (select count(distinct user_id) from public.fm_activity where day > current_date - 7 and app = 'field'),
+    'schools', coalesce((public.fm_plan_info()->>'schools')::int, 0), 'limit', pl.schools_limit,
+    'tickets', (select count(*) from public.tickets),
+    'wo30', (select count(*) from public.work_orders where created_at > now() - interval '30 days'),
+    'wo_closed30', (select count(*) from public.work_orders where status = 'closed' and coalesce(closed_at, updated_at) > now() - interval '30 days'),
+    'on', public.fm_mods_on(), 'until', pl.active_until);
+  t := j::text;
+  return jsonb_build_object('p', t, 's', public.fm_plan_hmac(t, pl.secret));
+end $$;
+revoke all on function public.fm_plan_usage() from public, anon;
+grant execute on function public.fm_plan_usage() to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.

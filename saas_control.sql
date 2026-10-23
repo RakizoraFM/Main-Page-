@@ -95,3 +95,83 @@ create or replace function public.saas_tenant(p_code text) returns jsonb languag
 revoke all on function public.saas_tenant(text), public.saas_is_owner() from public;
 grant execute on function public.saas_tenant(text) to anon, authenticated;
 grant execute on function public.saas_is_owner() to authenticated;
+
+-- ---------- V185: trial requests from try.html, daily usage of each company, renewal reminders ----------
+do $$ begin execute 'create extension if not exists pgcrypto with schema extensions'; exception when others then null; end $$;
+insert into public.saas_settings(key, value) values ('site', '{"demo_code":"","whatsapp":"","show_prices":true,"email":""}') on conflict (key) do nothing;
+alter table public.saas_tenants add column if not exists reminders jsonb not null default '{}';   -- {"2026-12-31:30": "2026-12-01", …} renewal reminders sent
+create table if not exists public.saas_leads (
+  id         uuid primary key default gen_random_uuid(),
+  at         timestamptz not null default now(),
+  name       text not null,
+  company    text not null,
+  phone      text not null,
+  email      text,
+  city       text,
+  schools    int,
+  modules    text[] not null default '{}',
+  message    text,
+  status     text not null default 'new' check (status in ('new','contacted','demo','trial','won','lost')),
+  note       text,
+  tenant     text,
+  updated_at timestamptz not null default now()
+);
+create index if not exists saas_leads_at_idx on public.saas_leads (at desc);
+create table if not exists public.saas_usage (
+  tenant text not null references public.saas_tenants(code) on update cascade on delete cascade,
+  day    date not null,
+  stats  jsonb not null,
+  at     timestamptz not null default now(),
+  primary key (tenant, day)
+);
+alter table public.saas_leads enable row level security;
+alter table public.saas_usage enable row level security;
+drop policy if exists p_saas_leads on public.saas_leads;
+create policy p_saas_leads on public.saas_leads for all using (public.saas_is_owner()) with check (public.saas_is_owner());
+drop policy if exists p_saas_usage on public.saas_usage;
+create policy p_saas_usage on public.saas_usage for select using (public.saas_is_owner());
+revoke all on public.saas_leads, public.saas_usage from anon;
+-- public (no account): what try.html shows — plans and add-ons with their parts (prices only when show_prices), the demo code
+create or replace function public.saas_public() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('seller', (select value->>'name' from public.saas_settings where key = 'seller'),
+    'site', (select value - 'email' from public.saas_settings where key = 'site'),
+    'plans', (select case when coalesce((select (value->>'show_prices')::boolean from public.saas_settings where key = 'site'), true) then value
+                          else (select coalesce(jsonb_agg(x - 'price'), '[]') from jsonb_array_elements(value) x) end from public.saas_settings where key = 'plans'),
+    'addons', (select case when coalesce((select (value->>'show_prices')::boolean from public.saas_settings where key = 'site'), true) then value else '[]'::jsonb end
+               from public.saas_settings where key = 'addons')) $$;
+-- public (no account): a trial request. hp is a hidden field that people leave empty; limits: 3 a day per phone, 300 a day in all
+create or replace function public.saas_lead_new(p jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare ph text := regexp_replace(coalesce(p->>'phone',''), '[^0-9+]', '', 'g');
+begin
+  if coalesce(p->>'hp','') <> '' then return 'ok'; end if;
+  if length(btrim(coalesce(p->>'name',''))) < 2 or length(btrim(coalesce(p->>'company',''))) < 2 then raise exception 'name required'; end if;
+  if ph !~ '^\+?[0-9]{9,15}$' then raise exception 'invalid phone'; end if;
+  if (select count(*) from public.saas_leads where phone = ph and at > now() - interval '1 day') >= 3
+     or (select count(*) from public.saas_leads where at > now() - interval '1 day') >= 300 then raise exception 'too many requests'; end if;
+  insert into public.saas_leads(name, company, phone, email, city, schools, modules, message)
+  values (left(btrim(p->>'name'),120), left(btrim(p->>'company'),200), ph, left(nullif(btrim(coalesce(p->>'email','')),''),120), left(nullif(btrim(coalesce(p->>'city','')),''),80),
+          least(greatest(coalesce(nullif(regexp_replace(coalesce(p->>'schools',''),'[^0-9]','','g'),'')::int, 0), 0), 100000),
+          coalesce((select array_agg(left(x,20)) from jsonb_array_elements_text(case when jsonb_typeof(p->'modules') = 'array' then p->'modules' else '[]' end) x limit 10), '{}'),
+          left(nullif(btrim(coalesce(p->>'message','')),''),1000));
+  return 'ok';
+end $$;
+-- a company's platform reports its daily numbers, signed in its own database with the company secret (fm_plan_usage)
+create or replace function public.saas_hmac(p_data text, p_key text) returns text language plpgsql immutable set search_path = public as $$
+begin
+  begin return encode(extensions.hmac(convert_to(p_data,'utf8'), convert_to(p_key,'utf8'), 'sha256'), 'hex');
+  exception when undefined_function or invalid_schema_name then return encode(public.hmac(convert_to(p_data,'utf8'), convert_to(p_key,'utf8'), 'sha256'), 'hex'); end;
+end $$;
+create or replace function public.saas_ping(p_code text, p_payload text, p_sig text) returns text language plpgsql security definer set search_path = public as $$
+declare t public.saas_tenants; j jsonb;
+begin
+  select * into t from public.saas_tenants where code = lower(btrim(coalesce(p_code,'')));
+  if not found or length(coalesce(p_payload,'')) > 4000 or public.saas_hmac(p_payload, t.secret) <> coalesce(p_sig,'') then raise exception 'invalid'; end if;
+  j := p_payload::jsonb;
+  if j->>'c' is distinct from t.code or abs((j->>'d')::date - current_date) > 2 then raise exception 'invalid'; end if;
+  insert into public.saas_usage(tenant, day, stats) values (t.code, (j->>'d')::date, j - 'c' - 'd')
+    on conflict (tenant, day) do update set stats = excluded.stats, at = now();
+  return 'ok';
+end $$;
+revoke all on function public.saas_hmac(text, text) from public, anon, authenticated;
+revoke all on function public.saas_public(), public.saas_lead_new(jsonb), public.saas_ping(text, text, text) from public;
+grant execute on function public.saas_public(), public.saas_lead_new(jsonb), public.saas_ping(text, text, text) to anon, authenticated;

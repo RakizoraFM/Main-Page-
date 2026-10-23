@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SA3">
+<meta name="fm-version" content="SA4">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -83,6 +83,9 @@ const API=window.FMSaasAPI=window.FMSaasAPI||{
  async settings(){const c=await sb();return Object.fromEntries((chk(await c.from('saas_settings').select('key,value'))||[]).map(x=>[x.key,x.value]))},
  async saveSetting(k,v){const c=await sb();return chk(await c.from('saas_settings').upsert([{key:k,value:v,updated_at:new Date().toISOString()}],{onConflict:'key'}))},
  async invoices(){const c=await sb();return chk(await c.from('saas_invoices').select('*').order('created_at',{ascending:false}).limit(1000))},
+ async leads(){const c=await sb();return chk(await c.from('saas_leads').select('*').order('at',{ascending:false}).limit(1000))},
+ async updLead(id,o){const c=await sb();return chk(await c.from('saas_leads').update(Object.assign({updated_at:new Date().toISOString()},o)).eq('id',id).select())},
+ async usage(){const c=await sb();const d=new Date(Date.now()-60*864e5).toISOString().slice(0,10);return chk(await c.from('saas_usage').select('*').gte('day',d).order('day',{ascending:false}))},
  async addInvoice(o){const c=await sb();return chk(await c.from('saas_invoices').insert(o).select())[0]},
  async updInvoice(id,o){const c=await sb();return chk(await c.from('saas_invoices').update(o).eq('id',id).select())[0]}
 };
@@ -94,7 +97,7 @@ async function signCode(t,plan,limit,until,nonce,mods){const o={c:t.code,p:plan,
  const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(t.secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
  const sig=new Uint8Array(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(b)));return b+'.'+[...sig].map(x=>x.toString(16).padStart(2,'0')).join('')}
 window.fmSaasSign=signCode;
-let T=[],INV=[],SET={},TAB='dash';
+let T=[],INV=[],SET={},TAB='dash',LEADS=[],USE=[];
 const plans=()=>Array.isArray(SET.plans)?SET.plans:[];
 const planOf=k=>plans().find(p=>p.k===k)||{k,name:k,max:0,price:0};
 /* SA2 (V181): the parts of the platform. A plan (باقة) lists its parts; other parts are add-ons priced per month
@@ -123,22 +126,52 @@ function login(err){app.innerHTML=`<div class="login"><h2>🔐 لوحة مالك
 async function boot(){app.innerHTML='<div class="login">جارٍ التحميل…</div>';
  try{if(!await API.session())return login();if(!await API.isOwner()){app.innerHTML=`<div class="login"><h2>غير مصرح</h2><div class="err">هذا الحساب ليس من مالكي المنصة. أضفه في saas_owners من محرر SQL.</div><button class="b" id="out">خروج</button></div>`;$('#out').onclick=async()=>{await API.signOut();login()};return}
   await reload();render()}catch(e){app.innerHTML=`<div class="login"><div class="err">${esc(ERR(e.message))}</div><button class="b" id="out">خروج</button></div>`;$('#out').onclick=async()=>{try{await API.signOut()}catch(_){}login()}}}
-async function reload(){[T,INV,SET]=await Promise.all([API.tenants(),API.invoices(),API.settings()])}
+async function reload(){[T,INV,SET]=await Promise.all([API.tenants(),API.invoices(),API.settings()]);[LEADS,USE]=await Promise.all([API.leads?API.leads().catch(()=>[]):[],API.usage?API.usage().catch(()=>[]):[]])}
 
 /* ---------- main ---------- */
 function render(){app.innerHTML=`<div class="top"><h1>🏢 لوحة مالك المنصة <small>RakizoraFM SaaS</small></h1><button id="rl">🔄</button><button id="out">خروج</button></div><main>
- <div class="tabs">${[['dash','📊 نظرة عامة'],['co','🏢 الشركات'],['inv','🧾 الفواتير'],['set','⚙️ الباقات والبائع']].map(([k,l])=>`<button data-t="${k}" class="${TAB===k?'on':''}">${l}</button>`).join('')}</div><div id="pane"></div></main>`;
+ <div class="tabs">${[['dash','📊 نظرة عامة'],['co','🏢 الشركات'],['lead',`📥 طلبات التجربة${LEADS.filter(l=>l.status==='new').length?' ('+LEADS.filter(l=>l.status==='new').length+')':''}`],['inv','🧾 الفواتير'],['set','⚙️ الباقات والبائع']].map(([k,l])=>`<button data-t="${k}" class="${TAB===k?'on':''}">${l}</button>`).join('')}</div><div id="pane"></div></main>`;
  $('#rl').onclick=async()=>{await reload();render()};$('#out').onclick=async()=>{await API.signOut();login()};
  app.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{TAB=b.dataset.t;render()});
- ({dash,co:companies,inv:invoices,set:settingsTab})[TAB]($('#pane'))}
+ ({dash,co:companies,lead:leadsTab,inv:invoices,set:settingsTab})[TAB]($('#pane'))}
 function dash(p){const act=T.filter(t=>t.status==='active'),tr=T.filter(t=>t.status==='trial'),exp=T.filter(t=>t.status!=='suspended'&&daysLeft(t.active_until)!=null&&daysLeft(t.active_until)<=30).sort((a,b)=>daysLeft(a.active_until)-daysLeft(b.active_until));
  const mrr=act.reduce((s,t)=>{const m=tMods(t),inc=planMods(t.plan);return s+(+planOf(t.plan).price||0)+(m?Object.keys(m).filter(k=>!inc.includes(k)&&!m[k]).reduce((a,k)=>a+addonPrice(k,t.schools_limit),0):0)},0),unpaid=INV.filter(i=>i.status==='unpaid'),y=new Date().getFullYear(),paidY=INV.filter(i=>i.status==='paid'&&String(i.paid_at||'').startsWith(String(y)));
  p.innerHTML=`<div class="kpis"><div class="kpi"><span>شركات نشطة</span><b>${act.length}</b><small>${tr.length} تجريبية · ${T.filter(t=>t.status==='suspended').length} موقوفة</small></div>
   <div class="kpi"><span>الإيراد الشهري المتكرر</span><b>${money(mrr)}</b><small>حسب باقات الشركات النشطة</small></div>
   <div class="kpi"><span>فواتير غير مدفوعة</span><b style="color:${unpaid.length?'var(--bad)':'var(--ok)'}">${money(unpaid.reduce((s,i)=>s+ +i.total,0))}</b><small>${unpaid.length} فاتورة</small></div>
-  <div class="kpi"><span>المحصّل هذه السنة</span><b>${money(paidY.reduce((s,i)=>s+ +i.total,0))}</b><small>${paidY.length} فاتورة</small></div></div>
- <div class="card"><h3>⏰ اشتراكات تنتهي خلال 30 يوماً</h3>${exp.length?`<div class="tw"><table><thead><tr><th>الشركة</th><th>الباقة</th><th>ينتهي</th><th>المتبقي</th><th></th></tr></thead><tbody>${exp.map(t=>{const d=daysLeft(t.active_until);return `<tr><td><b>${esc(t.name)}</b></td><td>${esc(planOf(t.plan).name)}</td><td>${dshow(t.active_until)}</td><td style="color:${d<0?'var(--bad)':'var(--warn)'};font-weight:800">${d<0?'منتهٍ منذ '+(-d)+' يوم':d+' يوم'}</td><td><button class="b p" data-inv="${esc(t.code)}">🧾 فاتورة تجديد</button></td></tr>`}).join('')}</tbody></table></div>`:'<div style="color:var(--mut);font-weight:700">لا يوجد ✅</div>'}</div>`;
- p.querySelectorAll('[data-inv]').forEach(b=>b.onclick=()=>invoiceDlg(T.find(t=>t.code===b.dataset.inv)))}
+  <div class="kpi"><span>المحصّل هذه السنة</span><b>${money(paidY.reduce((s,i)=>s+ +i.total,0))}</b><small>${paidY.length} فاتورة</small></div></div>`;
+ p.querySelectorAll('[data-inv]').forEach(b=>b.onclick=()=>invoiceDlg(T.find(t=>t.code===b.dataset.inv)));
+ dashMore(p)}
+/* SA4 (V185): renewal reminders, usage of each company (saas_usage, sent daily by the company's platform), new trial requests */
+const stageOf=t=>{const d=daysLeft(t.active_until);if(d==null||t.status==='suspended')return null;return d<0?'exp':d<=7?'7':d<=15?'15':d<=30?'30':null};
+const STG={'30':'قبل 30 يوماً','15':'قبل 15 يوماً','7':'قبل 7 أيام',exp:'بعد الانتهاء'};
+function remindTxt(t){const d=daysLeft(t.active_until),pl=planOf(t.plan);return `مرحباً ${t.contact_name||''}\n${d<0?`انتهى اشتراك ${t.name} في منصة RakizoraFM بتاريخ ${t.active_until}، والدخول متاح حتى نهاية فترة السماح.`:`نذكّركم بأن اشتراك ${t.name} في منصة RakizoraFM (باقة ${pl.name}) ينتهي بتاريخ ${t.active_until} — بعد ${d} يوم.`}\nللتجديد نرسل لكم فاتورة التجديد، وبعد السداد يصلكم كود التفعيل.\nشكراً لكم.`}
+function dashMore(p){const R=T.filter(t=>stageOf(t)).sort((a,b)=>daysLeft(a.active_until)-daysLeft(b.active_until));const last=code=>USE.filter(u=>u.tenant===code)[0];
+ const box=document.createElement('div');
+ box.innerHTML=`<div class="card"><h3>🔔 تذكير التجديد</h3>${R.length?`<div class="tw"><table><thead><tr><th>الشركة</th><th>ينتهي</th><th>المرحلة</th><th>التذكير</th><th></th></tr></thead><tbody>${R.map(t=>{const st=stageOf(t),k=t.active_until+':'+st,sent=(t.reminders||{})[k];
+  return `<tr><td><b>${esc(t.name)}</b></td><td>${dshow(t.active_until)} (${daysLeft(t.active_until)} يوم)</td><td>${STG[st]}</td><td>${sent?`<span class="tag active">✓ ذُكّر ${dshow(sent)}</span>`:'<span class="tag unpaid">لم يُذكَّر</span>'}</td><td>${t.contact_phone?`<button class="b ${sent?'':'p'}" data-rem="${esc(t.code)}">💬 تذكير واتساب</button>`:'<span style="color:var(--mut)">لا يوجد جوال</span>'}<button class="b" data-inv2="${esc(t.code)}">🧾 فاتورة</button></td></tr>`}).join('')}</tbody></table></div>`:'<div style="color:var(--mut);font-weight:700">لا توجد تذكيرات مستحقة ✅</div>'}</div>
+ <div class="card"><h3>📈 استخدام الشركات (آخر تقرير يومي)</h3><div class="tw"><table><thead><tr><th>الشركة</th><th>آخر تقرير</th><th>المستخدمون</th><th>نشطون 7 أيام</th><th>الميدان 7 أيام</th><th>المدارس</th><th>البلاغات</th><th>أوامر 30 يوماً</th><th>ملاحظة</th></tr></thead><tbody>
+  ${T.filter(t=>t.status!=='suspended').map(t=>{const u=last(t.code),x=u?u.stats:{},age=u?Math.round((Date.parse(today())-Date.parse(u.day))/864e5):null,lim=+x.limit||+t.schools_limit||0;
+   const flags=[];if(!u)flags.push('لا تصل أرقام (لم يدخل مدير منذ التحديث)');else{if(age>3)flags.push('آخر تقرير منذ '+age+' يوم');if(+x.users&&+x.active7/+x.users<.3)flags.push('⚠️ استخدام منخفض');if(lim&&+x.schools>=lim*.9)flags.push('⬆️ قارب حد المدارس — اعرض ترقية')}
+   return `<tr><td><b>${esc(t.name)}</b></td><td>${u?dshow(u.day):'—'}</td><td>${u?num(x.users,0):'—'}</td><td>${u?num(x.active7,0):'—'}</td><td>${u?num(x.field7,0):'—'}</td><td>${u?`${num(x.schools,0)}${lim?' / '+num(lim,0):''}`:'—'}</td><td>${u?num(x.tickets,0):'—'}</td><td>${u?`${num(x.wo30,0)} (معتمد ${num(x.wo_closed30,0)})`:'—'}</td><td class="wrap" style="color:var(--warn);font-weight:700">${esc(flags.join(' • '))}</td></tr>`}).join('')||'<tr><td colspan="9">لا توجد شركات</td></tr>'}</tbody></table></div></div>
+ ${LEADS.filter(l=>l.status==='new').length?`<div class="card"><h3>📥 طلبات تجربة جديدة: ${LEADS.filter(l=>l.status==='new').length}</h3><button class="b p" data-goleads>عرض الطلبات</button></div>`:''}`;
+ p.appendChild(box);
+ box.querySelectorAll('[data-rem]').forEach(b=>b.onclick=async()=>{const t=T.find(x=>x.code===b.dataset.rem);wa(t.contact_phone,remindTxt(t));const k=t.active_until+':'+stageOf(t);
+  try{await API.saveTenant({code:t.code,reminders:Object.assign({},t.reminders||{},{[k]:today()})},false);await reload();render()}catch(e){toast(ERR(e.message),1)}});
+ box.querySelectorAll('[data-inv2]').forEach(b=>b.onclick=()=>invoiceDlg(T.find(t=>t.code===b.dataset.inv2)));
+ const gl=box.querySelector('[data-goleads]');if(gl)gl.onclick=()=>{TAB='lead';render()}}
+const LST={new:'جديد',contacted:'تم التواصل',demo:'عُرض عليه',trial:'تجريبي',won:'اشترك',lost:'لم يتم'};
+const MODN2=k=>(MODS.find(m=>m[0]===k)||[k,k])[1];
+function leadsTab(p){p.innerHTML=`<div class="card"><div class="note">الطلبات القادمة من الصفحة التعريفية try.html. «➕ إنشاء شركة» يفتح نموذج الشركة بالبيانات ويجعل الطلب «تجريبي».</div><div class="tw"><table><thead><tr><th>التاريخ</th><th>الاسم / الجهة</th><th>التواصل</th><th>المدارس</th><th>الأجزاء</th><th>الرسالة</th><th>الحالة</th><th>ملاحظة</th><th></th></tr></thead><tbody>
+ ${LEADS.map(l=>`<tr><td>${dshow(String(l.at).slice(0,10))}</td><td><b>${esc(l.name)}</b><div style="font-size:12px;color:var(--mut)">${esc(l.company)}${l.city?' • '+esc(l.city):''}</div></td><td dir="ltr">${esc(l.phone)}${l.email?`<div style="font-size:12px">${esc(l.email)}</div>`:''}</td><td>${l.schools?num(l.schools,0):'—'}</td><td class="wrap" style="font-size:12px">${(l.modules||[]).map(k=>esc(MODN2(k))).join('، ')||'—'}</td><td class="wrap" style="max-width:260px;font-size:12.5px">${esc(l.message||'')}</td>
+  <td><select data-ls="${esc(l.id)}">${Object.entries(LST).map(([k,v])=>`<option value="${k}" ${l.status===k?'selected':''}>${v}</option>`).join('')}</select>${l.tenant?`<div style="font-size:11.5px" dir="ltr">${esc(l.tenant)}</div>`:''}</td><td><input data-ln="${esc(l.id)}" value="${esc(l.note||'')}" style="min-width:140px"></td>
+  <td><button class="b" data-lw="${esc(l.id)}">💬 واتساب</button>${l.tenant?'':`<button class="b p" data-lc="${esc(l.id)}">➕ إنشاء شركة</button>`}</td></tr>`).join('')||'<tr><td colspan="9">لا توجد طلبات بعد — انشر رابط try.html</td></tr>'}</tbody></table></div></div>`;
+ const L=id=>LEADS.find(l=>l.id===id),up=async(id,o)=>{try{await API.updLead(id,o);Object.assign(L(id),o)}catch(e){toast(ERR(e.message),1)}};
+ p.querySelectorAll('[data-ls]').forEach(e=>e.onchange=()=>up(e.dataset.ls,{status:e.value}));
+ p.querySelectorAll('[data-ln]').forEach(e=>e.onchange=()=>up(e.dataset.ln,{note:S(e.value)||null}));
+ p.querySelectorAll('[data-lw]').forEach(b=>b.onclick=()=>{const l=L(b.dataset.lw);wa(l.phone,`مرحباً ${l.name}\nشكراً لاهتمامكم بمنصة RakizoraFM لإدارة الصيانة.\nيسعدنا ترتيب عرض سريع للمنصة لكم — متى يناسبكم؟`);if(l.status==='new')up(l.id,{status:'contacted'}).then(()=>render())});
+ p.querySelectorAll('[data-lc]').forEach(b=>b.onclick=()=>{const l=L(b.dataset.lc);const code=S(l.company).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,20);
+  tenantDlg(null,{name:l.company,code,contact_name:l.name,contact_phone:l.phone,contact_email:l.email,notes:l.message||'',lead:l.id})})}
 function companies(p){p.innerHTML=`<div class="row" style="margin-bottom:10px"><button class="b p" id="add">➕ شركة جديدة</button></div><div class="card"><div class="tw"><table><thead><tr><th>الشركة</th><th>الرمز</th><th>الباقة</th><th>المدارس</th><th>الحالة</th><th>حتى</th><th>التواصل</th><th></th></tr></thead><tbody>
  ${T.map(t=>{const d=daysLeft(t.active_until);return `<tr><td>${t.logo?`<img class="logo" src="${esc(t.logo)}" alt=""> `:''}<b>${esc(t.name)}</b></td><td dir="ltr">${esc(t.code)}</td><td>${esc(planOf(t.plan).name)}<div style="font-size:11.5px;color:var(--mut)">${esc(modsTxt(tMods(t)))}</div></td><td>${+t.schools_limit?num(t.schools_limit,0):'بلا حد'}</td><td><span class="tag ${esc(t.status)}">${STL[t.status]||t.status}</span></td>
   <td>${dshow(t.active_until)}${d!=null?`<div style="font-size:11.5px;color:${d<0?'var(--bad)':d<=30?'var(--warn)':'var(--mut)'};font-weight:800">${d<0?'منتهٍ':d+' يوم'}</div>`:''}</td><td class="wrap">${esc(t.contact_name||'')}<div style="font-size:11.5px;color:var(--mut)" dir="ltr">${esc(t.contact_phone||'')}</div></td>
@@ -152,7 +185,7 @@ function dlg(html){const d=document.createElement('dialog');d.innerHTML=html;doc
 /* the key must be public: an sb_publishable_ key or a JWT whose role is anon */
 function keyOk(k){k=S(k);if(/^sb_secret_/.test(k))return false;if(/^sb_publishable_/.test(k))return true;try{const r=JSON.parse(atob(k.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).role;return r==='anon'}catch(e){return false}}
 function shrinkLogo(file){return new Promise((res,rej)=>{const r=new FileReader();r.onerror=rej;r.onload=()=>{const im=new Image();im.onerror=rej;im.onload=()=>{const m=256,k=Math.min(1,m/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);let o=c.toDataURL('image/png');if(o.length>190000)o=c.toDataURL('image/jpeg',.85);res(o)};im.src=r.result};r.readAsDataURL(file)})}
-function tenantDlg(t){const isNew=!t;t=t||{status:'trial',plan:plans()[0]?.k||'basic',schools_limit:plans()[0]?.max||50,active_until:addDays(today(),30),color:'#1d4ed8'};let logo=t.logo||'';
+function tenantDlg(t,pre){const isNew=!t;const lead=pre&&pre.lead;t=t||Object.assign({status:'trial',plan:plans()[0]?.k||'basic',schools_limit:plans()[0]?.max||50,active_until:addDays(today(),30),color:'#1d4ed8'},pre||{});delete t.lead;let logo=t.logo||'';
  const d=dlg(`<div class="in"><h3>${isNew?'➕ شركة جديدة':'✏️ '+esc(t.name)}</h3>
   <div class="two"><label class="f">اسم الشركة *<input data-k="name" value="${esc(t.name||'')}"></label><label class="f">رمز الشركة * (يظهر في الرابط)<input data-k="code" dir="ltr" value="${esc(t.code||'')}" ${isNew?'':'disabled'} placeholder="acme"></label></div>
   <div class="two"><label class="f">الشعار<input type="file" accept="image/*" data-logo></label><label class="f">اللون<input type="color" data-k="color" value="${esc(t.color||'#1d4ed8')}" style="height:40px"></label></div><div data-lp>${logo?`<img class="logo" src="${esc(logo)}" style="width:64px;height:64px">`:''}</div>
@@ -171,7 +204,7 @@ function tenantDlg(t){const isNew=!t;t=t||{status:'trial',plan:plans()[0]?.k||'b
   if(!o.name||!o.code||!o.url||!o.anon_key){toast('أكمل الحقول المطلوبة',1);return}if(!keyOk(o.anon_key)){toast('هذا ليس المفتاح العام — لا تستخدم service_role أو sb_secret أبداً',1);return}
   o.demo=q('[data-demo]').checked;o.demo_pass=o.demo?(o.demo_pass||null):null;if(o.demo&&!o.demo_pass){toast('اكتب كلمة مرور حسابات العرض',1);return}
   o.url=o.url.replace(/\/+$/,'');o.schools_limit=+o.schools_limit||0;o.active_until=o.active_until||null;o.logo=logo||null;o.updated_at=new Date().toISOString();
-  try{await API.saveTenant(o,isNew);toast('تم الحفظ');d.close();await reload();render();if(isNew)provision(T.find(x=>x.code===o.code))}catch(e){toast(ERR(e.message),1)}}}
+  try{await API.saveTenant(o,isNew);if(lead)try{await API.updLead(lead,{status:'trial',tenant:o.code})}catch(_){}toast('تم الحفظ');d.close();await reload();render();if(isNew)provision(T.find(x=>x.code===o.code))}catch(e){toast(ERR(e.message),1)}}}
 function provision(t){if(!t)return;const link=siteBase()+'?c='+encodeURIComponent(t.code);
  const sql=`select public.fm_plan_init('${t.code}', '${t.secret}', '${t.plan}', ${+t.schools_limit||0}, ${t.active_until?`'${t.active_until}'`:'null'});`;
  const d=dlg(`<div class="in"><h3>🚀 تجهيز «${esc(t.name)}»</h3><ol style="margin:0;padding-inline-start:20px;line-height:2.1;font-weight:700;font-size:13.5px">
@@ -242,6 +275,10 @@ function settingsTab(p){const s=seller();p.innerHTML=`<div class="card"><h3>📦
  <div class="card"><h3>➕ الأجزاء الإضافية (لمن لا تشملها باقته)</h3><div class="note">السعر الشهري = مبلغ ثابت + سعر لكل مدرسة × حد مدارس الشركة.</div><div class="tw"><table><thead><tr><th>الجزء</th><th>مبلغ ثابت / شهر</th><th>لكل مدرسة / شهر</th></tr></thead><tbody>
  ${MODS.map(([k,n])=>`<tr><td>${esc(n)}</td><td><input data-ad="base" data-k2="${k}" value="${esc(addonOf(k).base||0)}"></td><td><input data-ad="per_school" data-k2="${k}" value="${esc(addonOf(k).per_school||0)}"></td></tr>`).join('')}</tbody></table></div>
  <div class="row" style="margin-top:8px"><button class="b p" id="as">💾 حفظ أسعار الأجزاء</button></div></div>
+ <div class="card"><h3>🌐 الصفحة التعريفية try.html</h3><div class="note">رابطها: <b dir="ltr">${esc(new URL('try.html',location.href).href)}</b> — تعرض الأجزاء والباقات ونموذج «اطلب تجربة»، وزر الدخول لنسخة العرض.</div>
+ <div class="two"><label class="f">رمز شركة العرض (نسخة العرض)<input data-st="demo_code" dir="ltr" value="${esc((SET.site||{}).demo_code||'')}" placeholder="demo"></label><label class="f">جوال الواتساب للتواصل<input data-st="whatsapp" dir="ltr" value="${esc((SET.site||{}).whatsapp||'')}" placeholder="05xxxxxxxx"></label></div>
+ <div class="two"><label class="f">بريد الإشعارات (لك فقط)<input data-st="email" dir="ltr" value="${esc((SET.site||{}).email||'')}"></label><label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-st="show_prices" ${(SET.site||{}).show_prices!==false?'checked':''} style="width:auto"> عرض الأسعار في الصفحة</label></div>
+ <div class="row" style="margin-top:8px"><button class="b p" id="sts">💾 حفظ</button><a class="b" href="try.html" target="_blank" rel="noopener">👁️ معاينة</a></div></div>
  <div class="card"><h3>🏷️ بيانات البائع في الفواتير</h3><div class="two"><label class="f">الاسم<input data-s="name" value="${esc(s.name)}"></label><label class="f">الرقم الضريبي<input data-s="vat_no" dir="ltr" value="${esc(s.vat_no)}"></label></div>
  <div class="two"><label class="f">العنوان<input data-s="address" value="${esc(s.address)}"></label><label class="f">الآيبان<input data-s="iban" dir="ltr" value="${esc(s.iban)}"></label></div><label class="f" style="max-width:220px">نسبة الضريبة %<input data-s="vat_pct" value="${esc(s.vat_pct)}"></label>
  <div class="row" style="margin-top:8px"><button class="b p" id="ss">💾 حفظ</button></div></div>`;
@@ -252,6 +289,7 @@ function settingsTab(p){const s=seller();p.innerHTML=`<div class="card"><h3>📦
  p.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{L.splice(+b.dataset.rm,1);SET.plans=L;settingsTab(p)});
  $('#pa').onclick=()=>{L.push({k:'plan'+(L.length+1),name:'باقة جديدة',max:100,price:0,modules:['tickets']});SET.plans=L;settingsTab(p)};
  $('#ps').onclick=async()=>{if(L.some(x=>!/^[a-z0-9_-]+$/.test(x.k))||new Set(L.map(x=>x.k)).size!==L.length){toast('رموز الباقات: إنجليزية صغيرة وغير مكررة',1);return}try{await API.saveSetting('plans',L);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}};
+ $('#sts').onclick=async()=>{const o={};p.querySelectorAll('[data-st]').forEach(i=>o[i.dataset.st]=i.type==='checkbox'?i.checked:S(i.value));o.demo_code=o.demo_code.toLowerCase();try{await API.saveSetting('site',o);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}};
  $('#ss').onclick=async()=>{const o={};p.querySelectorAll('[data-s]').forEach(i=>o[i.dataset.s]=i.dataset.s==='vat_pct'?+i.value||0:S(i.value));try{await API.saveSetting('seller',o);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}}}
 boot();
 })();
