@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F30">
+<meta name="fm-version" content="F31">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1691,6 +1691,12 @@ apply();let n=0;const t=setInterval(async()=>{if(++n>60){clearInterval(t);return
  ON=r.data.modules&&Array.isArray(r.data.on)?r.data.on:null;try{localStorage.setItem('fmf_mods',JSON.stringify(ON))}catch(e){}apply()}catch(e){}},2000);
 setInterval(apply,3000);
 })();
+</script>
+<script id="fmf-31-demo">(function(){
+/* F31 (V182): the demo company — a small ribbon (fm_tenant.demo) */
+let T=null;try{T=JSON.parse(localStorage.getItem('fm_tenant')||'null')}catch(e){}if(!T||!T.demo)return;
+const r=document.createElement('div');r.textContent='🧪 نسخة عرض — بيانات وهمية';r.style.cssText='position:fixed;left:8px;bottom:74px;z-index:1400;background:#7c3aed;color:#fff;border-radius:999px;padding:4px 12px;font:800 11.5px Cairo,Tahoma,sans-serif;pointer-events:none';
+document.body.appendChild(r)})();
 </script>
 </body>
 </html>

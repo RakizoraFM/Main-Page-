@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SA2">
+<meta name="fm-version" content="SA3">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -162,12 +162,14 @@ function tenantDlg(t){const isNew=!t;t=t||{status:'trial',plan:plans()[0]?.k||'b
   <div class="two"><label class="f">الاشتراك حتى<input type="date" data-k="active_until" value="${esc(t.active_until||'')}"></label><label class="f">الرقم الضريبي للعميل<input data-k="vat_no" dir="ltr" value="${esc(t.vat_no||'')}"></label></div>
   <div class="three"><label class="f">مسؤول التواصل<input data-k="contact_name" value="${esc(t.contact_name||'')}"></label><label class="f">الجوال<input data-k="contact_phone" dir="ltr" value="${esc(t.contact_phone||'')}"></label><label class="f">البريد<input data-k="contact_email" dir="ltr" value="${esc(t.contact_email||'')}"></label></div>
   <label class="f">ملاحظات<textarea data-k="notes" rows="2">${esc(t.notes||'')}</textarea></label>
+  <div class="two"><label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-demo ${t.demo?'checked':''} style="width:auto"> 🧪 شركة عرض (بيانات وهمية للعملاء المحتملين)</label><label class="f">كلمة مرور حسابات العرض (تظهر للزوار)<input data-k="demo_pass" dir="ltr" value="${esc(t.demo_pass||'')}" placeholder="مثال: Demo-2026!"></label></div>
   ${isNew?'':'<div class="warn">تغيير الباقة أو التاريخ هنا يغيّر سجلك فقط — يصل للشركة بكود تفعيل (فاتورة مدفوعة أو «🔑 كود يدوي»).</div>'}</div>
   <div class="ft"><button class="b p" data-s>💾 حفظ</button><button class="b" data-x>إلغاء</button></div>`);
  const q=s=>d.querySelector(s);q('[data-k=plan]').onchange=e=>{const p=planOf(e.target.value);q('[data-k=schools_limit]').value=p.max};
  q('[data-logo]').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{logo=await shrinkLogo(f);q('[data-lp]').innerHTML=`<img class="logo" src="${logo}" style="width:64px;height:64px">`}catch(_){toast('تعذر قراءة الصورة',1)}};
  q('[data-s]').onclick=async()=>{const o={};d.querySelectorAll('[data-k]').forEach(i=>{if(!i.disabled)o[i.dataset.k]=S(i.value)});if(!isNew)o.code=t.code;else o.code=o.code.toLowerCase();
   if(!o.name||!o.code||!o.url||!o.anon_key){toast('أكمل الحقول المطلوبة',1);return}if(!keyOk(o.anon_key)){toast('هذا ليس المفتاح العام — لا تستخدم service_role أو sb_secret أبداً',1);return}
+  o.demo=q('[data-demo]').checked;o.demo_pass=o.demo?(o.demo_pass||null):null;if(o.demo&&!o.demo_pass){toast('اكتب كلمة مرور حسابات العرض',1);return}
   o.url=o.url.replace(/\/+$/,'');o.schools_limit=+o.schools_limit||0;o.active_until=o.active_until||null;o.logo=logo||null;o.updated_at=new Date().toISOString();
   try{await API.saveTenant(o,isNew);toast('تم الحفظ');d.close();await reload();render();if(isNew)provision(T.find(x=>x.code===o.code))}catch(e){toast(ERR(e.message),1)}}}
 function provision(t){if(!t)return;const link=siteBase()+'?c='+encodeURIComponent(t.code);
@@ -175,6 +177,7 @@ function provision(t){if(!t)return;const link=siteBase()+'?c='+encodeURIComponen
  const d=dlg(`<div class="in"><h3>🚀 تجهيز «${esc(t.name)}»</h3><ol style="margin:0;padding-inline-start:20px;line-height:2.1;font-weight:700;font-size:13.5px">
   <li>في مشروع Supabase الخاص بالشركة: SQL Editor ← الصق ملف <b>supabase_setup.sql</b> ← Run.</li>
   <li>ثم شغّل هذا السطر مرة واحدة (يربط الاشتراك وسر التفعيل — لا ترسله لأحد):<div class="code" data-sql>${esc(sql)}</div><button class="b" data-c="sql">📋 نسخ السطر</button></li>
+  ${t.demo?`<li>🧪 شركة عرض: شغّل أيضاً ملف <b>demo_seed.sql</b>، ثم:<div class="code">select public.fm_demo_users('${esc(t.demo_pass||'كلمة-مرور-العرض')}');<br>select public.fm_demo_reset();</div>البيانات تُعاد كل ليلة تلقائياً (pg_cron)، ورابط العرض يعرض أزرار الأدوار.</li>`:''}
   <li>Authentication ← URL Configuration: أضف رابط الموقع ${esc(new URL('.',location.href).href)} في Redirect URLs.</li>
   <li>أرسل رابط الشركة لمسؤولها: أول حساب يُنشأ يصبح «مدير النظام» للشركة تلقائياً.<div class="code">${esc(link)}</div><button class="b" data-c="link">📋 نسخ الرابط</button> ${t.contact_phone?`<button class="b" data-wa>💬 واتساب</button>`:''}</li></ol>
   <div class="note">التجديد لاحقاً: فاتورة ← «تم الدفع» ← كود تفعيل يُدخله مدير النظام في الشركة من «الإعدادات ← 💳 الاشتراك». الإيقاف الفوري: «إيقاف» الشركة هنا يمنع الدخول من صفحة البداية، أو أوقف مشروع Supabase نفسه.</div></div>

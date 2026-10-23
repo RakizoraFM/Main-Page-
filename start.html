@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S7">
+<meta name="fm-version" content="S8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <title>RakizoraFM | تسجيل الدخول</title>
@@ -121,7 +121,7 @@ async function tenantStep(){const qc=S(new URLSearchParams(location.search).get(
  if(t.status==='suspended'){try{localStorage.setItem(TKEY,JSON.stringify({code:t.code,name:t.name,logo:t.logo,color:t.color,status:t.status}))}catch(e){}tenantError(`حساب ${t.name} موقوف حالياً — تواصل مع مزود الخدمة.`);return false}
  const changed=!cur||cur.code!==t.code||readCfg().url!==S(t.url).replace(/\/+$/,'');
  if(changed){try{localStorage.removeItem('fm-cloud-auth')}catch(e){}client=null}
- saveCfg({url:t.url,key:t.key});try{localStorage.setItem(TKEY,JSON.stringify({code:t.code,name:t.name,logo:t.logo,color:t.color,status:t.status,active_until:t.active_until}))}catch(e){}
+ saveCfg({url:t.url,key:t.key});try{localStorage.setItem(TKEY,JSON.stringify({code:t.code,name:t.name,logo:t.logo,color:t.color,status:t.status,active_until:t.active_until,demo:!!t.demo,demo_pass:t.demo?t.demo_pass||'':undefined}))}catch(e){}
  applyBrand(t);return true}
 window.fmStartChangeCompany=changeCompany;
 const msg=(t,k)=>t?`<div class="msg ${k||'err'}">${t}</div>`:'';
@@ -136,11 +136,16 @@ function setupView(err){
  $('#c-go').onclick=()=>{const o={url:$('#c-u').value,key:$('#c-k').value};if(!valid(o)){setupView('تحقق من الرابط والمفتاح');return}saveCfg(o);client=null;boot()};
 }
 
+/* S8 (V182): a demo company lists its demo accounts (demo_seed.sql) — one click signs in with the public demo password */
+const demoT=()=>{const t=readT();return t&&t.demo?t:null};
+const DEMO=[['demo.admin','🛡️ مدير النظام'],['demo.pm','📊 مدير المشروع'],['demo.area','🗺️ مدير المنطقة'],['demo.eng1','👷 مهندس المنطقة'],['demo.sup1','🧰 مشرف (تطبيق الميدان)'],['demo.contractor','🏗️ مقاول (تطبيق الميدان)'],['demo.store','📦 أمين المستودع'],['demo.owner','✅ ممثل الجهة المالكة'],['demo.acc','💰 المحاسبة']];
+const demoBox=()=>`<div class="msg info" style="text-align:right"><b>🧪 نسخة عرض ببيانات وهمية</b> — اختر الدور لتجربة المنصة كما يراها:<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">${DEMO.map(([e,l])=>`<button type="button" class="go" style="margin:0;padding:8px;font-size:13px" data-demo="${e}@rakizora.demo">${l}</button>`).join('')}</div><div style="font-size:12px;margin-top:6px">تُعاد البيانات لحالتها كل ليلة.</div></div>`;
 function loginView(mode,info,err){
  mode=mode||'in';
  const title={in:'تسجيل الدخول',up:'إنشاء حساب',reset:'استعادة كلمة المرور'}[mode];
  frame(`<h2>${title}</h2><div class="sub">${mode==='up'?'بعد إنشاء الحساب يفعّله مدير النظام ويحدد دورك':'دخول موحّد للمدير والمهندسين والمشرفين والمقاولين'}</div>
   ${info?msg(info,'info'):''}
+  ${mode==='in'&&demoT()?demoBox():''}
   ${mode==='up'?'<label>الاسم الكامل</label><input id="l-n" autocomplete="name">':''}
   <label>البريد الإلكتروني</label><input id="l-e" type="email" dir="ltr" autocomplete="username">
   ${mode==='reset'?'':`<label>كلمة المرور</label><input id="l-p" type="password" dir="ltr" autocomplete="${mode==='up'?'new-password':'current-password'}">`}
@@ -160,6 +165,7 @@ function loginView(mode,info,err){
    await route();
   }catch(e){loginView(mode,'',ARmsg(e.message))}};
  $('#l-go').onclick=go;app.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter')go()});
+ app.querySelectorAll('[data-demo]').forEach(b=>b.onclick=()=>{$('#l-e').value=b.dataset.demo;$('#l-p').value=demoT().demo_pass||'';go()});
  $('#l-e')?.focus();
 }
 

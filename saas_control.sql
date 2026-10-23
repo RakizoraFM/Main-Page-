@@ -65,6 +65,9 @@ grant usage, select on sequence public.saas_invoice_seq to authenticated;
 alter table public.saas_tenants  add column if not exists modules jsonb;
 alter table public.saas_invoices add column if not exists modules jsonb;
 alter table public.saas_invoices add column if not exists lines   jsonb;
+-- V182: a demo company (fake data, demo_seed.sql in its own project): start.html lists its demo accounts with this password
+alter table public.saas_tenants add column if not exists demo      boolean not null default false;
+alter table public.saas_tenants add column if not exists demo_pass text;
 insert into public.saas_settings(key, value) values
   ('addons', '[{"k":"tickets","base":800,"per_school":0},{"k":"wo","base":1500,"per_school":0},{"k":"wh","base":1500,"per_school":0},{"k":"eng","base":500,"per_school":0},{"k":"portal","base":500,"per_school":0},{"k":"costs","base":500,"per_school":0}]')
 on conflict (key) do nothing;
@@ -87,7 +90,7 @@ revoke all on public.saas_owners, public.saas_tenants, public.saas_settings, pub
 -- public (no account): one company's connection and branding for the start page, school portal and rating page
 create or replace function public.saas_tenant(p_code text) returns jsonb language sql stable security definer set search_path = public as $$
   select coalesce((select jsonb_build_object('code', t.code, 'name', t.name, 'logo', t.logo, 'color', t.color, 'url', t.url, 'key', t.anon_key,
-      'status', t.status, 'active_until', t.active_until)
+      'status', t.status, 'active_until', t.active_until, 'demo', t.demo, 'demo_pass', case when t.demo then t.demo_pass end)
     from public.saas_tenants t where t.code = lower(btrim(coalesce(p_code,'')))), jsonb_build_object('status','unknown')) $$;
 revoke all on function public.saas_tenant(text), public.saas_is_owner() from public;
 grant execute on function public.saas_tenant(text) to anon, authenticated;
