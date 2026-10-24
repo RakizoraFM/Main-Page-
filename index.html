@@ -1,7 +1,14 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V187">
+<meta name="fm-version" content="V188">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="RakizoraFM">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -25593,10 +25600,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V187',date:'2026-10-23',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V188',date:'2026-10-24',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V188',d:'2026-10-24',t:'تثبيت المنصة كتطبيق والعمل دون اتصال',i:['المنصة وتطبيق الميدان يُثبَّتان كتطبيق على الجوال والكمبيوتر: أيقونة على الشاشة، ونافذة مستقلة بلا شريط المتصفح.','يعمل التطبيق دون اتصال: الصفحات والمكتبات والخطوط محفوظة على الجهاز، وتتحدث تلقائياً عند الاتصال.','الخرائط: كل منطقة شاهدتها تُحفظ وتظهر بعد ذلك دون اتصال.','عند فتح التطبيق دون اتصال يفتح مباشرة آخر ما استخدمته (المنصة أو الميدان) ببياناته المحفوظة، وشريط «📴 بدون اتصال» يوضح ذلك.','على iPhone: بعد إضافة التطبيق للشاشة الرئيسية تصل الإشعارات أيضاً.','زر «📲 تثبيت» في صفحة الدخول، والصفحة الرئيسية لتطبيق الميدان، و«الإعدادات» ← السحابة (مع حجم المحفوظ وزر مسحه).']},
  {v:'V187',d:'2026-10-23',t:'إشعارات فورية على الجوال والكمبيوتر',i:['تصلك إشعارات حتى والتطبيق مغلق: أمر عمل جديد، أمر بانتظار اعتمادك، أمر أُعيد إليك أو اعتُمد، تصعيد أمر متأخر، إيقاف عمل، طلب صرف لأمين المستودع، صرف قطع لعهدتك، تالف متأخر، صنف أو طلب شراء بانتظار الاعتماد، والمستخلصات.','كل شخص يفعّلها على جهازه من «🔔 إعدادات الإشعارات» (في الإعدادات ← السحابة، أو الشريط الذي يظهر أسفل الشاشة، أو الزر في تطبيق الميدان) ويختار الأنواع التي تصله ويرسل لنفسه تجربة.','الضغط على الإشعار يفتح الأمر أو الصفحة المعنية مباشرة.','مدير النظام يجهّز الإرسال مرة واحدة من «🔔 إعداد الإشعارات» (المفاتيح، رابط الدالة، الأنواع المفعّلة للجميع) ويرى عدد الأجهزة وما أُرسل.','على iPhone تعمل الإشعارات بعد إضافة التطبيق للشاشة الرئيسية.']},
  {v:'V186',d:'2026-10-23',t:'مركز التكلفة: الإيراد والتكلفة والربح',i:['صفحة «💹 مركز التكلفة» في مجموعة جديدة «💹 المالية والتكاليف» (مع المستخلصات وتكاليف المباني).','مراكز للمناطق وأقسام تحتها (صيانة المباني، السيارات، الإدارة…) مع تفصيل التكلفة حسب المبنى.','التكاليف تُجمع تلقائياً: المستخلصات المعتمدة، مواد المستودع والمشتريات في أوامر العمل المعتمدة، مصروفات المباني، ورواتب الموظفين (محسوبة بأيام العمل في الشهر)؛ وقيود يدوية للسيارات والوقود والسكن وغيرها.','الإيراد: قيمة العقد الشهرية لكل مركز أو فاتورة العميل، والأعمال الإضافية، وخصومات العميل — والربح والهامش لكل مركز وشهر.','الميزانية الشهرية لكل مركز وبند، ونسبة المستهلك، والتوقع لنهاية السنة، وتنبيه عند 80% و100%، وتقرير PDF وExcel.','صلاحيات مركز التكلفة (الرؤية، القيود، الميزانية، الرواتب، الإيراد) يحددها مدير النظام لكل مسمى من الإعدادات.']},
  {v:'V185',d:'2026-10-23',t:'التسويق ومتابعة الشركات',i:['صفحة تعريفية عامة try.html: الأجزاء والباقات وأسعارها، زر الدخول لنسخة العرض، ونموذج «اطلب تجربة» يصل مباشرة للوحة مالك المنصة.','لوحة مالك المنصة: «📥 طلبات التجربة» بحالاتها وتحويل الطلب إلى شركة بضغطة، وجدول استخدام كل شركة (المستخدمون النشطون، الميدان، المدارس، أوامر العمل) مع تنبيه الاستخدام المنخفض وقرب حد المدارس.','تذكير التجديد بالواتساب قبل 30 و15 و7 أيام وبعد الانتهاء، مع تسجيل ما أُرسل.','المنصة ترسل لمزود الخدمة مرة يومياً أرقام الاستخدام فقط (بدون أسماء أو بيانات مدارس أو بلاغات)، موقّعة بسر الشركة.']},
@@ -31837,6 +31845,7 @@ const MANUAL=[
  {id:'v2-nav-fm177-pen',t:'أداء المقاولين والغرامات',where:'الكادر والمقاولون ← «⚖️ أداء المقاولين والغرامات»',what:'بطاقة شهرية لكل مقاول (البلاغات والالتزام بالـ SLA ومتوسط الإغلاق وأوامر العمل المتأخرة والمعادة) مع حساب الغرامات وفق بنود العقد وخطاب PDF.',how:['اختر الشهر من أعلى الصفحة.','«⚙️ بنود الغرامات والعقود» (مدير النظام): غرامة البلاغ المتجاوز لكل أولوية، ولكل يوم تأخير أمر، ولكل إرجاع، والحد الأقصى كنسبة من قيمة العقد الشهرية لكل مقاول.','«📄 خطاب» يفتح إشعار الغرامات للمقاول جاهزاً للطباعة والتوقيع، و«⬇️ Excel» بالبطاقة والتفاصيل.'],who:'مدير النظام والمديرون والمحاسب',tips:['المقاول يُعرف من بيانات البلاغ / قاعدة المدارس، ومن اسم المُسند إليه في أوامر العمل.','البلاغ يُحسب في شهر إنشائه.'],v:'V177'},
  {id:'v2-nav-fm178-monthly',t:'التقرير الشهري للعميل',where:'التقارير ← «📑 التقرير الشهري للعميل»',what:'تقرير PDF شهري جاهز للإرسال للعميل: غلاف، الملخص التنفيذي مع المقارنة بالشهر السابق، البلاغات، أوامر العمل والصيانة الوقائية، التكاليف والمواد، رضا المدارس، وخطة الشهر القادم.',how:['اختر الشهر والمنطقة من أعلى الصفحة.','اكتب الملخص التنفيذي (أو اتركه للنص التلقائي) وخطة الشهر القادم — تظهر في المعاينة فوراً.','«🖨️ PDF / طباعة» ثم «حفظ كـ PDF» وأرسله للعميل.'],who:'المديرون والمهندس',tips:['أقسام التكاليف وأوامر العمل والرضا تظهر عند ربط السحابة وحسب صلاحياتك.','الأرقام من البلاغات المرفوعة للمنطقة؛ ارفع ملف الشهر كاملاً قبل إصدار التقرير.'],v:'V178'},
  {id:'saas-sub',t:'الاشتراك (لعدة شركات)',where:'الإعدادات ← السحابة ← «💳 الاشتراك»',what:'حالة اشتراك الشركة: الباقة وحد المدارس والمستخدم منها وتاريخ الانتهاء، وإدخال كود التفعيل بعد دفع فاتورة التجديد.',how:['عند اقتراب الانتهاء يظهر شريط أسفل الشاشة قبل 15 يوماً.','بعد الدفع يصل كود التفعيل من مزود الخدمة: «🔑 إدخال كود التفعيل» والصقه.','بعد الانتهاء بمهلة 7 أيام يتوقف الدخول للجميع وتبقى البيانات، ويعود العمل فور إدخال الكود.'],who:'مدير النظام',tips:['رابط دخول الشركة: start.html?c=رمز الشركة — أرسله لفريقك.','زيادة المدارس عن حد الباقة تُرفض عند حفظ قاعدة المدارس في السحابة — اطلب ترقية الباقة.'],v:'V179'},
+ {id:'pwa',t:'تثبيت التطبيق والعمل دون اتصال',where:'زر «📲 ثبّت التطبيق» في صفحة الدخول والصفحة الرئيسية لتطبيق الميدان، و«الإعدادات» ← السحابة ← «📲 تثبيت المنصة والعمل دون اتصال»',what:'تثبيت المنصة أو تطبيق الميدان كتطبيق بأيقونة على الجوال أو الكمبيوتر، والعمل دون اتصال: الصفحات والمكتبات والخرائط التي فتحتها تبقى محفوظة على الجهاز وتتحدث تلقائياً عند الاتصال.',how:['على Android أو الكمبيوتر (Chrome / Edge): اضغط «📲 ثبّت التطبيق» ثم «تثبيت».','على iPhone / iPad: افتح الموقع في Safari ← زر المشاركة ⬆️ ← «إضافة إلى الشاشة الرئيسية» ← «إضافة».','افتح التطبيق من أيقونته؛ يفتح على صفحة الدخول ثم على تطبيقك.','افتحه مرة واحدة على الأقل وأنت متصل، وتصفّح الخرائط التي تحتاجها، لتعمل بعدها دون اتصال.'],who:'كل المستخدمين',tips:['دون اتصال يفتح التطبيق آخر ما استخدمته ويعرض آخر بيانات محفوظة؛ إجراءات أوامر العمل في الميدان تُرسل تلقائياً عند عودة الاتصال.','على iPhone لا تصل الإشعارات إلا بعد التثبيت (iOS 16.4 أو أحدث).','«🧹 مسح المحفوظ» يحرر المساحة ولا يمس بياناتك؛ يُحفظ من جديد عند الاستخدام.'],v:'V188'},
  {id:'push',t:'الإشعارات على الجوال والكمبيوتر',where:'الإعدادات ← السحابة ← «🔔 الإشعارات على هذا الجهاز»، أو الشريط أسفل الشاشة «🔔 فعّل الإشعارات»، وفي تطبيق الميدان زر «🔔» في الصفحة الرئيسية',what:'إشعار فوري يصلك حتى والتطبيق مغلق عند حدث يخصك: أمر عمل جديد، أمر بانتظار اعتمادك، إعادة أو اعتماد أمر، تصعيد، إيقاف عمل، طلب صرف، صرف لعهدتك، تالف متأخر، اعتماد صنف أو شراء، المستخلصات. الضغط عليه يفتح الأمر أو الصفحة.',how:['افتح «🔔 إعدادات الإشعارات» واضغط «🔔 تفعيل على هذا الجهاز» واسمح للمتصفح بالإشعارات.','اختر الأنواع التي تريدها ثم «💾 حفظ اختياراتي».','«📨 أرسل لي تجربة» للتأكد أن الجهاز يستقبل.','فعّلها على كل جهاز تستخدمه (الجوال والكمبيوتر).'],who:'كل المستخدمين (بعد أن يجهّزها مدير النظام)',tips:['على iPhone / iPad: أضف التطبيق للشاشة الرئيسية من زر المشاركة أولاً، ثم افتحه من الأيقونة وفعّل الإشعارات (iOS 16.4 أو أحدث).','لا يصلك إشعار عن عمل قمت به بنفسك، والحملة الكبيرة تصلك بإشعار واحد.','إذا رفضت الإذن بالخطأ: افتح إعدادات الموقع في المتصفح واسمح بالإشعارات.'],v:'V187'},
  {id:'push-setup',t:'إعداد الإشعارات (مدير النظام)',where:'الإعدادات ← السحابة ← «🔔 إعداد الإشعارات (مدير النظام)»',what:'تجهيز إرسال الإشعارات مرة واحدة: مفاتيح الإرسال، ربط دالة fm-push على Supabase، الأنواع المفعّلة للشركة، ومتابعة عدد الأجهزة وما أُرسل وآخر خطأ.',how:['«🔑 توليد المفاتيح» وانسخ المفتاح الخاص إلى أسرار الدالة باسم VAPID_PRIVATE.','أنشئ الدالة fm-push في Supabase ← Edge Functions والصق ملف supabase/functions/fm-push/index.ts، وأوقف Verify JWT.','اكتب رابط الدالة و«🔐 حفظ الربط وتوليد السر» وانسخ السر إلى أسرار الدالة باسم FM_PUSH_HOOK.','فعّل pg_net و pg_cron من Database ← Extensions.','فعّل «الإشعارات مفعّلة للشركة» واحفظ، ثم جرّب على جهازك.'],who:'مدير النظام',tips:['المفتاح الخاص والسر لا يُحفظان في المنصة؛ يظهران مرة واحدة للنسخ.','توليد مفاتيح جديدة يلغي تفعيل كل الأجهزة.'],v:'V187'},
  {id:'v2-nav-fm186-cc',t:'مركز التكلفة',where:'المالية والتكاليف ← «💹 مركز التكلفة»',what:'الإيراد والتكلفة والربح للمشروع لكل مركز تكلفة (المنطقة ثم أقسامها) ولكل شهر، مقابل الميزانية، مع التفصيل حسب البند والمبنى. معظم التكاليف تُجمع تلقائياً من المنصة.',how:['«⚙️ المراكز»: «⚡ إنشاء مراكز المناطق» ثم أضف الأقسام تحت كل منطقة واختر ما تستقبله تلقائياً (المستخلصات، مواد المستودع، المشتريات، مصروفات المباني)، وقيمة العقد الشهرية للمنطقة.','«👥 الموظفون والرواتب»: أضف الموظفين أو ارفع القائمة من Excel بمراكزهم ورواتبهم وبدلاتهم ونسبة التأمينات.','«✍️ القيود اليدوية» ← «➕ قيد»: السيارات والوقود والسكن وغيرها، وفاتورة العميل الشهرية وخصوماته.','«🎯 الميزانية»: ميزانية كل مركز لكل بند وشهر (و«⇉» لنسخ يناير على السنة).','«📊 لوحة المتابعة»: الإيراد والتكلفة والربح حتى الآن، المستهلك من الميزانية، التوقع لنهاية السنة، والتنبيهات؛ ثم «🏢 حسب المركز» للتفاصيل، و«🖨️ تقرير» أو «⬇️ Excel».'],who:'حسب الصلاحيات التي يحددها مدير النظام في «الإعدادات» ← السحابة ← «💹 صلاحيات مركز التكلفة»',tips:['التوريد للمستودع والصرف للعهدة لا يُحسبان تكلفة حتى تُستخدم المادة في أمر عمل معتمد.','المستخلص يُحسب بصافيه قبل الضريبة عند اعتماده، ولا تتكرر المواد التي يحملها المستخلص.','مدير المنطقة ومهندس المنطقة يرون مراكز مناطقهم فقط، والرواتب والإيراد لا تظهر إلا لمن له صلاحيتها.'],v:'V186'},
@@ -34701,6 +34710,61 @@ const rnd=n=>[...crypto.getRandomValues(new Uint8Array(n))].map(x=>x.toString(16
 let n=0;const t=setInterval(async()=>{try{if(++n>120){clearInterval(t);return}if(!C.engClient)return;const d=await db();const u=d.auth&&d.auth.getSession?((await d.auth.getSession()).data||{}).session:true;if(!u)return;clearInterval(t);
  if(/^#(wo=|cus|wh=|bill)/.test(location.hash))setTimeout(()=>{go(location.hash);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}},1500);
  await settings().catch(()=>null);sync().catch(()=>{});refreshHome();setInterval(refreshHome,3000);}catch(e){}},1500);
+})();
+</script>
+<script id="fm-v188-pwa">(function(){
+'use strict';
+/* V188 (field F33, start S10): the installable app and offline use. Registers sw.js on every page (it saves the pages, the
+   libraries and the map tiles; see sw.js), keeps the install prompt (Android / desktop Chrome and Edge) and explains the steps
+   on iPhone (Safari: share ⬆️ ← «إضافة إلى الشاشة الرئيسية»). window.fmPwa = {install, can, standalone, ios, on, help}.
+   localStorage fm_last_app = the last app opened (index.html / field.html), so start.html can open it without a connection. */
+const PAGE=(location.pathname.split('/').pop()||'index.html');
+const SUP='serviceWorker' in navigator&&window.isSecureContext;
+const IOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const SAFARI=IOS&&!/crios|fxios|edgios/i.test(navigator.userAgent);
+const standalone=()=>!!((window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true);
+let BIP=null;const L=new Set();const fire=()=>L.forEach(f=>{try{f()}catch(e){}});
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();BIP=e;fire()});
+window.addEventListener('appinstalled',()=>{BIP=null;try{localStorage.setItem('fm188_installed',String(Date.now()))}catch(e){}fire()});
+const can=()=>!standalone()&&(!!BIP||IOS);
+function help(){let m=document.getElementById('fm188');if(m)m.remove();m=document.createElement('div');m.id='fm188';m.dir='rtl';
+ const steps=IOS?(SAFARI?['اضغط زر المشاركة ⬆️ أسفل الشاشة (أو أعلاها في iPad).','اختر «إضافة إلى الشاشة الرئيسية».','اضغط «إضافة»، ثم افتح التطبيق من أيقونته.']:['افتح هذه الصفحة في Safari (التثبيت على iPhone يتم من Safari فقط).','زر المشاركة ⬆️ ← «إضافة إلى الشاشة الرئيسية» ← «إضافة».']):
+  ['افتح قائمة المتصفح ⋮ (أعلى الشاشة).','اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».','افتح التطبيق من أيقونته.'];
+ m.innerHTML=`<div class="in"><div class="hd"><b>📲 تثبيت التطبيق على جهازك</b><button type="button" data-x>✕</button></div><ol>${steps.map(s=>`<li>${s}</li>`).join('')}</ol>
+  <p>بعد التثبيت: يفتح التطبيق بأيقونة مثل أي تطبيق، ويعمل دون اتصال بآخر بيانات محفوظة${IOS?'، وتصلك الإشعارات (iOS 16.4 أو أحدث)':''}.</p></div>`;
+ m.onclick=e=>{if(e.target===m||e.target.dataset.x!==undefined)m.remove()};document.body.appendChild(m)}
+async function install(){if(BIP){const e=BIP;BIP=null;try{await e.prompt();const r=await e.userChoice;fire();return r&&r.outcome}catch(x){fire()}return 'dismissed'}help();return 'manual'}
+window.fmPwa={install,can,standalone,ios:IOS,on:f=>{L.add(f);return()=>L.delete(f)},help,page:PAGE};
+const css=document.createElement('style');css.id='fm188-css';css.textContent=`
+#fm188{position:fixed;inset:0;z-index:3100;background:rgba(15,23,42,.45);display:flex;align-items:flex-end;justify-content:center;padding:12px;font-family:Cairo,Tahoma,sans-serif}
+#fm188 .in{background:#fff;color:#0f172a;border-radius:16px;max-width:440px;width:100%;padding:14px 16px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+#fm188 .hd{display:flex;justify-content:space-between;align-items:center;font-size:16px;margin-bottom:6px}
+#fm188 .hd button{border:0;background:#f1f5f9;border-radius:8px;padding:4px 10px;cursor:pointer}
+#fm188 ol{margin:6px 0;padding-inline-start:20px;line-height:1.9;font-size:14px}#fm188 p{color:#475569;font-size:12.5px;margin:6px 0 0}
+#fm188-off{position:fixed;bottom:12px;right:50%;transform:translateX(50%);z-index:2600;background:#7c2d12;color:#fff;border-radius:999px;padding:5px 14px;font:800 12.5px Cairo,Tahoma,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.25);display:none}
+body.fm188-offline #fm188-off{display:block}`;document.head.appendChild(css);
+// remember the app, register the worker and save this page and its libraries
+if(PAGE==='index.html'||PAGE==='field.html'){try{localStorage.setItem('fm_last_app',PAGE)}catch(e){}}
+if(SUP){const go=()=>navigator.serviceWorker.register('sw.js').then(()=>navigator.serviceWorker.ready).then(r=>{
+  // what it loaded, plus every library the page refers to (some load only when needed, e.g. the map)
+  const ref=(document.documentElement.innerHTML.match(/https:\/\/(?:cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net)\/[^"'`\s)<>]+?\.(?:js|css)(?=["'`\s)<>])/g)||[]).filter(u=>!/\$\{/.test(u));
+  const libs=[...new Set((performance.getEntriesByType('resource')||[]).map(e=>e.name).filter(u=>/^https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//.test(u)).concat(ref))];
+  (r.active||navigator.serviceWorker.controller)&&(r.active||navigator.serviceWorker.controller).postMessage({fmCache:{page:PAGE,libs}})}).catch(()=>{});
+ if(document.readyState==='complete')setTimeout(go,1500);else window.addEventListener('load',()=>setTimeout(go,1500))}
+const off=document.createElement('div');off.id='fm188-off';off.textContent='📴 بدون اتصال — تعمل من النسخة المحفوظة على هذا الجهاز';document.body.appendChild(off);
+const upd=()=>document.body.classList.toggle('fm188-offline',!navigator.onLine);addEventListener('online',upd);addEventListener('offline',upd);upd();
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const say=(m,k)=>{try{window.showToast?.(m,k||'success')}catch(e){}};
+(window.fmHubExtras=window.fmHubExtras||[]).push(function(tab,pane){if(tab!=='cloud')return;const box=document.createElement('div');box.className='fm122-card';box.style.marginTop='14px';pane.appendChild(box);
+ const draw=async()=>{let used='';try{const e=await navigator.storage.estimate();used=(e.usage/1048576).toFixed(1)+' ميجابايت'}catch(e){}
+  let n={p:0,l:0,t:0};try{for(const [k,c] of [['p','fm-pages'],['l','fm-libs'],['t','fm-tiles']])n[k]=(await (await caches.open(c)).keys()).length}catch(e){}
+  box.innerHTML=`<h3>📲 تثبيت المنصة والعمل دون اتصال</h3>
+   <div class="fm125-src">${standalone()?'✅ المنصة تعمل الآن كتطبيق مثبّت على هذا الجهاز.':'ثبّت المنصة كتطبيق: أيقونة على سطح المكتب أو الجوال، تفتح في نافذتها، وتعمل دون اتصال بآخر بيانات محفوظة.'}</div>
+   <div class="fm125-src">المحفوظ على هذا الجهاز للعمل دون اتصال: ${n.p} صفحة • ${n.l} ملف مكتبات وخطوط • ${n.t} قطعة خريطة${used?' • المساحة المستخدمة '+esc(used):''}</div>
+   <div class="row">${standalone()?'':`<button class="fm103-btn primary" type="button" data-i>📲 تثبيت على هذا الجهاز</button>`}<button class="fm103-btn" type="button" data-c>🧹 مسح المحفوظ (يُحفظ من جديد عند الاستخدام)</button></div>`;
+  box.querySelector('[data-i]')&&(box.querySelector('[data-i]').onclick=async()=>{const r=await install();if(r==='accepted')say('تم تثبيت المنصة');draw()});
+  box.querySelector('[data-c]').onclick=async()=>{if(!confirm('مسح النسخ المحفوظة للعمل دون اتصال على هذا الجهاز؟ (لا يمس بياناتك)'))return;for(const c of ['fm-pages','fm-libs','fm-tiles'])try{await caches.delete(c)}catch(e){}say('تم المسح');draw()}};
+ draw();const off_=window.fmPwa.on(()=>{if(!box.isConnected)return off_();draw()})});
 })();
 </script>
 </body>
