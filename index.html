@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V199">
+<meta name="fm-version" content="V200">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -44,6 +44,16 @@ try{const a=JSON.parse(localStorage.getItem('fm-cloud-auth')||'null'),uid=a&&(a.
 })();
 </script>
 <style id="fm-v144-gate-css">html.fm144-lock body{visibility:hidden}html.fm144-lock #fm144-gate,html.fm144-lock .fm136-login{visibility:visible}</style>
+<script id="fm-v200-wipe-early">
+/* V200: a reset of the platform's data (V190) asks this device to drop its local copies on the NEXT load, before any layer
+   opens them (deleting an IndexedDB database that the page holds open is blocked, so the old tickets survived and were
+   restored). localStorage fm190_clear = JSON parts. */
+(function(){try{const raw=localStorage.getItem('fm190_clear');if(!raw)return;const P=JSON.parse(raw)||[];localStorage.removeItem('fm190_clear');
+ if(P.indexOf('tickets')>=0){['fm_v103_store','SmartTicketsAnalyticsDB','fm_photos_v135'].forEach(function(n){try{indexedDB.deleteDatabase(n)}catch(e){}});
+  Object.keys(localStorage).forEach(function(k){if(/^fm_ticket_work_v135$|^fm_ref_date_|^fm_rank_/.test(k))try{localStorage.removeItem(k)}catch(e){}})}
+ if(P.indexOf('schooldb')>=0){try{localStorage.removeItem('fm_school_master_db_v1')}catch(e){}}
+ window.__fm200Cleared=P}catch(e){}})();
+</script>
 <script id="fm-v144-gate-early">/* V144: on the published site the platform stays hidden until the signed-in role is allowed (fm-v144-access) */
 if(/^https?:$/.test(location.protocol))document.documentElement.classList.add('fm144-lock');</script>
 <script id="fm-school-code-canonical">
@@ -25608,10 +25618,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V199',date:'2026-10-26',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V200',date:'2026-10-26',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V200',d:'2026-10-26',t:'إصلاح تصفير البلاغات',i:['كان تصفير البلاغات يحذفها من السحابة، ثم تعيد المنصة رفعها من النسخة المحفوظة على الجهاز: حذف تلك النسخة كان يفشل والصفحة مفتوحة.','الآن تُمسح النسخة المحلية في بداية التحميل التالي قبل أن تُفتح، على جهاز المدير وعلى كل جهاز آخر.','بعد أي تصفير لا تُرفع البلاغات للسحابة إلا من ملف أو لصق جديد في نفس الجلسة، ولا تُرفع أبداً من نسخة محفوظة على الجهاز.']},
  {v:'V199',d:'2026-10-26',t:'إزالة أي اسم شركة افتراضي',i:['المنصة لا تحمل اسم أي شركة بعينها: أُزيل الاسم الافتراضي من التقارير وخطاب الغرامات ونموذج العقد وملف اختصار سطح المكتب ومثال حقل اسم الشركة.','يظهر اسم الشركة فقط إذا كانت الشركة مسجّلة في الاشتراك؛ وإلا يظهر RakizoraFM وحده.']},
  {v:'V198',d:'2026-10-26',t:'إصلاح تنبيه سجل الفحص',i:['أُزيل إنذار «وُجد تنسيق/كود ملصق داخل سكربت» في «سجل النسخ والفحص»: كان سطراً سليماً في نافذة طباعة خطاب الغرامات (V177) يبدأ بوسم script فاعتبره الفحص كوداً ملصقاً. لا تغيير في عمل الصفحة.']},
  {v:'V197',d:'2026-10-26',t:'تصحيحات نتجت عن الاختبار الشامل',i:['إصلاح تعطل تحليل التكرار عند كثرة العلاقات بين البلاغات','إصلاح دالة كشف أعمدة الحل والتاريخ المفقودة','تحقق فعلي بالمتصفح من الاستيراد والتقارير وتصميم الصفحات','اختبارات PostgreSQL محلية للصلاحيات ودورات العمل مع توضيح حدود المحاكاة']},
@@ -34928,7 +34939,7 @@ function clearLocal(parts){const P=new Set(parts||[]);
     if(q('[data-bk]').checked){res.innerHTML='<div class="fm125-src">جارٍ تجهيز النسخة الاحتياطية…</div>';const r=await d.rpc('fm_wipe_backup',{p_parts:parts});if(r.error)throw Error(r.error.message);
      dl('rakizora-backup-'+new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')+'.json',JSON.stringify(r.data),'application/json');await new Promise(r=>setTimeout(r,800))}
     res.innerHTML='<div class="fm125-src">جارٍ التصفير…</div>';const r=await d.rpc('fm_wipe',{p_parts:parts,p_confirm:'تصفير'});if(r.error)throw Error(r.error.message);
-    const out=r.data||{},rows=out.rows||{},tot=Object.values(rows).reduce((a,b)=>a+(+b||0),0);clearLocal(out.parts);try{localStorage.setItem('fm190_wipe_seen',new Date().toISOString())}catch(x){}
+    const out=r.data||{},rows=out.rows||{},tot=Object.values(rows).reduce((a,b)=>a+(+b||0),0);clearLocal(out.parts);try{localStorage.setItem('fm190_clear',JSON.stringify(out.parts||[]));localStorage.setItem('fm190_wipe_seen',new Date(Date.now()+60000).toISOString())}catch(x){}window.__fm190Block=true;
     res.innerHTML=`<div class="fm125-src" style="background:#ecfdf5;border-radius:10px;padding:10px">✅ تم التصفير: حُذف ${num(tot)} سجل${out.files?' و'+num(out.files)+' صورة':''}.${out.files_left?' ملفات الصور تبقى في التخزين (غير ظاهرة)؛ يمكن حذفها من Supabase ← Storage.':''} ستُعاد تحميل المنصة…</div>`;
     toast('تم التصفير');setTimeout(()=>location.reload(),2500)}
    catch(x){res.innerHTML=`<div class="fm125-src" style="color:#b91c1c">${esc(/confirm/.test(x.message)?'اكتب «تصفير» للتأكيد':/not allowed/.test(x.message)?'التصفير لمدير النظام فقط':x.message)}</div>`;btn.disabled=false}};
@@ -34940,11 +34951,19 @@ function wipeGate(){if(gate)return gate;gate=(async()=>{try{if(!cloudOn())return
  const w=((r.data||[])[0]||{}).value;if(!w||!w.at)return;let seen='';try{seen=localStorage.getItem('fm190_wipe_seen')||''}catch(e){}
  if(seen&&seen>=w.at)return;try{localStorage.setItem('fm190_wipe_seen',w.at)}catch(e){}
  const P=w.parts||[];if(!P.some(k=>k==='tickets'||k==='schooldb'))return;
- const had=P.includes('tickets')||(P.includes('schooldb')&&!!localStorage.getItem('fm_school_master_db_v1'));clearLocal(P);
- if(had&&!sessionStorage.getItem('fm190_reloaded')){sessionStorage.setItem('fm190_reloaded','1');toast('صُفّرت بيانات المنصة — تُحدَّث هذه النسخة','warning');setTimeout(()=>location.reload(),1200);throw Error('reloading')}}
+ clearLocal(P);try{localStorage.setItem('fm190_clear',JSON.stringify(P))}catch(e){}window.__fm190Block=true;
+ if(!sessionStorage.getItem('fm190_reloaded')){sessionStorage.setItem('fm190_reloaded','1');toast('صُفّرت بيانات المنصة — تُحدَّث هذه النسخة','warning');setTimeout(()=>location.reload(),1200);throw Error('reloading')}}
  catch(e){if(e&&e.message==='reloading')throw e}})();gate.catch(()=>{});return gate}
+let fresh=0;const mark=()=>{fresh=Date.now()};
+document.addEventListener('change',e=>{if(e.target&&e.target.type==='file'&&e.target.files&&e.target.files.length)mark()},true);
+document.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)mark()},true);
+document.addEventListener('click',e=>{if(e.target&&e.target.closest&&e.target.closest('#btn-analyze-pasted'))mark()},true);
+let wipedAt=null;async function wiped(){if(wipedAt!==null)return wipedAt;try{const d=await db();const r=await d.from('fm_settings').select('value').eq('key','wipe').limit(1);wipedAt=(((r.data||[])[0]||{}).value||{}).at||''}catch(e){wipedAt=''}return wipedAt}
 function wrap(){const A=C&&C.api;if(!A)return;for(const k of ['pushTickets','pushWork','setKV']){const f=A[k];if(typeof f!=='function'||f.__fm190)continue;
- const g=async function(...a){await wipeGate();return f.apply(this,a)};g.__fm190=true;A[k]=g}}
+ const g=async function(...a){await wipeGate();if(window.__fm190Block)throw Error('بعد التصفير: يُعاد تحميل الصفحة');
+  /* V200: after a reset, tickets go to the cloud only from a file / paste uploaded in this session — never from a copy restored from this device */
+  if(k==='pushTickets'&&!fresh&&await wiped())throw Error('لم تُرفع البلاغات: هذه نسخة محفوظة على الجهاز من قبل التصفير. ارفع ملف البلاغات من جديد.');
+  return f.apply(this,a)};g.__fm190=true;A[k]=g}}
 wrap();setInterval(wrap,2000);
 let n=0;const t=setInterval(()=>{if(++n>80){clearInterval(t);return}if(cloudOn()){clearInterval(t);wipeGate()}},1500);
 })();</script>
