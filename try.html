@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="fm-version" content="T2">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f172a">
+<title>RakizoraFM | منصة إدارة صيانة المباني والمدارس</title>
+<meta name="description" content="منصة سحابية لإدارة صيانة المدارس والمباني: البلاغات والـ SLA، أوامر العمل والصيانة الوقائية، المستودعات والعهد، مستخلصات المقاولين، وتطبيق ميداني للمشرفين.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0f172a;--mut:#475569;--line:#e2e8f0;--pri:#2563eb;--pri2:#7c3aed;--bg:#f8fafc;--ok:#15803d}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;font-family:Cairo,Tahoma,sans-serif;color:var(--ink);background:var(--bg);line-height:1.8}
+a{color:inherit}
+.wrap{max-width:1120px;margin:0 auto;padding:0 16px}
+header{position:sticky;top:0;z-index:5;background:rgba(15,23,42,.96);color:#fff}
+header .wrap{display:flex;align-items:center;gap:12px;padding-top:10px;padding-bottom:10px}
+header b{font-size:18px;flex:1}header a{text-decoration:none;font-weight:800;font-size:14px;padding:6px 12px;border-radius:10px}
+header a.c{background:var(--pri)}
+.hero{background:linear-gradient(135deg,#0f172a,#1e3a8a 60%,#4c1d95);color:#fff;padding:56px 0 64px}
+.hero h1{font-size:clamp(26px,4.4vw,44px);line-height:1.35;margin:0 0 12px;font-weight:900}
+.hero p{font-size:clamp(15px,2vw,19px);color:#cbd5e1;margin:0 0 22px;max-width:760px}
+.btn{display:inline-block;border:0;border-radius:14px;padding:12px 22px;font:900 15.5px Cairo,Tahoma,sans-serif;cursor:pointer;text-decoration:none;margin:4px}
+.btn.p{background:#22c55e;color:#052e16}.btn.s{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3)}.btn.w{background:#25d366;color:#fff}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:30px}
+.stats div{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:12px 14px}.stats b{display:block;font-size:22px}.stats span{color:#cbd5e1;font-size:13px}
+section{padding:52px 0}section h2{font-size:clamp(22px,3vw,30px);margin:0 0 6px;font-weight:900}section .sub{color:var(--mut);margin:0 0 24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.card .ic{font-size:30px}.card h3{margin:6px 0 4px;font-size:17px}.card p{margin:0;color:var(--mut);font-size:14px}
+.card ul{margin:8px 0 0;padding-inline-start:18px;color:var(--mut);font-size:13.5px}
+.plans .card{display:flex;flex-direction:column}.plans .pr{font-size:28px;font-weight:900;color:var(--pri);margin:6px 0}.plans .pr small{font-size:13px;color:var(--mut)}
+.plans .card.hl{border:2px solid var(--pri);box-shadow:0 10px 30px rgba(37,99,235,.15)}
+.chip{display:inline-block;background:#eff6ff;color:#1d4ed8;border-radius:999px;padding:1px 10px;font-size:12px;font-weight:800;margin:2px}
+.steps{counter-reset:s}.steps .card{position:relative;padding-top:26px}.steps .card:before{counter-increment:s;content:counter(s);position:absolute;top:-14px;right:16px;width:32px;height:32px;border-radius:50%;background:var(--pri);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900}
+form{display:grid;gap:10px}form .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{display:grid;gap:4px;font-weight:800;font-size:13px;color:#334155}
+input,textarea,select{font:600 14.5px Cairo,Tahoma,sans-serif;border:1px solid #cbd5e1;border-radius:12px;padding:10px 12px;width:100%;background:#fff}
+.mods{display:flex;flex-wrap:wrap;gap:6px}.mods label{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:4px 12px;font-size:13px;cursor:pointer;background:#fff}.mods input{width:auto}
+.msg{border-radius:12px;padding:10px 12px;font-weight:800}.msg.ok{background:#dcfce7;color:#166534}.msg.err{background:#fee2e2;color:#b91c1c}
+.hp{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);opacity:0;pointer-events:none}
+html,body{overflow-x:hidden}
+footer{background:#0f172a;color:#94a3b8;padding:22px 0;font-size:13px;text-align:center}
+@media(max-width:640px){form .two{grid-template-columns:1fr}header a:not(.c){display:none}.hero{padding:36px 0 44px}}
+</style>
+</head>
+<body>
+<header><div class="wrap"><b>RakizoraFM</b><a href="#parts">الأجزاء</a><a href="#plans">الباقات</a><a href="#demo" data-demo-link>جرّب العرض</a><a class="c" href="#trial">اطلب تجربة</a></div></header>
+<div class="hero"><div class="wrap">
+ <h1>إدارة صيانة المدارس والمباني<br>من البلاغ حتى المستخلص — في منصة واحدة</h1>
+ <p>بلاغات بمؤشرات SLA، أوامر عمل وصيانة وقائية بقوالب معتمدة، مستودع وعهد وتوالف، مستخلصات المقاولين، وتطبيق ميداني للمشرفين والمقاولين يعمل بدون إنترنت — لكل شركة قاعدة بيانات مستقلة.</p>
+ <a class="btn p" href="#trial">🚀 اطلب تجربة مجانية</a><a class="btn s" href="#demo" data-demo-link>🧪 ادخل نسخة العرض الآن</a>
+ <div class="stats"><div><b>8</b><span>أجزاء تشتري منها ما تحتاج</span></div><div><b>13</b><span>مسمى وظيفي بصلاحيات جاهزة</span></div><div><b>📱</b><span>تطبيق ميداني بالخريطة والصور</span></div><div><b>🔒</b><span>قاعدة بيانات مستقلة لكل شركة</span></div></div>
+</div></div>
+
+<section id="parts"><div class="wrap"><h2>اختر الأجزاء التي تحتاجها</h2><p class="sub">ابدأ بجزء واحد وأضف غيره لاحقاً بكود تفعيل — بياناتك لا تُفقد عند إيقاف جزء.</p>
+ <div class="grid" id="parts-grid"></div></div></section>
+
+<section id="plans" style="background:#fff"><div class="wrap"><h2>الباقات</h2><p class="sub">حسب عدد المدارس والأجزاء — وأي جزء غير مشمول يُضاف بسعره.</p><div class="grid plans" id="plans-grid"><div class="card">جارٍ التحميل…</div></div></div></section>
+
+<section><div class="wrap"><h2>كيف نبدأ معكم؟</h2><p class="sub">أسبوع واحد غالباً من الطلب حتى أول أمر عمل.</p><div class="grid steps">
+ <div class="card"><h3>طلب التجربة</h3><p>املأ النموذج أو تواصل بالواتساب، ونرتب معكم عرضاً سريعاً على نسخة العرض.</p></div>
+ <div class="card"><h3>تجهيز شركتكم</h3><p>نجهز لكم قاعدة بيانات مستقلة ورابط دخول خاص باسم شركتكم وشعارها.</p></div>
+ <div class="card"><h3>خطوات البداية</h3><p>معالج داخل المنصة: رفع المدارس، إضافة الفريق، المستودعات، والأصناف — خطوة بخطوة.</p></div>
+ <div class="card"><h3>التشغيل</h3><p>المشرفون على تطبيق الميدان، والإدارة على لوحة المؤشرات والتقارير الشهرية.</p></div></div></div></section>
+
+<section id="demo" style="background:#fff"><div class="wrap"><h2>🧪 جرّب نسخة العرض</h2><p class="sub">بيانات وهمية بالكامل لمدارس وبلاغات وأوامر عمل ومستودع — اختر أي دور (مدير مشروع، مهندس، مشرف، أمين مستودع…) وشاهد المنصة كما يراها.</p>
+ <a class="btn p" id="demo-go" href="#trial">🧪 ادخل نسخة العرض</a><span id="demo-none" style="color:var(--mut);font-weight:700" hidden>نسخة العرض تُفعَّل قريباً — اطلب عرضاً مباشراً من النموذج.</span></div></section>
+
+<section id="trial"><div class="wrap" style="max-width:760px"><h2>🚀 اطلب تجربة</h2><p class="sub">نتواصل معك خلال يوم عمل.</p>
+ <div class="card"><form id="f" autocomplete="on">
+  <div class="two"><label>الاسم *<input name="name" required maxlength="120" autocomplete="name"></label><label>الجهة / الشركة *<input name="company" required maxlength="200" autocomplete="organization"></label></div>
+  <div class="two"><label>الجوال (واتساب) *<input name="phone" required inputmode="tel" dir="ltr" placeholder="05xxxxxxxx" autocomplete="tel"></label><label>البريد<input name="email" type="email" dir="ltr" autocomplete="email"></label></div>
+  <div class="two"><label>المدينة<input name="city" maxlength="80"></label><label>عدد المدارس / المباني تقريباً<input name="schools" inputmode="numeric"></label></div>
+  <label>الأجزاء التي تهمك<div class="mods" id="mods"></div></label>
+  <label>ملاحظة<textarea name="message" rows="3" maxlength="1000"></textarea></label>
+  <div class="hp" aria-hidden="true"><label>اترك هذا الحقل فارغاً<input name="hp" tabindex="-1" autocomplete="off"></label></div>
+  <div id="m"></div><button class="btn p" type="submit" style="margin:0">إرسال الطلب</button>
+  <a class="btn w" id="wa" href="#" target="_blank" rel="noopener" hidden style="margin:0;text-align:center">💬 تواصل بالواتساب</a>
+ </form></div></div></section>
+<footer>RakizoraFM • إدارة المرافق والأصول الذكية • <a href="start.html">دخول العملاء</a></footer>
+<script>
+(function(){
+'use strict';
+/* T1 (V185): public page of the platform. Reads the plans / add-ons / demo code from the owner's control project
+   (saas_control.sql → saas_public) with the site's public key, and sends trial requests to saas_lead_new (no account). */
+const CFG={url:'https://hjumfnwabrtexyenshkg.supabase.co',key:'sb_publishable_g8_N3wEdQ7_fM9VKGan2iw_7xfcrByg'};
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=s=>document.querySelector(s);
+const API=window.FMTryAPI||{async call(fn,body){const r=await fetch(CFG.url+'/rest/v1/rpc/'+fn,{method:'POST',headers:{apikey:CFG.key,Authorization:'Bearer '+CFG.key,'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+ const t=await r.text();if(!r.ok){let m=t;try{m=JSON.parse(t).message||t}catch(e){}throw new Error(m)}return t?JSON.parse(t):null}};
+const PARTS=[['tickets','🎫','البلاغات والـ SLA','رفع بلاغات العميل وتحليلها: التنبيهات اليومية، توقع الاختراق، المتأخرات، أداء الكادر والمقاولين، والتقارير الأسبوعية والشهرية للعميل.'],
+ ['wo','🛠️','أوامر العمل والصيانة الوقائية','أوامر وحملات لمجموعة مدارس بقوالب معتمدة، فحص الحالة (FCI)، أوامر الإصلاح، الصور قبل وبعد، الاعتماد والتصعيد وتدقيق الجودة.'],
+ ['wh','📦','المستودعات وقطع الغيار','أصناف معتمدة من الجهة المالكة، الموردون والأسعار، العهد على المشرفين، إرجاع التوالف، طلبات الشراء والضمان، وتقارير الحركة.'],
+ ['bill','🧾','مستخلصات المقاولين','مستخلص شهري تلقائي من أوامر العمل المعتمدة وأسعار العقد، بالغرامات والمحتجزات والضريبة، ومسار مراجعة واعتماد وصرف.'],
+ ['eng','💬','التواصل مع المدارس والرضا','خطة تواصل دورية مع مديري المدارس، الملاحظات والمتابعة، وتقييم رضا المدارس برابط أو QR.'],
+ ['portal','🏫','بوابة مدير المدرسة','رابط خاص لكل مدرسة يرفع منه المدير طلباته بالصور ويتابعها ويقيّمها — بدون حساب.'],
+ ['cc','💹','مركز التكلفة','الإيراد والتكلفة والربح لكل منطقة وقسم وشهر مقابل الميزانية، تُجمع تلقائياً من المستخلصات وأوامر العمل والمستودع والرواتب، مع التوقع لنهاية السنة.'],
+ ['costs','💰','تكاليف المباني','ملف لكل مبنى بمصاريفه وقطع غياره وإصلاحاته وميزانيته السنوية، وخطة الإحلال.']];
+$('#parts-grid').innerHTML=PARTS.map(([k,i,t,d])=>`<div class="card"><div class="ic">${i}</div><h3>${esc(t)}</h3><p>${esc(d)}</p></div>`).join('')+`<div class="card" style="background:#f0fdf4"><div class="ic">🧱</div><h3>الأساسي — مع كل اشتراك</h3><p>المستخدمون والمسميات والصلاحيات، قاعدة المدارس، الخريطة، تطبيق الميدان، الأخبار، دليل المنصة، والنسخة الخاصة باسم شركتك وشعارها.</p></div>`;
+$('#mods').innerHTML=PARTS.map(([k,i,t])=>`<label><input type="checkbox" value="${k}"> ${i} ${esc(t)}</label>`).join('');
+const PN=Object.fromEntries(PARTS.map(([k,i,t])=>[k,i+' '+t]));
+const money=v=>(+v||0).toLocaleString('en-US')+' ر.س';
+(async()=>{let P=null;try{P=await API.call('saas_public')}catch(e){}
+ const site=(P&&P.site)||{},plans=(P&&Array.isArray(P.plans)&&P.plans)||[],adds=(P&&Array.isArray(P.addons)&&P.addons)||[];
+ if(site.demo_code){const u='start.html?c='+encodeURIComponent(site.demo_code);$('#demo-go').href=u;document.querySelectorAll('[data-demo-link]').forEach(a=>a.href=u)}else{$('#demo-go').hidden=true;$('#demo-none').hidden=false}
+ if(site.whatsapp){const w=$('#wa');let p=S(site.whatsapp).replace(/[^\d]/g,'');if(/^05\d{8}$/.test(p))p='966'+p.slice(1);w.href='https://wa.me/'+p+'?text='+encodeURIComponent('السلام عليكم، أرغب في معرفة المزيد عن منصة RakizoraFM');w.hidden=false}
+ $('#plans-grid').innerHTML=plans.length?plans.map((x,i)=>{const mods=Array.isArray(x.modules)?x.modules:Object.keys(PN);return `<div class="card ${i===1?'hl':''}"><h3>${esc(x.name)}</h3>${x.price!=null?`<div class="pr">${money(x.price)} <small>/ شهرياً قبل الضريبة</small></div>`:''}
+  <div style="color:var(--mut);font-weight:700">${+x.max?'حتى '+(+x.max).toLocaleString('en-US')+' مدرسة':'عدد غير محدود من المدارس'}</div><div style="margin:8px 0">${mods.map(k=>`<span class="chip">${esc(PN[k]||k)}</span>`).join('')}</div>
+  <a class="btn p" href="#trial" data-plan="${esc(x.k)}" style="margin-top:auto;text-align:center">اطلب هذه الباقة</a></div>`}).join('')
+  +(adds.some(a=>+a.base||+a.per_school)?`<div class="card"><h3>➕ أجزاء إضافية</h3><ul>${adds.filter(a=>+a.base||+a.per_school).map(a=>`<li>${esc(PN[a.k]||a.k)}: ${+a.base?money(a.base):''}${+a.per_school?` ${+a.base?'+ ':''}${money(a.per_school)} لكل مدرسة`:''} شهرياً</li>`).join('')}</ul></div>`:'')
+  :'<div class="card">تواصل معنا لعرض سعر يناسب عدد مدارسكم.</div>';
+ document.querySelectorAll('[data-plan]').forEach(a=>a.onclick=()=>{const x=plans.find(p=>p.k===a.dataset.plan);if(x&&Array.isArray(x.modules))document.querySelectorAll('#mods input').forEach(c=>c.checked=x.modules.includes(c.value));const m=$('[name=message]');if(x&&!S(m.value))m.value='مهتم بباقة '+x.name})})();
+$('#f').onsubmit=async e=>{e.preventDefault();const f=e.target,b=f.querySelector('[type=submit]'),v=n=>S(f.elements[n].value);
+ const ph=v('phone').replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c));
+ if(!v('name')||!v('company')||!/^\+?[0-9 ]{9,16}$/.test(ph)){$('#m').innerHTML='<div class="msg err">اكتب الاسم والجهة ورقم جوال صحيح</div>';return}
+ b.disabled=true;b.textContent='جارٍ الإرسال…';
+ try{await API.call('saas_lead_new',{p:{name:v('name'),company:v('company'),phone:ph.replace(/\s/g,''),email:v('email'),city:v('city'),schools:v('schools'),message:v('message'),hp:v('hp'),modules:[...document.querySelectorAll('#mods input:checked')].map(c=>c.value)}});
+  f.reset();$('#m').innerHTML='<div class="msg ok">✅ وصل طلبك — نتواصل معك خلال يوم عمل.</div>'}
+ catch(err){$('#m').innerHTML=`<div class="msg err">${/too many/.test(err.message)?'تم إرسال طلبك من قبل — سنتواصل معك قريباً':/invalid phone/.test(err.message)?'رقم الجوال غير صحيح':'تعذر الإرسال — حاول مرة أخرى أو تواصل بالواتساب'}</div>`}
+ b.disabled=false;b.textContent='إرسال الطلب'};
+})();
+</script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SA1">
+<meta name="fm-version" content="SA5">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -83,20 +83,38 @@ const API=window.FMSaasAPI=window.FMSaasAPI||{
  async settings(){const c=await sb();return Object.fromEntries((chk(await c.from('saas_settings').select('key,value'))||[]).map(x=>[x.key,x.value]))},
  async saveSetting(k,v){const c=await sb();return chk(await c.from('saas_settings').upsert([{key:k,value:v,updated_at:new Date().toISOString()}],{onConflict:'key'}))},
  async invoices(){const c=await sb();return chk(await c.from('saas_invoices').select('*').order('created_at',{ascending:false}).limit(1000))},
+ async leads(){const c=await sb();return chk(await c.from('saas_leads').select('*').order('at',{ascending:false}).limit(1000))},
+ async updLead(id,o){const c=await sb();return chk(await c.from('saas_leads').update(Object.assign({updated_at:new Date().toISOString()},o)).eq('id',id).select())},
+ async usage(){const c=await sb();const d=new Date(Date.now()-60*864e5).toISOString().slice(0,10);return chk(await c.from('saas_usage').select('*').gte('day',d).order('day',{ascending:false}))},
  async addInvoice(o){const c=await sb();return chk(await c.from('saas_invoices').insert(o).select())[0]},
  async updInvoice(id,o){const c=await sb();return chk(await c.from('saas_invoices').update(o).eq('id',id).select())[0]}
 };
 const ERR=m=>/Invalid login/i.test(m)?'البريد أو كلمة المرور غير صحيحة':/duplicate key/i.test(m)?'رمز الشركة مستخدم من قبل':/saas_tenants_url_check/.test(m)?'رابط المشروع يجب أن يكون https://xxxx.supabase.co':/anon_key_check/.test(m)?'المفتاح غير صالح — استخدم المفتاح العام (anon / publishable) فقط':/code_check/.test(m)?'رمز الشركة: أحرف إنجليزية صغيرة وأرقام و- (2–30)':/logo_check/.test(m)?'الشعار كبير — اختر صورة أصغر':/does not exist|schema cache/i.test(m)?'شغّل saas_control.sql في مشروع التحكم أولاً':/Failed to fetch/i.test(m)?'تعذر الاتصال':m;
 const toast=(m,bad)=>{const t=document.createElement('div');t.textContent=m;t.style.cssText=`position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:${bad?'#b91c1c':'#0f172a'};color:#fff;padding:10px 18px;border-radius:12px;font:800 13.5px Cairo,Tahoma,sans-serif;z-index:99`;document.body.appendChild(t);setTimeout(()=>t.remove(),3200)};
-/* activation code = base64url(JSON {c,p,l,u,n}) + '.' + hex HMAC-SHA256(that text, tenant secret) — verified by fm_plan_activate */
-async function signCode(t,plan,limit,until,nonce){const p=JSON.stringify({c:t.code,p:plan,l:+limit||0,u:until,n:nonce});
+/* activation code = base64url(JSON {c,p,l,u,n,m?}) + '.' + hex HMAC-SHA256(that text, tenant secret) — verified by fm_plan_activate */
+async function signCode(t,plan,limit,until,nonce,mods){const o={c:t.code,p:plan,l:+limit||0,u:until,n:nonce};if(mods&&typeof mods==='object')o.m=mods;const p=JSON.stringify(o);
  const b=btoa(unescape(encodeURIComponent(p))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
  const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(t.secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
  const sig=new Uint8Array(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(b)));return b+'.'+[...sig].map(x=>x.toString(16).padStart(2,'0')).join('')}
 window.fmSaasSign=signCode;
-let T=[],INV=[],SET={},TAB='dash';
+let T=[],INV=[],SET={},TAB='dash',LEADS=[],USE=[];
 const plans=()=>Array.isArray(SET.plans)?SET.plans:[];
 const planOf=k=>plans().find(p=>p.k===k)||{k,name:k,max:0,price:0};
+/* SA2 (V181): the parts of the platform. A plan (باقة) lists its parts; other parts are add-ons priced per month
+   (base + per school × the school limit). The company's parts {key: until-date | null} travel in the activation code (m). */
+const MODS=[['tickets','🎫 البلاغات والـ SLA'],['wo','🛠️ أوامر العمل'],['wh','📦 المستودعات وقطع الغيار'],['eng','💬 التواصل مع المدارس والرضا'],['portal','🏫 بوابة مدير المدرسة'],['costs','💰 تكاليف المباني'],['bill','🧾 مستخلصات المقاولين'],['cc','💹 مركز التكلفة']];
+const MODN=k=>(MODS.find(m=>m[0]===k)||[k,k])[1];
+const planMods=k=>{const p=planOf(k);return Array.isArray(p.modules)?p.modules:MODS.map(m=>m[0])};
+const addons=()=>Array.isArray(SET.addons)?SET.addons:[];
+const addonOf=k=>addons().find(a=>a.k===k)||{k,base:0,per_school:0};
+const addonPrice=(k,limit)=>(+addonOf(k).base||0)+(+addonOf(k).per_school||0)*(+limit||0);
+const tMods=t=>t&&t.modules&&typeof t.modules==='object'&&!Array.isArray(t.modules)?t.modules:null;
+const modsTxt=m=>m?Object.keys(m).map(k=>MODN(k).replace(/^\S+\s/,'')+(m[k]?` (حتى ${m[k]})`:'')).join('، ')||'—':'كل الأجزاء';
+/* the parts picker: parts of the plan are included; others are add-ons (with an optional end date for a trial) */
+function modPicker(planKey,cur,limit,trial){const inc=planMods(planKey);return `<table><thead><tr><th>الجزء</th><th>الحالة</th>${trial?'<th>حتى (تجربة)</th>':'<th>سعر الإضافة / شهر</th>'}</tr></thead><tbody>${MODS.map(([k,n])=>{const i=inc.includes(k),on=i||(cur&&k in cur);
+  return `<tr><td><label><input type="checkbox" data-mod="${k}" ${on?'checked':''} ${i?'disabled':''}> ${esc(n)}</label></td><td>${i?'<span class="tag active">ضمن الباقة</span>':'إضافة'}</td>${trial?`<td><input type="date" data-mu="${k}" value="${esc(cur&&cur[k]||'')}"></td>`:`<td>${i?'—':money(addonPrice(k,limit))}</td>`}</tr>`}).join('')}</tbody></table>`}
+function readPicker(d,planKey){const m={};planMods(planKey).forEach(k=>m[k]=null);d.querySelectorAll('[data-mod]:not(:disabled)').forEach(c=>{if(c.checked){const u=d.querySelector(`[data-mu="${c.dataset.mod}"]`);m[c.dataset.mod]=u&&u.value?u.value:null}});
+ d.querySelectorAll('[data-mod]:disabled').forEach(c=>{const u=d.querySelector(`[data-mu="${c.dataset.mod}"]`);if(u&&u.value)m[c.dataset.mod]=u.value});return m}
 const seller=()=>Object.assign({name:'RakizoraFM',vat_no:'',address:'',iban:'',vat_pct:15},SET.seller||{});
 
 /* ---------- sign in ---------- */
@@ -108,24 +126,54 @@ function login(err){app.innerHTML=`<div class="login"><h2>🔐 لوحة مالك
 async function boot(){app.innerHTML='<div class="login">جارٍ التحميل…</div>';
  try{if(!await API.session())return login();if(!await API.isOwner()){app.innerHTML=`<div class="login"><h2>غير مصرح</h2><div class="err">هذا الحساب ليس من مالكي المنصة. أضفه في saas_owners من محرر SQL.</div><button class="b" id="out">خروج</button></div>`;$('#out').onclick=async()=>{await API.signOut();login()};return}
   await reload();render()}catch(e){app.innerHTML=`<div class="login"><div class="err">${esc(ERR(e.message))}</div><button class="b" id="out">خروج</button></div>`;$('#out').onclick=async()=>{try{await API.signOut()}catch(_){}login()}}}
-async function reload(){[T,INV,SET]=await Promise.all([API.tenants(),API.invoices(),API.settings()])}
+async function reload(){[T,INV,SET]=await Promise.all([API.tenants(),API.invoices(),API.settings()]);[LEADS,USE]=await Promise.all([API.leads?API.leads().catch(()=>[]):[],API.usage?API.usage().catch(()=>[]):[]])}
 
 /* ---------- main ---------- */
 function render(){app.innerHTML=`<div class="top"><h1>🏢 لوحة مالك المنصة <small>RakizoraFM SaaS</small></h1><button id="rl">🔄</button><button id="out">خروج</button></div><main>
- <div class="tabs">${[['dash','📊 نظرة عامة'],['co','🏢 الشركات'],['inv','🧾 الفواتير'],['set','⚙️ الباقات والبائع']].map(([k,l])=>`<button data-t="${k}" class="${TAB===k?'on':''}">${l}</button>`).join('')}</div><div id="pane"></div></main>`;
+ <div class="tabs">${[['dash','📊 نظرة عامة'],['co','🏢 الشركات'],['lead',`📥 طلبات التجربة${LEADS.filter(l=>l.status==='new').length?' ('+LEADS.filter(l=>l.status==='new').length+')':''}`],['inv','🧾 الفواتير'],['set','⚙️ الباقات والبائع']].map(([k,l])=>`<button data-t="${k}" class="${TAB===k?'on':''}">${l}</button>`).join('')}</div><div id="pane"></div></main>`;
  $('#rl').onclick=async()=>{await reload();render()};$('#out').onclick=async()=>{await API.signOut();login()};
  app.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{TAB=b.dataset.t;render()});
- ({dash,co:companies,inv:invoices,set:settingsTab})[TAB]($('#pane'))}
+ ({dash,co:companies,lead:leadsTab,inv:invoices,set:settingsTab})[TAB]($('#pane'))}
 function dash(p){const act=T.filter(t=>t.status==='active'),tr=T.filter(t=>t.status==='trial'),exp=T.filter(t=>t.status!=='suspended'&&daysLeft(t.active_until)!=null&&daysLeft(t.active_until)<=30).sort((a,b)=>daysLeft(a.active_until)-daysLeft(b.active_until));
- const mrr=act.reduce((s,t)=>s+(+planOf(t.plan).price||0),0),unpaid=INV.filter(i=>i.status==='unpaid'),y=new Date().getFullYear(),paidY=INV.filter(i=>i.status==='paid'&&String(i.paid_at||'').startsWith(String(y)));
+ const mrr=act.reduce((s,t)=>{const m=tMods(t),inc=planMods(t.plan);return s+(+planOf(t.plan).price||0)+(m?Object.keys(m).filter(k=>!inc.includes(k)&&!m[k]).reduce((a,k)=>a+addonPrice(k,t.schools_limit),0):0)},0),unpaid=INV.filter(i=>i.status==='unpaid'),y=new Date().getFullYear(),paidY=INV.filter(i=>i.status==='paid'&&String(i.paid_at||'').startsWith(String(y)));
  p.innerHTML=`<div class="kpis"><div class="kpi"><span>شركات نشطة</span><b>${act.length}</b><small>${tr.length} تجريبية · ${T.filter(t=>t.status==='suspended').length} موقوفة</small></div>
   <div class="kpi"><span>الإيراد الشهري المتكرر</span><b>${money(mrr)}</b><small>حسب باقات الشركات النشطة</small></div>
   <div class="kpi"><span>فواتير غير مدفوعة</span><b style="color:${unpaid.length?'var(--bad)':'var(--ok)'}">${money(unpaid.reduce((s,i)=>s+ +i.total,0))}</b><small>${unpaid.length} فاتورة</small></div>
-  <div class="kpi"><span>المحصّل هذه السنة</span><b>${money(paidY.reduce((s,i)=>s+ +i.total,0))}</b><small>${paidY.length} فاتورة</small></div></div>
- <div class="card"><h3>⏰ اشتراكات تنتهي خلال 30 يوماً</h3>${exp.length?`<div class="tw"><table><thead><tr><th>الشركة</th><th>الباقة</th><th>ينتهي</th><th>المتبقي</th><th></th></tr></thead><tbody>${exp.map(t=>{const d=daysLeft(t.active_until);return `<tr><td><b>${esc(t.name)}</b></td><td>${esc(planOf(t.plan).name)}</td><td>${dshow(t.active_until)}</td><td style="color:${d<0?'var(--bad)':'var(--warn)'};font-weight:800">${d<0?'منتهٍ منذ '+(-d)+' يوم':d+' يوم'}</td><td><button class="b p" data-inv="${esc(t.code)}">🧾 فاتورة تجديد</button></td></tr>`}).join('')}</tbody></table></div>`:'<div style="color:var(--mut);font-weight:700">لا يوجد ✅</div>'}</div>`;
- p.querySelectorAll('[data-inv]').forEach(b=>b.onclick=()=>invoiceDlg(T.find(t=>t.code===b.dataset.inv)))}
+  <div class="kpi"><span>المحصّل هذه السنة</span><b>${money(paidY.reduce((s,i)=>s+ +i.total,0))}</b><small>${paidY.length} فاتورة</small></div></div>`;
+ p.querySelectorAll('[data-inv]').forEach(b=>b.onclick=()=>invoiceDlg(T.find(t=>t.code===b.dataset.inv)));
+ dashMore(p)}
+/* SA4 (V185): renewal reminders, usage of each company (saas_usage, sent daily by the company's platform), new trial requests */
+const stageOf=t=>{const d=daysLeft(t.active_until);if(d==null||t.status==='suspended')return null;return d<0?'exp':d<=7?'7':d<=15?'15':d<=30?'30':null};
+const STG={'30':'قبل 30 يوماً','15':'قبل 15 يوماً','7':'قبل 7 أيام',exp:'بعد الانتهاء'};
+function remindTxt(t){const d=daysLeft(t.active_until),pl=planOf(t.plan);return `مرحباً ${t.contact_name||''}\n${d<0?`انتهى اشتراك ${t.name} في منصة RakizoraFM بتاريخ ${t.active_until}، والدخول متاح حتى نهاية فترة السماح.`:`نذكّركم بأن اشتراك ${t.name} في منصة RakizoraFM (باقة ${pl.name}) ينتهي بتاريخ ${t.active_until} — بعد ${d} يوم.`}\nللتجديد نرسل لكم فاتورة التجديد، وبعد السداد يصلكم كود التفعيل.\nشكراً لكم.`}
+function dashMore(p){const R=T.filter(t=>stageOf(t)).sort((a,b)=>daysLeft(a.active_until)-daysLeft(b.active_until));const last=code=>USE.filter(u=>u.tenant===code)[0];
+ const box=document.createElement('div');
+ box.innerHTML=`<div class="card"><h3>🔔 تذكير التجديد</h3>${R.length?`<div class="tw"><table><thead><tr><th>الشركة</th><th>ينتهي</th><th>المرحلة</th><th>التذكير</th><th></th></tr></thead><tbody>${R.map(t=>{const st=stageOf(t),k=t.active_until+':'+st,sent=(t.reminders||{})[k];
+  return `<tr><td><b>${esc(t.name)}</b></td><td>${dshow(t.active_until)} (${daysLeft(t.active_until)} يوم)</td><td>${STG[st]}</td><td>${sent?`<span class="tag active">✓ ذُكّر ${dshow(sent)}</span>`:'<span class="tag unpaid">لم يُذكَّر</span>'}</td><td>${t.contact_phone?`<button class="b ${sent?'':'p'}" data-rem="${esc(t.code)}">💬 تذكير واتساب</button>`:'<span style="color:var(--mut)">لا يوجد جوال</span>'}<button class="b" data-inv2="${esc(t.code)}">🧾 فاتورة</button></td></tr>`}).join('')}</tbody></table></div>`:'<div style="color:var(--mut);font-weight:700">لا توجد تذكيرات مستحقة ✅</div>'}</div>
+ <div class="card"><h3>📈 استخدام الشركات (آخر تقرير يومي)</h3><div class="tw"><table><thead><tr><th>الشركة</th><th>آخر تقرير</th><th>المستخدمون</th><th>نشطون 7 أيام</th><th>الميدان 7 أيام</th><th>المدارس</th><th>البلاغات</th><th>أوامر 30 يوماً</th><th>ملاحظة</th></tr></thead><tbody>
+  ${T.filter(t=>t.status!=='suspended').map(t=>{const u=last(t.code),x=u?u.stats:{},age=u?Math.round((Date.parse(today())-Date.parse(u.day))/864e5):null,lim=+x.limit||+t.schools_limit||0;
+   const flags=[];if(!u)flags.push('لا تصل أرقام (لم يدخل مدير منذ التحديث)');else{if(age>3)flags.push('آخر تقرير منذ '+age+' يوم');if(+x.users&&+x.active7/+x.users<.3)flags.push('⚠️ استخدام منخفض');if(lim&&+x.schools>=lim*.9)flags.push('⬆️ قارب حد المدارس — اعرض ترقية')}
+   return `<tr><td><b>${esc(t.name)}</b></td><td>${u?dshow(u.day):'—'}</td><td>${u?num(x.users,0):'—'}</td><td>${u?num(x.active7,0):'—'}</td><td>${u?num(x.field7,0):'—'}</td><td>${u?`${num(x.schools,0)}${lim?' / '+num(lim,0):''}`:'—'}</td><td>${u?num(x.tickets,0):'—'}</td><td>${u?`${num(x.wo30,0)} (معتمد ${num(x.wo_closed30,0)})`:'—'}</td><td class="wrap" style="color:var(--warn);font-weight:700">${esc(flags.join(' • '))}</td></tr>`}).join('')||'<tr><td colspan="9">لا توجد شركات</td></tr>'}</tbody></table></div></div>
+ ${LEADS.filter(l=>l.status==='new').length?`<div class="card"><h3>📥 طلبات تجربة جديدة: ${LEADS.filter(l=>l.status==='new').length}</h3><button class="b p" data-goleads>عرض الطلبات</button></div>`:''}`;
+ p.appendChild(box);
+ box.querySelectorAll('[data-rem]').forEach(b=>b.onclick=async()=>{const t=T.find(x=>x.code===b.dataset.rem);wa(t.contact_phone,remindTxt(t));const k=t.active_until+':'+stageOf(t);
+  try{await API.saveTenant({code:t.code,reminders:Object.assign({},t.reminders||{},{[k]:today()})},false);await reload();render()}catch(e){toast(ERR(e.message),1)}});
+ box.querySelectorAll('[data-inv2]').forEach(b=>b.onclick=()=>invoiceDlg(T.find(t=>t.code===b.dataset.inv2)));
+ const gl=box.querySelector('[data-goleads]');if(gl)gl.onclick=()=>{TAB='lead';render()}}
+const LST={new:'جديد',contacted:'تم التواصل',demo:'عُرض عليه',trial:'تجريبي',won:'اشترك',lost:'لم يتم'};
+const MODN2=k=>(MODS.find(m=>m[0]===k)||[k,k])[1];
+function leadsTab(p){p.innerHTML=`<div class="card"><div class="note">الطلبات القادمة من الصفحة التعريفية try.html. «➕ إنشاء شركة» يفتح نموذج الشركة بالبيانات ويجعل الطلب «تجريبي».</div><div class="tw"><table><thead><tr><th>التاريخ</th><th>الاسم / الجهة</th><th>التواصل</th><th>المدارس</th><th>الأجزاء</th><th>الرسالة</th><th>الحالة</th><th>ملاحظة</th><th></th></tr></thead><tbody>
+ ${LEADS.map(l=>`<tr><td>${dshow(String(l.at).slice(0,10))}</td><td><b>${esc(l.name)}</b><div style="font-size:12px;color:var(--mut)">${esc(l.company)}${l.city?' • '+esc(l.city):''}</div></td><td dir="ltr">${esc(l.phone)}${l.email?`<div style="font-size:12px">${esc(l.email)}</div>`:''}</td><td>${l.schools?num(l.schools,0):'—'}</td><td class="wrap" style="font-size:12px">${(l.modules||[]).map(k=>esc(MODN2(k))).join('، ')||'—'}</td><td class="wrap" style="max-width:260px;font-size:12.5px">${esc(l.message||'')}</td>
+  <td><select data-ls="${esc(l.id)}">${Object.entries(LST).map(([k,v])=>`<option value="${k}" ${l.status===k?'selected':''}>${v}</option>`).join('')}</select>${l.tenant?`<div style="font-size:11.5px" dir="ltr">${esc(l.tenant)}</div>`:''}</td><td><input data-ln="${esc(l.id)}" value="${esc(l.note||'')}" style="min-width:140px"></td>
+  <td><button class="b" data-lw="${esc(l.id)}">💬 واتساب</button>${l.tenant?'':`<button class="b p" data-lc="${esc(l.id)}">➕ إنشاء شركة</button>`}</td></tr>`).join('')||'<tr><td colspan="9">لا توجد طلبات بعد — انشر رابط try.html</td></tr>'}</tbody></table></div></div>`;
+ const L=id=>LEADS.find(l=>l.id===id),up=async(id,o)=>{try{await API.updLead(id,o);Object.assign(L(id),o)}catch(e){toast(ERR(e.message),1)}};
+ p.querySelectorAll('[data-ls]').forEach(e=>e.onchange=()=>up(e.dataset.ls,{status:e.value}));
+ p.querySelectorAll('[data-ln]').forEach(e=>e.onchange=()=>up(e.dataset.ln,{note:S(e.value)||null}));
+ p.querySelectorAll('[data-lw]').forEach(b=>b.onclick=()=>{const l=L(b.dataset.lw);wa(l.phone,`مرحباً ${l.name}\nشكراً لاهتمامكم بمنصة RakizoraFM لإدارة الصيانة.\nيسعدنا ترتيب عرض سريع للمنصة لكم — متى يناسبكم؟`);if(l.status==='new')up(l.id,{status:'contacted'}).then(()=>render())});
+ p.querySelectorAll('[data-lc]').forEach(b=>b.onclick=()=>{const l=L(b.dataset.lc);const code=S(l.company).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,20);
+  tenantDlg(null,{name:l.company,code,contact_name:l.name,contact_phone:l.phone,contact_email:l.email,notes:l.message||'',lead:l.id})})}
 function companies(p){p.innerHTML=`<div class="row" style="margin-bottom:10px"><button class="b p" id="add">➕ شركة جديدة</button></div><div class="card"><div class="tw"><table><thead><tr><th>الشركة</th><th>الرمز</th><th>الباقة</th><th>المدارس</th><th>الحالة</th><th>حتى</th><th>التواصل</th><th></th></tr></thead><tbody>
- ${T.map(t=>{const d=daysLeft(t.active_until);return `<tr><td>${t.logo?`<img class="logo" src="${esc(t.logo)}" alt=""> `:''}<b>${esc(t.name)}</b></td><td dir="ltr">${esc(t.code)}</td><td>${esc(planOf(t.plan).name)}</td><td>${+t.schools_limit?num(t.schools_limit,0):'بلا حد'}</td><td><span class="tag ${esc(t.status)}">${STL[t.status]||t.status}</span></td>
+ ${T.map(t=>{const d=daysLeft(t.active_until);return `<tr><td>${t.logo?`<img class="logo" src="${esc(t.logo)}" alt=""> `:''}<b>${esc(t.name)}</b></td><td dir="ltr">${esc(t.code)}</td><td>${esc(planOf(t.plan).name)}<div style="font-size:11.5px;color:var(--mut)">${esc(modsTxt(tMods(t)))}</div></td><td>${+t.schools_limit?num(t.schools_limit,0):'بلا حد'}</td><td><span class="tag ${esc(t.status)}">${STL[t.status]||t.status}</span></td>
   <td>${dshow(t.active_until)}${d!=null?`<div style="font-size:11.5px;color:${d<0?'var(--bad)':d<=30?'var(--warn)':'var(--mut)'};font-weight:800">${d<0?'منتهٍ':d+' يوم'}</div>`:''}</td><td class="wrap">${esc(t.contact_name||'')}<div style="font-size:11.5px;color:var(--mut)" dir="ltr">${esc(t.contact_phone||'')}</div></td>
   <td><button class="b" data-ed="${esc(t.code)}">✏️ تعديل</button><button class="b" data-pr="${esc(t.code)}">🚀 التجهيز والرابط</button><button class="b" data-inv="${esc(t.code)}">🧾 فاتورة</button><button class="b" data-code="${esc(t.code)}">🔑 كود يدوي</button></td></tr>`}).join('')||'<tr><td colspan="8">لا توجد شركات بعد</td></tr>'}</tbody></table></div></div>`;
  $('#add').onclick=()=>tenantDlg(null);
@@ -137,7 +185,7 @@ function dlg(html){const d=document.createElement('dialog');d.innerHTML=html;doc
 /* the key must be public: an sb_publishable_ key or a JWT whose role is anon */
 function keyOk(k){k=S(k);if(/^sb_secret_/.test(k))return false;if(/^sb_publishable_/.test(k))return true;try{const r=JSON.parse(atob(k.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).role;return r==='anon'}catch(e){return false}}
 function shrinkLogo(file){return new Promise((res,rej)=>{const r=new FileReader();r.onerror=rej;r.onload=()=>{const im=new Image();im.onerror=rej;im.onload=()=>{const m=256,k=Math.min(1,m/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);let o=c.toDataURL('image/png');if(o.length>190000)o=c.toDataURL('image/jpeg',.85);res(o)};im.src=r.result};r.readAsDataURL(file)})}
-function tenantDlg(t){const isNew=!t;t=t||{status:'trial',plan:plans()[0]?.k||'basic',schools_limit:plans()[0]?.max||50,active_until:addDays(today(),30),color:'#1d4ed8'};let logo=t.logo||'';
+function tenantDlg(t,pre){const isNew=!t;const lead=pre&&pre.lead;t=t||Object.assign({status:'trial',plan:plans()[0]?.k||'basic',schools_limit:plans()[0]?.max||50,active_until:addDays(today(),30),color:'#1d4ed8'},pre||{});delete t.lead;let logo=t.logo||'';
  const d=dlg(`<div class="in"><h3>${isNew?'➕ شركة جديدة':'✏️ '+esc(t.name)}</h3>
   <div class="two"><label class="f">اسم الشركة *<input data-k="name" value="${esc(t.name||'')}"></label><label class="f">رمز الشركة * (يظهر في الرابط)<input data-k="code" dir="ltr" value="${esc(t.code||'')}" ${isNew?'':'disabled'} placeholder="acme"></label></div>
   <div class="two"><label class="f">الشعار<input type="file" accept="image/*" data-logo></label><label class="f">اللون<input type="color" data-k="color" value="${esc(t.color||'#1d4ed8')}" style="height:40px"></label></div><div data-lp>${logo?`<img class="logo" src="${esc(logo)}" style="width:64px;height:64px">`:''}</div>
@@ -147,19 +195,22 @@ function tenantDlg(t){const isNew=!t;t=t||{status:'trial',plan:plans()[0]?.k||'b
   <div class="two"><label class="f">الاشتراك حتى<input type="date" data-k="active_until" value="${esc(t.active_until||'')}"></label><label class="f">الرقم الضريبي للعميل<input data-k="vat_no" dir="ltr" value="${esc(t.vat_no||'')}"></label></div>
   <div class="three"><label class="f">مسؤول التواصل<input data-k="contact_name" value="${esc(t.contact_name||'')}"></label><label class="f">الجوال<input data-k="contact_phone" dir="ltr" value="${esc(t.contact_phone||'')}"></label><label class="f">البريد<input data-k="contact_email" dir="ltr" value="${esc(t.contact_email||'')}"></label></div>
   <label class="f">ملاحظات<textarea data-k="notes" rows="2">${esc(t.notes||'')}</textarea></label>
+  <div class="two"><label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-demo ${t.demo?'checked':''} style="width:auto"> 🧪 شركة عرض (بيانات وهمية للعملاء المحتملين)</label><label class="f">كلمة مرور حسابات العرض (تظهر للزوار)<input data-k="demo_pass" dir="ltr" value="${esc(t.demo_pass||'')}" placeholder="مثال: Demo-2026!"></label></div>
   ${isNew?'':'<div class="warn">تغيير الباقة أو التاريخ هنا يغيّر سجلك فقط — يصل للشركة بكود تفعيل (فاتورة مدفوعة أو «🔑 كود يدوي»).</div>'}</div>
   <div class="ft"><button class="b p" data-s>💾 حفظ</button><button class="b" data-x>إلغاء</button></div>`);
  const q=s=>d.querySelector(s);q('[data-k=plan]').onchange=e=>{const p=planOf(e.target.value);q('[data-k=schools_limit]').value=p.max};
  q('[data-logo]').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{logo=await shrinkLogo(f);q('[data-lp]').innerHTML=`<img class="logo" src="${logo}" style="width:64px;height:64px">`}catch(_){toast('تعذر قراءة الصورة',1)}};
  q('[data-s]').onclick=async()=>{const o={};d.querySelectorAll('[data-k]').forEach(i=>{if(!i.disabled)o[i.dataset.k]=S(i.value)});if(!isNew)o.code=t.code;else o.code=o.code.toLowerCase();
   if(!o.name||!o.code||!o.url||!o.anon_key){toast('أكمل الحقول المطلوبة',1);return}if(!keyOk(o.anon_key)){toast('هذا ليس المفتاح العام — لا تستخدم service_role أو sb_secret أبداً',1);return}
+  o.demo=q('[data-demo]').checked;o.demo_pass=o.demo?(o.demo_pass||null):null;if(o.demo&&!o.demo_pass){toast('اكتب كلمة مرور حسابات العرض',1);return}
   o.url=o.url.replace(/\/+$/,'');o.schools_limit=+o.schools_limit||0;o.active_until=o.active_until||null;o.logo=logo||null;o.updated_at=new Date().toISOString();
-  try{await API.saveTenant(o,isNew);toast('تم الحفظ');d.close();await reload();render();if(isNew)provision(T.find(x=>x.code===o.code))}catch(e){toast(ERR(e.message),1)}}}
+  try{await API.saveTenant(o,isNew);if(lead)try{await API.updLead(lead,{status:'trial',tenant:o.code})}catch(_){}toast('تم الحفظ');d.close();await reload();render();if(isNew)provision(T.find(x=>x.code===o.code))}catch(e){toast(ERR(e.message),1)}}}
 function provision(t){if(!t)return;const link=siteBase()+'?c='+encodeURIComponent(t.code);
  const sql=`select public.fm_plan_init('${t.code}', '${t.secret}', '${t.plan}', ${+t.schools_limit||0}, ${t.active_until?`'${t.active_until}'`:'null'});`;
  const d=dlg(`<div class="in"><h3>🚀 تجهيز «${esc(t.name)}»</h3><ol style="margin:0;padding-inline-start:20px;line-height:2.1;font-weight:700;font-size:13.5px">
   <li>في مشروع Supabase الخاص بالشركة: SQL Editor ← الصق ملف <b>supabase_setup.sql</b> ← Run.</li>
   <li>ثم شغّل هذا السطر مرة واحدة (يربط الاشتراك وسر التفعيل — لا ترسله لأحد):<div class="code" data-sql>${esc(sql)}</div><button class="b" data-c="sql">📋 نسخ السطر</button></li>
+  ${t.demo?`<li>🧪 شركة عرض: شغّل أيضاً ملف <b>demo_seed.sql</b>، ثم:<div class="code">select public.fm_demo_users('${esc(t.demo_pass||'كلمة-مرور-العرض')}');<br>select public.fm_demo_reset();</div>البيانات تُعاد كل ليلة تلقائياً (pg_cron)، ورابط العرض يعرض أزرار الأدوار.</li>`:''}
   <li>Authentication ← URL Configuration: أضف رابط الموقع ${esc(new URL('.',location.href).href)} في Redirect URLs.</li>
   <li>أرسل رابط الشركة لمسؤولها: أول حساب يُنشأ يصبح «مدير النظام» للشركة تلقائياً.<div class="code">${esc(link)}</div><button class="b" data-c="link">📋 نسخ الرابط</button> ${t.contact_phone?`<button class="b" data-wa>💬 واتساب</button>`:''}</li></ol>
   <div class="note">التجديد لاحقاً: فاتورة ← «تم الدفع» ← كود تفعيل يُدخله مدير النظام في الشركة من «الإعدادات ← 💳 الاشتراك». الإيقاف الفوري: «إيقاف» الشركة هنا يمنع الدخول من صفحة البداية، أو أوقف مشروع Supabase نفسه.</div></div>
@@ -169,11 +220,13 @@ function provision(t){if(!t)return;const link=siteBase()+'?c='+encodeURIComponen
  const w=d.querySelector('[data-wa]');if(w)w.onclick=()=>wa(t.contact_phone,`مرحباً ${t.contact_name||''}\nتم تجهيز منصة RakizoraFM لإدارة الصيانة الخاصة بـ ${t.name}.\nرابط الدخول: ${link}\nأول حساب تنشئه يصبح مدير النظام للشركة، ومنه تضيف فريقك.`)}
 function wa(ph,txt){let p=S(ph).replace(/[^\d]/g,'');if(/^05\d{8}$/.test(p))p='966'+p.slice(1);window.open(`https://wa.me/${p}?text=${encodeURIComponent(txt)}`,'_blank','noopener')}
 async function manualCode(t){if(!t)return;const d=dlg(`<div class="in"><h3>🔑 كود تفعيل يدوي — ${esc(t.name)}</h3><div class="note">لتمديد فترة تجريبية أو تعديل الباقة بدون فاتورة. يُستخدم الكود مرة واحدة.</div>
-  <div class="three"><label class="f">الباقة<select data-k="p">${plans().map(p=>`<option value="${esc(p.k)}" ${t.plan===p.k?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label><label class="f">حد المدارس<input data-k="l" value="${esc(t.schools_limit)}"></label><label class="f">حتى<input type="date" data-k="u" value="${esc(t.active_until||addDays(today(),30))}"></label></div><div data-out></div></div>
+  <div class="three"><label class="f">الباقة<select data-k="p">${plans().map(p=>`<option value="${esc(p.k)}" ${t.plan===p.k?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label><label class="f">حد المدارس<input data-k="l" value="${esc(t.schools_limit)}"></label><label class="f">حتى<input type="date" data-k="u" value="${esc(t.active_until||addDays(today(),30))}"></label></div>
+  <div class="note">الأجزاء المفعّلة. لتجربة جزء: فعّله واكتب تاريخ انتهاء التجربة (يتوقف بعده تلقائياً).</div><div data-mp>${modPicker(t.plan,tMods(t),t.schools_limit,1)}</div><div data-out></div></div>
   <div class="ft"><button class="b p" data-g>توليد الكود</button><button class="b" data-x>إغلاق</button></div>`);
+ d.querySelector('[data-k=p]').onchange=e=>{d.querySelector('[data-mp]').innerHTML=modPicker(e.target.value,tMods(t),t.schools_limit,1)};
  d.querySelector('[data-g]').onclick=async()=>{const p=d.querySelector('[data-k=p]').value,l=+d.querySelector('[data-k=l]').value||0,u=d.querySelector('[data-k=u]').value;if(!u){toast('اختر التاريخ',1);return}
-  const code=await signCode(t,p,l,u,'m-'+crypto.getRandomValues(new Uint32Array(2)).join(''));
-  try{await API.saveTenant({code:t.code,plan:p,schools_limit:l,active_until:u,updated_at:new Date().toISOString()},false);await reload()}catch(e){toast(ERR(e.message),1)}
+  const mods=readPicker(d,p);const code=await signCode(t,p,l,u,'m-'+crypto.getRandomValues(new Uint32Array(2)).join(''),mods);
+  try{await API.saveTenant({code:t.code,plan:p,schools_limit:l,active_until:u,modules:mods,updated_at:new Date().toISOString()},false);await reload()}catch(e){toast(ERR(e.message),1)}
   d.querySelector('[data-out]').innerHTML=codeBox(t,code,u);bindCode(d,t,code,u)}}
 const codeBox=(t,code,u)=>`<div class="note">أرسل الكود لمدير النظام في «${esc(t.name)}»: الإعدادات ← 💳 الاشتراك ← «إدخال كود التفعيل». يسري حتى ${dshow(u)}.</div><div class="code" data-cv>${esc(code)}</div><div class="row"><button class="b" data-cc>📋 نسخ الكود</button>${t.contact_phone?'<button class="b" data-cw>💬 واتساب</button>':''}</div>`;
 function bindCode(d,t,code,u){d.querySelector('[data-cc]').onclick=async()=>{try{await navigator.clipboard.writeText(code);toast('تم النسخ')}catch(e){prompt('انسخ:',code)}};
@@ -184,14 +237,17 @@ function invoiceDlg(t){if(!t)return;const pl=planOf(t.plan),from=t.active_until&
  const d=dlg(`<div class="in"><h3>🧾 فاتورة — ${esc(t.name)}</h3>
   <div class="three"><label class="f">الباقة<select data-k="plan">${plans().map(p=>`<option value="${esc(p.k)}" ${t.plan===p.k?'selected':''}>${esc(p.name)} — ${money(p.price)}/شهر</option>`).join('')}</select></label><label class="f">حد المدارس<input data-k="limit" value="${esc(t.schools_limit)}"></label><label class="f">المدة<select data-k="months">${[1,3,6,12].map(m=>`<option value="${m}" ${m===12?'selected':''}>${m} ${m===1?'شهر':m<=10?'أشهر':'شهراً'}</option>`).join('')}</select></label></div>
   <div class="three"><label class="f">من<input type="date" data-k="from" value="${from}"></label><label class="f">إلى<input type="date" data-k="to"></label><label class="f">المبلغ قبل الضريبة<input data-k="amount" inputmode="decimal"></label></div>
-  <label class="f">ملاحظة على الفاتورة<input data-k="note"></label><div class="note" data-sum></div></div>
+  <div data-mp></div><label class="f">ملاحظة على الفاتورة<input data-k="note"></label><div class="note" data-sum></div></div>
   <div class="ft"><button class="b p" data-s>💾 إصدار الفاتورة</button><button class="b" data-x>إلغاء</button></div>`);
  const q=s=>d.querySelector(s);let touched=false;
- const upd=()=>{const p=planOf(q('[data-k=plan]').value),m=+q('[data-k=months]').value;q('[data-k=to]').value=addMonths(q('[data-k=from]').value,m);if(!touched)q('[data-k=amount]').value=(+p.price||0)*m;
+ const lines=()=>{const p=planOf(q('[data-k=plan]').value),m=+q('[data-k=months]').value,l=+q('[data-k=limit]').value||0,inc=planMods(p.k);
+  return [{t:`باقة ${p.name} (${l?num(l,0)+' مدرسة':'بلا حد للمدارس'}) — ${inc.map(k=>MODN(k).replace(/^\S+\s/,'')).join('، ')}`,a:(+p.price||0)*m},...[...d.querySelectorAll('[data-mod]:not(:disabled):checked')].map(c=>({t:'إضافة: '+MODN(c.dataset.mod).replace(/^\S+\s/,''),a:addonPrice(c.dataset.mod,l)*m}))]};
+ const pick=()=>{q('[data-mp]').innerHTML='<div class="note">الأجزاء: ما في الباقة مشمول، وأي جزء آخر يُضاف بسعره.</div>'+modPicker(q('[data-k=plan]').value,tMods(t),+q('[data-k=limit]').value||0,0);q('[data-mp]').querySelectorAll('[data-mod]').forEach(c=>c.onchange=()=>{touched=false;upd()})};
+ const upd=()=>{const m=+q('[data-k=months]').value;q('[data-k=to]').value=addMonths(q('[data-k=from]').value,m);if(!touched)q('[data-k=amount]').value=lines().reduce((s,x)=>s+x.a,0);
   const a=+q('[data-k=amount]').value||0;q('[data-sum]').innerHTML=`المبلغ ${money(a)} + ضريبة ${vat}% = <b>${money(a*(1+vat/100))}</b>`};
- q('[data-k=plan]').onchange=()=>{q('[data-k=limit]').value=planOf(q('[data-k=plan]').value).max;touched=false;upd()};q('[data-k=months]').onchange=()=>{touched=false;upd()};q('[data-k=from]').onchange=upd;q('[data-k=amount]').oninput=()=>{touched=true;upd()};upd();
+ q('[data-k=plan]').onchange=()=>{q('[data-k=limit]').value=planOf(q('[data-k=plan]').value).max;touched=false;pick();upd()};q('[data-k=months]').onchange=()=>{touched=false;upd()};q('[data-k=from]').onchange=upd;q('[data-k=amount]').oninput=()=>{touched=true;upd()};q('[data-k=limit]').onchange=()=>{touched=false;pick();upd()};pick();upd();
  q('[data-s]').onclick=async()=>{const a=+q('[data-k=amount]').value;if(!(a>=0)){toast('المبلغ غير صحيح',1);return}
-  const o={tenant:t.code,period_from:q('[data-k=from]').value,period_to:q('[data-k=to]').value,plan:q('[data-k=plan]').value,schools_limit:+q('[data-k=limit]').value||0,months:+q('[data-k=months]').value,amount:a,vat_pct:vat,total:Math.round(a*(1+vat/100)*100)/100,note:S(q('[data-k=note]').value)||null};
+  const o={tenant:t.code,period_from:q('[data-k=from]').value,period_to:q('[data-k=to]').value,plan:q('[data-k=plan]').value,schools_limit:+q('[data-k=limit]').value||0,months:+q('[data-k=months]').value,amount:a,vat_pct:vat,total:Math.round(a*(1+vat/100)*100)/100,note:S(q('[data-k=note]').value)||null,modules:readPicker(d,q('[data-k=plan]').value),lines:touched?null:lines()};
   try{const inv=await API.addInvoice(o);toast('تم إصدار الفاتورة '+(inv&&inv.number||''));d.close();await reload();TAB='inv';render();if(inv)printInvoice(inv)}catch(e){toast(ERR(e.message),1)}}}
 function invoices(p){p.innerHTML=`<div class="card"><div class="tw"><table><thead><tr><th>الرقم</th><th>الشركة</th><th>التاريخ</th><th>الفترة</th><th>الباقة</th><th>الإجمالي</th><th>الحالة</th><th></th></tr></thead><tbody>
  ${INV.map(i=>{const t=T.find(x=>x.code===i.tenant)||{name:i.tenant};return `<tr><td dir="ltr"><b>${esc(i.number)}</b></td><td>${esc(t.name)}</td><td>${dshow(i.issued_at)}</td><td>${dshow(i.period_from)} ← ${dshow(i.period_to)}</td><td>${esc(planOf(i.plan).name)} · ${+i.schools_limit?num(i.schools_limit,0)+' مدرسة':'بلا حد'}</td><td><b>${money(i.total)}</b></td><td><span class="tag ${esc(i.status)}">${IST[i.status]}</span></td>
@@ -202,28 +258,38 @@ function invoices(p){p.innerHTML=`<div class="card"><div class="tw"><table><thea
  p.querySelectorAll('[data-paid]').forEach(b=>b.onclick=()=>markPaid(I(b.dataset.paid)));
  p.querySelectorAll('[data-sc]').forEach(b=>b.onclick=()=>{const i=I(b.dataset.sc),t=T.find(x=>x.code===i.tenant);const d=dlg(`<div class="in"><h3>🔑 كود التفعيل — ${esc(i.number)}</h3>${codeBox(t,i.activation_code,i.period_to)}</div><div class="ft"><button class="b" data-x>إغلاق</button></div>`);bindCode(d,t,i.activation_code,i.period_to)})}
 async function markPaid(i){const t=T.find(x=>x.code===i.tenant);if(!t||!confirm(`تأكيد استلام ${money(i.total)} من ${t.name}؟ سيُصدر كود تفعيل حتى ${i.period_to}.`))return;
- try{const code=await signCode(t,i.plan,i.schools_limit,i.period_to,'i-'+i.id);await API.updInvoice(i.id,{status:'paid',paid_at:new Date().toISOString(),activation_code:code});
-  await API.saveTenant({code:t.code,status:'active',plan:i.plan,schools_limit:i.schools_limit,active_until:i.period_to,updated_at:new Date().toISOString()},false);await reload();render();
+ try{const code=await signCode(t,i.plan,i.schools_limit,i.period_to,'i-'+i.id,tMods(i));await API.updInvoice(i.id,{status:'paid',paid_at:new Date().toISOString(),activation_code:code});
+  await API.saveTenant(Object.assign({code:t.code,status:'active',plan:i.plan,schools_limit:i.schools_limit,active_until:i.period_to,updated_at:new Date().toISOString()},tMods(i)?{modules:tMods(i)}:{}),false);await reload();render();
   const d=dlg(`<div class="in"><h3>✅ تم تسجيل الدفع — ${esc(i.number)}</h3>${codeBox(t,code,i.period_to)}</div><div class="ft"><button class="b" data-x>إغلاق</button></div>`);bindCode(d,t,code,i.period_to)}catch(e){toast(ERR(e.message),1)}}
 function printInvoice(i){const t=T.find(x=>x.code===i.tenant)||{name:i.tenant},s=seller(),w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة',1);return}const vat=+i.total-(+i.amount);
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>فاتورة ${esc(i.number)}</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet"><style>body{font-family:Cairo,Tahoma,sans-serif;margin:30px 36px;color:#0f172a;font-size:13.5px}h1{margin:0;font-size:24px}.hd{display:flex;justify-content:space-between;border-bottom:3px double #0f172a;padding-bottom:10px;margin-bottom:16px}.m{color:#64748b}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:right}th{background:#f1f5f9}.tot td{font-weight:900;background:#eff6ff}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px}.st{font-weight:900;color:${i.status==='paid'?'#15803d':i.status==='cancelled'?'#64748b':'#b45309'}}</style></head><body>
  <div class="hd"><div><h1>فاتورة ضريبية</h1><div class="m">Tax Invoice</div></div><div style="text-align:left"><b dir="ltr">${esc(i.number)}</b><div class="m">${dshow(i.issued_at)}</div><div class="st">${IST[i.status]}</div></div></div>
  <div class="two"><div class="box"><b>البائع</b><div>${esc(s.name)}</div>${s.vat_no?`<div>الرقم الضريبي: ${esc(s.vat_no)}</div>`:''}${s.address?`<div class="m">${esc(s.address)}</div>`:''}</div><div class="box"><b>العميل</b><div>${esc(t.name)}</div>${t.vat_no?`<div>الرقم الضريبي: ${esc(t.vat_no)}</div>`:''}${t.contact_name?`<div class="m">${esc(t.contact_name)} ${esc(t.contact_phone||'')}</div>`:''}</div></div>
- <table><thead><tr><th>البيان</th><th>الفترة</th><th>المدة</th><th>المبلغ</th></tr></thead><tbody><tr><td>اشتراك منصة RakizoraFM لإدارة الصيانة — باقة ${esc(planOf(i.plan).name)} (${+i.schools_limit?num(i.schools_limit,0)+' مدرسة':'بلا حد للمدارس'})${i.note?`<div class="m">${esc(i.note)}</div>`:''}</td><td>${dshow(i.period_from)} — ${dshow(i.period_to)}</td><td>${i.months} شهر</td><td>${money(i.amount)}</td></tr>
+ <table><thead><tr><th>البيان</th><th>الفترة</th><th>المدة</th><th>المبلغ</th></tr></thead><tbody>${Array.isArray(i.lines)&&i.lines.length?i.lines.map((x,n)=>`<tr><td>اشتراك منصة RakizoraFM — ${esc(x.t)}${n===0&&i.note?`<div class="m">${esc(i.note)}</div>`:''}</td><td>${dshow(i.period_from)} — ${dshow(i.period_to)}</td><td>${i.months} شهر</td><td>${money(x.a)}</td></tr>`).join(''):`<tr><td>اشتراك منصة RakizoraFM لإدارة الصيانة — باقة ${esc(planOf(i.plan).name)} (${+i.schools_limit?num(i.schools_limit,0)+' مدرسة':'بلا حد للمدارس'})${tMods(i)?`<div class="m">الأجزاء: ${esc(modsTxt(tMods(i)))}</div>`:''}${i.note?`<div class="m">${esc(i.note)}</div>`:''}</td><td>${dshow(i.period_from)} — ${dshow(i.period_to)}</td><td>${i.months} شهر</td><td>${money(i.amount)}</td></tr>`}
  <tr><td colspan="3">ضريبة القيمة المضافة ${num(i.vat_pct)}%</td><td>${money(vat)}</td></tr><tr class="tot"><td colspan="3">الإجمالي المستحق</td><td>${money(i.total)}</td></tr></tbody></table>
  ${s.iban?`<div class="box">التحويل البنكي: <b dir="ltr">${esc(s.iban)}</b> — يرجى ذكر رقم الفاتورة في التحويل.</div>`:''}<p class="m">بعد استلام الدفعة يُرسل كود التفعيل لمدير النظام لديكم.</p><script>setTimeout(()=>print(),600)<\/script></body></html>`);w.document.close()}
 /* ---------- settings ---------- */
-function settingsTab(p){const s=seller();p.innerHTML=`<div class="card"><h3>📦 الباقات (حسب عدد المدارس)</h3><div class="tw"><table><thead><tr><th>الرمز</th><th>الاسم</th><th>حد المدارس (0 = بلا حد)</th><th>السعر الشهري (ر.س قبل الضريبة)</th><th></th></tr></thead><tbody data-pl>
- ${plans().map((x,i)=>`<tr><td><input data-p="k" data-i="${i}" value="${esc(x.k)}" dir="ltr"></td><td><input data-p="name" data-i="${i}" value="${esc(x.name)}"></td><td><input data-p="max" data-i="${i}" value="${esc(x.max)}"></td><td><input data-p="price" data-i="${i}" value="${esc(x.price)}"></td><td><button class="b" data-rm="${i}" style="color:var(--bad)">حذف</button></td></tr>`).join('')}</tbody></table></div>
+function settingsTab(p){const s=seller();p.innerHTML=`<div class="card"><h3>📦 الباقات (حسب عدد المدارس والأجزاء)</h3><div class="tw"><table><thead><tr><th>الرمز</th><th>الاسم</th><th>حد المدارس (0 = بلا حد)</th><th>السعر الشهري (ر.س قبل الضريبة)</th><th>الأجزاء المشمولة</th><th></th></tr></thead><tbody data-pl>
+ ${plans().map((x,i)=>`<tr><td><input data-p="k" data-i="${i}" value="${esc(x.k)}" dir="ltr"></td><td><input data-p="name" data-i="${i}" value="${esc(x.name)}"></td><td><input data-p="max" data-i="${i}" value="${esc(x.max)}"></td><td><input data-p="price" data-i="${i}" value="${esc(x.price)}"></td><td class="wrap">${MODS.map(([k,n])=>`<label style="display:block;white-space:nowrap;font-size:12.5px"><input type="checkbox" data-pm="${k}" data-i="${i}" ${planMods(x.k).includes(k)?'checked':''}> ${esc(n)}</label>`).join('')}</td><td><button class="b" data-rm="${i}" style="color:var(--bad)">حذف</button></td></tr>`).join('')}</tbody></table></div>
  <div class="row" style="margin-top:8px"><button class="b" id="pa">➕ باقة</button><button class="b p" id="ps">💾 حفظ الباقات</button></div></div>
+ <div class="card"><h3>➕ الأجزاء الإضافية (لمن لا تشملها باقته)</h3><div class="note">السعر الشهري = مبلغ ثابت + سعر لكل مدرسة × حد مدارس الشركة.</div><div class="tw"><table><thead><tr><th>الجزء</th><th>مبلغ ثابت / شهر</th><th>لكل مدرسة / شهر</th></tr></thead><tbody>
+ ${MODS.map(([k,n])=>`<tr><td>${esc(n)}</td><td><input data-ad="base" data-k2="${k}" value="${esc(addonOf(k).base||0)}"></td><td><input data-ad="per_school" data-k2="${k}" value="${esc(addonOf(k).per_school||0)}"></td></tr>`).join('')}</tbody></table></div>
+ <div class="row" style="margin-top:8px"><button class="b p" id="as">💾 حفظ أسعار الأجزاء</button></div></div>
+ <div class="card"><h3>🌐 الصفحة التعريفية try.html</h3><div class="note">رابطها: <b dir="ltr">${esc(new URL('try.html',location.href).href)}</b> — تعرض الأجزاء والباقات ونموذج «اطلب تجربة»، وزر الدخول لنسخة العرض.</div>
+ <div class="two"><label class="f">رمز شركة العرض (نسخة العرض)<input data-st="demo_code" dir="ltr" value="${esc((SET.site||{}).demo_code||'')}" placeholder="demo"></label><label class="f">جوال الواتساب للتواصل<input data-st="whatsapp" dir="ltr" value="${esc((SET.site||{}).whatsapp||'')}" placeholder="05xxxxxxxx"></label></div>
+ <div class="two"><label class="f">بريد الإشعارات (لك فقط)<input data-st="email" dir="ltr" value="${esc((SET.site||{}).email||'')}"></label><label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-st="show_prices" ${(SET.site||{}).show_prices!==false?'checked':''} style="width:auto"> عرض الأسعار في الصفحة</label></div>
+ <div class="row" style="margin-top:8px"><button class="b p" id="sts">💾 حفظ</button><a class="b" href="try.html" target="_blank" rel="noopener">👁️ معاينة</a></div></div>
  <div class="card"><h3>🏷️ بيانات البائع في الفواتير</h3><div class="two"><label class="f">الاسم<input data-s="name" value="${esc(s.name)}"></label><label class="f">الرقم الضريبي<input data-s="vat_no" dir="ltr" value="${esc(s.vat_no)}"></label></div>
  <div class="two"><label class="f">العنوان<input data-s="address" value="${esc(s.address)}"></label><label class="f">الآيبان<input data-s="iban" dir="ltr" value="${esc(s.iban)}"></label></div><label class="f" style="max-width:220px">نسبة الضريبة %<input data-s="vat_pct" value="${esc(s.vat_pct)}"></label>
  <div class="row" style="margin-top:8px"><button class="b p" id="ss">💾 حفظ</button></div></div>`;
- const L=plans().map(x=>Object.assign({},x));
+ const L=plans().map(x=>Object.assign({},x,{modules:planMods(x.k)}));
+ p.querySelectorAll('[data-pm]').forEach(c=>c.onchange=()=>{const x=L[+c.dataset.i];x.modules=MODS.map(m=>m[0]).filter(k=>p.querySelector(`[data-pm="${k}"][data-i="${c.dataset.i}"]`).checked)});
+ $('#as').onclick=async()=>{const A=MODS.map(([k])=>({k,base:+p.querySelector(`[data-ad=base][data-k2="${k}"]`).value||0,per_school:+p.querySelector(`[data-ad=per_school][data-k2="${k}"]`).value||0}));try{await API.saveSetting('addons',A);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}};
  p.querySelectorAll('[data-p]').forEach(i=>i.oninput=()=>{const v=i.dataset.p==='max'||i.dataset.p==='price'?+i.value||0:S(i.value);L[+i.dataset.i][i.dataset.p]=v});
  p.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{L.splice(+b.dataset.rm,1);SET.plans=L;settingsTab(p)});
- $('#pa').onclick=()=>{L.push({k:'plan'+(L.length+1),name:'باقة جديدة',max:100,price:0});SET.plans=L;settingsTab(p)};
+ $('#pa').onclick=()=>{L.push({k:'plan'+(L.length+1),name:'باقة جديدة',max:100,price:0,modules:['tickets']});SET.plans=L;settingsTab(p)};
  $('#ps').onclick=async()=>{if(L.some(x=>!/^[a-z0-9_-]+$/.test(x.k))||new Set(L.map(x=>x.k)).size!==L.length){toast('رموز الباقات: إنجليزية صغيرة وغير مكررة',1);return}try{await API.saveSetting('plans',L);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}};
+ $('#sts').onclick=async()=>{const o={};p.querySelectorAll('[data-st]').forEach(i=>o[i.dataset.st]=i.type==='checkbox'?i.checked:S(i.value));o.demo_code=o.demo_code.toLowerCase();try{await API.saveSetting('site',o);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}};
  $('#ss').onclick=async()=>{const o={};p.querySelectorAll('[data-s]').forEach(i=>o[i.dataset.s]=i.dataset.s==='vat_pct'?+i.value||0:S(i.value));try{await API.saveSetting('seller',o);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}}}
 boot();
 })();
