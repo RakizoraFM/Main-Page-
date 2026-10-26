@@ -4362,4 +4362,114 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: overdue-scrap reminders are not sent; notifications go out when the events happen'; end;
 end $do$;
 
+-- ---------- 30) reset the platform's data (V190) ----------
+-- The system admin chooses the parts to empty, sees how many rows each holds, can download a backup of them first, and
+-- confirms by typing «تصفير». Accounts (profiles / auth), fm_settings, fm_plan, work-order templates, engagement targets and
+-- the audit log are never touched. Every reset is written to fm_audit_log and to fm_settings.wipe {at, parts, by} so the
+-- other devices clear their local copies (tickets, school DB) instead of pushing them back to the cloud.
+-- Part → tables, in delete order (children first). A table missing on an older project is skipped.
+create or replace function public.fm_wipe_parts() returns jsonb language sql immutable as $$
+  select jsonb_build_object(
+    'tickets',    jsonb_build_array('ticket_photos','ticket_events','ticket_work','tickets'),
+    'schooldb',   jsonb_build_array(),
+    'wo',         jsonb_build_array('wo_audits','wo_photos','wo_events','fm_bill_wos','work_orders','wo_schedules'),
+    'wh_moves',   jsonb_build_array('wo_serials','wo_purchase_requests','wo_issue_requests','wo_custody_counts','wo_custody_moves','wo_custody','wo_stock_moves','wo_stock'),
+    'wh_catalog', jsonb_build_array('wo_material_photos','wo_supplier_prices','wo_suppliers','wo_materials','wo_stores'),
+    'eng',        jsonb_build_array('fm_eng_ratings','fm_eng_rate_links','fm_eng_audit','fm_eng_observations','fm_eng_logs','fm_eng_assignments'),
+    'portal',     jsonb_build_array('fm_school_requests','fm_school_links'),
+    'costs',      jsonb_build_array('fm_expenses','fm_budgets'),
+    'bill',       jsonb_build_array('fm_bill_wos','fm_bills','fm_contracts'),
+    'cc',         jsonb_build_array('fm_cc_entries','fm_cc_budget','fm_cc_staff','fm_cc_centers'),
+    'misc',       jsonb_build_array('fm_news','fm_push_queue','fm_activity')) $$;
+-- app_kv keys of a part
+create or replace function public.fm_wipe_kv_match(p_part text, k text) returns boolean language sql immutable as $$
+  select case p_part when 'tickets' then k like 'fm_ref_date_%' or k like 'fm_rank_%'
+                     when 'schooldb' then k = 'fm_school_master_db_v1' else false end $$;
+create or replace function public.fm_wipe_ok() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.fm_role() = 'admin' and public.fm_my_pos() = 'sysadmin' $$;
+
+-- how many rows each part holds
+create or replace function public.fm_wipe_counts() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare P jsonb := public.fm_wipe_parts(); k text; t text; n bigint; c bigint; r jsonb := '{}';
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  for k in select jsonb_object_keys(P) loop
+    c := 0;
+    for t in select jsonb_array_elements_text(P->k) loop
+      if to_regclass('public.' || t) is not null then execute format('select count(*) from public.%I', t) into n; c := c + n; end if;
+    end loop;
+    if k in ('tickets','schooldb') then
+      select count(*) into n from public.app_kv a where public.fm_wipe_kv_match(k, a.key);
+      if k = 'schooldb' then select coalesce((select jsonb_array_length(value) from public.app_kv where key = 'fm_school_master_db_v1' and jsonb_typeof(value) = 'array'), 0) into n; end if;
+      c := c + n;
+    end if;
+    r := r || jsonb_build_object(k, c);
+  end loop;
+  return r;
+end $$;
+
+-- a copy of the rows of the chosen parts (downloaded by the platform before the reset)
+create or replace function public.fm_wipe_backup(p_parts text[]) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare P jsonb := public.fm_wipe_parts(); k text; t text; v jsonb; r jsonb := jsonb_build_object('at', now(), 'parts', to_jsonb(p_parts));
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  foreach k in array coalesce(p_parts,'{}') loop
+    if not P ? k then continue; end if;
+    for t in select jsonb_array_elements_text(P->k) loop
+      if to_regclass('public.' || t) is not null and not r ? t then
+        execute format('select coalesce(jsonb_agg(to_jsonb(x)), ''[]'') from public.%I x', t) into v; r := r || jsonb_build_object(t, v);
+      end if;
+    end loop;
+    if k in ('tickets','schooldb') then
+      select coalesce(jsonb_object_agg(a.key, a.value), '{}') into v from public.app_kv a where public.fm_wipe_kv_match(k, a.key);
+      r := r || jsonb_build_object('app_kv:' || k, v);
+    end if;
+  end loop;
+  return r;
+end $$;
+
+-- the reset itself: p_parts = the chosen parts, p_confirm must be «تصفير»
+create or replace function public.fm_wipe(p_parts text[], p_confirm text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare P jsonb := public.fm_wipe_parts(); k text; t text; n bigint; r jsonb := '{}'; parts text[] := '{}'; files int := 0; files_left boolean := false;
+  nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid());
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  if btrim(coalesce(p_confirm,'')) <> 'تصفير' then raise exception 'confirm required'; end if;
+  select coalesce(array_agg(distinct x), '{}') into parts from unnest(coalesce(p_parts,'{}')) x where P ? x;
+  if cardinality(parts) = 0 then raise exception 'no parts'; end if;
+  -- the warehouse catalog cannot go without its moves
+  if 'wh_catalog' = any(parts) and not 'wh_moves' = any(parts) then parts := parts || 'wh_moves'::text; end if;
+  -- the order of the parts: what refers to others first
+  foreach k in array array['bill','wo','wh_moves','wh_catalog','eng','portal','costs','cc','tickets','schooldb','misc'] loop
+    if not k = any(parts) then continue; end if;
+    if k = 'cc' and to_regclass('public.fm_cc_centers') is not null then
+      if to_regclass('public.fm_contracts') is not null then update public.fm_contracts set cc_id = null where cc_id is not null; end if;
+      update public.fm_cc_centers set parent_id = null where parent_id is not null;
+    end if;
+    for t in select jsonb_array_elements_text(P->k) loop
+      if to_regclass('public.' || t) is not null then
+        execute format('delete from public.%I', t); get diagnostics n = row_count;
+        r := r || jsonb_build_object(t, coalesce((r->>t)::bigint, 0) + n);
+      end if;
+    end loop;
+    if k in ('tickets','schooldb') then
+      delete from public.app_kv a where public.fm_wipe_kv_match(k, a.key); get diagnostics n = row_count;
+      r := r || jsonb_build_object('app_kv:' || k, n);
+    end if;
+  end loop;
+  -- the photo files of the emptied parts (newer projects refuse deletes from storage in SQL: they stay, unseen)
+  begin
+    if 'tickets' = any(parts) then delete from storage.objects where bucket_id = 'ticket-photos'; get diagnostics n = row_count; files := files + n; end if;
+    if 'wo' = any(parts) then delete from storage.objects where bucket_id = 'wo-photos'; get diagnostics n = row_count; files := files + n; end if;
+    if 'eng' = any(parts) then delete from storage.objects where bucket_id = 'school-engagement'; get diagnostics n = row_count; files := files + n; end if;
+  exception when others then files_left := true; end;
+  insert into public.fm_settings(key, value) values ('wipe', jsonb_build_object('at', now(), 'parts', to_jsonb(parts), 'by', nm))
+    on conflict (key) do update set value = excluded.value, updated_at = now();
+  insert into public.fm_audit_log(actor_name, action, target, details) values (nm, 'wipe', array_to_string(parts, ','), jsonb_build_object('rows', r, 'files', files));
+  return jsonb_build_object('parts', to_jsonb(parts), 'rows', r, 'files', files, 'files_left', files_left);
+end $$;
+revoke all on function public.fm_wipe_parts(), public.fm_wipe_kv_match(text, text), public.fm_wipe_ok() from public, anon, authenticated;
+revoke all on function public.fm_wipe_counts(), public.fm_wipe_backup(text[]), public.fm_wipe(text[], text) from public, anon;
+grant execute on function public.fm_wipe_counts(), public.fm_wipe_backup(text[]), public.fm_wipe(text[], text) to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
