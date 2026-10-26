@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V188">
+<meta name="fm-version" content="V189">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25600,10 +25600,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V188',date:'2026-10-24',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V189',date:'2026-10-26',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V189',d:'2026-10-26',t:'ترويسة أبسط ورفع البلاغات بزر صغير',i:['أُزيلت من ترويسة لوحة القيادة أزرار: تصدير إكسل، تقرير Power BI، نموذج الكادر، ربط المشرفين — وتبقى كما هي في صفحاتها بالقائمة الجانبية.','قسم رفع البلاغات الكبير أصبح سطراً واحداً: المصدر والإجمالي وأحدث تاريخ، مع زرَّي «⬆️ رفع ملف» و«📋 لصق جدول».','الرفع ما زال متاحاً من زر «رفع بلاغات المنطقة» في الشريط العلوي، وبسحب الملف وإفلاته في أي مكان على الصفحة.','صفحة المنطقة بلا بيانات: أُزيل المربع المكرر وبقيت بطاقة واحدة بزر الرفع.']},
  {v:'V188',d:'2026-10-24',t:'تثبيت المنصة كتطبيق والعمل دون اتصال',i:['المنصة وتطبيق الميدان يُثبَّتان كتطبيق على الجوال والكمبيوتر: أيقونة على الشاشة، ونافذة مستقلة بلا شريط المتصفح.','يعمل التطبيق دون اتصال: الصفحات والمكتبات والخطوط محفوظة على الجهاز، وتتحدث تلقائياً عند الاتصال.','الخرائط: كل منطقة شاهدتها تُحفظ وتظهر بعد ذلك دون اتصال.','عند فتح التطبيق دون اتصال يفتح مباشرة آخر ما استخدمته (المنصة أو الميدان) ببياناته المحفوظة، وشريط «📴 بدون اتصال» يوضح ذلك.','على iPhone: بعد إضافة التطبيق للشاشة الرئيسية تصل الإشعارات أيضاً.','زر «📲 تثبيت» في صفحة الدخول، والصفحة الرئيسية لتطبيق الميدان، و«الإعدادات» ← السحابة (مع حجم المحفوظ وزر مسحه).']},
  {v:'V187',d:'2026-10-23',t:'إشعارات فورية على الجوال والكمبيوتر',i:['تصلك إشعارات حتى والتطبيق مغلق: أمر عمل جديد، أمر بانتظار اعتمادك، أمر أُعيد إليك أو اعتُمد، تصعيد أمر متأخر، إيقاف عمل، طلب صرف لأمين المستودع، صرف قطع لعهدتك، تالف متأخر، صنف أو طلب شراء بانتظار الاعتماد، والمستخلصات.','كل شخص يفعّلها على جهازه من «🔔 إعدادات الإشعارات» (في الإعدادات ← السحابة، أو الشريط الذي يظهر أسفل الشاشة، أو الزر في تطبيق الميدان) ويختار الأنواع التي تصله ويرسل لنفسه تجربة.','الضغط على الإشعار يفتح الأمر أو الصفحة المعنية مباشرة.','مدير النظام يجهّز الإرسال مرة واحدة من «🔔 إعداد الإشعارات» (المفاتيح، رابط الدالة، الأنواع المفعّلة للجميع) ويرى عدد الأجهزة وما أُرسل.','على iPhone تعمل الإشعارات بعد إضافة التطبيق للشاشة الرئيسية.']},
  {v:'V186',d:'2026-10-23',t:'مركز التكلفة: الإيراد والتكلفة والربح',i:['صفحة «💹 مركز التكلفة» في مجموعة جديدة «💹 المالية والتكاليف» (مع المستخلصات وتكاليف المباني).','مراكز للمناطق وأقسام تحتها (صيانة المباني، السيارات، الإدارة…) مع تفصيل التكلفة حسب المبنى.','التكاليف تُجمع تلقائياً: المستخلصات المعتمدة، مواد المستودع والمشتريات في أوامر العمل المعتمدة، مصروفات المباني، ورواتب الموظفين (محسوبة بأيام العمل في الشهر)؛ وقيود يدوية للسيارات والوقود والسكن وغيرها.','الإيراد: قيمة العقد الشهرية لكل مركز أو فاتورة العميل، والأعمال الإضافية، وخصومات العميل — والربح والهامش لكل مركز وشهر.','الميزانية الشهرية لكل مركز وبند، ونسبة المستهلك، والتوقع لنهاية السنة، وتنبيه عند 80% و100%، وتقرير PDF وExcel.','صلاحيات مركز التكلفة (الرؤية، القيود، الميزانية، الرواتب، الإيراد) يحددها مدير النظام لكل مسمى من الإعدادات.']},
@@ -31845,6 +31846,7 @@ const MANUAL=[
  {id:'v2-nav-fm177-pen',t:'أداء المقاولين والغرامات',where:'الكادر والمقاولون ← «⚖️ أداء المقاولين والغرامات»',what:'بطاقة شهرية لكل مقاول (البلاغات والالتزام بالـ SLA ومتوسط الإغلاق وأوامر العمل المتأخرة والمعادة) مع حساب الغرامات وفق بنود العقد وخطاب PDF.',how:['اختر الشهر من أعلى الصفحة.','«⚙️ بنود الغرامات والعقود» (مدير النظام): غرامة البلاغ المتجاوز لكل أولوية، ولكل يوم تأخير أمر، ولكل إرجاع، والحد الأقصى كنسبة من قيمة العقد الشهرية لكل مقاول.','«📄 خطاب» يفتح إشعار الغرامات للمقاول جاهزاً للطباعة والتوقيع، و«⬇️ Excel» بالبطاقة والتفاصيل.'],who:'مدير النظام والمديرون والمحاسب',tips:['المقاول يُعرف من بيانات البلاغ / قاعدة المدارس، ومن اسم المُسند إليه في أوامر العمل.','البلاغ يُحسب في شهر إنشائه.'],v:'V177'},
  {id:'v2-nav-fm178-monthly',t:'التقرير الشهري للعميل',where:'التقارير ← «📑 التقرير الشهري للعميل»',what:'تقرير PDF شهري جاهز للإرسال للعميل: غلاف، الملخص التنفيذي مع المقارنة بالشهر السابق، البلاغات، أوامر العمل والصيانة الوقائية، التكاليف والمواد، رضا المدارس، وخطة الشهر القادم.',how:['اختر الشهر والمنطقة من أعلى الصفحة.','اكتب الملخص التنفيذي (أو اتركه للنص التلقائي) وخطة الشهر القادم — تظهر في المعاينة فوراً.','«🖨️ PDF / طباعة» ثم «حفظ كـ PDF» وأرسله للعميل.'],who:'المديرون والمهندس',tips:['أقسام التكاليف وأوامر العمل والرضا تظهر عند ربط السحابة وحسب صلاحياتك.','الأرقام من البلاغات المرفوعة للمنطقة؛ ارفع ملف الشهر كاملاً قبل إصدار التقرير.'],v:'V178'},
  {id:'saas-sub',t:'الاشتراك (لعدة شركات)',where:'الإعدادات ← السحابة ← «💳 الاشتراك»',what:'حالة اشتراك الشركة: الباقة وحد المدارس والمستخدم منها وتاريخ الانتهاء، وإدخال كود التفعيل بعد دفع فاتورة التجديد.',how:['عند اقتراب الانتهاء يظهر شريط أسفل الشاشة قبل 15 يوماً.','بعد الدفع يصل كود التفعيل من مزود الخدمة: «🔑 إدخال كود التفعيل» والصقه.','بعد الانتهاء بمهلة 7 أيام يتوقف الدخول للجميع وتبقى البيانات، ويعود العمل فور إدخال الكود.'],who:'مدير النظام',tips:['رابط دخول الشركة: start.html?c=رمز الشركة — أرسله لفريقك.','زيادة المدارس عن حد الباقة تُرفض عند حفظ قاعدة المدارس في السحابة — اطلب ترقية الباقة.'],v:'V179'},
+ {id:'upload',t:'رفع ملف البلاغات',where:'زر «رفع بلاغات المنطقة» في الشريط العلوي، أو «⬆️ رفع ملف» في سطر المصدر أعلى لوحة القيادة، أو سحب الملف وإفلاته في أي مكان على الصفحة',what:'تحديث بلاغات المنطقة المفتوحة (الرياض أو القصيم) من ملف Excel المصدَّر من نظام البلاغات، أو بلصق جدول. يتعرف النظام تلقائياً على الأعمدة، وتتحدث كل المؤشرات والتقارير.',how:['اختر المنطقة من الشريط العلوي.','اضغط «رفع بلاغات المنطقة» أو «⬆️ رفع ملف» واختر ملف Excel، أو اسحب الملف إلى الصفحة.','لجدول منسوخ: «📋 لصق جدول» ← الصق الجدول مع صف العناوين ← «تحليل البيانات الملصوقة».','تأكد من «الإجمالي» و«أحدث تاريخ» في سطر المصدر.'],who:'مدير النظام، مدير المشروع، مدير التشغيل، مدير المنطقة (لمناطقه)',tips:['كل منطقة تُحلَّل ببياناتها فقط.','«تخصيص / تعديل مطابقة الأعمدة» إذا تغيّرت أسماء الأعمدة في الملف.'],v:'V189'},
  {id:'pwa',t:'تثبيت التطبيق والعمل دون اتصال',where:'زر «📲 ثبّت التطبيق» في صفحة الدخول والصفحة الرئيسية لتطبيق الميدان، و«الإعدادات» ← السحابة ← «📲 تثبيت المنصة والعمل دون اتصال»',what:'تثبيت المنصة أو تطبيق الميدان كتطبيق بأيقونة على الجوال أو الكمبيوتر، والعمل دون اتصال: الصفحات والمكتبات والخرائط التي فتحتها تبقى محفوظة على الجهاز وتتحدث تلقائياً عند الاتصال.',how:['على Android أو الكمبيوتر (Chrome / Edge): اضغط «📲 ثبّت التطبيق» ثم «تثبيت».','على iPhone / iPad: افتح الموقع في Safari ← زر المشاركة ⬆️ ← «إضافة إلى الشاشة الرئيسية» ← «إضافة».','افتح التطبيق من أيقونته؛ يفتح على صفحة الدخول ثم على تطبيقك.','افتحه مرة واحدة على الأقل وأنت متصل، وتصفّح الخرائط التي تحتاجها، لتعمل بعدها دون اتصال.'],who:'كل المستخدمين',tips:['دون اتصال يفتح التطبيق آخر ما استخدمته ويعرض آخر بيانات محفوظة؛ إجراءات أوامر العمل في الميدان تُرسل تلقائياً عند عودة الاتصال.','على iPhone لا تصل الإشعارات إلا بعد التثبيت (iOS 16.4 أو أحدث).','«🧹 مسح المحفوظ» يحرر المساحة ولا يمس بياناتك؛ يُحفظ من جديد عند الاستخدام.'],v:'V188'},
  {id:'push',t:'الإشعارات على الجوال والكمبيوتر',where:'الإعدادات ← السحابة ← «🔔 الإشعارات على هذا الجهاز»، أو الشريط أسفل الشاشة «🔔 فعّل الإشعارات»، وفي تطبيق الميدان زر «🔔» في الصفحة الرئيسية',what:'إشعار فوري يصلك حتى والتطبيق مغلق عند حدث يخصك: أمر عمل جديد، أمر بانتظار اعتمادك، إعادة أو اعتماد أمر، تصعيد، إيقاف عمل، طلب صرف، صرف لعهدتك، تالف متأخر، اعتماد صنف أو شراء، المستخلصات. الضغط عليه يفتح الأمر أو الصفحة.',how:['افتح «🔔 إعدادات الإشعارات» واضغط «🔔 تفعيل على هذا الجهاز» واسمح للمتصفح بالإشعارات.','اختر الأنواع التي تريدها ثم «💾 حفظ اختياراتي».','«📨 أرسل لي تجربة» للتأكد أن الجهاز يستقبل.','فعّلها على كل جهاز تستخدمه (الجوال والكمبيوتر).'],who:'كل المستخدمين (بعد أن يجهّزها مدير النظام)',tips:['على iPhone / iPad: أضف التطبيق للشاشة الرئيسية من زر المشاركة أولاً، ثم افتحه من الأيقونة وفعّل الإشعارات (iOS 16.4 أو أحدث).','لا يصلك إشعار عن عمل قمت به بنفسك، والحملة الكبيرة تصلك بإشعار واحد.','إذا رفضت الإذن بالخطأ: افتح إعدادات الموقع في المتصفح واسمح بالإشعارات.'],v:'V187'},
  {id:'push-setup',t:'إعداد الإشعارات (مدير النظام)',where:'الإعدادات ← السحابة ← «🔔 إعداد الإشعارات (مدير النظام)»',what:'تجهيز إرسال الإشعارات مرة واحدة: مفاتيح الإرسال، ربط دالة fm-push على Supabase، الأنواع المفعّلة للشركة، ومتابعة عدد الأجهزة وما أُرسل وآخر خطأ.',how:['«🔑 توليد المفاتيح» وانسخ المفتاح الخاص إلى أسرار الدالة باسم VAPID_PRIVATE.','أنشئ الدالة fm-push في Supabase ← Edge Functions والصق ملف supabase/functions/fm-push/index.ts، وأوقف Verify JWT.','اكتب رابط الدالة و«🔐 حفظ الربط وتوليد السر» وانسخ السر إلى أسرار الدالة باسم FM_PUSH_HOOK.','فعّل pg_net و pg_cron من Database ← Extensions.','فعّل «الإشعارات مفعّلة للشركة» واحفظ، ثم جرّب على جهازك.'],who:'مدير النظام',tips:['المفتاح الخاص والسر لا يُحفظان في المنصة؛ يظهران مرة واحدة للنسخ.','توليد مفاتيح جديدة يلغي تفعيل كل الأجهزة.'],v:'V187'},
@@ -31924,7 +31926,7 @@ const allowed=()=>{const st=C&&C.state;if(!st||!st.on)return true;return !!st.pr
 /* V164: each title sees only what concerns it. Sidebar pages follow the portal's hidden pages (fmV157P[title].hide);
    other entries list their titles here. The system admin sees everything and can preview any title. */
 const MGR=['dept_manager','project_manager','ops_manager','area_manager'],ASG=['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'];
-const RMAP={users:['sysadmin'],'push-setup':['sysadmin'],'v2-nav-fm186-cc':['sysadmin','dept_manager','project_manager','accountant'],'v2-nav-fm184-bills':['sysadmin','dept_manager','project_manager','ops_manager','accountant','qa_manager','area_manager','area_engineer'],'v2-nav-fm183-setup':['sysadmin'],mods:['sysadmin'],demo:['sysadmin'],'saas-sub':['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],'cost-perms':['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
+const RMAP={users:['sysadmin'],upload:['sysadmin','project_manager','ops_manager','area_manager'],'push-setup':['sysadmin'],'v2-nav-fm186-cc':['sysadmin','dept_manager','project_manager','accountant'],'v2-nav-fm184-bills':['sysadmin','dept_manager','project_manager','ops_manager','accountant','qa_manager','area_manager','area_engineer'],'v2-nav-fm183-setup':['sysadmin'],mods:['sysadmin'],demo:['sysadmin'],'saas-sub':['sysadmin'],roles:['sysadmin'],cloud:['sysadmin'],'cost-perms':['sysadmin'],welcome:['sysadmin'],'gov-settings':['sysadmin'],'gov-audit':['sysadmin'],
  'wo-group':ASG,'wo-templates':ASG,'wo-fci':ASG,'wo-repair':ASG.concat('dept_manager'),'gov-stop':['sysadmin','hse_manager','project_manager','ops_manager','dept_manager'],
  'gov-deputy':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'eng-rating':['sysadmin',...MGR,'area_engineer'],
  'v2-nav-fm164-usage':['sysadmin','project_manager'],'v2-nav-fm168-novaro':['sysadmin','dept_manager','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm167-news':['sysadmin','project_manager','ops_manager','area_manager','area_engineer','hse_manager','qa_manager'],'v2-nav-fm158-qa':['sysadmin','qa_manager',...MGR],
@@ -34767,5 +34769,45 @@ const say=(m,k)=>{try{window.showToast?.(m,k||'success')}catch(e){}};
  draw();const off_=window.fmPwa.on(()=>{if(!box.isConnected)return off_();draw()})});
 })();
 </script>
+<style id="fm-v189-header-upload-css">
+/* V189: a lighter header and upload — the 4 buttons stay in their sidebar pages */
+#btn-export-powerbi-pdf,#btn-download-staff-template,#btn-open-staff-mapping,#btn-export-excel{display:none!important}
+section.table-card:has(#tab-btn-upload){padding:.6rem 1rem!important;margin-bottom:1rem!important}
+section.table-card:has(#tab-btn-upload) > div:has(> #tab-btn-upload),section.table-card #upload-dropzone,section.table-card #panel-paste{display:none!important}
+section.table-card:has(#tab-btn-upload) > div:has(.upload-meta-row){margin-top:0!important;padding-top:0!important;border-top:0!important}
+.fm45-empty-upload{display:none!important}
+.fm189-b{padding:.35rem .85rem!important;font-size:.775rem!important}
+#fm189-dlg{position:fixed;inset:0;z-index:3000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:12px}
+#fm189-dlg .in{background:var(--bg-secondary,#fff);color:var(--text-primary,#0f172a);border-radius:16px;max-width:640px;width:100%;padding:16px;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:Cairo,Tahoma,sans-serif}
+#fm189-dlg .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:16px}
+#fm189-dlg .hd button{border:0;background:#f1f5f9;border-radius:8px;padding:4px 10px;cursor:pointer}
+#fm189-dlg #panel-paste{display:block!important}
+</style>
+<script id="fm-v189-header-upload">(function(){
+'use strict';
+/* V189: the dashboard header no longer shows «تصدير إكسل», «Power BI», «نموذج الكادر», «ربط المشرفين» (hidden by CSS; the
+   buttons and their functions stay, the same tools are in the sidebar pages). The big upload panel (tabs, drop zone, paste
+   box) is hidden: the source line keeps «المصدر / الإجمالي / أحدث تاريخ» and gets two small buttons — «⬆️ رفع ملف»
+   (fm45UploadTickets for the open region, as the top bar) and «📋 لصق جدول» (the original #panel-paste moved into a
+   dialog and put back when it closes). Dropping a file anywhere still uploads it (V129). */
+const RN={riyadh:'الرياض',qassim:'القصيم'};
+const active=()=>(window.FM41&&FM41.active)||'riyadh';
+const may=()=>{try{return typeof window.fmV165CanUpload!=='function'||window.fmV165CanUpload(active())!==false}catch(e){return true}};
+function paste(){const panel=document.getElementById('panel-paste');if(!panel)return;const home=panel.parentNode,next=panel.nextSibling;
+ const d=document.createElement('div');d.id='fm189-dlg';d.dir='rtl';d.innerHTML=`<div class="in"><div class="hd"><b>📋 لصق جدول بلاغات ${RN[active()]||''}</b><button type="button" data-x>✕</button></div><div data-b></div></div>`;
+ document.body.appendChild(d);d.querySelector('[data-b]').appendChild(panel);
+ const close=()=>{if(panel.parentNode!==home)home.insertBefore(panel,next);d.remove()};
+ d.querySelector('[data-x]').onclick=close;d.onclick=e=>{if(e.target===d)close()};
+ document.getElementById('btn-analyze-pasted')?.addEventListener('click',()=>setTimeout(close,50),{once:true});
+ setTimeout(()=>document.getElementById('paste-csv-textarea')?.focus(),50)}
+function place(){const cust=document.getElementById('btn-customize-cols');if(!cust)return;const box=cust.parentElement;let w=document.getElementById('fm189-acts');
+ if(!may()){w?.remove();return}
+ if(w&&w.isConnected)return;w=document.createElement('span');w.id='fm189-acts';w.style.cssText='display:inline-flex;gap:.5rem';
+ w.innerHTML='<button type="button" class="btn btn-primary fm189-b" data-u><i class="fas fa-upload"></i> رفع ملف</button><button type="button" class="btn btn-secondary fm189-b" data-p><i class="fas fa-paste"></i> لصق جدول</button>';
+ w.querySelector('[data-u]').onclick=()=>{try{window.fm45UploadTickets?window.fm45UploadTickets(active()):document.getElementById('file-upload-input')?.click()}catch(e){}};
+ w.querySelector('[data-p]').onclick=paste;box.insertBefore(w,cust)}
+window.fmV189Paste=paste;
+place();setInterval(place,2000);
+})();</script>
 </body>
 </html>
