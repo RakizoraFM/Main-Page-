@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V197">
+<meta name="fm-version" content="V198">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25608,10 +25608,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V197',date:'2026-10-26',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V198',date:'2026-10-26',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V198',d:'2026-10-26',t:'إصلاح تنبيه سجل الفحص',i:['أُزيل إنذار «وُجد تنسيق/كود ملصق داخل سكربت» في «سجل النسخ والفحص»: كان سطراً سليماً في نافذة طباعة خطاب الغرامات (V177) يبدأ بوسم script فاعتبره الفحص كوداً ملصقاً. لا تغيير في عمل الصفحة.']},
  {v:'V197',d:'2026-10-26',t:'تصحيحات نتجت عن الاختبار الشامل',i:['إصلاح تعطل تحليل التكرار عند كثرة العلاقات بين البلاغات','إصلاح دالة كشف أعمدة الحل والتاريخ المفقودة','تحقق فعلي بالمتصفح من الاستيراد والتقارير وتصميم الصفحات','اختبارات PostgreSQL محلية للصلاحيات ودورات العمل مع توضيح حدود المحاكاة']},
  {v:'V196',d:'2026-10-26',t:'تحسين تصميم الصفحات الفرعية',i:['تنسيق موحد للبوكسات والعناوين وأزرار التحكم','منع تداخل الفلاتر والتبويبات والنماذج عند ضيق الشاشة','حصر تمرير الجداول وبنود المستخلص داخل مساحتها','تحسين النوافذ المنبثقة والوقائية والتقارير وصفحات النظام']},
  {v:'V195',d:'2026-10-26',t:'مركز التشغيل والتقارير',i:['مركز تنبيهات وتصعيد مشترك مرتبط بالمصادر','متابعة الصيانة الوقائية والخطط المتكررة','لوحة تنفيذية موحدة وتغطية المصادر','تقارير أسبوعية وشهرية وExcel وطباعة PDF ولقطات محلية']},
@@ -33329,8 +33330,7 @@ function letter(o){const [a]=monRange(MON),ml=a.toLocaleDateString(GREG,{month:'
  <h2>3) أوامر أُعيدت للتصحيح (${num(o.ret.length)})</h2>${T(['#','الأمر','المدرسة','مرات الإرجاع','الغرامة'],o.ret.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.code)} — ${esc(x.title)}</td><td>${esc(x.school||'')}</td><td>${num(x.n)}</td><td>${money(x.fee)}</td></tr>`))}
  <h2>الإجمالي</h2><table><tbody><tr><td>غرامات البلاغات</td><td>${money(o.pT)}</td></tr><tr><td>غرامات تأخير الأوامر</td><td>${money(o.pW)}</td></tr><tr><td>غرامات الإرجاع</td><td>${money(o.pR)}</td></tr>${o.cap?`<tr><td>السقف (${num(P.cap_pct)}% من ${money(o.monthly)})</td><td>${money(o.cap)}</td></tr>`:''}<tr class="tot"><td>الغرامة المستحقة</td><td>${money(o.pen)}</td></tr></tbody></table>
  <p class="m">يحق لكم الاعتراض كتابياً خلال 5 أيام عمل من تاريخ هذا الإشعار مع المستندات المؤيدة.</p>
- <div class="sg"><div>مدير المشروع</div><div>مدير العمليات</div><div>المقاول — للعلم والاستلام</div></div>
- <script>setTimeout(()=>print(),600)<\/script></body></html>`);w.document.close()}
+ <div class="sg"><div>مدير المشروع</div><div>مدير العمليات</div><div>المقاول — للعلم والاستلام</div></div><script>setTimeout(()=>print(),600)<\/script></body></html>`);w.document.close()}
 function setDlg(){const ad=isAdmin(),d=document.createElement('dialog');d.className='fm171-dlg';const names=(DATA&&DATA.L||[]).filter(o=>o.k!=='—');
  d.innerHTML=`<div class="in"><h3>⚙️ بنود الغرامات والعقود</h3><div class="fm125-src">${ad?'تُحفظ للجميع.':'للاطلاع — يعدّلها مدير النظام.'}</div>
   <b>غرامة البلاغ المتجاوز للمهلة (ر.س)</b><div class="fm171-two">${['طارئ','عالي','متوسط'].map(k=>`<label class="f">${k}<input data-b="${k}" inputmode="decimal" value="${esc((P.breach||{})[k]??'')}" ${ad?'':'disabled'}></label>`).join('')}</div>
