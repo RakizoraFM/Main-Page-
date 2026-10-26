@@ -94,3 +94,67 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 - Do not change existing numbers or SLA logic unless asked. After a change, compare the KPIs and page outputs with the previous version.
 - Be honest in the summary about anything that could not be tested, for example a real Supabase server, the real OpenStreetMap search, or a real phone.
 - Commit message: `V1NN — short description`. Deliver through a branch and PR; the owner merges to `main`.
+
+
+## V191 — field reliability (F35, 2026-10-26)
+- `fm-offline-v191` is an inline, testable Outbox helper in field.html. Queue/cache scope uses project URL + authenticated user id; mismatched JWT issuer is rejected.
+- Legacy `fmf_queue_v1` remains quarantined. Never silently attribute it to the current account; recovery needs explicit ownership verification. Photos in the old IndexedDB are preserved.
+- Failed operations remain with syncStatus/syncError; dependent actions stop until manual retry. Missing photos throw; photo writes must complete before a queued result is returned. New records added during a flush are merged by qid. Web Locks serialize flushes across tabs when supported.
+- Cache key `fmf_cache_v191:<scope>` requires the same stored session identity on offline reads. No cache fallback without that identity.
+- Field school() uses the same S-prefix normalization semantics as the desktop canonical code, with no ambiguous school selection.
+- `node tests/local/v191_test.cjs` exercises production outbox code with storage/API adapters; no network writes. Live server, real IndexedDB, real phones, and UI layout remain separate acceptance checks.
+- Server-side idempotency is not implemented: a lost response after server commit can still require duplicate prevention in a future SQL/RPC migration.
+
+
+## V192 — import auditing and team readiness
+- Inline `fm-v192-model` exposes pure audit/impact calculations; `fm-v192-operations` adds two sidebar pages and wraps imports.
+- fmTicketImport now returns audit metadata (input/accepted/rejected); a WeakMap preserves receipt provenance through validators. The selected worksheet's parsed data rows are counted; header/empty-sheet rows are not counted. No ticket filtering/deduplication rule changed.
+- Receipt summaries are local per project URL and region. Pre-V192 imports have unknown source counts, not zero. All-rejected attempts are retained separately without replacing the last successful dataset.
+- Readiness cloud mode uses SECURITY DEFINER RPCs with region checks, no direct client table privileges. Run migration_v192.sql on a staging company first. Existing backend scripts include it as well. Do not run both unless an idempotent rerun is intentional.
+- Readiness statuses ready/limited/stopped. Limited/stopped requires cause, owner and due date; server timestamps blocked_since, records old/new values and checks revision on updates. No auto-sending of notifications is added.
+- Impact uses uploaded active-region rows and existing SLA calculation, not live operational telemetry. Schools can overlap teams; counts must not be summed across teams. Missing links => unknown impact.
+- Local (unconfigured cloud) mode stores readiness on this device only. Configured but unavailable cloud never silently falls back to local saves.
+- Tests: node tests/local/v192_test.cjs and v191_test.cjs. Local tests do not validate live PostgreSQL/RLS or rendered UI.
+
+
+## V193 — parts follow-up / field F36
+- New page `v2-nav-fm193-parts`, group wh. `FM193Model` is identical inline in desktop and field (pure active/metrics/filter functions).
+- Reuses wo_issue_requests as source of truth. fm_parts_followup has a 1:1 request FK; metadata only. No new source request, inventory update, receipt confirmation or SLA pause is introduced.
+- migration_v193.sql depends on V192 (fm_team_readiness). RPC fm_parts_list/options/save/escalate/history enforce active subscription, wh module and explicit region/storekeeper/self permissions. No direct table grants. Source request is locked during save/escalation; revision checks protect concurrent edits. Terminal warehouse requests cannot be edited.
+- Escalation is an internal recorded action only, not an email/WhatsApp/push message. Deadlines remain overdue until the original request is resolved or its promised date is explicitly changed with an audit event.
+- Desktop reads through FMCloud.api.partsRPC (mockable), with account/project scope guards. Field button on home shows only requests where the caller is holder/requester, read live without an offline cache. Original receiving remains in fmfCustody.
+- Test node tests/local/v193_test.cjs plus v192/v191. PostgreSQL execution/RLS and actual rendered browser/mobile still need staging validation.
+
+
+## V194 — closure quality, backup and bill follow-up
+- Inline FM194Model: conservative same-school, distinct-ID, new-created-after-prior-resolved <=7 days description Dice similarity. Default 50%; skip short generic descriptions and duplicate source IDs. No changes to SLA or penalties.
+- fm_close_reviews/events: regional review permissions, cloud ticket existence, advisory locking + revisions. Review metadata only; not an automated engineering conclusion.
+- fm_bill_followup/events: native fm_bills amounts/status/history are unchanged. Follow-up owner/due/docs refs/hold/impact/team with server permission and active-module checks. No payment or external messaging.
+- tools/backup194.mjs: Node operator-side pg_dump(public)+Storage objects, AES-GCM/PBKDF2/HMAC. Same-project restore only; dry-run default, explicit maintenance + ref confirmation, safety snapshot first. Public schema excludes Auth and Storage policy/managed metadata. Restore dependency compatibility must be verified on Supabase; no production-readiness claim.
+- Browser backup check verifies/decrypts chosen local files using WebCrypto only; it neither uploads files nor runs database restoration.
+- Local tests total 70 (including prior regressions). Backup restore exercised with provider adapters, not a live database.
+
+## V195 — operational inbox, PPM overview, executive dashboard and periodic reports
+- New inline FM195Model and fm-v195-operations in index; field stays F36. Four nav entries are grouped and documented in MANUAL. PPM is tied to wo module; composite pages show unavailable modules/sources explicitly.
+- fm195_orders returns all visible WOs as JSON (no old 10k client cap), fm195_schedules is security invoker under existing RLS. Other sources reuse V192/V193/V194 permissions. An unavailable source remains null, never zero. Requests are scoped by user/project/region and serial; scope changes close pages/dialogs.
+- Tickets are full active-region Dataset; period = creation date. Existing SLA functions/reference date unchanged; DEFAULT_FALLBACK remaining is unknown for alerts. PPM period = due date in Riyadh, excludes cancelled/rejected; done waits approval separately. PPM uses native group/schedule dialogs, checklist/photos and approval flow.
+- fm_ops_escalations/events record independent follow-up metadata only, source existence/access checks, managerial writes, eligible regional recipients, advisory locking/revisions, recipient acknowledgement, and immutable events. New/reopened/reassigned escalation attempts ops_due Push through existing queue, without claiming delivery. No emails/WhatsApp or background alert worker. Page polls every 90 seconds only while open.
+- Reports are on-demand weekly/monthly/custom; current state snapshot is explicitly separated from historical date cohort. Excel exports all details, CSV sanitizes formula injection; iframe print is isolated and offers browser Save PDF. Account/project/region-local snapshots (max8) are saved exports, not cloud archives or backups. Data is not reconstructed at historical month-end.
+- Tests now 97 local: model/structure, DOM-adapted controller, earlier regressions and crypto/provider adapter tests. No actual browser, PDF/XLSX output, PostgreSQL/RLS, real Supabase or push delivery validation. See RELEASE_V195.md for staging acceptance.
+
+## V196 — shared subpage layout
+- App V196, field unchanged F36. Appended fm-v196-subpage-layout screen-only CSS + layout controller. Source business scripts unchanged byte-for-byte vs V195 except version log and manual; baseline hashes in tests/local. No SQL migration.
+- fm196-surface marks existing/new fm103 pages, contractor/engagement/portal/QA, classic modal/card/dialog families, native fm/eg dialogs. Main dashboard is not marked. Shared grids, wrapping headers/controls, toolbars, tabs, min-width:0 inputs and layout gaps address fixed minimum widths. Headers stay in document flow so tall headers cannot cover content.
+- Tables reuse existing overflow ancestors or receive a keyboard-accessible scroll wrapper. Skip print preview/presentation/nested tables. Invoice header and data-l share a scroll track; never wrap individual editable inputs (native oninput uses input.parentNode). Never clone the tables or business elements.
+- Child-list observer batches only affected roots into requestAnimationFrame. It does not observe its own class/ARIA attribute writes. No storage/network/business callback use. Preserve fullscreen, hidden and inline dialog semantics. CSS is media screen; new wrappers reset for print.
+- Manual entries with string tips normalized once to arrays; fixes render/search/print map errors from older additions. A new layout help entry and detailed DESIGN_REVIEW_V196.md cover the shared change.
+- 112 local tests passed (97 prior +15 DOM/baseline). Chromium installation failed; browser acceptance is NOT RUN. Offline 12-case fixture and Playwright runner included, not a claim of rendered correctness. Actual CSS/phone/PDF and live-page acceptance are still needed.
+
+## V197 — actual local acceptance and three regression fixes
+- Actual Chromium 153 runs now available via a scratch-only downloaded browser. Verified 108 synthetic production-style layout cases, 650-row XLSX school/ticket import, both building-code forms, 650/130/0/reset period counts, 50 closed/600 open, independent 529 SLA breaches, 650 identical-description group, real 9-sheet XLSX download (651 rows including header) and real browser PDF (60 pages with first/last IDs). Do not equate local browser tests with live account workflows.
+- Define the missing fmIsSolutionColumn before autoDetectColumns. It excludes exact solution-description aliases, never closure dates. The missing predicate previously threw and silently fell back to a reduced map without resolvedDate.
+- v321 recurrence max similarity uses reduction instead of Math.max spread over large edge arrays. Detection semantics/reference month are unchanged.
+- migration_v197.sql: fm_my_pos honors fm_plan_ok, and fm_mod_guard checks plan + module for INSERT/UPDATE/DELETE on the preexisting guarded operational table list. A native local test proved stored-role writes could bypass expired-plan fm_role; new tests reject WO/schedule/contract creates and schedule deletes while preserving admin renewal validation and grace-period writes.
+- 119 local regressions pass. Native PostgreSQL/PGlite executes the full schema plus rerun with a Supabase-shaped Auth/Storage bootstrap and RLS actor roles: 198 company +10 control checks. Credentials/auth/REST/storage delivery are adapters, not live Supabase. No external database writes.
+- Reusable tests/integration (PGlite 0.3.14, Playwright 1.62.1), JSON evidence and QA_REPORT_V197.md included. Baseline test now allows only explicitly hashed V197 changes to unnamed main script index7 and v321 index15; other business scripts stay identical to V195 apart from version log/manual.
+- Remaining acceptance: real Auth/Storage, managed extensions, pg_cron/pg_net/Edge delivery, phones/GPS/camera/offline restart, concurrency/first-admin bootstrap, and real pg_dump restore. Do not certify every function or production readiness from this local result.

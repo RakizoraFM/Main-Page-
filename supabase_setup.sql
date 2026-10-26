@@ -4473,3 +4473,349 @@ revoke all on function public.fm_wipe_counts(), public.fm_wipe_backup(text[]), p
 grant execute on function public.fm_wipe_counts(), public.fm_wipe_backup(text[]), public.fm_wipe(text[], text) to authenticated;
 
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
+
+
+-- V192: shared team readiness (also shipped as migration_v192.sql).
+-- V192: shared team readiness, region-scoped permissions and optimistic concurrency.
+begin;
+create table if not exists public.fm_team_readiness (
+ id uuid primary key default gen_random_uuid(), name text not null check(length(trim(name)) between 1 and 120),
+ region text not null check(region in ('riyadh','qassim')), leader text not null default '',
+ status text not null default 'ready' check(status in ('ready','limited','stopped')),
+ reason text not null default '' check(reason in ('','vehicle','labor','materials','other')),
+ owner_name text not null default '', due_at timestamptz, schools text[] not null default '{}',
+ note text not null default '', blocked_since timestamptz, revision int not null default 1,
+ updated_by uuid references public.profiles(id), updated_at timestamptz not null default now(),
+ check(status='ready' or (reason<>'' and length(trim(owner_name))>0 and due_at is not null)),
+ check(cardinality(schools)<=500),check(length(note)<=4000),check(length(leader)<=120),check(length(owner_name)<=120)
+);
+create table if not exists public.fm_team_readiness_events (
+ id bigint generated always as identity primary key, team_id uuid not null references public.fm_team_readiness(id),
+ at timestamptz not null default now(), by_user uuid references public.profiles(id), old_value jsonb, new_value jsonb not null
+);
+alter table public.fm_team_readiness enable row level security;
+alter table public.fm_team_readiness_events enable row level security;
+revoke all on public.fm_team_readiness, public.fm_team_readiness_events from anon, authenticated;
+create or replace function public.fm_ready_read(r text) returns boolean language sql stable security definer set search_path=public as $$
+ select coalesce(public.fm_role()<>'pending' and (public.fm_role()='admin' or public.fm_my_pos() in ('dept_manager','project_manager','ops_manager','qa_manager','hse_manager','owner_rep') or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(r))),false) $$;
+create or replace function public.fm_ready_write(r text) returns boolean language sql stable security definer set search_path=public as $$
+ select coalesce(public.fm_role()<>'pending' and (public.fm_role()='admin' or public.fm_my_pos() in ('project_manager','ops_manager') or (public.fm_my_pos()='area_manager' and public.fm_region_ok(r))),false) $$;
+create or replace function public.fm_ready_list() returns jsonb language sql stable security definer set search_path=public as $$
+ select coalesce(jsonb_agg(to_jsonb(t)||jsonb_build_object('can_edit',public.fm_ready_write(t.region)) order by t.updated_at desc),'[]'::jsonb) from public.fm_team_readiness t where public.fm_ready_read(t.region) $$;
+create or replace function public.fm_ready_save(p jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
+ declare old public.fm_team_readiness; v public.fm_team_readiness; k uuid; rg text:=p->>'region';
+ begin
+ if not public.fm_ready_write(rg) then raise exception 'not allowed'; end if;
+ if nullif(p->>'id','') is not null then
+  select * into old from public.fm_team_readiness where id=(p->>'id')::uuid for update;
+  if not found or not public.fm_ready_write(old.region) then raise exception 'not allowed'; end if;
+  if old.revision<>coalesce((p->>'revision')::int,0) then raise exception 'version conflict: reload'; end if;
+  k:=old.id;
+ else k:=gen_random_uuid(); end if;
+ insert into public.fm_team_readiness(id,name,region,leader,status,reason,owner_name,due_at,schools,note,blocked_since,revision,updated_by)
+ values(k,trim(p->>'name'),rg,coalesce(p->>'leader',''),p->>'status',case when p->>'status'='ready' then '' else coalesce(p->>'reason','') end,
+ coalesce(p->>'owner_name',''),nullif(p->>'due_at','')::timestamptz,
+ array(select distinct trim(x) from jsonb_array_elements_text(coalesce(p->'schools','[]')) as codes(x) where trim(x)<>''),coalesce(p->>'note',''),
+ case when p->>'status'='ready' then null else coalesce(old.blocked_since,now()) end,coalesce(old.revision,0)+1,auth.uid())
+ on conflict(id) do update set name=excluded.name,region=excluded.region,leader=excluded.leader,status=excluded.status,reason=excluded.reason,owner_name=excluded.owner_name,due_at=excluded.due_at,schools=excluded.schools,note=excluded.note,blocked_since=excluded.blocked_since,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=now() returning * into v;
+ insert into public.fm_team_readiness_events(team_id,by_user,old_value,new_value) values(k,auth.uid(),case when old.id is null then null else to_jsonb(old) end,to_jsonb(v));
+ return to_jsonb(v);
+ end $$;
+create or replace function public.fm_ready_history(p_id uuid) returns jsonb language sql stable security definer set search_path=public as $$
+ select coalesce(jsonb_agg(to_jsonb(e) order by e.at desc,e.id desc),'[]'::jsonb) from public.fm_team_readiness_events e join public.fm_team_readiness t on t.id=e.team_id where e.team_id=p_id and public.fm_ready_read(t.region) $$;
+revoke all on function public.fm_ready_read(text),public.fm_ready_write(text),public.fm_ready_list(),public.fm_ready_save(jsonb),public.fm_ready_history(uuid) from public,anon;
+grant execute on function public.fm_ready_read(text),public.fm_ready_write(text),public.fm_ready_list(),public.fm_ready_save(jsonb),public.fm_ready_history(uuid) to authenticated;
+commit;
+
+
+-- V193 parts follow-up; full initial setup includes this migration.
+-- V193: follow up existing issue requests, without changing stock or SLA.
+-- Prerequisites: current supabase_setup.sql through V192 (or migration_v192.sql).
+begin;
+create table if not exists public.fm_parts_followup (
+ request_id uuid primary key references public.wo_issue_requests(id) on delete cascade,
+ owner_id uuid not null references public.profiles(id), due_at timestamptz not null,
+ stage text not null check(stage in ('stock','purchase','ordered','available','hold')),
+ supplier text not null default '' check(length(supplier)<=200), team_id uuid references public.fm_team_readiness(id) on delete set null,
+ note text not null check(length(trim(note)) between 1 and 4000),
+ revision int not null default 1, updated_by uuid references public.profiles(id), updated_at timestamptz not null default now(),
+ escalated_to uuid references public.profiles(id), escalated_by uuid references public.profiles(id), escalated_at timestamptz
+);
+create table if not exists public.fm_parts_events (
+ id bigint generated always as identity primary key, request_id uuid not null references public.wo_issue_requests(id) on delete cascade,
+ at timestamptz not null default now(), by_user uuid references public.profiles(id), kind text not null check(kind in ('followup','escalation')),
+ old_value jsonb, new_value jsonb not null
+);
+create index if not exists fm_parts_events_request_at on public.fm_parts_events(request_id,at desc);
+alter table public.fm_parts_followup enable row level security;
+alter table public.fm_parts_events enable row level security;
+revoke all on public.fm_parts_followup,public.fm_parts_events from anon,authenticated;
+create or replace function public.fm_parts_region(k uuid) returns text language sql stable security definer set search_path=public as $$
+ select coalesce(nullif(w.region,''),nullif(s.region,''),case when cardinality(p.regions)=1 then p.regions[1] end,'')
+ from public.wo_issue_requests r left join public.work_orders w on w.id=r.wo_id left join public.wo_stores s on s.id=r.store_id left join public.profiles p on p.id=r.holder where r.id=k $$;
+create or replace function public.fm_parts_can(k uuid, write_access boolean default false) returns boolean language sql stable security definer set search_path=public as $$
+ select coalesce(auth.uid() is not null and public.fm_role()<>'pending' and public.fm_mod('wh') and exists(select 1 from public.wo_issue_requests r where r.id=k and (
+ public.fm_role()='admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+ or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_parts_region(k)<>'' and public.fm_region_ok(public.fm_parts_region(k)))
+ or (public.fm_my_pos()='storekeeper' and public.fm_wh_keeper(r.store_id))
+ or (not write_access and (r.requested_by=auth.uid() or r.holder=auth.uid() or public.fm_my_pos() in ('dept_manager','qa_manager','owner_rep')))
+ )),false) $$;
+create or replace function public.fm_parts_person(k uuid,p_user uuid,escalation boolean default false) returns boolean language sql stable security definer set search_path=public as $$
+ select exists(select 1 from public.profiles p where p.id=p_user and p.active and public.fm_posx(p.role,p.job_title)=any(case when escalation then array['sysadmin','project_manager','ops_manager','area_manager'] else array['sysadmin','project_manager','ops_manager','area_manager','area_engineer','storekeeper'] end)
+ and (public.fm_posx(p.role,p.job_title) in ('sysadmin','project_manager','ops_manager') or cardinality(p.regions)=0 or public.fm_parts_region(k)=any(p.regions))) $$;
+create or replace function public.fm_parts_list() returns jsonb language sql stable security definer set search_path=public as $$
+ select coalesce(jsonb_agg(to_jsonb(r)||jsonb_build_object('region',public.fm_parts_region(r.id),'can_edit',public.fm_parts_can(r.id,true),'followup',case when f.request_id is null then null else to_jsonb(f)||jsonb_build_object('owner_name',o.full_name,'team_name',t.name,'escalated_name',ep.full_name) end,
+ 'items',coalesce((select jsonb_agg(l||jsonb_build_object('name',m.name,'unit',m.unit)) from jsonb_array_elements(r.lines) as lines(l) left join public.wo_materials m on m.id=nullif(l->>'material_id','')::uuid),'[]'::jsonb)) order by r.at desc),'[]'::jsonb)
+ from public.wo_issue_requests r left join public.fm_parts_followup f on f.request_id=r.id left join public.profiles o on o.id=f.owner_id left join public.fm_team_readiness t on t.id=f.team_id left join public.profiles ep on ep.id=f.escalated_to where public.fm_parts_can(r.id,false) $$;
+create or replace function public.fm_parts_options(k uuid) returns jsonb language plpgsql stable security definer set search_path=public as $$
+ begin
+ if not public.fm_parts_can(k,true) then raise exception 'not allowed';end if;
+ return jsonb_build_object('people',(select coalesce(jsonb_agg(jsonb_build_object('id',p.id,'name',coalesce(p.full_name,p.email),'can_escalate',public.fm_parts_person(k,p.id,true)) order by p.full_name),'[]'::jsonb) from public.profiles p where public.fm_parts_person(k,p.id,false)),
+ 'teams',(select coalesce(jsonb_agg(jsonb_build_object('id',t.id,'name',t.name) order by t.name),'[]'::jsonb) from public.fm_team_readiness t where t.region=public.fm_parts_region(k) and public.fm_ready_read(t.region)));
+ end $$;
+create or replace function public.fm_parts_save(p jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
+ declare k uuid:=(p->>'request_id')::uuid; r public.wo_issue_requests; old public.fm_parts_followup; v public.fm_parts_followup; own uuid:=(p->>'owner_id')::uuid; team uuid:=nullif(p->>'team_id','')::uuid;
+ begin
+ -- Lock the source request as well, so first-time follow-up creation cannot race.
+ select * into r from public.wo_issue_requests where id=k for update;
+ if not found or not public.fm_parts_can(k,true) then raise exception 'not allowed'; end if;
+ if r.status not in ('requested','partial','issued') then raise exception 'request finished';end if;
+ if not public.fm_parts_person(k,own,false) then raise exception 'invalid owner';end if;
+ if team is not null and not exists(select 1 from public.fm_team_readiness t where t.id=team and t.region=public.fm_parts_region(k) and public.fm_ready_read(t.region)) then raise exception 'invalid team';end if;
+ select * into old from public.fm_parts_followup where request_id=k for update;
+ if coalesce(old.revision,0)<>coalesce((p->>'revision')::int,0) then raise exception 'version conflict: reload';end if;
+ insert into public.fm_parts_followup(request_id,owner_id,due_at,stage,supplier,team_id,note,revision,updated_by)
+ values(k,own,(p->>'due_at')::timestamptz,p->>'stage',coalesce(p->>'supplier',''),team,trim(p->>'note'),coalesce(old.revision,0)+1,auth.uid())
+ on conflict(request_id) do update set owner_id=excluded.owner_id,due_at=excluded.due_at,stage=excluded.stage,supplier=excluded.supplier,team_id=excluded.team_id,note=excluded.note,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=now() returning * into v;
+ insert into public.fm_parts_events(request_id,by_user,kind,old_value,new_value) values(k,auth.uid(),'followup',case when old.request_id is null then null else to_jsonb(old) end,to_jsonb(v));return to_jsonb(v);
+ end $$;
+create or replace function public.fm_parts_escalate(k uuid,p_to uuid,p_note text,p_revision int) returns jsonb language plpgsql security definer set search_path=public as $$
+ declare r public.wo_issue_requests; old public.fm_parts_followup; v public.fm_parts_followup;
+ begin
+ select * into r from public.wo_issue_requests where id=k for update;
+ if not found or not public.fm_parts_can(k,true) then raise exception 'not allowed';end if;
+ if r.status not in ('requested','partial','issued') then raise exception 'request finished';end if;
+ if not public.fm_parts_person(k,p_to,true) or length(trim(coalesce(p_note,''))) not between 1 and 4000 then raise exception 'invalid escalation';end if;
+ select * into old from public.fm_parts_followup where request_id=k for update;
+ if not found then raise exception 'save followup first';end if;
+ if old.revision is distinct from p_revision then raise exception 'version conflict: reload';end if;
+ update public.fm_parts_followup set escalated_to=p_to,escalated_by=auth.uid(),escalated_at=now(),note=trim(p_note),revision=revision+1,updated_by=auth.uid(),updated_at=now() where request_id=k returning * into v;
+ insert into public.fm_parts_events(request_id,by_user,kind,old_value,new_value) values(k,auth.uid(),'escalation',to_jsonb(old),to_jsonb(v));return to_jsonb(v);
+ end $$;
+create or replace function public.fm_parts_history(k uuid) returns jsonb language plpgsql stable security definer set search_path=public as $$
+ begin if not public.fm_parts_can(k,false) then raise exception 'not allowed';end if;
+ return (select coalesce(jsonb_agg(to_jsonb(e) order by e.at desc,e.id desc),'[]'::jsonb) from public.fm_parts_events e where e.request_id=k);end $$;
+revoke all on function public.fm_parts_region(uuid),public.fm_parts_can(uuid,boolean),public.fm_parts_person(uuid,uuid,boolean),public.fm_parts_list(),public.fm_parts_options(uuid),public.fm_parts_save(jsonb),public.fm_parts_escalate(uuid,uuid,text,int),public.fm_parts_history(uuid) from public,anon;
+grant execute on function public.fm_parts_can(uuid,boolean),public.fm_parts_list(),public.fm_parts_options(uuid),public.fm_parts_save(jsonb),public.fm_parts_escalate(uuid,uuid,text,int),public.fm_parts_history(uuid) to authenticated;
+notify pgrst, 'reload schema';
+commit;
+
+-- V194 quality and bill follow-up.
+-- V194: quality-review annotations and contractor-payment follow-up.
+begin;
+create table if not exists public.fm_close_reviews (
+ region text not null, old_id text not null, new_id text not null,
+ result text not null check(result in ('pending','confirmed','different','actioned')),
+ note text not null check(length(trim(note)) between 1 and 4000), revision int not null default 1,
+ updated_by uuid references public.profiles(id),updated_at timestamptz not null default now(),
+ primary key(region,old_id,new_id),check(lower(trim(old_id))<>lower(trim(new_id)))
+);
+create table if not exists public.fm_close_review_events (
+ id bigint generated always as identity primary key, region text not null,old_id text not null,new_id text not null,
+ at timestamptz not null default now(),by_user uuid references public.profiles(id),old_value jsonb,new_value jsonb not null
+);
+alter table public.fm_close_reviews enable row level security;
+alter table public.fm_close_review_events enable row level security;
+revoke all on public.fm_close_reviews,public.fm_close_review_events from anon,authenticated;
+create or replace function public.fm_close_can(r text) returns boolean language sql stable security definer set search_path=public as $$
+ select coalesce(auth.uid() is not null and public.fm_role()<>'pending' and public.fm_mod('tickets') and (public.fm_role()='admin' or public.fm_my_pos() in ('sysadmin','qa_manager','project_manager','ops_manager') or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(r))),false) $$;
+create or replace function public.fm_close_list(r text) returns jsonb language plpgsql stable security definer set search_path=public as $$
+ begin if not public.fm_close_can(r) then raise exception 'not allowed';end if;return (select coalesce(jsonb_agg(to_jsonb(x)),'[]'::jsonb) from public.fm_close_reviews x where x.region=r);end $$;
+create or replace function public.fm_close_save(p jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
+ declare rg text:=p->>'region';o text:=trim(p->>'old_id');n text:=trim(p->>'new_id');old public.fm_close_reviews;v public.fm_close_reviews;
+ begin
+ if not public.fm_close_can(rg) then raise exception 'not allowed';end if;
+ if lower(o)=lower(n) or o is null or n is null then raise exception 'distinct tickets required';end if;
+ if not exists(select 1 from public.tickets t where t.region=rg and t.ticket_id=o) or not exists(select 1 from public.tickets t where t.region=rg and t.ticket_id=n) then raise exception 'upload both tickets to cloud first';end if;
+ perform pg_advisory_xact_lock(hashtextextended('fmclose:'||rg||':'||o||':'||n,0));
+ select * into old from public.fm_close_reviews where region=rg and old_id=o and new_id=n for update;
+ if coalesce(old.revision,0)<>coalesce((p->>'revision')::int,0) then raise exception 'version conflict: reload';end if;
+ insert into public.fm_close_reviews(region,old_id,new_id,result,note,revision,updated_by)
+ values(rg,o,n,p->>'result',trim(p->>'note'),coalesce(old.revision,0)+1,auth.uid())
+ on conflict(region,old_id,new_id) do update set result=excluded.result,note=excluded.note,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=now() returning * into v;
+ insert into public.fm_close_review_events(region,old_id,new_id,by_user,old_value,new_value) values(rg,o,n,auth.uid(),case when old.old_id is null then null else to_jsonb(old) end,to_jsonb(v));return to_jsonb(v);
+ end $$;
+create or replace function public.fm_close_history(r text,o text,n text) returns jsonb language plpgsql stable security definer set search_path=public as $$
+ begin if not public.fm_close_can(r) then raise exception 'not allowed';end if;return(select coalesce(jsonb_agg(to_jsonb(e) order by e.at desc,e.id desc),'[]'::jsonb) from public.fm_close_review_events e where e.region=r and e.old_id=o and e.new_id=n);end $$;
+create table if not exists public.fm_bill_followup (
+ bill_id uuid primary key references public.fm_bills(id) on delete cascade,
+ owner_id uuid not null references public.profiles(id),due_at timestamptz not null,
+ documents jsonb not null default '[]' check(jsonb_typeof(documents)='array' and jsonb_array_length(documents)<=20),
+ hold_reason text not null default '' check(length(hold_reason)<=1000),impact_note text not null default '' check(length(impact_note)<=2000),
+ team_id uuid references public.fm_team_readiness(id) on delete set null,
+ note text not null check(length(trim(note)) between 1 and 4000),revision int not null default 1,
+ updated_by uuid references public.profiles(id),updated_at timestamptz not null default now()
+);
+create table if not exists public.fm_bill_followup_events (
+ id bigint generated always as identity primary key,bill_id uuid not null references public.fm_bills(id) on delete cascade,
+ at timestamptz not null default now(),by_user uuid references public.profiles(id),old_value jsonb,new_value jsonb not null
+);
+alter table public.fm_bill_followup enable row level security;alter table public.fm_bill_followup_events enable row level security;
+revoke all on public.fm_bill_followup,public.fm_bill_followup_events from anon,authenticated;
+create or replace function public.fm_bfollow_can(k uuid,w boolean default false) returns boolean language sql stable security definer set search_path=public as $$
+ select coalesce(public.fm_role()<>'pending' and public.fm_mod('bill') and exists(select 1 from public.fm_bills b join public.fm_contracts c on c.id=b.contract_id where b.id=k and case when w then public.fm_bill_can('prep',c.region) or public.fm_bill_can('pay',c.region) or public.fm_bill_can('review',c.region) else public.fm_bill_can('read',c.region) or c.contractor_id=auth.uid() end),false) $$;
+create or replace function public.fm_bfollow_list() returns jsonb language sql stable security definer set search_path=public as $$
+ select coalesce(jsonb_agg(to_jsonb(b)||jsonb_build_object('region',c.region,'contractor_name',c.contractor_name,'contract_name',c.name,'can_edit',public.fm_bfollow_can(b.id,true),'followup',case when f.bill_id is null then null else to_jsonb(f)||jsonb_build_object('owner_name',p.full_name,'team_name',t.name) end) order by b.created_at desc),'[]'::jsonb)
+ from public.fm_bills b join public.fm_contracts c on c.id=b.contract_id left join public.fm_bill_followup f on f.bill_id=b.id left join public.profiles p on p.id=f.owner_id left join public.fm_team_readiness t on t.id=f.team_id where public.fm_bfollow_can(b.id,false) $$;
+create or replace function public.fm_bfollow_options(k uuid) returns jsonb language plpgsql stable security definer set search_path=public as $$
+ declare rg text;begin
+ if not public.fm_bfollow_can(k,true) then raise exception 'not allowed';end if;
+ select c.region into rg from public.fm_contracts c join public.fm_bills b on b.contract_id=c.id where b.id=k;
+ return jsonb_build_object('people',(select coalesce(jsonb_agg(jsonb_build_object('id',p.id,'name',coalesce(p.full_name,p.email)) order by p.full_name),'[]'::jsonb) from public.profiles p where p.active and public.fm_posx(p.role,p.job_title) in ('sysadmin','accountant','project_manager','ops_manager','area_manager','area_engineer') and (public.fm_posx(p.role,p.job_title) in ('sysadmin','accountant','project_manager','ops_manager') or cardinality(p.regions)=0 or rg=any(p.regions))),
+ 'teams',(select coalesce(jsonb_agg(jsonb_build_object('id',t.id,'name',t.name)),'[]'::jsonb) from public.fm_team_readiness t where t.region=rg and public.fm_ready_read(t.region)));
+ end $$;
+create or replace function public.fm_bfollow_save(p jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
+ declare k uuid:=(p->>'bill_id')::uuid; old public.fm_bill_followup;v public.fm_bill_followup;bl public.fm_bills;rg text;own uuid:=(p->>'owner_id')::uuid;tm uuid:=nullif(p->>'team_id','')::uuid;doc jsonb;
+ begin
+ select * into bl from public.fm_bills where id=k for update;
+ if not found or not public.fm_bfollow_can(k,true) then raise exception 'not allowed';end if;
+ if bl.status in ('paid','cancelled') then raise exception 'bill finished';end if;
+ select c.region into rg from public.fm_contracts c where c.id=bl.contract_id;
+ if not exists(select 1 from public.profiles pr where pr.id=own and pr.active and public.fm_posx(pr.role,pr.job_title) in ('sysadmin','accountant','project_manager','ops_manager','area_manager','area_engineer') and (public.fm_posx(pr.role,pr.job_title) in ('sysadmin','accountant','project_manager','ops_manager') or cardinality(pr.regions)=0 or rg=any(pr.regions))) then raise exception 'invalid owner';end if;
+ if tm is not null and not exists(select 1 from public.fm_team_readiness t where t.id=tm and t.region=rg and public.fm_ready_read(t.region)) then raise exception 'invalid team';end if;
+ if jsonb_typeof(p->'documents') is distinct from 'array' or jsonb_array_length(p->'documents')>20 then raise exception 'invalid documents';end if;
+ if (select count(distinct x->>'key') from jsonb_array_elements(p->'documents') x)<>jsonb_array_length(p->'documents') then raise exception 'duplicate document keys';end if;
+ for doc in select * from jsonb_array_elements(p->'documents') loop
+ if coalesce(doc->>'key','') not in ('scene','invoice','warranty','other') or jsonb_typeof(doc->'required') is distinct from 'boolean' or jsonb_typeof(doc->'received') is distinct from 'boolean' or length(coalesce(doc->>'reference',''))>500 then raise exception 'invalid document';end if;
+ if (doc->>'received')::boolean and length(trim(coalesce(doc->>'reference','')))=0 then raise exception 'document reference required';end if;
+ end loop;
+ select * into old from public.fm_bill_followup where bill_id=k for update;
+ if coalesce(old.revision,0)<>coalesce((p->>'revision')::int,0) then raise exception 'version conflict: reload';end if;
+ insert into public.fm_bill_followup(bill_id,owner_id,due_at,documents,hold_reason,impact_note,team_id,note,revision,updated_by)
+ values(k,own,(p->>'due_at')::timestamptz,p->'documents',coalesce(p->>'hold_reason',''),coalesce(p->>'impact_note',''),tm,trim(p->>'note'),coalesce(old.revision,0)+1,auth.uid())
+ on conflict(bill_id) do update set owner_id=excluded.owner_id,due_at=excluded.due_at,documents=excluded.documents,hold_reason=excluded.hold_reason,impact_note=excluded.impact_note,team_id=excluded.team_id,note=excluded.note,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=now() returning * into v;
+ insert into public.fm_bill_followup_events(bill_id,by_user,old_value,new_value) values(k,auth.uid(),case when old.bill_id is null then null else to_jsonb(old) end,to_jsonb(v));return to_jsonb(v);
+ end $$;
+create or replace function public.fm_bfollow_history(k uuid) returns jsonb language plpgsql stable security definer set search_path=public as $$
+ begin if not public.fm_bfollow_can(k,false) then raise exception 'not allowed';end if;return(select coalesce(jsonb_agg(to_jsonb(e) order by e.at desc,e.id desc),'[]'::jsonb) from public.fm_bill_followup_events e where e.bill_id=k);end $$;
+revoke all on function public.fm_close_can(text),public.fm_close_list(text),public.fm_close_save(jsonb),public.fm_close_history(text,text,text),public.fm_bfollow_can(uuid,boolean),public.fm_bfollow_list(),public.fm_bfollow_options(uuid),public.fm_bfollow_save(jsonb),public.fm_bfollow_history(uuid) from public,anon;
+grant execute on function public.fm_close_can(text),public.fm_close_list(text),public.fm_close_save(jsonb),public.fm_close_history(text,text,text),public.fm_bfollow_list(),public.fm_bfollow_options(uuid),public.fm_bfollow_save(jsonb),public.fm_bfollow_history(uuid) to authenticated;
+notify pgrst,'reload schema';
+commit;
+
+-- V195: source-linked operational escalation inbox. Depends on V192-V194.
+begin;
+create table if not exists public.fm_ops_escalations (
+ id uuid primary key default gen_random_uuid(), kind text not null check(kind in ('ticket','wo','parts','bill','team')),
+ source_key text not null, region text not null check(region in ('riyadh','qassim')),
+ recipient uuid not null references public.profiles(id), due_at timestamptz not null,
+ status text not null check(status in ('open','acknowledged','resolved')) default 'open',
+ note text not null check(length(trim(note)) between 1 and 4000),
+ revision int not null default 1, updated_by uuid references public.profiles(id), updated_at timestamptz not null default now(),
+ unique(kind,source_key,region)
+);
+create table if not exists public.fm_ops_events (
+ id bigint generated always as identity primary key, escalation_id uuid not null references public.fm_ops_escalations(id) on delete cascade,
+ at timestamptz not null default now(), by_user uuid references public.profiles(id), old_value jsonb, new_value jsonb not null,
+ push_queued boolean not null default false
+);
+alter table public.fm_ops_escalations enable row level security;
+alter table public.fm_ops_events enable row level security;
+revoke all on public.fm_ops_escalations,public.fm_ops_events from anon,authenticated;
+create or replace function public.fm195_manager(r text) returns boolean language sql stable security definer set search_path=public as $$
+ select coalesce(auth.uid() is not null and public.fm_role()<>'pending' and (public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager') or (public.fm_my_pos()='area_manager' and public.fm_region_ok(r))),false) $$;
+create or replace function public.fm195_source(k text,s text,r text,w boolean default false) returns boolean language plpgsql stable security definer set search_path=public as $$
+begin
+ if auth.uid() is null or public.fm_role()='pending' or r not in ('riyadh','qassim') or (w and not public.fm195_manager(r)) then return false;end if;
+ if k='ticket' then return public.fm_close_can(r) and exists(select 1 from public.tickets t where t.ticket_id=s and t.region=r);
+ elsif k='wo' then return public.fm_mod('wo') and exists(select 1 from public.work_orders x where x.id=public.fm_uuid_or_null(s) and x.region=r and public.fm_wo_can_see(x.id));
+ elsif k='parts' then return coalesce(public.fm_parts_can(public.fm_uuid_or_null(s),w) and public.fm_parts_region(public.fm_uuid_or_null(s))=r,false);
+ elsif k='bill' then return public.fm_bfollow_can(public.fm_uuid_or_null(s),w) and exists(select 1 from public.fm_bills b join public.fm_contracts c on c.id=b.contract_id where b.id=public.fm_uuid_or_null(s) and c.region=r);
+ elsif k='team' then return (case when w then public.fm_ready_write(r) else public.fm_ready_read(r) end) and exists(select 1 from public.fm_team_readiness t where t.id=public.fm_uuid_or_null(s) and t.region=r);
+ end if;return false;
+end $$;
+create or replace function public.fm195_people(r text,k text) returns jsonb language plpgsql stable security definer set search_path=public as $$
+begin
+ if not public.fm195_manager(r) then raise exception 'not allowed';end if;
+ return(select coalesce(jsonb_agg(jsonb_build_object('id',p.id,'name',coalesce(p.full_name,p.email)) order by p.full_name),'[]'::jsonb) from public.profiles p where p.active and public.fm_posx(p.role,p.job_title) in ('sysadmin','project_manager','ops_manager','area_manager') and (public.fm_posx(p.role,p.job_title)<>'area_manager' or cardinality(p.regions)=0 or r=any(p.regions)));
+end $$;
+create or replace function public.fm195_inbox() returns jsonb language sql stable security definer set search_path=public as $$
+ select coalesce(jsonb_agg(to_jsonb(e)||jsonb_build_object('recipient_name',p.full_name,'can_edit',public.fm195_source(e.kind,e.source_key,e.region,true)) order by e.updated_at desc),'[]'::jsonb) from public.fm_ops_escalations e join public.profiles p on p.id=e.recipient where public.fm195_source(e.kind,e.source_key,e.region,false) $$;
+create or replace function public.fm195_escalate(p jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
+declare k text:=p->>'kind';s text:=trim(p->>'source_key');r text:=p->>'region';u uuid:=(p->>'recipient')::uuid;
+ old public.fm_ops_escalations;v public.fm_ops_escalations;queued boolean:=false;st text:=p->>'status';
+begin
+ if not public.fm195_source(k,s,r,true) then raise exception 'not allowed or source missing';end if;
+ if not exists(select 1 from jsonb_array_elements(public.fm195_people(r,k)) x where (x->>'id')::uuid=u) then raise exception 'invalid recipient';end if;
+ perform pg_advisory_xact_lock(hashtextextended('fm195:'||k||':'||s||':'||r,0));
+ select * into old from public.fm_ops_escalations where kind=k and source_key=s and region=r for update;
+ if (p->>'revision')::int is distinct from coalesce(old.revision,0) then raise exception 'version conflict: reload';end if;
+ if old.id is null and st<>'open' then raise exception 'new escalation must be open';end if;
+ insert into public.fm_ops_escalations(kind,source_key,region,recipient,due_at,status,note,revision,updated_by)
+ values(k,s,r,u,(p->>'due_at')::timestamptz,st,trim(p->>'note'),coalesce(old.revision,0)+1,auth.uid())
+ on conflict(kind,source_key,region) do update set recipient=excluded.recipient,due_at=excluded.due_at,status=excluded.status,note=excluded.note,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=now() returning * into v;
+ -- Each revision is saved once. Push is only attempted for a new/reopened/reassigned escalation.
+ if st='open' and (old.id is null or old.status<>'open' or old.recipient<>u) then
+  begin queued:=public.fm_push_add(u,'ops_due','تصعيد تشغيلي يحتاج متابعة','المرجع: '||s||' — افتح مركز التنبيهات للمراجعة.','ops195','ops195-'||v.id::text||'-'||v.revision::text);exception when others then queued:=false;end;
+ end if;
+ insert into public.fm_ops_events(escalation_id,by_user,old_value,new_value,push_queued) values(v.id,auth.uid(),case when old.id is null then null else to_jsonb(old) end,to_jsonb(v),queued);
+ return to_jsonb(v)||jsonb_build_object('push_queued',queued);
+end $$;
+create or replace function public.fm195_ack(k uuid,p_revision int,p_note text) returns jsonb language plpgsql security definer set search_path=public as $$
+declare old public.fm_ops_escalations;v public.fm_ops_escalations;
+begin
+ select * into old from public.fm_ops_escalations where id=k for update;
+ if old.id is null or old.recipient<>auth.uid() or not public.fm195_source(old.kind,old.source_key,old.region,false) then raise exception 'not allowed';end if;
+ if p_revision is distinct from old.revision then raise exception 'version conflict: reload';end if;
+ if old.status<>'open' then raise exception 'escalation is not open';end if;
+ if length(trim(coalesce(p_note,''))) not between 1 and 4000 then raise exception 'note required';end if;
+ update public.fm_ops_escalations set status='acknowledged',note=trim(p_note),revision=revision+1,updated_by=auth.uid(),updated_at=now() where id=k returning * into v;
+ insert into public.fm_ops_events(escalation_id,by_user,old_value,new_value) values(k,auth.uid(),to_jsonb(old),to_jsonb(v));return to_jsonb(v);
+end $$;
+create or replace function public.fm195_history(k uuid) returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare e public.fm_ops_escalations;begin select * into e from public.fm_ops_escalations where id=k;
+ if e.id is null or not public.fm195_source(e.kind,e.source_key,e.region,false) then raise exception 'not allowed';end if;
+ return(select coalesce(jsonb_agg(to_jsonb(x)||jsonb_build_object('by_name',pr.full_name) order by x.at desc,x.id desc),'[]'::jsonb) from public.fm_ops_events x left join public.profiles pr on pr.id=x.by_user where x.escalation_id=k);end $$;
+-- Complete JSON arrays avoid silently truncating a paginated PostgREST table read.
+create or replace function public.fm195_orders() returns jsonb language sql stable security definer set search_path=public as $$
+ select coalesce(jsonb_agg(to_jsonb(w) order by w.created_at desc,w.id),'[]'::jsonb) from public.work_orders w where public.fm_role()<>'pending' and public.fm_mod('wo') and public.fm_wo_can_see(w.id) $$;
+create or replace function public.fm195_schedules() returns jsonb language sql stable security invoker set search_path=public as $$
+ select coalesce(jsonb_agg(to_jsonb(s) order by s.next_run_at,s.id),'[]'::jsonb) from public.wo_schedules s where public.fm_role()<>'pending' and public.fm_mod('wo') $$;
+revoke all on function public.fm195_manager(text),public.fm195_source(text,text,text,boolean),public.fm195_people(text,text),public.fm195_inbox(),public.fm195_escalate(jsonb),public.fm195_ack(uuid,int,text),public.fm195_history(uuid),public.fm195_orders(),public.fm195_schedules() from public,anon;
+grant execute on function public.fm195_manager(text),public.fm195_people(text,text),public.fm195_inbox(),public.fm195_escalate(jsonb),public.fm195_ack(uuid,int,text),public.fm195_history(uuid),public.fm195_orders(),public.fm195_schedules() to authenticated;
+notify pgrst,'reload schema';
+commit;
+
+-- V197: subscription enforcement discovered through local PostgreSQL integration tests.
+-- Run after V195 on the company project. No user data is changed.
+begin;
+-- Position-based helpers must honor the same plan state as fm_role().
+create or replace function public.fm_my_pos() returns text
+language sql stable security definer set search_path=public as $$
+ select case when p.active and public.fm_plan_ok() then public.fm_posx(p.role,p.job_title) end
+ from public.profiles p where p.id=auth.uid()
+$$;
+-- Some old SECURITY DEFINER writes check the stored profile directly. Guard the target tables too.
+create or replace function public.fm_mod_guard() returns trigger
+language plpgsql security definer set search_path=public as $$
+begin
+ if not public.fm_plan_ok() then raise exception 'subscription expired' using errcode='42501';end if;
+ if not public.fm_mod(tg_argv[0]) then raise exception 'module disabled: %',tg_argv[0] using errcode='42501';end if;
+ if tg_op='DELETE' then return old;end if;
+ return new;
+end $$;
+do $$ declare x text[];begin
+ foreach x slice 1 in array array[
+ ['tickets','tickets'],['work_orders','wo'],['wo_schedules','wo'],['wo_issue_requests','wh'],['wo_purchase_requests','wh'],
+ ['wo_stock_moves','wh'],['wo_custody_moves','wh'],['fm_eng_logs','eng'],['fm_school_links','portal'],['fm_school_requests','portal'],['fm_expenses','costs'],['fm_budgets','costs']
+ ] loop
+  if to_regclass('public.'||x[1]) is not null then
+   execute format('drop trigger if exists fm_mod_guard on public.%I',x[1]);
+   execute format('create trigger fm_mod_guard before insert or update or delete on public.%I for each row execute function public.fm_mod_guard(%L)',x[1],x[2]);
+  end if;
+ end loop;
+end $$;
+revoke all on function public.fm_mod_guard() from public,anon,authenticated;
+-- Authenticated calls to renewal remain governed by fm_plan_activate's explicit active-admin check.
+notify pgrst,'reload schema';
+commit;

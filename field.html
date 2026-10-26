@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F34">
+<meta name="fm-version" content="F36">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -182,6 +182,26 @@ textarea.in{min-height:90px;line-height:1.8}
 <body>
 <div id="app"></div>
 <div class="toast" id="toast"></div>
+<script id="fm-offline-v191">
+/* V191: tenant/account-scoped durable outbox. Never silently discard rejected work. */
+(function(root){
+'use strict';
+const code=value=>{const v=String(value??'').normalize('NFKC').replace(/[\u200b-\u200f\u202a-\u202e\u061c\ufeff]/g,'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).trim().replace(/\.0+$/,'').replace(/\s+/g,'').toLowerCase();return v.replace(/^s[-_–—]?(?=\d+$)/,'').replace(/[-_–—]/g,'')};
+class Outbox {
+ constructor(storage,identity){this.storage=storage;this.identity=identity}
+ scope(){const x=this.identity();return x&&x.url&&x.uid?encodeURIComponent(x.url.replace(/\/+$/,'').toLowerCase())+':'+encodeURIComponent(x.uid):''}
+ key(scope=this.scope()){return scope?'fmf_queue_v191:'+scope:null}
+ load(scope=this.scope()){const key=this.key(scope);if(!key)return [];const raw=this.storage.getItem(key);if(!raw)return [];const a=JSON.parse(raw);if(!Array.isArray(a))throw Error('تعذر قراءة التحديثات المحفوظة؛ لم تُحذف البيانات');return a}
+ save(a,scope=this.scope()){const key=this.key(scope);if(!key)throw Error('يلزم تسجيل الدخول لحفظ التحديث على هذا الجهاز');this.storage.setItem(key,JSON.stringify(a))}
+ stamp(op){return Object.assign({},op,{qid:op.qid||(root.crypto?.randomUUID?.()||Date.now().toString(36)+Math.random().toString(36).slice(2)),savedAt:op.savedAt||new Date().toISOString(),syncStatus:'pending'})}
+ enqueue(op){const x=this.stamp(op),a=this.load();a.push(x);this.save(a);return x}
+ // Merge acknowledgements with the latest queue so new edits made during a flush survive.
+ settle(scope,updates){const a=this.load(scope),out=[];for(const o of a){if(!updates.has(o.qid)){out.push(o);continue}const u=updates.get(o.qid);if(u)out.push(u)}this.save(out,scope);return out}
+}
+root.FMOfflineV191={Outbox,code};
+})(window);
+
+</script>
 <script>
 /* FM Cloud core — thin wrapper over supabase-js used by the desktop platform and the field app.
    Every network call goes through FMCloud.api so it can be replaced in tests. */
@@ -295,40 +315,58 @@ function sla(t){const lim=D.hours[S(t.priority)]||72;const c=t.created_at?new Da
  const h=x=>Math.abs(x)<48?fmt(Math.abs(x),0)+' س':fmt(Math.abs(x)/24,1)+' يوم';
  if(done(st))return {lim,rem,txt:el>lim?'أُغلق متأخراً':'أُغلق ضمن المهلة',cls:el>lim?'c-warn':'c-ok'};
  return rem<0?{lim,rem,txt:'متأخر '+h(rem),cls:'c-bad',late:true}:{lim,rem,txt:'متبقي '+h(rem),cls:rem<=Math.min(12,lim*.2)?'c-warn':'c-ok'}}
-function school(t){const b=S(t.building_id).toUpperCase().replace(/[^\dA-Z]/g,''),n=S(t.school);return D.db.find(x=>b&&S(x.buildingId).toUpperCase().replace(/[^\dA-Z]/g,'')===b)||D.db.find(x=>S(x.school)===n)||null}
+function school(t){const code=window.FMOfflineV191.code,b=code(t.building_id),n=S(t.school);const hits=D.db.filter(x=>b&&code(x.buildingId)===b);if(hits.length===1)return hits[0];if(hits.length>1)return null;const names=D.db.filter(x=>S(x.school)===n);return names.length===1?names[0]:null}
 const hasXY=x=>x&&x.lat!==''&&x.lng!==''&&x.lat!=null&&isFinite(+x.lat)&&isFinite(+x.lng)&&+x.lat!==0;
 function dist(a,b){const R=6371e3,r=x=>x*Math.PI/180;const dl=r(b.lat-a.lat),dg=r(b.lng-a.lng);const h=Math.sin(dl/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dg/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
 
-/* ---------- offline queue ---------- */
-const QK='fmf_queue_v1';
-const qLoad=()=>{try{return JSON.parse(localStorage.getItem(QK)||'[]')}catch(e){return []}};
-const qSave=a=>{try{localStorage.setItem(QK,JSON.stringify(a))}catch(e){toast('مساحة الجهاز لا تكفي لحفظ التحديث بدون اتصال','e')}qBanner()};
-function qBanner(){const n=qLoad().length,b=$('#qb');if(b){b.style.display=n?'block':'none';b.textContent='⏳ '+fmt(n)+' تحديث محفوظ على الجهاز بانتظار الاتصال — يُرسل تلقائياً'}}
-const netErr=e=>/fetch|network|Failed|اتصال|timeout/i.test(String(e&&e.message||e));
-/* F10: work-order actions and photos also wait on the phone; the photo itself is kept in IndexedDB */
+/* ---------- offline queue (V191) ---------- */
+const QK='fmf_queue_v1'; // Legacy unowned updates are retained, never auto-sent under a new account.
+function syncIdentity(){try{const cfg=C.cfg(),auth=JSON.parse(localStorage.getItem('fm-cloud-auth')||'null');if(!cfg.url||!auth?.user?.id)return null;
+ if(auth.access_token){const token=auth.access_token.split('.')[1];if(token){const p=JSON.parse(atob(token.replace(/-/g,'+').replace(/_/g,'/')));if(p.iss&&p.iss.replace(/\/auth\/v1\/?$/,'').replace(/\/+$/,'')!==cfg.url.replace(/\/+$/,''))return null}}
+ return {url:cfg.url,uid:auth.user.id}}catch(e){return null}}
+const outbox=new window.FMOfflineV191.Outbox(localStorage,syncIdentity);
+const qLoad=()=>outbox.load();
+const qSave=a=>{outbox.save(a);qBanner()};
+function qBanner(){const a=qLoad(),failed=a.filter(x=>x.syncStatus==='failed').length,b=$('#qb');let legacy=0;try{legacy=JSON.parse(localStorage.getItem(QK)||'[]').length}catch(e){}
+ if(b){b.style.display=a.length||legacy?'block':'none';b.textContent=`⏳ ${fmt(a.length-failed)} بانتظار الإرسال · ${fmt(failed)} فشل ويحتاج مراجعة${legacy?' · توجد تحديثات قديمة محفوظة ومعزولة للمراجعة':''}`;b.onclick=openSync;b.setAttribute('role','button');b.tabIndex=0;b.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openSync()}}}}
+function openSync(){const rows=qLoad(),old=localStorage.getItem(QK),bg=document.createElement('div');bg.className='ss-bg';const panel=document.createElement('section');panel.className='ss';
+ panel.innerHTML=`<div class="hd"><h2>مركز المزامنة</h2><button data-x>✕</button></div><p>التحديثات تخص الشركة والحساب الحاليين. يبقى التحديث الفاشل محفوظاً حتى تنجح معالجته.</p>${rows.map(o=>`<div class="note"><b>${esc(o.k)} — ${esc(o.id||o.tid||o.row?.ticket_id||'')}</b><br>${o.syncStatus==='failed'?'⚠️ فشل':'⏳ بانتظار الإرسال'}${o.syncError?'<br>'+esc(o.syncError):''}</div>`).join('')||'<p>لا توجد تحديثات للحساب الحالي.</p>'}<button class="big p" data-retry>إعادة محاولة المزامنة</button><button class="big" data-export>تنزيل سجل التحديثات</button>${old?'<p>توجد بيانات من إصدار سابق بلا هوية موثوقة. احتُفظ بها ولم تُرسل تلقائياً. تواصل مع مدير النظام لاستعادتها بعد التحقق من صاحبها.</p>':''}`;
+ const close=()=>{panel.remove();bg.remove()};bg.onclick=close;panel.querySelector('[data-x]').onclick=close;
+ const download=(name,data)=>{const url=URL.createObjectURL(new Blob([data],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+ panel.querySelector('[data-export]').onclick=()=>download('Rakizora-sync.json',JSON.stringify({scope:outbox.scope(),updates:qLoad()},null,2));
+ 
+ panel.querySelector('[data-retry]').onclick=async()=>{try{qSave(qLoad().map(o=>({...o,syncStatus:'pending',syncError:''})));close();await flush()}catch(e){toast(e.message,'e')}};document.body.append(bg,panel)}
+window.fmFieldSyncOpen=openSync;
+const netErr=e=>/fetch|network|Failed to fetch|اتصال|timeout/i.test(String(e&&e.message||e));
 const PDB=(()=>{let p=null;const open=()=>p||(p=new Promise((res,rej)=>{const r=indexedDB.open('fmf_photos',1);r.onupgradeneeded=()=>r.result.createObjectStore('p');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}));
  const tx=async(m,f)=>{const db=await open();return new Promise((res,rej)=>{const t=db.transaction('p',m),q=f(t.objectStore('p'));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)})};
  return {put:(k,v)=>tx('readwrite',s=>s.put(v,k)),get:k=>tx('readonly',s=>s.get(k)),del:k=>tx('readwrite',s=>s.delete(k))}})();
-const pendMem=new Map();
-const qid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,10);
-async function woSend(op){if(op.k==='woup'&&op.d){op.pid=op.pid||qid();pendMem.set(op.pid,op.d)}
- try{if(!navigator.onLine)throw new Error('offline network');await run(op);if(op.pid)pendMem.delete(op.pid);return true}
- catch(e){if(netErr(e)||!navigator.onLine){const o=Object.assign({},op);delete o.d;if(op.k==='woup')await PDB.put(op.pid,op.d).catch(()=>{});
-   let q=qLoad();if(o.k==='woact'&&o.a==='checklist')q=q.filter(x=>!(x.k==='woact'&&x.a==='checklist'&&x.id===o.id));q.push(o);qSave(q);return 'queued'}
-  if(op.pid)pendMem.delete(op.pid);throw e}}
-/* photos of an order still waiting on the phone, shown like the uploaded ones */
-async function woPending(id){const out=[];for(const o of qLoad().filter(x=>x.k==='woup'&&x.id===id)){const d=pendMem.get(o.pid)||await PDB.get(o.pid).catch(()=>null);if(d){pendMem.set(o.pid,d);out.push({kind:o.kind,item:o.item??null,tag:o.tag||null,d,pending:true})}}return out}
-async function run(op){if(op.k==='woact')return C.api.woAct(op.id,op.a,op.note||null,op.geo||null,op.data);
- if(op.k==='woup'){const d=op.d||pendMem.get(op.pid)||await PDB.get(op.pid).catch(()=>null);if(!d)return;const r=await C.api.woUpload(op.id,op.kind,d,op.by,op.geo,op.item,op.tag);if(op.pid){PDB.del(op.pid).catch(()=>{});pendMem.delete(op.pid)}return r}
- if(op.k==='work')return C.api.pushWork(op.row);if(op.k==='events')return C.api.addEvents(op.rows);if(op.k==='photo')return C.api.uploadPhoto(op.region,op.tid,op.kind,op.d,op.by,op.geo)}
-async function send(op){try{await run(op);return true}catch(e){if(netErr(e)||!navigator.onLine){const q=qLoad();q.push(op);qSave(q);return 'queued'}throw e}}
-let flushing=false;async function flush(){if(flushing||!navigator.onLine)return;const q=qLoad();if(!q.length)return;flushing=true;const rest=[];
- let stop=false;for(const op of q){if(stop){rest.push(op);continue}try{await run(op)}catch(e){if(netErr(e)){rest.push(op);stop=/^wo/.test(op.k)}else{console.warn('dropped',e);if(/^wo/.test(op.k)){toast('تعذر إرسال تحديث محفوظ لأمر عمل: '+woSql(e.message),'e');if(op.pid)PDB.del(op.pid).catch(()=>{})}}}}
- qSave(rest);flushing=false;if(q.length!==rest.length){toast('تم إرسال '+fmt(q.length-rest.length)+' تحديث محفوظ');await pull(true);if(q.some(o=>/^wo/.test(o.k))){await woPull();if(D.curWo&&D.curWo!=='new')woRefresh(D.curWo)}}}
-window.addEventListener('online',flush);setInterval(flush,30000);
+const pendMem=new Map();const qid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+async function enqueueOffline(op){const scope=outbox.scope();if(!scope)throw Error('لا يمكن حفظ التحديث بدون هوية الحساب');const o=outbox.stamp(op);delete o.d;
+ if(op.k==='woup'){if(!op.d)throw Error('الصورة غير متاحة؛ أعد التقاطها');o.pid='v191:'+scope+':'+(op.pid||qid());await PDB.put(o.pid,op.d)}
+ if(scope!==outbox.scope())throw Error('تغير الحساب؛ لم يُرسل التحديث');const a=qLoad();a.push(o);qSave(a);return 'queued'}
+async function woSend(op){if(op.k==='woup'&&op.d)op.pid=op.pid||qid();
+ try{if(qLoad().length)return enqueueOffline(op);if(!navigator.onLine)throw Error('offline network');await run(op);return true}catch(e){if(netErr(e)||!navigator.onLine)return enqueueOffline(op);throw e}}
+async function woPending(id){const out=[];for(const o of qLoad().filter(x=>x.k==='woup'&&x.id===id)){const d=await PDB.get(o.pid).catch(()=>null);if(d)out.push({kind:o.kind,item:o.item??null,tag:o.tag||null,d,pending:true})}return out}
+async function run(op){const who=syncIdentity();if(!who||D.me?.id!==who.uid)throw Error('تغير الحساب؛ أعد تسجيل الدخول');
+ if(op.k==='woact')return C.api.woAct(op.id,op.a,op.note||null,op.geo||null,op.data);
+ if(op.k==='woup'){const d=op.d||await PDB.get(op.pid);if(!d)throw Error('الصورة المحفوظة غير متاحة؛ لم يُرسل التحديث');return C.api.woUpload(op.id,op.kind,d,op.by,op.geo,op.item,op.tag)}
+ if(op.k==='work')return C.api.pushWork(op.row);if(op.k==='events')return C.api.addEvents(op.rows);if(op.k==='photo')return C.api.uploadPhoto(op.region,op.tid,op.kind,op.d,op.by,op.geo);throw Error('نوع تحديث غير معروف')}
+async function send(op){try{if(qLoad().length){outbox.enqueue(op);qBanner();return 'queued'}if(!navigator.onLine)throw Error('offline network');await run(op);return true}catch(e){if(netErr(e)||!navigator.onLine){outbox.enqueue(op);qBanner();return 'queued'}throw e}}
+let flushing=false;
+async function flush(){if(flushing||!navigator.onLine||!outbox.scope()||D.me?.id!==syncIdentity()?.uid)return;
+ const scope=outbox.scope();const execute=async()=>{if(scope!==outbox.scope())return;const q=qLoad();if(!q.length)return;flushing=true;const updates=new Map(),sent=[];let stop=false;
+ try{for(const op of q){if(stop||scope!==outbox.scope())break;if(op.syncStatus==='failed'){stop=true;break}
+ try{await run(op);updates.set(op.qid,null);sent.push(op)}catch(e){const network=netErr(e)||!navigator.onLine;updates.set(op.qid,{...op,syncStatus:network?'pending':'failed',syncError:String(e.message||e),attempts:(op.attempts||0)+1});stop=true}}
+ outbox.settle(scope,updates);for(const op of sent){if(op.pid){await PDB.del(op.pid).catch(()=>{});pendMem.delete(op.pid)}}
+ if(scope===outbox.scope()){qBanner();if(sent.length){toast('تم إرسال '+fmt(sent.length)+' تحديث محفوظ');await pull(true);if(sent.some(o=>/^wo/.test(o.k))){await woPull();if(D.curWo&&D.curWo!=='new')woRefresh(D.curWo)}}}
+ }catch(e){toast('تعذر إكمال المزامنة: '+e.message,'e')}finally{flushing=false}};
+ if(navigator.locks?.request)return navigator.locks.request('rakizora-sync:'+scope,execute);return execute()}
+window.addEventListener('online',()=>flush().catch(e=>toast(e.message,'e')));setInterval(()=>flush().catch(e=>console.warn(e)),30000);
 
 /* ---------- screens ---------- */
 function loginView(info){
+ D.me=null;pendMem.clear();
  if(!C.configured()){$('#app').innerHTML=`<div class="login"><div class="card"><img class="lg" src="${FM_BRAND.logo}" alt="${FM_BRAND.name}"><h2>إعداد التطبيق</h2><p>افتح التطبيق من الرابط الذي أرسله مدير النظام (يحتوي كود الربط)، أو أدخل البيانات يدوياً:</p>
   <label class="l">رابط المشروع</label><input class="in" id="c-u" dir="ltr" placeholder="https://xxxx.supabase.co"><label class="l">المفتاح العام (anon)</label><input class="in" id="c-k" dir="ltr">
   <button class="big p" style="width:100%;margin-top:14px" id="c-go">حفظ</button></div></div>`;
@@ -369,15 +407,14 @@ async function pull(silent){
   if(/^fm_rank_/.test(x.key)&&v&&typeof v==='object')D.rank[x.key.slice(8)]=v;
   if(/^fm_ref_date_/.test(x.key)&&v){const ms=Date.parse(v);if(ms)D.ref[x.key.slice(12)]=ms}});
  refFallback();MEMO=new Map();
- try{localStorage.setItem('fmf_cache_v1',JSON.stringify({at:Date.now(),me:D.me,tickets:T,work:W.work,events:W.events,hours:D.hours,rules:D.rules,db:D.db,ref:D.ref,rank:D.rank}))}catch(e){}
+ try{if(outbox.scope())localStorage.setItem('fmf_cache_v191:'+outbox.scope(),JSON.stringify({scope:outbox.scope(),at:Date.now(),me:D.me,tickets:T,work:W.work,events:W.events,hours:D.hours,rules:D.rules,db:D.db,ref:D.ref,rank:D.rank}))}catch(e){}
  D.syncAt=Date.now();
  if(silent&&D.cur)ticketView(D.cur,true);else main();
  woPull();
  loadMyRank().then(()=>{if(D.view==='me'&&!D.cur&&D.myRank){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});touchField();loadLeaves().then(()=>{if(D.leaves&&D.leaves.length&&D.view==='home'&&!D.cur&&!D.curWo){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});loadMyEng().then(()=>{if(D.eng&&['me','home'].includes(D.view)&&!D.cur){const y=window.scrollY;main();window.scrollTo(0,y)}}).catch(()=>{});checkAlerts(false);
 }
-function fromCache(){try{const o=JSON.parse(localStorage.getItem('fmf_cache_v1')||'null');if(!o)return false;
- /* V165 (F22): the cache belongs to one account; another account on this phone starts from the cloud */
- try{const au=JSON.parse(localStorage.getItem('fm-cloud-auth')||'null'),uid=au&&au.user&&au.user.id;if(uid&&o.me&&o.me.id&&o.me.id!==uid){localStorage.removeItem('fmf_cache_v1');return false}}catch(e){}D.me=D.me||o.me;D.syncAt=o.at||null;D.ref=o.ref||{};D.rank=o.rank||{};D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
+function fromCache(){try{const scope=outbox.scope();if(!scope)return false;const o=JSON.parse(localStorage.getItem('fmf_cache_v191:'+scope)||'null');if(!o||o.scope!==scope||o.me?.id!==syncIdentity()?.uid)return false;
+ D.me=o.me;D.syncAt=o.at||null;D.ref=o.ref||{};D.rank=o.rank||{};D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
 
 function shell(inner,title,sub,back){return `<div class="top">${back?'<button id="bk">→</button>':`<img class="bm" src="${FM_BRAND.mark}" alt="${FM_BRAND.name}">`}<h1>${title}<small>${sub||''}</small></h1>${back?'':'<button id="rf" title="تحديث">🔄</button><button id="lo" title="خروج">خروج</button>'}</div><div class="wrap"><div class="q" id="qb"></div>${inner}</div>`}
 /* ---------- main screens (F4): home, tickets, schools, profile ---------- */
@@ -390,7 +427,7 @@ function bindTop(){
  $('#rf')&&($('#rf').onclick=async()=>{toast('جارٍ التحديث…');try{await flush();await pull()}catch(e){toast(C.msg(e.message),'e')}});
  $('#lo')&&($('#lo').onclick=signOutNow);
 }
-async function signOutNow(){if(!confirm('تسجيل الخروج؟'))return;await C.api.signOut().catch(()=>{});localStorage.removeItem('fmf_cache_v1');loginView()}
+async function signOutNow(){if(!confirm(qLoad().length?'توجد تحديثات محفوظة ستبقى لهذا الحساب فقط. تسجيل الخروج؟':'تسجيل الخروج؟'))return;const scope=outbox.scope();await C.api.signOut().catch(()=>{});if(scope)localStorage.removeItem('fmf_cache_v191:'+scope);localStorage.removeItem('fmf_cache_v1');D.me=null;pendMem.clear();loginView()}
 const dayStart=()=>{const d=new Date();d.setHours(0,0,0,0);return d};
 const monthStart=(off=0)=>{const d=new Date();d.setHours(0,0,0,0);d.setDate(1);d.setMonth(d.getMonth()+off);return d};
 /* ---------- analytics on the platform's own rules (F6) ---------- */
@@ -756,7 +793,7 @@ function profileView(){
   <div class="card"><h3>🔑 تغيير كلمة المرور</h3><input class="in" id="p-p1" type="password" dir="ltr" placeholder="كلمة المرور الجديدة" autocomplete="new-password"><input class="in" id="p-p2" type="password" dir="ltr" placeholder="تأكيد كلمة المرور" autocomplete="new-password" style="margin-top:8px"><button class="big" id="p-ps" style="width:100%;margin-top:10px">تغيير كلمة المرور</button></div>
   <div class="card"><h3>🔔 التنبيهات</h3><label class="sw"><span>نبّهني عند اقتراب بلاغ من الاختراق (أقل من 3 ساعات)</span><input type="checkbox" id="p-al" ${notifOn()?'checked':''}></label>
    <div class="muted" style="margin-top:6px">${'Notification' in window?(Notification.permission==='denied'?'⚠️ الإشعارات محظورة في إعدادات المتصفح — سيظهر التنبيه داخل التطبيق فقط.':'يظهر إشعار على الجهاز وتنبيه داخل التطبيق.'):'يظهر التنبيه داخل التطبيق.'} يعمل التنبيه ما دام التطبيق مفتوحاً (ولو في الخلفية).</div></div>
-  <div class="card"><h3>⚙️ التطبيق</h3><div class="kv"><span>آخر مزامنة</span><b>${D.syncAt?dts(D.syncAt):'—'}</b><span>بانتظار الإرسال</span><b>${fmt(qLoad().length)} تحديث</b><span>الإصدار</span><b>${esc(ver)}</b></div>
+  <div class="card"><h3>⚙️ التطبيق</h3><button class="big" onclick="fmFieldSyncOpen()">⏳ مركز المزامنة</button><div class="kv"><span>آخر مزامنة</span><b>${D.syncAt?dts(D.syncAt):'—'}</b><span>بانتظار الإرسال</span><b>${fmt(qLoad().length)} تحديث</b><span>الإصدار</span><b>${esc(ver)}</b></div>
    <div class="btns" style="margin-top:12px"><button class="big" id="p-sync">🔄 مزامنة الآن</button><a class="big" href="start.html">🏠 صفحة البدء</a></div>
    <button class="big" id="p-out" style="width:100%;margin-top:8px;color:var(--bad)">🚪 تسجيل الخروج</button></div>`
  +navHtml(),'حسابي','');
@@ -1320,6 +1357,7 @@ async function boot(){
   try{C.api.subscribe(()=>{clearTimeout(boot.t);boot.t=setTimeout(()=>pull(true).catch(()=>{}),1500)})}catch(e){}
  }catch(e){if(fromCache()){toast('بدون اتصال — تعرض آخر بيانات محفوظة','w');main()}else{toast(C.msg(e.message),'e');loginView()}}
 }
+window.fmFieldCacheClear=()=>{const scope=outbox.scope();if(scope)localStorage.removeItem('fmf_cache_v191:'+scope)};
 window.__fmField={woPull,woBadge,openWo,goalInfo,planData,checkAlerts,loadMyRank,D,boot,pull,main,listView,ticketView,rating,slaP,pstats,resAt};
 setTimeout(boot,60);
 })();
@@ -1865,6 +1903,26 @@ const C=window.FMCloud;if(!C)return;let n=0;const t=setInterval(async()=>{if(++n
  const s=d.auth&&d.auth.getSession?((await d.auth.getSession()).data||{}).session:true;if(!s)return;clearInterval(t);
  const r=await d.from('fm_settings').select('value').eq('key','wipe').limit(1);const w=((r.data||[])[0]||{}).value;if(!w||!w.at)return;
  let seen='';try{seen=localStorage.getItem('fm190_wipe_seen')||''}catch(e){}if(seen&&seen>=w.at)return;try{localStorage.setItem('fm190_wipe_seen',w.at)}catch(e){}
- if(localStorage.getItem('fmf_cache_v1')&&!sessionStorage.getItem('fm190_reloaded')){localStorage.removeItem('fmf_cache_v1');sessionStorage.setItem('fm190_reloaded','1');location.reload()}}catch(e){}},2000)})();</script>
+ window.fmFieldCacheClear?.();if(!sessionStorage.getItem('fm190_reloaded')){localStorage.removeItem('fmf_cache_v1');sessionStorage.setItem('fm190_reloaded','1');location.reload()}}catch(e){}},2000)})();</script>
+<style id="fmf-36-parts-style">body.fmm-no-wh #f36-parts{display:none!important}.fm193-field{direction:rtl;width:min(600px,94vw);max-height:90vh;overflow:auto;border:1px solid #cbd5e1;border-radius:16px;background:var(--bg,#f8fafc);color:var(--ink,#0f172a);padding:16px}.fm193-field::backdrop{background:#0f172a99}</style>
+<script id="fmf-36-parts-model">(function(root){'use strict';
+const active=r=>['requested','partial','issued'].includes(r.status);
+function metrics(r,now=Date.now()){const f=r.followup||null,open=active(r),when=f?.due_at?Date.parse(f.due_at):NaN,at=Date.parse(r.at),end=r.status==='received'?Date.parse(r.received_at):now;
+ return {active:open,unscheduled:open&&!f,late:open&&Number.isFinite(when)&&when<now,receipt:r.status==='issued',waitHours:Number.isFinite(at)&&Number.isFinite(end)?Math.max(0,(end-at)/36e5):null,pendingItems:(r.items||r.lines||[]).filter(l=>Number(l.qty)>Number(l.issued||0)).length,escalated:!!f?.escalated_at}}
+function summary(a,now=Date.now()){const M=a.map(r=>metrics(r,now));return {total:a.length,open:M.filter(x=>x.active).length,late:M.filter(x=>x.late).length,unscheduled:M.filter(x=>x.unscheduled).length,receipt:M.filter(x=>x.receipt).length,escalated:M.filter(x=>x.active&&x.escalated).length}}
+function filtered(a,F,now=Date.now()){const q=String(F.q||'').trim().toLowerCase();return a.filter(r=>{const m=metrics(r,now);return (!F.region||r.region===F.region)&&(!F.status||(F.status==='open'?m.active:F.status==='late'?m.late:F.status==='unscheduled'?m.unscheduled:F.status==='escalated'?m.active&&m.escalated:r.status===F.status))&&[r.code,r.school,r.ticket_ref,r.wo_code,r.holder_name,r.followup?.owner_name,r.followup?.team_name,...(r.items||[]).map(x=>x.name)].some(x=>String(x??'').toLowerCase().includes(q))}).sort((a,b)=>{if(F.sort==='oldest')return Date.parse(a.at)-Date.parse(b.at);const x=metrics(a,now),y=metrics(b,now);return Number(y.late)-Number(x.late)||Number(y.unscheduled)-Number(x.unscheduled)||Date.parse(a.at)-Date.parse(b.at)})}
+root.FM193Model={active,metrics,summary,filtered};
+})(window);
+</script>
+<script id="fmf-36-parts">(function(){'use strict';const C=window.FMCloud,E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])),dt=v=>v?new Date(v).toLocaleString('ar-SA-u-ca-gregory'):'غير محدد';
+const ST={stock:'متابعة المستودع',purchase:'طلب شراء',ordered:'بانتظار المورد',available:'متاحة ولم يؤكد صرفها',hold:'متوقفة'},RQ={requested:'بانتظار الصرف',partial:'صرف جزء',issued:'صرفت — أكّد الاستلام',received:'تم الاستلام',rejected:'مرفوض',cancelled:'ملغى'};
+let list=[],all=false,scope='';const identity=()=>{const u=C?.cfg?.().url,id=window.__fmField?.D?.me?.id;return u&&id?u+':'+id:''};
+function panel(){let d=document.getElementById('fm193-field-parts');if(d)d.remove();d=document.createElement('dialog');d.className='fm193-field';d.innerHTML='<form method="dialog"><button class="big">إغلاق</button></form><h3>🧩 متابعة طلبات قطع الغيار</h3><button class="big p" data-reload>تحديث</button><button class="big" data-all>تبديل النشطة / كل طلباتي</button><button class="big" data-source>عهدتي وتأكيد الاستلام</button><p data-state></p><div data-items></div>';document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();d.querySelector('[data-reload]').onclick=()=>load(d);d.querySelector('[data-all]').onclick=()=>{all=!all;render(d)};d.querySelector('[data-source]').onclick=()=>{d.close();window.fmfCustody?.()};return d}
+function render(d){if(!scope||scope!==identity()){list=[];d.close();return}const a=list.filter(r=>all||FM193Model.active(r));d.querySelector('[data-state]').textContent=(all?'كل طلباتي':'الطلبات النشطة')+' — '+a.length+' طلب. المتابعة لا تعني الصرف أو إيقاف SLA.';d.querySelector('[data-items]').innerHTML=a.map(r=>{const x=FM193Model.metrics(r),f=r.followup;return `<div class="card"><h3>${E(r.code)}</h3><p>${E(r.school||'')} · ${E(r.ticket_ref||r.wo_code||'')}</p><b>${E(RQ[r.status]||r.status)}</b><p>${(r.items||[]).map(l=>`${E(l.name)}: ${E(l.qty)} / ${E(l.issued||0)} ${E(l.unit)}`).join('<br>')}</p><p>المسؤول: ${E(f?.owner_name||'لم يحدد')}<br>الموعد: ${dt(f?.due_at)}${x.late?' ⚠️ تجاوز الموعد':''}<br>الفريق: ${E(f?.team_name||'لم يربط')}<br>المتابعة: ${E(ST[f?.stage]||'لم تسجل')}<br>${E(f?.note||'')}</p></div>`}).join('')||'<p>لا توجد طلبات مطابقة.</p>'}
+async function load(d){scope=identity();list=[];d.querySelector('[data-items]').textContent='';d.querySelector('[data-state]').textContent='جارٍ القراءة من السحابة…';const mine=window.__fmField?.D?.me?.id,initial=scope;if(!scope){d.querySelector('[data-state]').textContent='سجّل الدخول أولاً';return}try{const db=await C.engClient(),r=await db.rpc('fm_parts_list');if(r.error)throw Error(r.error.message);if(initial!==identity()||!d.isConnected)return;list=(r.data||[]).filter(x=>x.holder===mine||x.requested_by===mine);render(d)}catch(e){if(!d.isConnected)return;d.querySelector('[data-state]').textContent='تعذرت القراءة؛ يلزم الاتصال وتثبيت تحديث V193. '+e.message}}
+window.fmfPartsTracking=()=>{all=false;load(panel())};
+function button(){if(scope&&scope!==identity()){list=[];scope='';document.getElementById('fm193-field-parts')?.close()}const home=document.querySelector('#app .card.hello');if(!identity()){document.getElementById('f36-parts')?.remove();document.getElementById('fm193-field-parts')?.close();return}if(!home||document.getElementById('f36-parts'))return;const b=document.createElement('button');b.id='f36-parts';b.className='big';b.textContent='🧩 متابعة طلبات قطع الغيار';b.onclick=window.fmfPartsTracking;home.appendChild(b)}setInterval(button,1800);button();
+})();
+</script>
 </body>
 </html>
