@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V198">
+<meta name="fm-version" content="V199">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25608,10 +25608,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V198',date:'2026-10-26',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V199',date:'2026-10-26',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+ {v:'V199',d:'2026-10-26',t:'إزالة أي اسم شركة افتراضي',i:['المنصة لا تحمل اسم أي شركة بعينها: أُزيل الاسم الافتراضي من التقارير وخطاب الغرامات ونموذج العقد وملف اختصار سطح المكتب ومثال حقل اسم الشركة.','يظهر اسم الشركة فقط إذا كانت الشركة مسجّلة في الاشتراك؛ وإلا يظهر RakizoraFM وحده.']},
  {v:'V198',d:'2026-10-26',t:'إصلاح تنبيه سجل الفحص',i:['أُزيل إنذار «وُجد تنسيق/كود ملصق داخل سكربت» في «سجل النسخ والفحص»: كان سطراً سليماً في نافذة طباعة خطاب الغرامات (V177) يبدأ بوسم script فاعتبره الفحص كوداً ملصقاً. لا تغيير في عمل الصفحة.']},
  {v:'V197',d:'2026-10-26',t:'تصحيحات نتجت عن الاختبار الشامل',i:['إصلاح تعطل تحليل التكرار عند كثرة العلاقات بين البلاغات','إصلاح دالة كشف أعمدة الحل والتاريخ المفقودة','تحقق فعلي بالمتصفح من الاستيراد والتقارير وتصميم الصفحات','اختبارات PostgreSQL محلية للصلاحيات ودورات العمل مع توضيح حدود المحاكاة']},
  {v:'V196',d:'2026-10-26',t:'تحسين تصميم الصفحات الفرعية',i:['تنسيق موحد للبوكسات والعناوين وأزرار التحكم','منع تداخل الفلاتر والتبويبات والنماذج عند ضيق الشاشة','حصر تمرير الجداول وبنود المستخلص داخل مساحتها','تحسين النوافذ المنبثقة والوقائية والتقارير وصفحات النظام']},
@@ -28241,7 +28242,7 @@ window.fmV130Settings=function(tab,after,host){
   w.innerHTML=`${host?'<div class="fm122-dlg fm130-inline">':`<div class="fm122-dlg" style="width:min(860px,96vw)"><h3>✏️ قوالب الرسائل والتصعيد</h3>
    <div class="fm122-chips" style="margin:6px 0 10px"><button type="button" class="fm122-chip ${tab==='tpl'?'on':''}" data-t="tpl">قوالب الرسائل</button><button type="button" class="fm122-chip ${tab==='esc'?'on':''}" data-t="esc">التصعيد والمتابعة</button></div>`}
    ${tab==='tpl'?`<div class="meta">المتغيرات: <b>{الاسم}</b> <b>{اللقب}</b> <b>{المنطقة}</b> <b>{التاريخ}</b> <b>{الشركة}</b> <b>{العدد}</b> — اترك الخانة فارغة لاستخدام الصيغة الافتراضية.</div>
-    <div class="two"><div><label>اسم الشركة / الجهة</label><input id="t-co" value="${esc(T.company)}" placeholder="مثال: شلفا الدولية"></div><div><label>اللقب قبل اسم المشرف والمهندس</label><input id="t-ti" value="${esc(T.title)}" placeholder="م/"></div></div>
+    <div class="two"><div><label>اسم الشركة / الجهة</label><input id="t-co" value="${esc(T.company)}" placeholder="اسم شركتكم"></div><div><label>اللقب قبل اسم المشرف والمهندس</label><input id="t-ti" value="${esc(T.title)}" placeholder="م/"></div></div>
     <label>التحية (أول سطر)</label><input id="t-gr" value="${esc(T.greeting)}">
     <label>التوقيع (يُضاف في آخر كل رسالة)</label><textarea id="t-sg" style="min-height:70px" placeholder="مثال:\nمحمد — مدير برنامج المرافق\n{الشركة}">${esc(T.signature)}</textarea>
     <label style="display:flex;gap:6px;font-weight:700"><input type="checkbox" id="t-sp" style="width:auto" ${T.subjectPrefix?'checked':''}> إضافة اسم الشركة في بداية عنوان البريد</label>
@@ -31249,7 +31250,7 @@ window.fmV151Page=function(o,h){const {w,ph,ev}=o,cl=Array.isArray(w.checklist)?
  return `<section class="pg fci"><header><div><h1>تقرير مؤشر مستوى التشغيل لمبنى مدرسي</h1><div class="sub">Operational Level Indicator Report for a School Building (FCI) • ${e(w.code||'')}</div></div>${logo?`<img class="lg" src="${e(logo)}" alt="">`:''}</header>
   <table class="kv"><tr><th>اسم المدرسة</th><td>${e(w.school||'')}</td><th>الرقم الوزاري</th><td>${e(w.building_id||'')}</td></tr>
    <tr><th>العنوان الوطني</th><td>${e(val('العنوان الوطني للمبنى'))}</td><th>المنطقة</th><td>${e({riyadh:'الرياض',qassim:'القصيم'}[w.region]||w.region||'')}</td></tr>
-   <tr><th>رقم العقد</th><td>${e(val('رقم العقد'))}</td><th>اسم المقاول</th><td>${e((window.FM_TENANT&&FM_TENANT.name)||'شركة شلفا')}</td></tr>
+   <tr><th>رقم العقد</th><td>${e(val('رقم العقد'))}</td><th>اسم المقاول</th><td>${e((window.FM_TENANT&&FM_TENANT.name)||'')}</td></tr>
    <tr><th>عدد الطلاب</th><td>${e(val('عدد الطلاب'))}</td><th>النوع</th><td>${e(val('النوع'))}</td></tr>
    <tr><th>تاريخ تعبئة التقرير</th><td>${dt(done&&done.at||w.done_at||arrive&&arrive.at)}</td><th>حالة المبنى التشغيلية النهائية</th><td>${fin?`<span class="fin" style="background:${FC[fin]||'#64748b'}">${e(fin)}</span>`:'—'}</td></tr></table>
   ${ph.some(p=>p.kind==='arrival')?`<h2>📍 توثيق الوصول ${arrive?'— '+dt(arrive.at):''}</h2><div class="g3">${[['sign','لوحة المدرسة'],['entrance','مدخل المدرسة'],['fence','سور المدرسة']].map(([t,l])=>{const p=ph.filter(p=>p.kind==='arrival'&&p.tag===t).pop();return p?img(p,l):''}).join('')}</div>`:''}
@@ -33322,7 +33323,7 @@ function letter(o){const [a]=monRange(MON),ml=a.toLocaleDateString(GREG,{month:'
  table{width:100%;border-collapse:collapse;margin-top:4px}th,td{border:1px solid #cbd5e1;padding:5px 7px;text-align:right}th{background:#f1f5f9}
  .tot td{font-weight:900;background:#fef2f2}.sg{display:flex;justify-content:space-between;margin-top:46px}.sg div{width:30%;text-align:center;border-top:1px solid #0f172a;padding-top:6px}
  @media print{button{display:none}}</style></head><body>
- <div class="hd"><div><h1>إشعار غرامات تأخير — ${esc(ml)}</h1><div class="m">RakizoraFM · إدارة المرافق — ${esc(window.fmTenantName?.()||'Shalfa International')}</div></div><div class="m">التاريخ: ${new Date().toLocaleDateString(GREG)}</div></div>
+ <div class="hd"><div><h1>إشعار غرامات تأخير — ${esc(ml)}</h1><div class="m">RakizoraFM · إدارة المرافق${window.fmTenantName?.()?' — '+esc(window.fmTenantName()):''}</div></div><div class="m">التاريخ: ${new Date().toLocaleDateString(GREG)}</div></div>
  <p>السادة / <b>${esc(o.n)}</b> المحترمين،<br>نحيطكم علماً بنتائج أدائكم لشهر ${esc(ml)} وما ترتب عليها من غرامات وفق بنود العقد:</p>
  <table><tbody><tr><th>البلاغات</th><td>${num(o.tk)}</td><th>الالتزام بالـ SLA</th><td>${o.sla==null?'—':num(o.sla,1)+'%'}</td></tr><tr><th>أوامر العمل</th><td>${num(o.wos)}</td><th>متأخرة / معادة</th><td>${num(o.late.length)} / ${num(o.ret.length)}</td></tr><tr><th>متوسط زمن الإغلاق</th><td>${o.avgH==null?'—':num(o.avgH,1)+' ساعة'}</td><th>الدرجة</th><td>${o.score} / 100</td></tr></tbody></table>
  <h2>1) بلاغات تجاوزت المهلة (${num(o.br.length)})</h2>${T(['#','رقم البلاغ','المدرسة','الأولوية','ساعات التجاوز','الغرامة'],o.br.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.id)}</td><td>${esc(x.school)}</td><td>${esc(x.pr)}</td><td>${num(x.over)}</td><td>${money(x.fee)}</td></tr>`))}
@@ -33428,7 +33429,7 @@ function html(o,n){const c=o.cur,p=o.prev,ml=o.a.toLocaleDateString(GREG,{month:
  const top=(m,k)=>[...m.entries()].sort((x,y)=>y[1]-x[1]).slice(0,k);
  let sn=1;const H=t=>`<h2>${sn++}) ${t}</h2>`;
  const auto=`خلال ${ml} استُلم ${num(c.rec)} بلاغاً${p.rec?` (${c.rec>=p.rec?'+':''}${num(c.rec-p.rec)} عن الشهر السابق)`:''}، وأُغلق ${num(c.closed)}، وبلغت نسبة الالتزام بالمهلة ${c.sla==null?'—':num(c.sla,1)+'%'}${o.wo?`، ونُفّذ ${num(o.wo.pm)} أمر صيانة وقائية و${num(o.wo.rep)} أمر إصلاح`:''}.`;
- return `<div class="rp"><div class="pg cv"><div class="m">RakizoraFM · إدارة المرافق — ${esc(window.fmTenantName?.()||'Shalfa International')}</div><div class="t">تقرير أعمال الصيانة الشهري</div><div class="s">${esc(ml)} — منطقة ${esc(reg)}</div><div class="m" style="margin-top:20px">تاريخ الإصدار: ${new Date().toLocaleDateString(GREG)}${n.by?' · إعداد: '+esc(n.by):''}</div></div>
+ return `<div class="rp"><div class="pg cv"><div class="m">RakizoraFM · إدارة المرافق${window.fmTenantName?.()?' — '+esc(window.fmTenantName()):''}</div><div class="t">تقرير أعمال الصيانة الشهري</div><div class="s">${esc(ml)} — منطقة ${esc(reg)}</div><div class="m" style="margin-top:20px">تاريخ الإصدار: ${new Date().toLocaleDateString(GREG)}${n.by?' · إعداد: '+esc(n.by):''}</div></div>
  <div class="pg">${H('الملخص التنفيذي')}<div class="k">
   <div><span>البلاغات المستلمة</span><b>${num(c.rec)}</b>${delta(c.rec,p.rec,true)}</div><div><span>البلاغات المغلقة</span><b>${num(c.closed)}</b>${delta(c.closed,p.closed,false)}</div><div><span>الالتزام بالـ SLA</span><b>${c.sla==null?'—':num(c.sla,1)+'%'}</b>${delta(c.sla,p.sla,false,true)}</div>
   <div><span>بلاغات متجاوزة</span><b>${num(c.br)}</b>${delta(c.br,p.br,true)}</div><div><span>متوسط زمن الإغلاق</span><b>${c.avgH==null?'—':num(c.avgH,1)+' س'}</b>${delta(c.avgH,p.avgH,true,false)}</div><div><span>مفتوحة من بلاغات الشهر</span><b>${num(c.openEnd)}</b></div></div>
@@ -33489,7 +33490,7 @@ const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;',
 const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
 const GREG='ar-SA-u-ca-gregory';
 const T=window.FM_TENANT=(()=>{try{return JSON.parse(localStorage.getItem('fm_tenant')||'null')}catch(e){return null}})();
-window.fmTenantName=()=>(T&&T.name)||'Shalfa International';
+window.fmTenantName=()=>(T&&T.name)||'';
 const dshow=d=>d?new Date(String(d).slice(0,10)+'T12:00:00Z').toLocaleDateString(GREG,{year:'numeric',month:'long',day:'numeric'}):'—';
 const PLN={basic:'الأساسية',pro:'الاحترافية',enterprise:'المؤسسات'};
 const ERR=m=>/invalid code/.test(m)?'الكود غير صحيح':/another company/.test(m)?'الكود لشركة أخرى':/already used/.test(m)?'هذا الكود استُخدم من قبل':/not allowed/.test(m)?'يُدخل الكود مدير النظام فقط':/no subscription/.test(m)?'لا يوجد اشتراك مُعرَّف لهذه الشركة':/does not exist|schema cache|Could not find/i.test(m)?'شغّل supabase_setup.sql المحدَّث (القسم 23)':m;

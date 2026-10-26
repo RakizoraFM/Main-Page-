@@ -1,6 +1,6 @@
 # FM Platform — notes for Claude
 
-School facility-maintenance ticket analytics for Shalfa International (Riyadh and Qassim regions).
+School facility-maintenance ticket analytics (RakizoraFM; regions Riyadh and Qassim). The platform carries no client or company name of its own: a company name appears only from the SaaS tenant (`fmTenantName()`, empty by default) — never hard-code one.
 The owner is Mohamed (Facility Program Manager). Reply to him in **Arabic**, concisely. Code comments stay in English.
 
 ## Files
