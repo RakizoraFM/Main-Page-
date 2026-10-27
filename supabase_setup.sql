@@ -4449,7 +4449,7 @@ begin
     end if;
     for t in select jsonb_array_elements_text(P->k) loop
       if to_regclass('public.' || t) is not null then
-        execute format('delete from public.%I', t); get diagnostics n = row_count;
+        execute format('delete from public.%I where true', t); get diagnostics n = row_count;   -- V203: Supabase (pg_safeupdate) refuses a DELETE without WHERE
         r := r || jsonb_build_object(t, coalesce((r->>t)::bigint, 0) + n);
       end if;
     end loop;

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V202">
+<meta name="fm-version" content="V203">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25618,10 +25618,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V202',date:'2026-10-27',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V203',date:'2026-10-27',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V203',d:'2026-10-27',t:'الشعار يعود للرئيسية وإصلاح التصفير',i:['الضغط على شعار RakizoraFM أعلى القائمة الجانبية يغلق أي صفحة مفتوحة ويعود إلى الصفحة الرئيسية (لوحة البلاغات)','إصلاح رسالة «DELETE requires a WHERE clause» عند التصفير: Supabase يرفض الحذف بدون شرط، فأصبح الحذف بشرط صريح (يتطلب تشغيل آخر نسخة من supabase_setup.sql)']},
 {v:'V202',d:'2026-10-27',t:'إصلاح تصفير البيانات',i:['النسخة الاحتياطية قبل التصفير تُجهَّز على دفعات (500 سجل) بدل طلب واحد ضخم كان يتوقف على الخادم فيُلغى التصفير','إن تعذّرت النسخة الاحتياطية يُسأل المدير: متابعة التصفير بدونها أم الإلغاء','التصفير لم يعد يتوقف بسبب فحص الاشتراك / الأجزاء عند الحذف','رسالة خطأ واضحة بالعربية (مع نافذة تنبيه) وتلميح عند عدم اختيار أي بيانات']},
  {v:'V201',d:'2026-10-27',t:'ترتيب القائمة الجانبية حسب التصنيف',i:['القائمة الجانبية أصبحت 11 مجموعة حسب الموضوع: المتابعة اليومية والـ SLA، البلاغات، الصيانة والجودة، المدارس، الكادر والمقاولون، المستودعات، المالية، التحليل، التقارير والإرسال، البيانات وجودتها، النظام.','كل صفحة في مجموعة واحدة فقط، وبترتيب العمل المعتاد داخل المجموعة.','إصلاح: الصفحات التي تُضاف بعد تسجيل الدخول كانت تظهر أسفل «مسح كافة البيانات» خارج مجموعاتها؛ الآن تُنقل لمجموعتها تلقائياً.']},
  {v:'V200',d:'2026-10-26',t:'إصلاح تصفير البلاغات',i:['كان تصفير البلاغات يحذفها من السحابة، ثم تعيد المنصة رفعها من النسخة المحفوظة على الجهاز: حذف تلك النسخة كان يفشل والصفحة مفتوحة.','الآن تُمسح النسخة المحلية في بداية التحميل التالي قبل أن تُفتح، على جهاز المدير وعلى كل جهاز آخر.','بعد أي تصفير لا تُرفع البلاغات للسحابة إلا من ملف أو لصق جديد في نفس الجلسة، ولا تُرفع أبداً من نسخة محفوظة على الجهاز.']},
@@ -31839,7 +31840,7 @@ html::-webkit-scrollbar,nav.v2-nav::-webkit-scrollbar{display:none;width:0;heigh
    reach it, what = what it is for, how = steps, who = who uses it, tips, v = version that added / last changed it.
    RULE: every version that adds or changes a feature updates its entry here (and its v). */
 const MANUAL=[
- {g:'تصميم الصفحات الفرعية',icon:'🧩',items:[{id:'layout-subpages',t:'البوكسات والجداول والنوافذ',where:'جميع الصفحات الفرعية داخل المنصة',what:'تخطيط متجاوب للبطاقات والعناوين والفلاتر، مع تمرير مستقل للجداول العريضة وبنود المستخلصات.',how:['صغّر عرض النافذة؛ تنتقل الحقول والبطاقات إلى أسطر إضافية.','استخدم تمرير الجدول لعرض الأعمدة، أو Tab ثم أسهم لوحة المفاتيح.','تظل أزرار الإغلاق والتكبير والتصغير والتصدير بوظائفها السابقة.'],who:'كل مستخدمي المنصة وفق صلاحيات الصفحات',tips:['هذه تحسينات عرض؛ لا تغير حساب المؤشرات أو قواعد SLA.','تظل قوالب الطباعة والتصدير السابقة مستقلة عن تنسيق الشاشة.'],v:'V196'}]},
+ {g:'تصميم الصفحات الفرعية',icon:'🧩',items:[{id:'brand-home',t:'العودة للصفحة الرئيسية',where:'شعار RakizoraFM أعلى القائمة الجانبية',what:'يغلق أي صفحة فرعية أو صفحة كاملة مفتوحة (التواصل، البوابة، الجودة…) ويعود إلى لوحة البلاغات الرئيسية.',how:['اضغط على الشعار أو اسم RakizoraFM أعلى القائمة الجانبية.'],who:'الجميع',v:'V203'},{id:'layout-subpages',t:'البوكسات والجداول والنوافذ',where:'جميع الصفحات الفرعية داخل المنصة',what:'تخطيط متجاوب للبطاقات والعناوين والفلاتر، مع تمرير مستقل للجداول العريضة وبنود المستخلصات.',how:['صغّر عرض النافذة؛ تنتقل الحقول والبطاقات إلى أسطر إضافية.','استخدم تمرير الجدول لعرض الأعمدة، أو Tab ثم أسهم لوحة المفاتيح.','تظل أزرار الإغلاق والتكبير والتصغير والتصدير بوظائفها السابقة.'],who:'كل مستخدمي المنصة وفق صلاحيات الصفحات',tips:['هذه تحسينات عرض؛ لا تغير حساب المؤشرات أو قواعد SLA.','تظل قوالب الطباعة والتصدير السابقة مستقلة عن تنسيق الشاشة.'],v:'V196'}]},
  {g:'التشغيل المتكامل V195',icon:'📊',items:[{id:'v2-nav-fm195-alerts',t:'مركز التنبيهات والتصعيد',where:'القائمة الجانبية',what:'تنبيهات المصادر الحالية وسجل مسؤول وموعد واستلام وتصعيد.',how:['شغّل migration_v195.sql بعد V194.','اختر المنطقة والفترة وراجع تغطية المصادر.','افتح التفاصيل أو صدّر النتائج حسب الحاجة.'],who:'الإدارة والمهندسون والأدوار الرقابية وفق صلاحيات المصادر',tips:'البيانات غير المتاحة ليست صفراً. التنبيهات تتجدد أثناء فتح الصفحة؛ Push يتطلب تهيئة قائمة الإرسال وخدمتها. اللقطات محلية والتقارير تنشأ عند الطلب.',v:'V195'},{id:'v2-nav-fm195-ppm',t:'متابعة الصيانة الوقائية',where:'القائمة الجانبية',what:'متابعة الأوامر الوقائية الأصلية وخطط التكرار والفحص والصور والاعتماد.',how:['شغّل migration_v195.sql بعد V194.','اختر المنطقة والفترة وراجع تغطية المصادر.','افتح التفاصيل أو صدّر النتائج حسب الحاجة.'],who:'الإدارة والمهندسون والأدوار الرقابية وفق صلاحيات المصادر',tips:'البيانات غير المتاحة ليست صفراً. التنبيهات تتجدد أثناء فتح الصفحة؛ Push يتطلب تهيئة قائمة الإرسال وخدمتها. اللقطات محلية والتقارير تنشأ عند الطلب.',v:'V195'},{id:'v2-nav-fm195-exec',t:'اللوحة التنفيذية الموحدة',where:'القائمة الجانبية',what:'قراءة مؤشرات البلاغات والوقائية والفرق والمواد والمستحقات بنطاق معلوم.',how:['شغّل migration_v195.sql بعد V194.','اختر المنطقة والفترة وراجع تغطية المصادر.','افتح التفاصيل أو صدّر النتائج حسب الحاجة.'],who:'الإدارة والمهندسون والأدوار الرقابية وفق صلاحيات المصادر',tips:'البيانات غير المتاحة ليست صفراً. التنبيهات تتجدد أثناء فتح الصفحة؛ Push يتطلب تهيئة قائمة الإرسال وخدمتها. اللقطات محلية والتقارير تنشأ عند الطلب.',v:'V195'},{id:'v2-nav-fm195-reports',t:'التقارير الدورية',where:'القائمة الجانبية',what:'فترات أسبوعية وشهرية وتفاصيل كاملة في Excel وطباعة وحفظ PDF ولقطات محلية.',how:['شغّل migration_v195.sql بعد V194.','اختر المنطقة والفترة وراجع تغطية المصادر.','افتح التفاصيل أو صدّر النتائج حسب الحاجة.'],who:'الإدارة والمهندسون والأدوار الرقابية وفق صلاحيات المصادر',tips:'البيانات غير المتاحة ليست صفراً. التنبيهات تتجدد أثناء فتح الصفحة؛ Push يتطلب تهيئة قائمة الإرسال وخدمتها. اللقطات محلية والتقارير تنشأ عند الطلب.',v:'V195'}]},
 
  {g:'الاعتمادية V194',icon:'🛡️',items:[{id:'v2-nav-fm194-quality',t:'جودة الإغلاق',where:'التقارير ← جودة الإغلاق',what:'مراجعة عودة عطل مشابه ببلاغ جديد بعد إغلاق السابق خلال 7 أيام.',how:['اختر فترة إنشاء البلاغ الجديد وحد التشابه.','راجع النصين وافتح أعمال وصور البلاغين.','دوّن نتيجة المراجعة والإجراء؛ الحفظ السحابي يتطلب رفع البلاغين وترحيل V194.'],who:'الإدارة والجودة ومهندس المنطقة حسب الصلاحية',tips:'لا يثبت التشابه أصل العطل ولا ينشئ خصماً تلقائياً. الأرقام المتطابقة منفصلة عن فحص جودة الإغلاق.',v:'V194'},{id:'v2-nav-fm194-claims',t:'مستحقات المقاولين',where:'المالية والتكاليف ← مستحقات المقاولين',what:'مستندات المستخلص ومسؤول متابعة التأخير والموعد والأثر على التشغيل.',how:['أنشئ المستخلص من المسار الحالي.','حدّد المستندات المطلوبة والمستلمة ومراجعها والمسؤول وموعد المعالجة.','راجع سجل المتابعة ومسار اعتماد المستخلص الأصلي.'],who:'المحاسبة والإدارة والمهندس حسب الصلاحية؛ المقاول يقرأ مستخلصاته',tips:'تسجيل المستند ليس تحققاً من الختم والتوقيع ولا ينفذ دفعة مالية.',v:'V194'},{id:'v2-nav-fm194-backup',t:'النسخ والاستعادة',where:'النظام ← النسخ والاستعادة',what:'فحص نسخة مشفرة محلياً؛ أداة تشغيل خارج المتصفح لنسخ public والمرفقات واستعادتها لنفس المشروع.',how:['اقرأ BACKUP_GUIDE_V194.md.','أنشئ نسخة بالأداة خارج المتصفح ثم افحص المجلد هنا أو بالأداة.','اختبر الاستعادة على بيئة مخصصة؛ وضع عرض الخطة هو الافتراضي.'],who:'مدير النظام ومشغل النسخ الموثوق',tips:'لا تدخل مفاتيح الخدمة هنا. Auth وسياسات Storage خارج النطاق وتحتاج خطة مستقلة. فحص ملفات النسخة لا يثبت تنفيذ PostgreSQL.',v:'V194'}]},
@@ -34954,7 +34955,7 @@ function clearLocal(parts){const P=new Set(parts||[]);
     const out=r.data||{},rows=out.rows||{},tot=Object.values(rows).reduce((a,b)=>a+(+b||0),0);clearLocal(out.parts);try{localStorage.setItem('fm190_clear',JSON.stringify(out.parts||[]));localStorage.setItem('fm190_wipe_seen',new Date(Date.now()+60000).toISOString())}catch(x){}window.__fm190Block=true;
     res.innerHTML=`<div class="fm125-src" style="background:#ecfdf5;border-radius:10px;padding:10px">✅ تم التصفير: حُذف ${num(tot)} سجل${out.files?' و'+num(out.files)+' صورة':''}.${out.files_left?' ملفات الصور تبقى في التخزين (غير ظاهرة)؛ يمكن حذفها من Supabase ← Storage.':''} ستُعاد تحميل المنصة…</div>`;
     toast('تم التصفير');setTimeout(()=>location.reload(),2500)}
-   catch(x){const m=String(x&&x.message||x),t=/confirm required/.test(m)?'اكتب «تصفير» للتأكيد':/not allowed/.test(m)?'التصفير لمدير النظام فقط (مسمى «مدير النظام» ودور admin)':/subscription expired/.test(m)?'الاشتراك منتهٍ: جدّد الاشتراك أو شغّل آخر نسخة من supabase_setup.sql ثم أعد المحاولة':/module disabled/.test(m)?'هذا الجزء غير مفعّل في الاشتراك: شغّل آخر نسخة من supabase_setup.sql ثم أعد المحاولة':/timeout|canceling statement/i.test(m)?'انتهت مهلة الخادم: أعد المحاولة':/Failed to fetch|NetworkError|network/i.test(m)?'تعذّر الاتصال بالخادم: تحقق من الإنترنت':/fm_wipe|schema cache|Could not find the function/i.test(m)?'دالة التصفير غير موجودة على الخادم: شغّل آخر نسخة من supabase_setup.sql':m;
+   catch(x){const m=String(x&&x.message||x),t=/confirm required/.test(m)?'اكتب «تصفير» للتأكيد':/not allowed/.test(m)?'التصفير لمدير النظام فقط (مسمى «مدير النظام» ودور admin)':/subscription expired/.test(m)?'الاشتراك منتهٍ: جدّد الاشتراك أو شغّل آخر نسخة من supabase_setup.sql ثم أعد المحاولة':/module disabled/.test(m)?'هذا الجزء غير مفعّل في الاشتراك: شغّل آخر نسخة من supabase_setup.sql ثم أعد المحاولة':/timeout|canceling statement/i.test(m)?'انتهت مهلة الخادم: أعد المحاولة':/Failed to fetch|NetworkError|network/i.test(m)?'تعذّر الاتصال بالخادم: تحقق من الإنترنت':/requires a WHERE clause/i.test(m)?'دالة التصفير على الخادم قديمة: شغّل آخر نسخة من supabase_setup.sql في محرر SQL ثم أعد المحاولة':/fm_wipe|schema cache|Could not find the function/i.test(m)?'دالة التصفير غير موجودة على الخادم: شغّل آخر نسخة من supabase_setup.sql':m;
     res.innerHTML=`<div class="fm125-src" style="color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px;font-weight:700">❌ لم يتم التصفير: ${esc(t)}${t!==m?`<div style="font-weight:400;font-size:12px;direction:ltr;text-align:left;margin-top:4px">${esc(m)}</div>`:''}</div>`;try{res.scrollIntoView({block:'center'})}catch(z){}alert('❌ لم يتم التصفير:\n'+t);btn.disabled=false}};
   ob.disabled=false}});
 
@@ -35371,6 +35372,29 @@ window.fmV196RefreshLayout=refresh;
    «مسح كافة البيانات». Every 1.5 s: a loose page button (or a sidebar not grouped yet) → rebuild the groups. */
 setInterval(()=>{try{const n=document.querySelector('nav.v2-nav');if(!n||typeof window.fmV123Rebuild!=='function')return;
  if(!n.classList.contains('fm123-ready')||n.querySelector(':scope > .v2-nav-btn:not(#fm-v38-clear-all-nav)'))window.fmV123Rebuild()}catch(e){}},1500);
+})();</script>
+<style id="fm-v203-brand-home-css">
+.v2-brand.fm203{cursor:pointer;border-radius:12px;transition:background .15s}.v2-brand.fm203:hover{background:rgba(37,99,235,.07)}
+.v2-brand.fm203:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+</style>
+<script id="fm-v203-brand-home">(function(){'use strict';
+/* V203 — the sidebar logo goes back to the main dashboard: every sub-page / full-screen page is closed and the page scrolls to the top */
+function home(){
+ try{window.fmV103ClosePages&&window.fmV103ClosePages()}catch(e){}
+ try{window.fmV92CloseContractorAnalysis&&window.fmV92CloseContractorAnalysis()}catch(e){}
+ ['eng-page','fm157-portal','fm158-qa'].forEach(id=>{const x=document.getElementById(id);if(x)x.hidden=true});
+ document.querySelectorAll('.fm103-page.open,#fm-v92-contractor-page.open').forEach(x=>x.classList.remove('open'));
+ document.documentElement.classList.remove('eng-print');
+ document.querySelectorAll('nav.v2-nav .v2-nav-btn.active').forEach(b=>b.classList.remove('active'));
+ if(/^#(wo|bill|cus|wh)/.test(location.hash))try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
+ window.scrollTo(0,0);
+ document.querySelectorAll('.v2-main,.main-content,main').forEach(m=>{if(m.scrollTop)m.scrollTop=0});
+}
+window.fmV203Home=home;
+function wire(){const b=document.querySelector('.v2-brand');if(!b||b.classList.contains('fm203'))return;
+ b.classList.add('fm203');b.setAttribute('role','button');b.tabIndex=0;b.title='الصفحة الرئيسية';
+ b.addEventListener('click',home);b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();home()}})}
+wire();window.addEventListener('load',wire);setInterval(wire,2000);
 })();</script>
 </body>
 </html>
