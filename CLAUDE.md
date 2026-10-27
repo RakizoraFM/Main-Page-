@@ -170,3 +170,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 ## V203 — logo goes home; reset DELETE fix
 - `fm-v203-brand-home`: the sidebar `.v2-brand` (class `fm203`, role button, Enter / Space) calls `window.fmV203Home()`: closes `.fm103-page`, the V92 contractor page, `#eng-page`, `#fm157-portal`, `#fm158-qa`, clears the active nav button and a `#wo…` hash, scrolls to the top. Full-screen pages that cover the sidebar (QA, engagement, report modal) keep their own close buttons.
 - `fm_wipe` deletes with `where true`: Supabase's pg_safeupdate refuses a DELETE without WHERE («DELETE requires a WHERE clause»). Never write a bare `delete from t` in a function called through the API.
+
+## V204 — no «مسح كافة البيانات» in the sidebar
+- `fm-v204-no-clear-all` (CSS) hides `#fm-v38-clear-all-nav` and the V123 `.fm123-danger-wrap`; `fmClearAllPlatformData` stays defined. The reset is the V190 card in «الإعدادات» ← السحابة.

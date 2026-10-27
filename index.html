@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V203">
+<meta name="fm-version" content="V204">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25618,10 +25618,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V203',date:'2026-10-27',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V204',date:'2026-10-27',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V204',d:'2026-10-27',t:'إزالة زر «مسح كافة البيانات»',i:['حُذف زر «مسح كافة البيانات» من أسفل القائمة الجانبية؛ التصفير لمدير النظام من الإعدادات ← السحابة ← «🧹 تصفير بيانات المنصة»']},
 {v:'V203',d:'2026-10-27',t:'الشعار يعود للرئيسية وإصلاح التصفير',i:['الضغط على شعار RakizoraFM أعلى القائمة الجانبية يغلق أي صفحة مفتوحة ويعود إلى الصفحة الرئيسية (لوحة البلاغات)','إصلاح رسالة «DELETE requires a WHERE clause» عند التصفير: Supabase يرفض الحذف بدون شرط، فأصبح الحذف بشرط صريح (يتطلب تشغيل آخر نسخة من supabase_setup.sql)']},
 {v:'V202',d:'2026-10-27',t:'إصلاح تصفير البيانات',i:['النسخة الاحتياطية قبل التصفير تُجهَّز على دفعات (500 سجل) بدل طلب واحد ضخم كان يتوقف على الخادم فيُلغى التصفير','إن تعذّرت النسخة الاحتياطية يُسأل المدير: متابعة التصفير بدونها أم الإلغاء','التصفير لم يعد يتوقف بسبب فحص الاشتراك / الأجزاء عند الحذف','رسالة خطأ واضحة بالعربية (مع نافذة تنبيه) وتلميح عند عدم اختيار أي بيانات']},
  {v:'V201',d:'2026-10-27',t:'ترتيب القائمة الجانبية حسب التصنيف',i:['القائمة الجانبية أصبحت 11 مجموعة حسب الموضوع: المتابعة اليومية والـ SLA، البلاغات، الصيانة والجودة، المدارس، الكادر والمقاولون، المستودعات، المالية، التحليل، التقارير والإرسال، البيانات وجودتها، النظام.','كل صفحة في مجموعة واحدة فقط، وبترتيب العمل المعتاد داخل المجموعة.','إصلاح: الصفحات التي تُضاف بعد تسجيل الدخول كانت تظهر أسفل «مسح كافة البيانات» خارج مجموعاتها؛ الآن تُنقل لمجموعتها تلقائياً.']},
@@ -35396,5 +35397,9 @@ function wire(){const b=document.querySelector('.v2-brand');if(!b||b.classList.c
  b.addEventListener('click',home);b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();home()}})}
 wire();window.addEventListener('load',wire);setInterval(wire,2000);
 })();</script>
+<style id="fm-v204-no-clear-all">
+/* V204 — the sidebar button «مسح كافة البيانات» is removed (hidden; its function stays). The admin reset is in الإعدادات ← السحابة «🧹 تصفير بيانات المنصة». */
+#fm-v38-clear-all-nav,nav.v2-nav .fm123-danger-wrap{display:none!important}
+</style>
 </body>
 </html>
