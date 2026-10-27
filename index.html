@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V200">
+<meta name="fm-version" content="V202">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25618,10 +25618,12 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V200',date:'2026-10-26',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V202',date:'2026-10-27',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V202',d:'2026-10-27',t:'إصلاح تصفير البيانات',i:['النسخة الاحتياطية قبل التصفير تُجهَّز على دفعات (500 سجل) بدل طلب واحد ضخم كان يتوقف على الخادم فيُلغى التصفير','إن تعذّرت النسخة الاحتياطية يُسأل المدير: متابعة التصفير بدونها أم الإلغاء','التصفير لم يعد يتوقف بسبب فحص الاشتراك / الأجزاء عند الحذف','رسالة خطأ واضحة بالعربية (مع نافذة تنبيه) وتلميح عند عدم اختيار أي بيانات']},
+ {v:'V201',d:'2026-10-27',t:'ترتيب القائمة الجانبية حسب التصنيف',i:['القائمة الجانبية أصبحت 11 مجموعة حسب الموضوع: المتابعة اليومية والـ SLA، البلاغات، الصيانة والجودة، المدارس، الكادر والمقاولون، المستودعات، المالية، التحليل، التقارير والإرسال، البيانات وجودتها، النظام.','كل صفحة في مجموعة واحدة فقط، وبترتيب العمل المعتاد داخل المجموعة.','إصلاح: الصفحات التي تُضاف بعد تسجيل الدخول كانت تظهر أسفل «مسح كافة البيانات» خارج مجموعاتها؛ الآن تُنقل لمجموعتها تلقائياً.']},
  {v:'V200',d:'2026-10-26',t:'إصلاح تصفير البلاغات',i:['كان تصفير البلاغات يحذفها من السحابة، ثم تعيد المنصة رفعها من النسخة المحفوظة على الجهاز: حذف تلك النسخة كان يفشل والصفحة مفتوحة.','الآن تُمسح النسخة المحلية في بداية التحميل التالي قبل أن تُفتح، على جهاز المدير وعلى كل جهاز آخر.','بعد أي تصفير لا تُرفع البلاغات للسحابة إلا من ملف أو لصق جديد في نفس الجلسة، ولا تُرفع أبداً من نسخة محفوظة على الجهاز.']},
  {v:'V199',d:'2026-10-26',t:'إزالة أي اسم شركة افتراضي',i:['المنصة لا تحمل اسم أي شركة بعينها: أُزيل الاسم الافتراضي من التقارير وخطاب الغرامات ونموذج العقد وملف اختصار سطح المكتب ومثال حقل اسم الشركة.','يظهر اسم الشركة فقط إذا كانت الشركة مسجّلة في الاشتراك؛ وإلا يظهر RakizoraFM وحده.']},
  {v:'V198',d:'2026-10-26',t:'إصلاح تنبيه سجل الفحص',i:['أُزيل إنذار «وُجد تنسيق/كود ملصق داخل سكربت» في «سجل النسخ والفحص»: كان سطراً سليماً في نافذة طباعة خطاب الغرامات (V177) يبدأ بوسم script فاعتبره الفحص كوداً ملصقاً. لا تغيير في عمل الصفحة.']},
@@ -27118,15 +27120,18 @@ nav.v2-nav.fm123-searching .fm123-danger-wrap:not(:has(.v2-nav-btn:not(.fm123-hi
 (function(){
 'use strict';
 const GROUPS=[
- {k:'sla',icon:'🚨',t:'الـ SLA والمتابعة اليومية',ids:['v2-nav-fm195-alerts','v2-nav-fm195-ppm','v2-nav-fm103-alerts','v2-nav-fm122-risk','v2-nav-sla','v2-nav-fm122-follow','v2-nav-fm135-work','v2-nav-fm118-breach','v2-nav-risk']},
- {k:'schools',icon:'🏫',t:'المدارس والأعطال',ids:['v2-nav-fm118-school','v2-nav-fm175-req','v2-nav-fm176-capex','v2-nav-fm131-map','v2-nav-school-analysis','v2-nav-recurring','v2-nav-fm131-cost','v2-nav-table']},
- {k:'staff',icon:'👷',t:'الكادر والمقاولون',ids:['v2-nav-fm192-ready','v2-nav-staff','v2-nav-staff-performance','v2-nav-eng','v2-nav-fm124-visits','v2-nav-fm124-load','v2-nav-contractors','v2-nav-fm177-pen','v2-nav-fm122-score']},
- {k:'analysis',icon:'📊',t:'التحليل والمقارنات',ids:['v2-nav-fm195-exec','v2-nav-charts','v2-nav-period','v2-nav-fm103-periods','v2-nav-fm131-season','v2-nav-compare','v2-nav-pivot','v2-nav-saved']},
- {k:'reports',icon:'📄',t:'التقارير',ids:['v2-nav-fm195-reports','v2-nav-fm194-quality','v2-nav-fm127-today','v2-nav-fm125-send','v2-nav-fm126-log','v2-nav-fm118-weekly','v2-nav-fm178-monthly','v2-nav-report','v2-nav-fm123-weekfu','v2-nav-fm158-qa']},
- {k:'wh',icon:'📦',t:'المستودعات وقطع الغيار',ids:['v2-nav-fm193-parts','v2-nav-fm173-stock','v2-nav-fm180-items','v2-nav-fm180-custody','v2-nav-fm180-po','v2-nav-fm180-rep']},
- {k:'data',icon:'🗂️',t:'البيانات والإعداد',ids:['v2-nav-fm192-audit','v2-nav-fm174-dq','v2-nav-fm168-novaro','v2-nav-school-db','v2-nav-fm125-contacts','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-quality','v2-nav-refresh']},
- {k:'fin',icon:'💹',t:'المالية والتكاليف',ids:['v2-nav-fm194-claims','v2-nav-fm186-cc','v2-nav-fm184-bills','v2-nav-fm171-costs']},
- {k:'system',icon:'⚙️',t:'النظام',ids:['v2-nav-fm194-backup','v2-nav-fm183-setup','v2-nav-fm190-app','v2-nav-fm122-settings','v2-nav-fm116','v2-nav-fm162-manual','v2-nav-fm164-usage','v2-nav-fm167-news']}
+ /* V201: the sidebar regrouped by subject (every page in exactly one group, the usual order of work inside each group) */
+ {k:'sla',icon:'🚨',t:'المتابعة اليومية والـ SLA',ids:['v2-nav-fm195-alerts','v2-nav-fm103-alerts','v2-nav-sla','v2-nav-fm122-risk','v2-nav-fm122-follow','v2-nav-fm123-weekfu','v2-nav-fm118-breach','v2-nav-risk']},
+ {k:'tickets',icon:'📋',t:'البلاغات',ids:['v2-nav-table','v2-nav-fm135-work','v2-nav-recurring','v2-nav-fm194-quality','v2-nav-school-analysis']},
+ {k:'maint',icon:'🛠️',t:'الصيانة والجودة',ids:['v2-nav-fm195-ppm','v2-nav-fm175-req','v2-nav-fm158-qa','v2-nav-fm176-capex']},
+ {k:'schools',icon:'🏫',t:'المدارس',ids:['v2-nav-fm118-school','v2-nav-school-db','v2-nav-fm131-map','v2-nav-fm131-cost','v2-nav-fm125-contacts']},
+ {k:'staff',icon:'👷',t:'الكادر والمقاولون',ids:['v2-nav-fm192-ready','v2-nav-staff','v2-nav-staff-performance','v2-nav-eng','v2-nav-fm124-visits','v2-nav-fm124-load','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-contractors','v2-nav-fm122-score','v2-nav-fm177-pen']},
+ {k:'wh',icon:'📦',t:'المستودعات وقطع الغيار',ids:['v2-nav-fm180-items','v2-nav-fm173-stock','v2-nav-fm180-custody','v2-nav-fm193-parts','v2-nav-fm180-po','v2-nav-fm180-rep']},
+ {k:'fin',icon:'💹',t:'المالية والتكاليف',ids:['v2-nav-fm186-cc','v2-nav-fm171-costs','v2-nav-fm184-bills','v2-nav-fm194-claims']},
+ {k:'analysis',icon:'📊',t:'التحليل والمقارنات',ids:['v2-nav-fm195-exec','v2-nav-charts','v2-nav-period','v2-nav-fm103-periods','v2-nav-compare','v2-nav-fm131-season','v2-nav-pivot','v2-nav-saved']},
+ {k:'reports',icon:'📄',t:'التقارير والإرسال',ids:['v2-nav-fm195-reports','v2-nav-report','v2-nav-fm118-weekly','v2-nav-fm178-monthly','v2-nav-fm127-today','v2-nav-fm125-send','v2-nav-fm126-log']},
+ {k:'data',icon:'🗂️',t:'البيانات وجودتها',ids:['v2-nav-refresh','v2-nav-fm192-audit','v2-nav-fm174-dq','v2-nav-quality','v2-nav-fm168-novaro']},
+ {k:'system',icon:'⚙️',t:'النظام',ids:['v2-nav-fm122-settings','v2-nav-fm183-setup','v2-nav-fm162-manual','v2-nav-fm190-app','v2-nav-fm167-news','v2-nav-fm164-usage','v2-nav-fm116','v2-nav-fm194-backup']}
 ];
 const TOP=['v2-nav-portal','v2-nav-solution','v2-nav-actions','v2-nav-fm145-wo'],DANGER='fm-v38-clear-all-nav';
 const KEY='fm_nav_groups_v123';
@@ -31882,7 +31887,7 @@ const MANUAL=[
  {id:'v2-nav-fm178-monthly',t:'التقرير الشهري للعميل',where:'التقارير ← «📑 التقرير الشهري للعميل»',what:'تقرير PDF شهري جاهز للإرسال للعميل: غلاف، الملخص التنفيذي مع المقارنة بالشهر السابق، البلاغات، أوامر العمل والصيانة الوقائية، التكاليف والمواد، رضا المدارس، وخطة الشهر القادم.',how:['اختر الشهر والمنطقة من أعلى الصفحة.','اكتب الملخص التنفيذي (أو اتركه للنص التلقائي) وخطة الشهر القادم — تظهر في المعاينة فوراً.','«🖨️ PDF / طباعة» ثم «حفظ كـ PDF» وأرسله للعميل.'],who:'المديرون والمهندس',tips:['أقسام التكاليف وأوامر العمل والرضا تظهر عند ربط السحابة وحسب صلاحياتك.','الأرقام من البلاغات المرفوعة للمنطقة؛ ارفع ملف الشهر كاملاً قبل إصدار التقرير.'],v:'V178'},
  {id:'saas-sub',t:'الاشتراك (لعدة شركات)',where:'الإعدادات ← السحابة ← «💳 الاشتراك»',what:'حالة اشتراك الشركة: الباقة وحد المدارس والمستخدم منها وتاريخ الانتهاء، وإدخال كود التفعيل بعد دفع فاتورة التجديد.',how:['عند اقتراب الانتهاء يظهر شريط أسفل الشاشة قبل 15 يوماً.','بعد الدفع يصل كود التفعيل من مزود الخدمة: «🔑 إدخال كود التفعيل» والصقه.','بعد الانتهاء بمهلة 7 أيام يتوقف الدخول للجميع وتبقى البيانات، ويعود العمل فور إدخال الكود.'],who:'مدير النظام',tips:['رابط دخول الشركة: start.html?c=رمز الشركة — أرسله لفريقك.','زيادة المدارس عن حد الباقة تُرفض عند حفظ قاعدة المدارس في السحابة — اطلب ترقية الباقة.'],v:'V179'},
  {id:'v2-nav-fm190-app',t:'تحميل التطبيق على جهاز آخر',where:'النظام ← «📲 تحميل التطبيق»',what:'المنصة لا تحتاج ملف تنزيل: تُثبَّت من رابطها على أي جهاز وتتحدث تلقائياً. هذه الصفحة تجمع الرابط ورمز QR وخطوات التثبيت لكل جهاز، وزر التثبيت على هذا الجهاز.',how:['على جهاز آخر: امسح رمز QR بكاميرا الجوال، أو أرسل الرابط لنفسك بواتساب أو البريد.','افتح الرابط وسجّل الدخول، ثم ثبّت التطبيق حسب نوع الجهاز (الخطوات في الصفحة).','على هذا الجهاز: «📲 تثبيت على هذا الجهاز».','للكمبيوتر بدون تثبيت: «📥 اختصار سطح المكتب» يضع أيقونة تفتح المنصة.'],who:'كل المستخدمين',tips:['على iPhone يتم التثبيت من Safari فقط.','الرابط يحمل رمز شركتكم، فيفتح على منصتكم مباشرة.'],v:'V190'},
- {id:'wipe',t:'تصفير بيانات المنصة',where:'الإعدادات ← السحابة ← «🧹 تصفير بيانات المنصة»',what:'حذف بيانات أجزاء تختارها من المنصة (البلاغات، قاعدة المدارس، أوامر العمل، المستودع، التواصل، بوابة المدارس، التكاليف، المستخلصات، مركز التكلفة، الأخبار والإشعارات) لبدء جديد أو بعد التجربة.',how:['افتح البطاقة؛ يظهر عدد السجلات في كل جزء.','اختر الأجزاء التي تريد تصفيرها.','اترك «تنزيل نسخة احتياطية» مفعّلاً لحفظ ملف بكل ما سيُحذف.','اكتب «تصفير» واضغط الزر، ثم أكّد.'],who:'مدير النظام فقط',tips:['لا يمكن التراجع عن التصفير إلا بالنسخة الاحتياطية.','الحسابات والإعدادات والاشتراك وقوالب أوامر العمل لا تُحذف.','حذف «الأصناف والموردين والمستودعات» يحذف معه حركة المستودع والعهد.'],v:'V190'},
+ {id:'wipe',t:'تصفير بيانات المنصة',where:'الإعدادات ← السحابة ← «🧹 تصفير بيانات المنصة»',what:'حذف بيانات أجزاء تختارها من المنصة (البلاغات، قاعدة المدارس، أوامر العمل، المستودع، التواصل، بوابة المدارس، التكاليف، المستخلصات، مركز التكلفة، الأخبار والإشعارات) لبدء جديد أو بعد التجربة.',how:['افتح البطاقة؛ يظهر عدد السجلات في كل جزء.','اختر الأجزاء التي تريد تصفيرها.','اترك «تنزيل نسخة احتياطية» مفعّلاً لحفظ ملف بكل ما سيُحذف.','اكتب «تصفير» واضغط الزر، ثم أكّد.','انتظر حتى يكتمل تنزيل النسخة الاحتياطية (تُجهَّز على دفعات ويظهر العدد)، ثم يتم التصفير وتُعاد تحميل المنصة.'],who:'مدير النظام فقط',tips:['إن تعذّرت النسخة الاحتياطية تُسأل: متابعة بدونها أم الإلغاء.','إن لم يتم التصفير تظهر رسالة حمراء بالسبب تحت الزر.','لا يمكن التراجع عن التصفير إلا بالنسخة الاحتياطية.','الحسابات والإعدادات والاشتراك وقوالب أوامر العمل لا تُحذف.','حذف «الأصناف والموردين والمستودعات» يحذف معه حركة المستودع والعهد.'],v:'V202'},
  {id:'upload',t:'رفع ملف البلاغات',where:'زر «رفع بلاغات المنطقة» في الشريط العلوي، أو «⬆️ رفع ملف» في سطر المصدر أعلى لوحة القيادة، أو سحب الملف وإفلاته في أي مكان على الصفحة',what:'تحديث بلاغات المنطقة المفتوحة (الرياض أو القصيم) من ملف Excel المصدَّر من نظام البلاغات، أو بلصق جدول. يتعرف النظام تلقائياً على الأعمدة، وتتحدث كل المؤشرات والتقارير.',how:['اختر المنطقة من الشريط العلوي.','اضغط «رفع بلاغات المنطقة» أو «⬆️ رفع ملف» واختر ملف Excel، أو اسحب الملف إلى الصفحة.','لجدول منسوخ: «📋 لصق جدول» ← الصق الجدول مع صف العناوين ← «تحليل البيانات الملصوقة».','تأكد من «الإجمالي» و«أحدث تاريخ» في سطر المصدر.'],who:'مدير النظام، مدير المشروع، مدير التشغيل، مدير المنطقة (لمناطقه)',tips:['كل منطقة تُحلَّل ببياناتها فقط.','«تخصيص / تعديل مطابقة الأعمدة» إذا تغيّرت أسماء الأعمدة في الملف.'],v:'V189'},
  {id:'pwa',t:'تثبيت التطبيق والعمل دون اتصال',where:'زر «📲 ثبّت التطبيق» في صفحة الدخول والصفحة الرئيسية لتطبيق الميدان، و«الإعدادات» ← السحابة ← «📲 تثبيت المنصة والعمل دون اتصال»',what:'تثبيت المنصة أو تطبيق الميدان كتطبيق بأيقونة على الجوال أو الكمبيوتر، والعمل دون اتصال: الصفحات والمكتبات والخرائط التي فتحتها تبقى محفوظة على الجهاز وتتحدث تلقائياً عند الاتصال.',how:['على Android أو الكمبيوتر (Chrome / Edge): اضغط «📲 ثبّت التطبيق» ثم «تثبيت».','على iPhone / iPad: افتح الموقع في Safari ← زر المشاركة ⬆️ ← «إضافة إلى الشاشة الرئيسية» ← «إضافة».','افتح التطبيق من أيقونته؛ يفتح على صفحة الدخول ثم على تطبيقك.','افتحه مرة واحدة على الأقل وأنت متصل، وتصفّح الخرائط التي تحتاجها، لتعمل بعدها دون اتصال.'],who:'كل المستخدمين',tips:['دون اتصال يفتح التطبيق آخر ما استخدمته ويعرض آخر بيانات محفوظة؛ إجراءات أوامر العمل في الميدان تُرسل تلقائياً عند عودة الاتصال.','على iPhone لا تصل الإشعارات إلا بعد التثبيت (iOS 16.4 أو أحدث).','«🧹 مسح المحفوظ» يحرر المساحة ولا يمس بياناتك؛ يُحفظ من جديد عند الاستخدام.'],v:'V188'},
  {id:'push',t:'الإشعارات على الجوال والكمبيوتر',where:'الإعدادات ← السحابة ← «🔔 الإشعارات على هذا الجهاز»، أو الشريط أسفل الشاشة «🔔 فعّل الإشعارات»، وفي تطبيق الميدان زر «🔔» في الصفحة الرئيسية',what:'إشعار فوري يصلك حتى والتطبيق مغلق عند حدث يخصك: أمر عمل جديد، أمر بانتظار اعتمادك، إعادة أو اعتماد أمر، تصعيد، إيقاف عمل، طلب صرف، صرف لعهدتك، تالف متأخر، اعتماد صنف أو شراء، المستخلصات. الضغط عليه يفتح الأمر أو الصفحة.',how:['افتح «🔔 إعدادات الإشعارات» واضغط «🔔 تفعيل على هذا الجهاز» واسمح للمتصفح بالإشعارات.','اختر الأنواع التي تريدها ثم «💾 حفظ اختياراتي».','«📨 أرسل لي تجربة» للتأكد أن الجهاز يستقبل.','فعّلها على كل جهاز تستخدمه (الجوال والكمبيوتر).'],who:'كل المستخدمين (بعد أن يجهّزها مدير النظام)',tips:['على iPhone / iPad: أضف التطبيق للشاشة الرئيسية من زر المشاركة أولاً، ثم افتحه من الأيقونة وفعّل الإشعارات (iOS 16.4 أو أحدث).','لا يصلك إشعار عن عمل قمت به بنفسك، والحملة الكبيرة تصلك بإشعار واحد.','إذا رفضت الإذن بالخطأ: افتح إعدادات الموقع في المتصفح واسمح بالإشعارات.'],v:'V187'},
@@ -34929,20 +34934,28 @@ function clearLocal(parts){const P=new Set(parts||[]);
    <div class="row" style="flex-wrap:wrap;gap:12px;align-items:center;margin-top:8px"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-all style="width:auto"> تحديد الكل</label>
     <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-bk checked style="width:auto"> ⬇️ تنزيل نسخة احتياطية قبل التصفير</label></div>
    <label style="display:block;margin-top:10px">للتأكيد اكتب كلمة <b>تصفير</b><input data-cf placeholder="تصفير" style="max-width:200px;display:block"></label>
-   <div class="row"><button class="fm103-btn danger" type="button" data-go disabled>🧹 تصفير البيانات المحددة</button></div><div data-res></div>`;
+   <div class="row"><button class="fm103-btn danger" type="button" data-go disabled>🧹 تصفير البيانات المحددة</button></div><div data-hint style="color:#b45309;font-weight:700;font-size:13px;margin-top:6px"></div><div data-res></div>`;
   const q=x=>bd.querySelector(x),chosen=()=>[...bd.querySelectorAll('[data-k]')].filter(i=>i.checked).map(i=>i.dataset.k);
-  const upd=()=>{const cat=q('[data-k="wh_catalog"]'),mv=q('[data-k="wh_moves"]');if(cat.checked){mv.checked=true;mv.disabled=true}else mv.disabled=false;q('[data-go]').disabled=!(chosen().length&&S(q('[data-cf]').value)==='تصفير')};
+  const upd=()=>{const cat=q('[data-k="wh_catalog"]'),mv=q('[data-k="wh_moves"]');if(cat.checked){mv.checked=true;mv.disabled=true}else mv.disabled=false;const n=chosen().length,ok=S(q('[data-cf]').value)==='تصفير';q('[data-go]').disabled=!(n&&ok);const h=q('[data-hint]');if(h)h.textContent=!n?'☝️ اختر من القائمة أعلاه البيانات المراد تصفيرها (علامة ✓ بجوار «البلاغات» مثلاً).':!ok?'✍️ اكتب كلمة «تصفير» في خانة التأكيد.':''};
   bd.querySelectorAll('[data-k]').forEach(i=>i.onchange=upd);q('[data-cf]').oninput=upd;q('[data-all]').onchange=e=>{bd.querySelectorAll('[data-k]').forEach(i=>i.checked=e.target.checked);upd()};
   q('[data-go]').onclick=async e=>{const parts=chosen(),names=PARTS.filter(p=>parts.includes(p[0])).map(p=>p[1]).join('\n');
    if(!confirm('سيتم حذف هذه البيانات نهائياً:\n\n'+names+'\n\nمتابعة؟'))return;const btn=e.currentTarget;btn.disabled=true;const res=q('[data-res]');
    try{const d=await db();
-    if(q('[data-bk]').checked){res.innerHTML='<div class="fm125-src">جارٍ تجهيز النسخة الاحتياطية…</div>';const r=await d.rpc('fm_wipe_backup',{p_parts:parts});if(r.error)throw Error(r.error.message);
-     dl('rakizora-backup-'+new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')+'.json',JSON.stringify(r.data),'application/json');await new Promise(r=>setTimeout(r,800))}
+    if(q('[data-bk]').checked){/* V202: the backup is read in pages (one call with every row can pass the server limits) */
+     const msg=t=>res.innerHTML='<div class="fm125-src">'+t+'</div>';msg('جارٍ تجهيز النسخة الاحتياطية…');
+     try{let out;const pl=await d.rpc('fm_wipe_plan',{p_parts:parts});
+      if(pl.error&&/fm_wipe_plan|function|schema cache/i.test(pl.error.message)){const r=await d.rpc('fm_wipe_backup',{p_parts:parts});if(r.error)throw Error(r.error.message);out=r.data}
+      else{if(pl.error)throw Error(pl.error.message);const P=pl.data||{},tabs={},all=(P.tables||[]).reduce((a,x)=>a+(+x.n||0),0);let got=0;
+       for(const x of P.tables||[]){const rows=[];for(let off=0;off<(+x.n||0);off+=500){const r=await d.rpc('fm_wipe_backup_page',{p_table:x.t,p_offset:off,p_limit:500});if(r.error)throw Error(r.error.message);rows.push(...(r.data||[]));got+=(r.data||[]).length;msg('جارٍ تجهيز النسخة الاحتياطية… '+num(got)+' / '+num(all))}tabs[x.t]=rows}
+       out={at:P.at,parts:P.parts,tables:tabs,kv:P.kv}}
+      dl('rakizora-backup-'+new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')+'.json',JSON.stringify(out),'application/json');await new Promise(r=>setTimeout(r,800))}
+     catch(bx){if(!confirm('تعذّر تجهيز النسخة الاحتياطية:\n'+bx.message+'\n\nمتابعة التصفير بدون نسخة احتياطية؟')){throw Error('أُلغي التصفير: لم تُجهَّز النسخة الاحتياطية ('+bx.message+')')}}}
     res.innerHTML='<div class="fm125-src">جارٍ التصفير…</div>';const r=await d.rpc('fm_wipe',{p_parts:parts,p_confirm:'تصفير'});if(r.error)throw Error(r.error.message);
     const out=r.data||{},rows=out.rows||{},tot=Object.values(rows).reduce((a,b)=>a+(+b||0),0);clearLocal(out.parts);try{localStorage.setItem('fm190_clear',JSON.stringify(out.parts||[]));localStorage.setItem('fm190_wipe_seen',new Date(Date.now()+60000).toISOString())}catch(x){}window.__fm190Block=true;
     res.innerHTML=`<div class="fm125-src" style="background:#ecfdf5;border-radius:10px;padding:10px">✅ تم التصفير: حُذف ${num(tot)} سجل${out.files?' و'+num(out.files)+' صورة':''}.${out.files_left?' ملفات الصور تبقى في التخزين (غير ظاهرة)؛ يمكن حذفها من Supabase ← Storage.':''} ستُعاد تحميل المنصة…</div>`;
     toast('تم التصفير');setTimeout(()=>location.reload(),2500)}
-   catch(x){res.innerHTML=`<div class="fm125-src" style="color:#b91c1c">${esc(/confirm/.test(x.message)?'اكتب «تصفير» للتأكيد':/not allowed/.test(x.message)?'التصفير لمدير النظام فقط':x.message)}</div>`;btn.disabled=false}};
+   catch(x){const m=String(x&&x.message||x),t=/confirm required/.test(m)?'اكتب «تصفير» للتأكيد':/not allowed/.test(m)?'التصفير لمدير النظام فقط (مسمى «مدير النظام» ودور admin)':/subscription expired/.test(m)?'الاشتراك منتهٍ: جدّد الاشتراك أو شغّل آخر نسخة من supabase_setup.sql ثم أعد المحاولة':/module disabled/.test(m)?'هذا الجزء غير مفعّل في الاشتراك: شغّل آخر نسخة من supabase_setup.sql ثم أعد المحاولة':/timeout|canceling statement/i.test(m)?'انتهت مهلة الخادم: أعد المحاولة':/Failed to fetch|NetworkError|network/i.test(m)?'تعذّر الاتصال بالخادم: تحقق من الإنترنت':/fm_wipe|schema cache|Could not find the function/i.test(m)?'دالة التصفير غير موجودة على الخادم: شغّل آخر نسخة من supabase_setup.sql':m;
+    res.innerHTML=`<div class="fm125-src" style="color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px;font-weight:700">❌ لم يتم التصفير: ${esc(t)}${t!==m?`<div style="font-weight:400;font-size:12px;direction:ltr;text-align:left;margin-top:4px">${esc(m)}</div>`:''}</div>`;try{res.scrollIntoView({block:'center'})}catch(z){}alert('❌ لم يتم التصفير:\n'+t);btn.disabled=false}};
   ob.disabled=false}});
 
 /* other devices: clear local copies after a reset, before anything is pushed back */
@@ -35351,5 +35364,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 window.fmV196RefreshLayout=refresh;
 })();</script>
 
+<script id="fm-v201-nav-guard">(function(){
+'use strict';
+/* V201: the grouped sidebar (V123) rebuilds when a page button is added, but it watched only the sidebar it found first and
+   rebuilt at fixed times; on the published site, signing in can come later, and buttons added then stayed loose below
+   «مسح كافة البيانات». Every 1.5 s: a loose page button (or a sidebar not grouped yet) → rebuild the groups. */
+setInterval(()=>{try{const n=document.querySelector('nav.v2-nav');if(!n||typeof window.fmV123Rebuild!=='function')return;
+ if(!n.classList.contains('fm123-ready')||n.querySelector(':scope > .v2-nav-btn:not(#fm-v38-clear-all-nav)'))window.fmV123Rebuild()}catch(e){}},1500);
+})();</script>
 </body>
 </html>
