@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F39">
+<meta name="fm-version" content="F40">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -151,7 +151,9 @@ textarea.in{min-height:90px;line-height:1.8}
 .cb{position:relative}.cb .in{width:100%;box-sizing:border-box;padding-left:30px}.cbok{position:absolute;left:10px;top:9px;color:var(--ok);font-weight:900}.cbok.o{color:var(--warn)}
 .cbl{position:absolute;z-index:30;top:100%;right:0;left:0;max-height:260px;overflow:auto;background:#fff;border:1px solid #94a3b8;border-radius:10px;box-shadow:0 10px 24px rgba(15,23,42,.18);margin-top:2px}
 .cbl button{display:block;width:100%;text-align:right;border:0;border-bottom:1px solid #f1f5f9;background:#fff;padding:9px 10px;font:700 14px Cairo,Tahoma,sans-serif;color:var(--ink)}
-.cbl button b{background:#fef08a;font-weight:900}.cbl button small{display:block;color:var(--mut);font-size:11.5px}.cbl button:active{background:#eff6ff}.cbl .oth{color:var(--warn)}.cbh{position:sticky;top:0;background:#f8fafc;border-bottom:1px solid var(--line);padding:6px 10px;font-size:12px;font-weight:800;color:#334155;display:flex;justify-content:space-between;align-items:center;gap:6px}
+.cbl button b{background:#fef08a;font-weight:900}.cbl button small{display:block;color:var(--mut);font-size:11.5px}
+.cbl button.wth{display:flex;align-items:center;gap:10px}.cbl button.wth img,.cbl button.wth .ni{width:42px;height:42px;flex:none;border-radius:8px;object-fit:cover;background:#f8fafc;border:1px solid #e2e8f0;display:grid;place-items:center;font-style:normal;font-size:20px;pointer-events:none}.cbl button.wth span{flex:1;min-width:0;pointer-events:none}
+.cbl button:active{background:#eff6ff}.cbl .oth{color:var(--warn)}.cbh{position:sticky;top:0;background:#f8fafc;border-bottom:1px solid var(--line);padding:6px 10px;font-size:12px;font-weight:800;color:#334155;display:flex;justify-content:space-between;align-items:center;gap:6px}
 .cbh.o{position:static;background:#fff7ed;color:#9a3412}.cbh button{border:1px solid #cbd5e1!important;background:#fff!important;border-radius:8px;padding:2px 8px!important;font:800 11.5px Cairo,sans-serif!important;width:auto!important;display:inline!important;color:var(--pri)!important}.cbn{padding:8px 10px;color:var(--mut);font-size:12.5px}.mr .u{align-self:center;font-weight:800;font-size:12.5px;color:#0e7490}.mr .in{margin:0;padding:7px 6px;font-size:13px}.mr .del{border:0;background:none;font-size:16px}
 .mat .madd,.ci .shph{border:1px dashed #64748b;background:#fff;border-radius:8px;padding:5px 10px;font:800 12.5px Cairo,sans-serif;margin-top:4px}.mrv{font-size:13px;padding:2px 0}
 .arr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.arr .as{border:1px dashed #94a3b8;border-radius:12px;padding:6px;text-align:center;font-size:12.5px}.arr .as.done{border:1px solid #16a34a;background:#f0fdf4}
@@ -1214,7 +1216,9 @@ function ciRich(x,i,on,open){const r=ciRes(x),no=`<span class="no">${esc(x.no||S
    :`<input class="in" data-tx="${i}" ${dis} value="${esc(x.v||'')}" placeholder="${esc(x.ph||'')}" ${x.num?'inputmode="numeric"':''}>`}
   ${sug?`<div class="muted" style="margin-top:4px">المقترح حسب تقييم العناصر: <b>${sug}</b>${on&&S(x.v)!==sug?` <button type="button" class="shph" data-tv="${i}" data-val="${sug}">اعتماد المقترح</button>`:''}</div>`:''}</div>`}
 async function woPhotosNow(id){let P=[];try{P=await C.api.woPhotos(id);const c=D.woC.get(id);if(c)c.ph=P}catch(e){P=(D.woC.get(id)||{}).ph||[]}return P.concat(await woPending(id))}
-async function woMats(){D.mats=lsGet('fmf_mats',null)||[];try{D.mats=(await C.api.woMaterials()).filter(m=>m.approved_at!==null&&m.active!==false);try{localStorage.setItem('fmf_mats',JSON.stringify(D.mats))}catch(_){}}catch(e){}woStock();return D.mats}
+async function woMats(){D.mats=lsGet('fmf_mats',null)||[];try{D.mats=(await C.api.woMaterials()).filter(m=>m.approved_at!==null&&m.active!==false);try{localStorage.setItem('fmf_mats',JSON.stringify(D.mats))}catch(_){}}catch(e){}woStock();woExtra();return D.mats}
+/* F40: the client code (Logix) and the small photo of each item, read once per session (not kept in the offline cache) */
+async function woExtra(){try{if(!D.mx){const db=await C.engClient?.();if(!db)return;const r=await db.from('wo_materials').select('id,ext_code,thumb');if(r.error)return;D.mx=new Map((r.data||[]).map(x=>[x.id,x]))}for(const m of D.mats||[]){const x=D.mx.get(m.id);if(x){m.ext_code=x.ext_code;m.thumb=x.thumb}}}catch(e){}}
 /* F26: the balance of each material in the stores of the caller's regions (shown in the picker; read-only) */
 async function woStock(){try{const db=await C.engClient?.();if(!db)return;const [a,b]=await Promise.all([db.from('wo_stores').select('id,region,active'),db.from('wo_stock').select('store_id,material_id,qty')]);if(a.error||b.error)return;
  const R=D.me?.regions||[],ok=new Set((a.data||[]).filter(x=>x.active&&(!R.length||!x.region||R.includes(x.region))).map(x=>x.id));if(!ok.size)return;
@@ -1230,7 +1234,7 @@ const CI_R=[['ok','✅ سليم'],['fix','⚠️ يحتاج إصلاح'],['fixed
 const MAT_SRC={store:'مستودع',buy:'شراء'};
 /* Arabic-tolerant matching: أ/إ/آ = ا, ة = ه, ى = ي, no diacritics, every typed word must appear */
 const ciN=v=>S(v).normalize('NFKC').replace(/[\u064B-\u065F\u0640]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').toLowerCase();
-function ciFind(q){const M=D.mats||[],w=ciN(q).split(/\s+/).filter(Boolean);return w.length?M.filter(x=>{const h=ciN(x.name+' '+(x.category||'')+' '+(x.code||''));return w.every(t=>h.includes(t))}):M}
+function ciFind(q){const M=D.mats||[],w=ciN(q).split(/\s+/).filter(Boolean);return w.length?M.filter(x=>{const h=ciN(x.name+' '+(x.category||'')+' '+(x.code||'')+' '+(x.ext_code||''));return w.every(t=>h.includes(t))}):M}
 /* material groups: a material category belongs to a group when it contains one of the group's words;
    a checklist item gets its groups from its own text, plus the system of its order (title / «النظام:» line) */
 const MG={elec:{l:'كهرباء',cat:['كهرب'],txt:['كهرب','فيش','افياش','مفتاح','مفاتيح','اضاء','انار','لمب','لوح','قاطع','قواطع','جهد','تاريض','كابل','توصيلات','كونتاكت','سماعات','جرس','بروجيكتور','شاشات']},
@@ -1248,7 +1252,7 @@ function ciList(box,q,i,all){const A=ciFind(q),G=i==null?[]:ciGroups(i),scoped=G
  /* highlight the first typed word (same length in the normalised text, so the indexes line up) */
  const hl=t=>{const k=w?ciN(t).indexOf(w):-1;return k<0||ciN(t).length!==t.length?e(t):e(t.slice(0,k))+'<b>'+e(t.slice(k,k+w.length))+'</b>'+e(t.slice(k+w.length))};
  const sq=x=>(window.__fmfCus&&window.__fmfCus.get(x.id)?` • 🧰 في عهدتك ${fmt(window.__fmfCus.get(x.id))}`:'')+(D.stock&&D.stock.has(x.id)?(D.stock.get(x.id)>0?` • 📦 متاح ${fmt(D.stock.get(x.id))}`:' • ⚠️ غير متوفر بالمخزن'):'');
- const it=x=>`<button type="button" data-pick="${esc(x.id)}">${hl(x.name)}<small>${esc([x.unit,x.category].filter(Boolean).join(' • ')+sq(x))}</small></button>`;
+ const it=x=>`<button type="button" data-pick="${esc(x.id)}" class="wth">${x.thumb?`<img src="${esc(x.thumb)}" alt="" loading="lazy">`:'<i class="ni">📦</i>'}<span>${hl(x.name)}<small>${esc([x.ext_code?'Logix '+x.ext_code:'',x.unit,x.category].filter(Boolean).join(' • ')+sq(x))}</small></span></button>`;
  box.innerHTML=(scoped?`<div class="cbh">🔎 مواد ${esc(G.map(k=>MG[k].l).join(' و'))} والمواد العامة <button type="button" data-allm="${i}">عرض كل الأصناف (${fmt((D.mats||[]).length)})</button></div>`:G.length&&all?`<div class="cbh">كل الأصناف <button type="button" data-allm="${i}" data-off="1">مواد البند فقط</button></div>`:'')
   +(L.slice(0,40).map(it).join('')||`<div class="cbn">${O.length?'لا يوجد في مواد هذا البند':'لا يوجد صنف بهذا الاسم'}</div>`)
   +(L.length>40?`<div class="cbn">${fmt(L.length-40)} صنف آخر — اكتب أكثر لتضييق البحث</div>`:'')
@@ -1695,6 +1699,11 @@ let n=0;const t=setInterval(async()=>{if(++n>60){clearInterval(t);return}try{if(
 })();
 </script>
 <style id="fmf-29-custody-css">
+#f29 .f40-nf{width:100%;margin:8px 0;border:1px dashed #93c5fd;background:#eff6ff;color:#1d4ed8;border-radius:12px;padding:10px;font:800 13.5px Cairo,Tahoma,sans-serif}
+#f29 .f40-cam{display:grid;place-items:center;border:2px dashed #cbd5e1;border-radius:14px;min-height:120px;margin-bottom:8px;background:#f8fafc;font-weight:800;color:#475569;cursor:pointer}
+#f29 .f40-cam img{max-width:100%;max-height:220px;border-radius:10px}
+#f29 .cd label{display:block;font-weight:800;font-size:13px;margin-top:6px}
+
 #f29 .f39-ln{display:grid;grid-template-columns:48px 1fr auto 34px;gap:8px;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:6px;margin-bottom:6px}
 #f29 .f39-ln img,#f29 .f39-ln .ni{width:48px;height:48px;border-radius:9px;object-fit:cover;background:#fff;display:grid;place-items:center;font-size:22px}
 #f29 .f39-ln b{display:block;font-size:13.5px}#f29 .f39-ln small{display:block;color:#64748b;font-size:11.5px}
@@ -1745,6 +1754,7 @@ async function load(){const db=await C.engClient();const since=new Date(Date.now
   db.from('wo_materials').select('id,code,name,unit,price,category,scrap_return,approved_at,active').order('name')]);
  if(R[0].error)throw Error(R[0].error.message);
  const g=i=>(!R[i].error&&R[i].data)||[];X={cus:g(0),mv:g(1),req:g(2).filter(r=>r.holder===ME.id||r.requested_by===ME.id),cnt:g(3),mats:g(4)};
+ try{const g=await db.from('wo_part_suggestions').select('id,code,name,status,note,qty,unit,at,material_id').eq('by_id',ME.id).order('at',{ascending:false}).limit(30);X.sugg=g.error?null:(g.data||[])}catch(e){X.sugg=null}
  try{const e=await db.from('wo_materials').select('id,ext_code');if(!e.error)for(const r of e.data||[]){const m=X.mats.find(x=>x.id===r.id);if(m)m.ext_code=r.ext_code}}catch(e){}
  window.__fmfCus=new Map(X.cus.filter(c=>+c.qty>0).map(c=>[c.material_id,+c.qty]));return X}
 const mat=id=>(X.mats.find(m=>m.id===id)||{name:'صنف'});
@@ -1769,6 +1779,7 @@ function draw(){const s=sheet(),L=late(),recv=X.req.filter(r=>r.holder===ME.id&&
   <div class="cd"><h3>🧰 في عهدتي</h3>${X.cus.filter(c=>+c.qty||+c.scrap).map(c=>{const m=mat(c.material_id),du=due(c.material_id);return `<div class="row"><span>${esc(m.name)}<small>${esc(m.unit||'')}${m.scrap_return?' • ♻️ يُرجع تالفه':''}</small></span><span class="n">${fmt(c.qty)} في يدي${+c.scrap?`<small style="color:${du&&du<today()?'#b91c1c':'#92400e'}">♻️ تالف مطلوب ${fmt(c.scrap)}${du?' حتى '+dd(du):''}</small>`:''}</span></div>`}).join('')||'<div class="row">لا توجد قطع في عهدتك</div>'}
    <div style="color:#64748b;font-size:12px;margin-top:6px">عند اعتماد أمر العمل تُخصم المواد المستخدمة من عهدتك؛ تالف الأصناف ♻️ يبقى عليك حتى يؤكد أمين المستودع استلامه.</div></div>
   <div class="cd"><h3>➕ طلب قطع غيار</h3><div data-form></div></div>
+  ${X.sugg&&X.sugg.length?`<div class="cd"><h3>💡 أصناف اقترحتها</h3>${X.sugg.slice(0,10).map(g=>`<div class="row"><span>${esc(g.name)}<small>${esc(g.code||'')} • ${dd(g.at)}${g.note?' • '+esc(g.note):''}</small></span><span class="ch ${g.status==='new'?'y':g.status==='rejected'?'r':'g'}">${({new:'بانتظار المراجعة',added:'أُضيف للكتالوج',linked:'رُبط بصنف موجود',rejected:'مرفوض'})[g.status]||esc(g.status)}</span></div>`).join('')}</div>`:''}
   <div class="cd"><h3>📝 طلباتي</h3>${X.req.slice(0,25).map(r=>`<div class="row"><span>${esc(r.code)} <small>${r.source==='wo'?'أمر '+esc(r.wo_code||''):r.source==='ticket'?'بلاغ '+esc(r.ticket_ref||''):'توجيه '+esc(r.requested_by_name||'')} • ${dd(r.at)}</small><small>${(r.lines||[]).map(l=>`${esc(mat(l.material_id).name)} ×${fmt(l.qty)}${+l.issued?` (صُرف ${fmt(l.issued)})`:''}`).join('، ')}</small>${r.response?`<small>${esc(r.response)}</small>`:''}</span><span><span class="ch ${(RQ[r.status]||[''])[0]}">${(RQ[r.status]||['',r.status])[1]}</span>${r.status==='requested'?` <button type="button" class="bt" data-cn="${esc(r.id)}">إلغاء</button>`:''}</span></div>`).join('')||'<div class="row">لا توجد طلبات</div>'}</div>
   <div class="cd"><h3>🕘 آخر الحركات</h3>${X.mv.slice(0,30).map(m=>`<div class="row"><span>${({issue:'📤 صُرف لي',use:'🛠️ استُخدم',scrap:'♻️ سلّمت تالفاً',return:'↩️ أرجعت',writeoff:'⚖️ تسوية'})[m.kind]||m.kind} — ${esc(mat(m.material_id).name)}<small>${dd(m.at)} ${esc([m.wo_code,m.school,m.kind==='use'?'':m.ref].filter(Boolean).join(' • '))}</small></span><span class="n" dir="ltr">${+m.qty?(+m.qty>0?'+':'')+fmt(m.qty):''}${+m.scrap?` ♻️${+m.scrap>0?'+':''}${fmt(m.scrap)}`:''}</span></div>`).join('')||'<div class="row">—</div>'}</div></div>`;
  s.querySelector('[data-x]').onclick=close;s.querySelector('[data-rf]').onclick=open;
@@ -1793,28 +1804,46 @@ async function form(box){let W=[];try{W=(await C.api.woList()||[]).filter(w=>w.a
   q('[data-ls]').querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const l=lines[+b.dataset.m];l.q=Math.max(1,(+l.q||1)-1);dr()});
   q('[data-ls]').querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const l=lines[+b.dataset.p];l.q=(+l.q||0)+1;dr()});
   q('[data-ls]').querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.d,1);dr()})};
- dr();q('[data-add]').onclick=()=>pick(M,id=>{const l=lines.find(x=>x.id===id);if(l)l.q=(+l.q||0)+1;else lines.push({id,q:1});dr()});
+ dr();q('[data-add]').onclick=()=>pick(M,id=>{const l=lines.find(x=>x.id===id);if(l)l.q=(+l.q||0)+1;else lines.push({id,q:1});dr()},()=>q('[data-src]').value==='wo'?{wo_id:q('[data-wo]').value}:{ticket_ref:S(q('[data-tk]').value)});
  q('[data-send]').onclick=async ev=>{const L=[];for(const l of lines){const m=mat(l.id);const qt=+S(l.q).replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c));if(!(qt>0)){toast('كمية غير صحيحة: '+m.name,'w');return}L.push({material_id:l.id,qty:qt})}
   if(!L.length){toast('أضف صنفاً','w');return}const src=q('[data-src]').value,p={source:src,lines:L,note:S(q('[data-nt]').value)};
   if(src==='wo')p.wo_id=q('[data-wo]').value;else{p.ticket_ref=S(q('[data-tk]').value);p.school=S(q('[data-sc]').value);if(!p.ticket_ref){toast('اكتب رقم البلاغ','w');return}}
   if(!navigator.onLine){toast('الطلب يحتاج اتصالاً بالإنترنت','w');return}ev.currentTarget.disabled=true;
   try{const db=await C.engClient();const r=await db.rpc('fm_issue_req_new',{p});if(r.error)throw Error(r.error.message);toast('تم إرسال الطلب '+(r.data&&r.data.code||''));await load();draw()}catch(e){toast(ERR(e),'e');ev.currentTarget.disabled=false}}}
+/* F40: a part that is not in the catalog — photo + description to the storekeeper */
+function shrinkPh(file){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=()=>no(Error('تعذر قراءة الصورة'));r.onload=()=>{const im=new Image();im.onerror=()=>no(Error('صورة غير صالحة'));im.onload=()=>{let w=im.width,h=im.height;const k=Math.min(1,1100/Math.max(w,h));w=Math.round(w*k);h=Math.round(h*k);
+ const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);let q=.8,u=c.toDataURL('image/jpeg',q);while(u.length>400000&&q>.3){q-=.1;u=c.toDataURL('image/jpeg',q)}ok(u)};im.src=r.result};r.readAsDataURL(file)})}
+function suggest(pre){const s=sheet(),ov=document.createElement('div');ov.className='f39-pk';s.appendChild(ov);let ph='';const cats=[...new Set(X.mats.map(m=>S(m.category)).filter(Boolean))];
+ ov.innerHTML=`<div class="hd"><button type="button" data-b>→</button><h2>📷 صنف غير موجود</h2></div><div class="bd"><div class="cd">
+  <div style="color:#64748b;font-size:13px;margin-bottom:8px">صوّر القطعة واكتب اسمها ووصفها؛ يراجعها أمين المستودع ويضيفها للكتالوج أو يربطها بصنف موجود، ويصلك إشعار بالنتيجة. بعد إضافتها اطلبها من «طلب قطع غيار».</div>
+  <label class="f40-cam">${'<span>📷 التقط صورة القطعة</span>'}<input type="file" accept="image/*" capture="environment" data-ph hidden></label>
+  <label>اسم القطعة *<input data-n maxlength="200" value="${esc(pre.name||'')}" placeholder="مثال: حساس دخان لاسلكي"></label>
+  <label>الوصف (المقاس، الماركة، الموديل…)<input data-d maxlength="1000"></label>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px"><label>التصنيف<input data-c list="f40-cats" value="${esc(pre.category||'')}"></label><label>الوحدة<input data-u maxlength="40" placeholder="حبة"></label><label>الكمية<input data-q inputmode="decimal" value="1"></label></div>
+  <datalist id="f40-cats">${cats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
+  <button type="button" class="bt p" data-go style="width:100%;margin-top:10px;padding:10px">📤 إرسال لأمين المستودع</button></div></div>`;
+ const q=x=>ov.querySelector(x);q('[data-b]').onclick=()=>ov.remove();
+ q('[data-ph]').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{ph=await shrinkPh(f);q('.f40-cam').innerHTML=`<img src="${ph}" alt=""><input type="file" accept="image/*" capture="environment" data-ph hidden>`;q('[data-ph]').onchange=e.target.onchange}catch(er){toast(er.message,'e')}};
+ q('[data-go]').onclick=async ev=>{const n=S(q('[data-n]').value),qt=+S(q('[data-q]').value).replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c));if(!n){toast('اكتب اسم القطعة','w');return}if(!ph&&!confirm('بدون صورة؟ الصورة تساعد أمين المستودع على التعرّف على القطعة.'))return;
+  if(!navigator.onLine){toast('الإرسال يحتاج اتصالاً بالإنترنت','w');return}ev.currentTarget.disabled=true;
+  const p={name:n,descr:S(q('[data-d]').value),category:S(q('[data-c]').value),unit:S(q('[data-u]').value),qty:qt>0?qt:null,photo:ph||null,wo_id:pre.wo_id||null,ticket_ref:pre.ticket_ref||null};
+  try{const db=await C.engClient();const r=await db.rpc('fm_part_suggest',{p});if(r.error)throw Error(r.error.message);toast('أُرسل الاقتراح '+(r.data&&r.data.code||''));ov.remove();await load();draw()}catch(e){toast(ERR(e),'e');ev.currentTarget.disabled=false}}}
 /* F39: pick an item — category first, then the item (photo, client code, unit, what I hold) */
 let TH=null;async function thumbs(){if(TH)return TH;TH=new Map();try{const db=await C.engClient();const r=await db.from('wo_materials').select('id,thumb').not('thumb','is',null);if(!r.error)for(const x of r.data||[])TH.set(x.id,x.thumb)}catch(e){}return TH}
-async function pick(M,done){const s=sheet();const ov=document.createElement('div');ov.className='f39-pk';s.appendChild(ov);let cat='',qq='';
+async function pick(M,done,ctx){const s=sheet();const ov=document.createElement('div');ov.className='f39-pk';s.appendChild(ov);let cat='',qq='';
  const close=()=>ov.remove();const T=await thumbs();for(const m of M)if(T.has(m.id))m.thumb=T.get(m.id);
  const cats=[...M.reduce((g,m)=>g.set(S(m.category)||'أخرى',(g.get(S(m.category)||'أخرى')||0)+1),new Map()).entries()].sort((a,b)=>b[1]-a[1]);
  const IC=c=>/سباك/.test(c)?'🚿':/كهرب/.test(c)?'⚡':/مكيف|تكييف/.test(c)?'❄️':/نجار/.test(c)?'🪚':/دهان/.test(c)?'🎨':/بناء|مدني/.test(c)?'🧱':/لحام/.test(c)?'🔥':/حريق/.test(c)?'🧯':/مصاعد/.test(c)?'🛗':'📦';
  const draw=()=>{const L=M.filter(m=>(!cat||(S(m.category)||'أخرى')===cat)&&(!qq||[m.name,m.code,m.ext_code].some(v=>S(v).toLowerCase().includes(qq))));
   ov.innerHTML=`<div class="hd"><button type="button" data-b>→</button><h2>${cat?esc(IC(cat)+' '+cat):'اختر التصنيف'}</h2></div><div class="bd">
-   <input data-q placeholder="🔎 ابحث باسم الصنف أو الكود" value="${esc(qq)}">
+   <input data-q placeholder="🔎 ابحث باسم الصنف أو الكود" value="${esc(qq)}">${X.sugg?`<button type="button" class="f40-nf" data-nf>📷 لم أجد الصنف؟ أرسل صورته ووصفه لأمين المستودع</button>`:''}
    ${!cat&&!qq?`<div class="f39-cats">${cats.map(([c,n])=>`<button type="button" data-c="${esc(c)}"><i>${IC(c)}</i><b>${esc(c)}</b><small>${fmt(n)} صنف</small></button>`).join('')}</div>`
    :`${cat?`<div class="f39-chips">${cats.map(([c])=>`<button type="button" data-c="${esc(c)}" class="${c===cat?'on':''}">${IC(c)} ${esc(c)}</button>`).join('')}</div>`:''}
     <div class="f39-grid">${L.map(m=>{const h=(window.__fmfCus&&window.__fmfCus.get(m.id))||0;return `<button type="button" data-id="${esc(m.id)}">${m.thumb?`<img src="${esc(m.thumb)}" alt="" loading="lazy">`:'<span class="ni">📦</span>'}<b>${esc(m.name)}</b><small>${esc([m.ext_code?'Logix '+m.ext_code:'',m.unit].filter(Boolean).join(' • '))}</small>${h?`<i>🧰 في عهدتك ${fmt(h)}</i>`:''}</button>`}).join('')||'<div style="color:#64748b">لا توجد أصناف مطابقة</div>'}</div>`}</div>`;
   ov.querySelector('[data-b]').onclick=()=>{if(cat||qq){cat='';qq='';draw()}else close()};
   const qi=ov.querySelector('[data-q]');qi.oninput=()=>{qq=S(qi.value).toLowerCase();const p=qi.selectionStart;draw();const n=ov.querySelector('[data-q]');n.focus();try{n.setSelectionRange(p,p)}catch(e){}};
   ov.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{cat=b.dataset.c;draw();ov.scrollTop=0});
-  ov.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{done(b.dataset.id);toast('أُضيف: '+mat(b.dataset.id).name);close()})};
+  ov.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{done(b.dataset.id);toast('أُضيف: '+mat(b.dataset.id).name);close()});const nf=ov.querySelector('[data-nf]');if(nf)nf.onclick=()=>{close();suggest(Object.assign({name:qq&&!/^\d+$/.test(qq)?qi.value:'',category:cat},ctx&&ctx()))}};
  draw()}
 window.fmfCustody=open;
 let n=0;const t=setInterval(async()=>{try{if(!ME){if(++n>90){clearInterval(t);return}if(!C.engClient||!C.api||!C.api.me)return;const p=await C.api.me();if(!p||!['supervisor','contractor','engineer'].includes(p.role))return;ME=p;try{await load();on=true}catch(e){X=null}}
@@ -1861,7 +1890,7 @@ const IOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='
 const STANDALONE=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
 const KINDS=[['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
  ['wo_esc','⏫ تصعيد أمر متأخر إليّ'],['wo_stop','⛔ إيقاف عمل'],['wh_req','📦 طلب صرف جديد (أمين المستودع)'],['wh_issued','🧰 صُرفت قطع لعهدتي أو رُفض طلبي'],
- ['wh_scrap','⏰ تالف متأخر عليّ'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات']];
+ ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات']];
 const b64u=buf=>{let s='';const b=new Uint8Array(buf);for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
 const unb64u=s=>{s=S(s);const t=atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4));const b=new Uint8Array(t.length);for(let i=0;i<t.length;i++)b[i]=t.charCodeAt(i);return b};
 let SET=null,SETAT=0;
@@ -2103,6 +2132,10 @@ else{let v;try{Object.defineProperty(window,'L',{configurable:true,enumerable:tr
  .psave{bottom:14px}
 }
 @media print{.bnav{display:none!important}.top,.wrap{margin-right:0!important}}
+</style>
+<style id="fmf-40-fix">
+/* F40: «.cb» is also the round call button of the school card (F25: 42 px circle); give the material search box its full row back */
+.mr .cb,.ndr .cb{width:auto;height:auto;border-radius:0;display:block;place-items:normal;font-size:inherit;flex:initial}
 </style>
 </body>
 </html>
