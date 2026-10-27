@@ -4508,6 +4508,222 @@ end $$;
 revoke all on function public.fm_wipe_plan(text[]), public.fm_wipe_backup_page(text, int, int) from public, anon;
 grant execute on function public.fm_wipe_plan(text[]), public.fm_wipe_backup_page(text, int, int) to authenticated;
 
+-- ---------- 32) personal file of each account (V206, field F38) ----------
+-- emp_no (الرقم الوظيفي) is set by the system admin only. personal = the person's own data, written only through
+-- fm_update_my_profile (whitelisted keys, trimmed, ≤ 200 chars each). The person cannot change his name or emp_no himself.
+alter table public.profiles add column if not exists emp_no   text;
+alter table public.profiles add column if not exists personal jsonb not null default '{}'::jsonb;
+drop policy if exists p_profiles_self on public.profiles;
+create policy p_profiles_self on public.profiles for update using (id = auth.uid())
+  with check (id = auth.uid() and role = (select role from public.profiles where id = auth.uid())
+              and job_title is not distinct from (select job_title from public.profiles where id = auth.uid())
+              and person_names = (select person_names from public.profiles where id = auth.uid())
+              and regions = (select regions from public.profiles where id = auth.uid())
+              and active = (select active from public.profiles where id = auth.uid())
+              and reports_to is not distinct from (select reports_to from public.profiles where id = auth.uid())
+              and full_name is not distinct from (select full_name from public.profiles where id = auth.uid())
+              and emp_no is not distinct from (select emp_no from public.profiles where id = auth.uid())
+              and personal = (select personal from public.profiles where id = auth.uid()));
+create or replace function public.fm_profile_keys() returns text[] language sql immutable as $$
+  select array['phone2','nid','nid_exp','nationality','birth','blood','marital','city','district','address',
+               'emerg_name','emerg_rel','emerg_phone','license_no','license_exp','qualification','specialty','experience','hire_date','bank_iban','notes'] $$;
+create or replace function public.fm_update_my_profile(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare k text; v text; outv jsonb := '{}'; cur jsonb;
+begin
+  if auth.uid() is null then raise exception 'not allowed' using errcode = '42501'; end if;
+  select personal into cur from public.profiles where id = auth.uid();
+  if not found then raise exception 'not allowed' using errcode = '42501'; end if;
+  outv := coalesce(cur, '{}');
+  for k in select unnest(public.fm_profile_keys()) loop
+    if p ? k then
+      v := left(btrim(coalesce(p->>k, '')), 200);
+      if k in ('nid_exp','birth','license_exp','hire_date') and v <> '' and v !~ '^\d{4}-\d{2}-\d{2}$' then raise exception 'bad date: %', k; end if;
+      if v = '' then outv := outv - k; else outv := outv || jsonb_build_object(k, v); end if;
+    end if;
+  end loop;
+  update public.profiles set personal = outv, updated_at = now() where id = auth.uid();
+  if p ? 'phone' then
+    update public.profiles set phone = nullif(left(btrim(p->>'phone'), 30), '') where id = auth.uid();
+    perform public.fm_apply_contact(auth.uid());
+  end if;
+  return outv;
+end $$;
+revoke all on function public.fm_update_my_profile(jsonb) from public, anon;
+grant execute on function public.fm_update_my_profile(jsonb) to authenticated;
+-- the person's own manager line (name and phone) for his profile page
+create or replace function public.fm_my_manager() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('id', b.id, 'name', coalesce(b.full_name, b.email), 'phone', b.phone, 'title', b.job_title)
+  from public.profiles m join public.profiles b on b.id = m.reports_to where m.id = auth.uid() $$;
+revoke all on function public.fm_my_manager() from public, anon;
+grant execute on function public.fm_my_manager() to authenticated;
+
+-- ---------- 33) spare-parts catalog with the client's codes and photos (V207, field F39) ----------
+-- ext_code = the item code in the client's system (Logix); thumb = a small JPEG (≤ 60 000 chars) shown in lists and in the
+-- field request picker. fm_wh_catalog_import(rows) adds / updates items from a catalog file and returns each row's item id
+-- so the platform can upload the row's photos (fm_mat_photo). New items follow the normal approval (fm_mat_save).
+alter table public.wo_materials add column if not exists ext_code text;
+alter table public.wo_materials add column if not exists thumb text;
+alter table public.wo_materials drop constraint if exists wo_materials_thumb_check;
+alter table public.wo_materials add constraint wo_materials_thumb_check check (thumb is null or (thumb ~ '^data:image/(jpeg|png|webp);base64,' and length(thumb) <= 60000));
+create index if not exists wo_materials_ext_idx on public.wo_materials (lower(ext_code));
+-- set the client code and / or the thumbnail of an item: p {ext_code?, thumb?} (a key present = set it, empty = clear)
+create or replace function public.fm_mat_extra(p_id uuid, p jsonb) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_wh_edit() then raise exception 'not allowed'; end if;
+  if not exists(select 1 from public.wo_materials where id = p_id) then raise exception 'not found'; end if;
+  if p ? 'ext_code' then update public.wo_materials set ext_code = left(nullif(btrim(coalesce(p->>'ext_code','')),''),60), updated_at = now() where id = p_id; end if;
+  if p ? 'thumb' then update public.wo_materials set thumb = nullif(p->>'thumb',''), updated_at = now() where id = p_id; end if;
+end $$;
+-- rows [{i, name, ext_code, unit, category, specs}] (≤ 500 a call) → [{i, id, st: new | updated | skipped, err?}]
+-- match: the name, else the client code when exactly one item has it (and the row has no nocode flag)
+create or replace function public.fm_wh_catalog_import(p_rows jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare x jsonb; mid uuid; n int; out jsonb := '[]'; ec text; nm text; st text;
+begin
+  if auth.uid() is null or not public.fm_wh_edit() then raise exception 'not allowed'; end if;
+  if jsonb_array_length(coalesce(p_rows,'[]')) > 500 then raise exception 'too many rows'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p_rows,'[]')) loop
+    ec := nullif(btrim(coalesce(x->>'ext_code','')),''); nm := btrim(coalesce(x->>'name','')); mid := null;
+    if nm = '' then out := out || jsonb_build_object('i', x->'i', 'st', 'skipped', 'err', 'name required'); continue; end if;
+    begin
+      select id into mid from public.wo_materials where lower(name) = lower(nm) limit 1;
+      -- a renamed item is found by its client code (not when the code repeats in the file: nocode)
+      if mid is null and ec is not null and not coalesce((x->>'nocode')::boolean, false) then
+        select count(*) into n from public.wo_materials where lower(ext_code) = lower(ec);
+        if n = 1 then select id into mid from public.wo_materials where lower(ext_code) = lower(ec); end if;
+      end if;
+      if mid is null then
+        mid := public.fm_mat_save(jsonb_strip_nulls(jsonb_build_object('name', nm, 'unit', x->>'unit', 'category', x->>'category', 'specs', nullif(btrim(coalesce(x->>'specs','')),''))));
+        st := 'new';
+      else
+        perform public.fm_mat_save(jsonb_strip_nulls(jsonb_build_object('id', mid, 'name', (select name from public.wo_materials where id = mid),
+          'unit', nullif(btrim(coalesce(x->>'unit','')),''), 'category', nullif(btrim(coalesce(x->>'category','')),''), 'specs', nullif(btrim(coalesce(x->>'specs','')),''))));
+        st := 'updated';
+      end if;
+      if ec is not null then update public.wo_materials set ext_code = left(ec,60) where id = mid; end if;
+      out := out || jsonb_build_object('i', x->'i', 'id', mid, 'st', st, 'photos', (select count(*) from public.wo_material_photos where material_id = mid));
+    exception when others then
+      out := out || jsonb_build_object('i', x->'i', 'st', 'skipped', 'err', left(sqlerrm, 200));
+    end;
+  end loop;
+  return out;
+end $$;
+revoke all on function public.fm_mat_extra(uuid, jsonb), public.fm_wh_catalog_import(jsonb) from public, anon;
+grant execute on function public.fm_mat_extra(uuid, jsonb), public.fm_wh_catalog_import(jsonb) to authenticated;
+
+-- ---------- 34) technician part suggestions and the low-stock alert (V208, field F40) ----------
+-- A technician who cannot find a part in the catalog sends its photo and description; the storekeeper (or anyone who edits
+-- the warehouse, fm_wh_edit) adds it as a new item (normal approval), links it to an existing item, or rejects it with a reason.
+create table if not exists public.wo_part_suggestions (
+  id          uuid primary key default gen_random_uuid(),
+  code        text unique,
+  by_id       uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  by_name     text,
+  region      text,
+  name        text not null,
+  descr       text,
+  category    text,
+  unit        text,
+  qty         numeric,
+  photo       text check (photo is null or (photo ~ '^data:image/(jpeg|png|webp);base64,' and length(photo) <= 420000)),
+  wo_id       uuid,
+  wo_code     text,
+  ticket_ref  text,
+  status      text not null default 'new' check (status in ('new','added','linked','rejected')),
+  material_id uuid references public.wo_materials(id) on delete set null,
+  note        text,
+  done_by     text,
+  done_at     timestamptz,
+  at          timestamptz not null default now()
+);
+create index if not exists wo_part_sugg_idx on public.wo_part_suggestions (status, at desc);
+alter table public.wo_part_suggestions enable row level security;
+drop policy if exists p_wps_read on public.wo_part_suggestions;
+create policy p_wps_read on public.wo_part_suggestions for select using (by_id = auth.uid() or public.fm_wh_edit()
+  or coalesce(public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager'), false));
+revoke insert, update, delete on public.wo_part_suggestions from anon, authenticated;
+create sequence if not exists public.wo_part_sugg_seq;
+-- the storekeepers who should hear about a region (the keeper of its stores, else the storekeepers of that region)
+create or replace function public.fm_wh_keepers_of(p_region text) returns setof uuid language sql stable security definer set search_path = public as $$
+  select distinct u from (
+    select s.keeper u from public.wo_stores s where s.active and s.keeper is not null and (p_region is null or s.region is null or s.region = p_region)
+    union
+    select p.id from public.profiles p where p.active and p.job_title = 'storekeeper'
+      and (p_region is null or cardinality(p.regions) = 0 or p_region = any(p.regions))) x where u is not null $$;
+revoke all on function public.fm_wh_keepers_of(text) from public, anon, authenticated;
+-- p {name, descr, category, unit, qty, photo, wo_id, ticket_ref}
+create or replace function public.fm_part_suggest(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare me public.profiles; r public.wo_part_suggestions; w public.work_orders; k uuid; q numeric := nullif(p->>'qty','')::numeric;
+begin
+  select * into me from public.profiles where id = auth.uid() and active;
+  if not found or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  if btrim(coalesce(p->>'name','')) = '' then raise exception 'name required'; end if;
+  if q is not null and (q <= 0 or q > 100000) then raise exception 'invalid qty'; end if;
+  if (select count(*) from public.wo_part_suggestions where by_id = auth.uid() and at > now() - interval '1 day') >= 20 then raise exception 'too many today'; end if;
+  if nullif(p->>'wo_id','') is not null then select * into w from public.work_orders where id = (p->>'wo_id')::uuid; end if;
+  insert into public.wo_part_suggestions(code, by_name, region, name, descr, category, unit, qty, photo, wo_id, wo_code, ticket_ref)
+  values ('PS-' || to_char(now(),'YYYY') || '-' || lpad(nextval('public.wo_part_sugg_seq')::text, 4, '0'), coalesce(me.full_name, me.email),
+    coalesce(w.region, (me.regions)[1]), left(btrim(p->>'name'),200), left(nullif(btrim(coalesce(p->>'descr','')),''),1000),
+    left(nullif(btrim(coalesce(p->>'category','')),''),80), left(nullif(btrim(coalesce(p->>'unit','')),''),40), q, nullif(p->>'photo',''),
+    w.id, w.code, left(nullif(btrim(coalesce(p->>'ticket_ref','')),''),60)) returning * into r;
+  begin
+    for k in select * from public.fm_wh_keepers_of(r.region) loop
+      perform public.fm_push_add(k, 'wh_req', '💡 صنف مقترح من ' || coalesce(r.by_name,''), r.name || coalesce(' — ' || r.wo_code, ''), 'wh=sugg', 'sugg');
+    end loop;
+  exception when others then null; end;
+  return jsonb_build_object('id', r.id, 'code', r.code);
+end $$;
+-- action: add (p {name?, category?, unit?, specs?}: a new item from the suggestion, its photo copied) | link (p {material_id}) | reject (p {note})
+create or replace function public.fm_part_suggest_act(p_id uuid, p_action text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.wo_part_suggestions; mid uuid; nm text := public.fm_me_name();
+begin
+  if auth.uid() is null or not public.fm_wh_edit() then raise exception 'not allowed'; end if;
+  select * into r from public.wo_part_suggestions where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if r.status <> 'new' then raise exception 'already handled'; end if;
+  if p_action = 'add' then
+    mid := public.fm_mat_save(jsonb_strip_nulls(jsonb_build_object('name', coalesce(nullif(btrim(coalesce(p->>'name','')),''), r.name),
+      'category', coalesce(nullif(btrim(coalesce(p->>'category','')),''), r.category), 'unit', coalesce(nullif(btrim(coalesce(p->>'unit','')),''), r.unit),
+      'specs', coalesce(nullif(btrim(coalesce(p->>'specs','')),''), r.descr), 'notes', 'مقترح من ' || coalesce(r.by_name,'') || ' (' || r.code || ')')));
+    if r.photo is not null then insert into public.wo_material_photos(material_id, data) values (mid, r.photo); end if;
+    update public.wo_part_suggestions set status = 'added', material_id = mid, note = left(nullif(btrim(coalesce(p->>'note','')),''),500), done_by = nm, done_at = now() where id = r.id;
+  elsif p_action = 'link' then
+    mid := nullif(p->>'material_id','')::uuid;
+    if mid is null or not exists(select 1 from public.wo_materials where id = mid) then raise exception 'unknown material'; end if;
+    update public.wo_part_suggestions set status = 'linked', material_id = mid, note = left(nullif(btrim(coalesce(p->>'note','')),''),500), done_by = nm, done_at = now() where id = r.id;
+  elsif p_action = 'reject' then
+    if btrim(coalesce(p->>'note','')) = '' then raise exception 'reason required'; end if;
+    update public.wo_part_suggestions set status = 'rejected', note = left(btrim(p->>'note'),500), done_by = nm, done_at = now() where id = r.id;
+  else raise exception 'invalid action'; end if;
+  begin
+    perform public.fm_push_add(r.by_id, 'wh_issued', case p_action when 'reject' then '✋ لم يُعتمد الصنف المقترح' else '✅ أُضيف الصنف المقترح' end,
+      r.name || case when p_action = 'reject' then ' — ' || btrim(p->>'note') when p_action = 'link' then ' → ' || (select name from public.wo_materials where id = mid) else '' end, 'cus', null);
+  exception when others then null; end;
+  return jsonb_build_object('status', (select status from public.wo_part_suggestions where id = r.id), 'material_id', mid);
+end $$;
+revoke all on function public.fm_part_suggest(jsonb), public.fm_part_suggest_act(uuid, text, jsonb) from public, anon;
+grant execute on function public.fm_part_suggest(jsonb), public.fm_part_suggest_act(uuid, text, jsonb) to authenticated;
+-- daily: each storekeeper hears how many items of his stores are below their minimum (wo_stock.min_qty > 0 and qty < min)
+create or replace function public.fm_wh_low_daily() returns int language plpgsql security definer set search_path = public as $$
+declare s record; k uuid; n int := 0;
+begin
+  for s in select st.id, st.name, st.region, count(*) c, string_agg(m.name, '، ' order by m.name) names
+           from public.wo_stock x join public.wo_stores st on st.id = x.store_id and st.active join public.wo_materials m on m.id = x.material_id and m.active
+           where coalesce(x.min_qty,0) > 0 and coalesce(x.qty,0) < x.min_qty group by st.id, st.name, st.region loop
+    for k in select * from public.fm_wh_keepers_of(s.region) loop
+      begin
+        if public.fm_push_add(k, 'wh_low', '⚠️ ' || s.c || ' صنف تحت الحد الأدنى — ' || s.name, left(s.names, 250), 'wh=low', 'low-' || s.id, true) then n := n + 1; end if;
+      exception when others then null; end;
+    end loop;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_wh_low_daily() from public, anon, authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-wh-low'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-wh-low'', ''10 5 * * *'', ''select public.fm_wh_low_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: the daily low-stock alert is not sent (the platform still shows it)'; end;
+end $do$;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
 
 
