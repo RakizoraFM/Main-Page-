@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F38">
+<meta name="fm-version" content="F39">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1695,6 +1695,21 @@ let n=0;const t=setInterval(async()=>{if(++n>60){clearInterval(t);return}try{if(
 })();
 </script>
 <style id="fmf-29-custody-css">
+#f29 .f39-ln{display:grid;grid-template-columns:48px 1fr auto 34px;gap:8px;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:6px;margin-bottom:6px}
+#f29 .f39-ln img,#f29 .f39-ln .ni{width:48px;height:48px;border-radius:9px;object-fit:cover;background:#fff;display:grid;place-items:center;font-size:22px}
+#f29 .f39-ln b{display:block;font-size:13.5px}#f29 .f39-ln small{display:block;color:#64748b;font-size:11.5px}
+#f29 .f39-q{display:flex;align-items:center;gap:4px}#f29 .f39-q button{width:30px;height:32px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;font-weight:900;font-size:16px}#f29 .f39-q input{width:52px;text-align:center;padding:6px}
+#f29 .f39-x{height:32px;border:0;background:#fee2e2;color:#b91c1c;border-radius:9px}
+#f29 .f39-pk{position:fixed;inset:0;z-index:5;background:var(--bg,#f1f5f9);overflow:auto}
+#f29 .f39-cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+#f29 .f39-cats button{border:1px solid #e2e8f0;background:#fff;border-radius:16px;padding:16px 10px;display:flex;flex-direction:column;align-items:center;gap:4px;font-family:Cairo,Tahoma,sans-serif;box-shadow:0 2px 8px rgba(15,23,42,.05)}
+#f29 .f39-cats i{font-style:normal;font-size:34px}#f29 .f39-cats b{font-size:15px}#f29 .f39-cats small{color:#64748b;font-weight:700}
+#f29 .f39-chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}#f29 .f39-chips button{flex:none;border:1px solid #cbd5e1;background:#fff;border-radius:99px;padding:5px 12px;font:800 13px Cairo,Tahoma,sans-serif}#f29 .f39-chips button.on{background:#1d4ed8;color:#fff;border-color:#1d4ed8}
+#f29 .f39-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+#f29 .f39-grid button{border:1px solid #e2e8f0;background:#fff;border-radius:14px;padding:8px;display:flex;flex-direction:column;gap:3px;text-align:right;font-family:Cairo,Tahoma,sans-serif}
+#f29 .f39-grid img,#f29 .f39-grid .ni{width:100%;aspect-ratio:1;object-fit:contain;border-radius:10px;background:#f8fafc;display:grid;place-items:center;font-size:34px}
+#f29 .f39-grid b{font-size:13px;line-height:1.5}#f29 .f39-grid small{color:#64748b;font-size:11.5px}#f29 .f39-grid i{font-style:normal;color:#166534;font-weight:800;font-size:12px}
+
 #f29{z-index:45}#f29 .hd{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;padding:12px 14px;background:var(--ink,#0f172a);color:#fff}
 #f29 .hd button{border:0;background:rgba(255,255,255,.15);color:#fff;border-radius:10px;padding:6px 12px;font:800 14px Cairo,Tahoma,sans-serif}#f29 .hd h2{margin:0;font-size:17px;flex:1}
 #f29 .bd{padding:12px;display:grid;gap:10px;max-width:760px;margin:0 auto}
@@ -1730,6 +1745,7 @@ async function load(){const db=await C.engClient();const since=new Date(Date.now
   db.from('wo_materials').select('id,code,name,unit,price,category,scrap_return,approved_at,active').order('name')]);
  if(R[0].error)throw Error(R[0].error.message);
  const g=i=>(!R[i].error&&R[i].data)||[];X={cus:g(0),mv:g(1),req:g(2).filter(r=>r.holder===ME.id||r.requested_by===ME.id),cnt:g(3),mats:g(4)};
+ try{const e=await db.from('wo_materials').select('id,ext_code');if(!e.error)for(const r of e.data||[]){const m=X.mats.find(x=>x.id===r.id);if(m)m.ext_code=r.ext_code}}catch(e){}
  window.__fmfCus=new Map(X.cus.filter(c=>+c.qty>0).map(c=>[c.material_id,+c.qty]));return X}
 const mat=id=>(X.mats.find(m=>m.id===id)||{name:'صنف'});
 const late=()=>X.mv.filter(m=>m.kind==='use'&&+m.scrap_open>0&&m.scrap_due&&m.scrap_due<today());
@@ -1763,22 +1779,43 @@ function draw(){const s=sheet(),L=late(),recv=X.req.filter(r=>r.holder===ME.id&&
  s.querySelectorAll('[data-ds]').forEach(b=>b.onclick=()=>{const n=prompt('سبب الاعتراض:');if(S(n))act('fm_custody_count_sign',{p_id:b.dataset.ds,p_agree:false,p_note:n},'تم تسجيل الاعتراض')});
  form(s.querySelector('[data-form]'))}
 async function form(box){let W=[];try{W=(await C.api.woList()||[]).filter(w=>w.assignee===ME.id&&!['closed','cancelled','rejected'].includes(w.status))}catch(e){}
- const M=X.mats.filter(m=>m.approved_at&&m.active!==false);const lines=[{}];
+ const M=X.mats.filter(m=>m.approved_at&&m.active!==false);const lines=[];
  box.innerHTML=`<label>السبب<select data-src>${W.length?`<option value="wo">أمر عمل مسند إليّ</option>`:''}<option value="ticket">بلاغ</option></select></label>
   <div data-w="wo" style="margin-top:6px"><select data-wo>${W.map(w=>`<option value="${esc(w.id)}">${esc(w.code||'')} — ${esc(w.school||w.title||'')}</option>`).join('')}</select></div>
   <div data-w="ticket" style="margin-top:6px"><input data-tk placeholder="رقم البلاغ" maxlength="60"><input data-sc placeholder="المدرسة (اختياري)" maxlength="200" style="margin-top:6px"></div>
-  <datalist id="f29-dl">${M.map(m=>`<option value="${esc(m.name)}">${esc([m.code,m.unit].filter(Boolean).join(' • '))}</option>`).join('')}</datalist>
-  <div style="margin:8px 0 4px;font-weight:800">الأصناف (المعتمدة فقط)</div><div data-ls></div><button type="button" class="bt" data-add>➕ صنف آخر</button>
+  <div style="margin:10px 0 6px;font-weight:800">الأصناف المطلوبة</div><div data-ls></div><button type="button" class="bt p" data-add style="width:100%;padding:10px">➕ اختر صنفاً (حسب التصنيف)</button>
   <input data-nt placeholder="ملاحظة (اختياري)" maxlength="500" style="margin-top:8px"><button type="button" class="bt p" data-send style="width:100%;margin-top:8px;padding:10px">📤 إرسال الطلب لأمين المستودع</button>`;
  const q=x=>box.querySelector(x),sw=()=>box.querySelectorAll('[data-w]').forEach(e=>e.hidden=e.dataset.w!==q('[data-src]').value);q('[data-src]').onchange=sw;sw();
- const dr=()=>{q('[data-ls]').innerHTML=lines.map((l,i)=>`<div class="ln"><input list="f29-dl" data-i="${i}" data-c="n" placeholder="الصنف" value="${esc(l.n||'')}"><input data-i="${i}" data-c="q" inputmode="decimal" placeholder="الكمية" value="${esc(l.q||'')}"><button type="button" data-d="${i}">✕</button></div>`).join('');
-  q('[data-ls]').querySelectorAll('input').forEach(e=>e.oninput=()=>{lines[+e.dataset.i][e.dataset.c]=e.value});q('[data-ls]').querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.d,1);if(!lines.length)lines.push({});dr()})};
- dr();q('[data-add]').onclick=()=>{lines.push({});dr()};
- q('[data-send]').onclick=async ev=>{const L=[];for(const l of lines){if(!S(l.n))continue;const m=M.find(m=>m.name===S(l.n));const qt=+S(l.q).replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c));if(!m){toast('اختر الصنف من القائمة: '+S(l.n),'w');return}if(!(qt>0)){toast('كمية غير صحيحة: '+m.name,'w');return}L.push({material_id:m.id,qty:qt})}
+ const im=m=>m.thumb?`<img src="${esc(m.thumb)}" alt="">`:'<span class="ni">📦</span>';
+ const dr=()=>{q('[data-ls]').innerHTML=lines.length?lines.map((l,i)=>{const m=mat(l.id);return `<div class="f39-ln">${im(m)}<div><b>${esc(m.name)}</b><small>${esc([m.ext_code?'Logix '+m.ext_code:'',m.unit].filter(Boolean).join(' • '))}</small></div>
+   <div class="f39-q"><button type="button" data-m="${i}">−</button><input data-i="${i}" inputmode="decimal" value="${esc(l.q)}"><button type="button" data-p="${i}">+</button></div><button type="button" class="f39-x" data-d="${i}">✕</button></div>`}).join(''):'<div style="color:#64748b;font-size:13px;margin-bottom:6px">لم تختر أصنافاً بعد.</div>';
+  q('[data-ls]').querySelectorAll('[data-i]').forEach(e=>e.oninput=()=>{lines[+e.dataset.i].q=e.value});
+  q('[data-ls]').querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const l=lines[+b.dataset.m];l.q=Math.max(1,(+l.q||1)-1);dr()});
+  q('[data-ls]').querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const l=lines[+b.dataset.p];l.q=(+l.q||0)+1;dr()});
+  q('[data-ls]').querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.d,1);dr()})};
+ dr();q('[data-add]').onclick=()=>pick(M,id=>{const l=lines.find(x=>x.id===id);if(l)l.q=(+l.q||0)+1;else lines.push({id,q:1});dr()});
+ q('[data-send]').onclick=async ev=>{const L=[];for(const l of lines){const m=mat(l.id);const qt=+S(l.q).replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c));if(!(qt>0)){toast('كمية غير صحيحة: '+m.name,'w');return}L.push({material_id:l.id,qty:qt})}
   if(!L.length){toast('أضف صنفاً','w');return}const src=q('[data-src]').value,p={source:src,lines:L,note:S(q('[data-nt]').value)};
   if(src==='wo')p.wo_id=q('[data-wo]').value;else{p.ticket_ref=S(q('[data-tk]').value);p.school=S(q('[data-sc]').value);if(!p.ticket_ref){toast('اكتب رقم البلاغ','w');return}}
   if(!navigator.onLine){toast('الطلب يحتاج اتصالاً بالإنترنت','w');return}ev.currentTarget.disabled=true;
   try{const db=await C.engClient();const r=await db.rpc('fm_issue_req_new',{p});if(r.error)throw Error(r.error.message);toast('تم إرسال الطلب '+(r.data&&r.data.code||''));await load();draw()}catch(e){toast(ERR(e),'e');ev.currentTarget.disabled=false}}}
+/* F39: pick an item — category first, then the item (photo, client code, unit, what I hold) */
+let TH=null;async function thumbs(){if(TH)return TH;TH=new Map();try{const db=await C.engClient();const r=await db.from('wo_materials').select('id,thumb').not('thumb','is',null);if(!r.error)for(const x of r.data||[])TH.set(x.id,x.thumb)}catch(e){}return TH}
+async function pick(M,done){const s=sheet();const ov=document.createElement('div');ov.className='f39-pk';s.appendChild(ov);let cat='',qq='';
+ const close=()=>ov.remove();const T=await thumbs();for(const m of M)if(T.has(m.id))m.thumb=T.get(m.id);
+ const cats=[...M.reduce((g,m)=>g.set(S(m.category)||'أخرى',(g.get(S(m.category)||'أخرى')||0)+1),new Map()).entries()].sort((a,b)=>b[1]-a[1]);
+ const IC=c=>/سباك/.test(c)?'🚿':/كهرب/.test(c)?'⚡':/مكيف|تكييف/.test(c)?'❄️':/نجار/.test(c)?'🪚':/دهان/.test(c)?'🎨':/بناء|مدني/.test(c)?'🧱':/لحام/.test(c)?'🔥':/حريق/.test(c)?'🧯':/مصاعد/.test(c)?'🛗':'📦';
+ const draw=()=>{const L=M.filter(m=>(!cat||(S(m.category)||'أخرى')===cat)&&(!qq||[m.name,m.code,m.ext_code].some(v=>S(v).toLowerCase().includes(qq))));
+  ov.innerHTML=`<div class="hd"><button type="button" data-b>→</button><h2>${cat?esc(IC(cat)+' '+cat):'اختر التصنيف'}</h2></div><div class="bd">
+   <input data-q placeholder="🔎 ابحث باسم الصنف أو الكود" value="${esc(qq)}">
+   ${!cat&&!qq?`<div class="f39-cats">${cats.map(([c,n])=>`<button type="button" data-c="${esc(c)}"><i>${IC(c)}</i><b>${esc(c)}</b><small>${fmt(n)} صنف</small></button>`).join('')}</div>`
+   :`${cat?`<div class="f39-chips">${cats.map(([c])=>`<button type="button" data-c="${esc(c)}" class="${c===cat?'on':''}">${IC(c)} ${esc(c)}</button>`).join('')}</div>`:''}
+    <div class="f39-grid">${L.map(m=>{const h=(window.__fmfCus&&window.__fmfCus.get(m.id))||0;return `<button type="button" data-id="${esc(m.id)}">${m.thumb?`<img src="${esc(m.thumb)}" alt="" loading="lazy">`:'<span class="ni">📦</span>'}<b>${esc(m.name)}</b><small>${esc([m.ext_code?'Logix '+m.ext_code:'',m.unit].filter(Boolean).join(' • '))}</small>${h?`<i>🧰 في عهدتك ${fmt(h)}</i>`:''}</button>`}).join('')||'<div style="color:#64748b">لا توجد أصناف مطابقة</div>'}</div>`}</div>`;
+  ov.querySelector('[data-b]').onclick=()=>{if(cat||qq){cat='';qq='';draw()}else close()};
+  const qi=ov.querySelector('[data-q]');qi.oninput=()=>{qq=S(qi.value).toLowerCase();const p=qi.selectionStart;draw();const n=ov.querySelector('[data-q]');n.focus();try{n.setSelectionRange(p,p)}catch(e){}};
+  ov.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{cat=b.dataset.c;draw();ov.scrollTop=0});
+  ov.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{done(b.dataset.id);toast('أُضيف: '+mat(b.dataset.id).name);close()})};
+ draw()}
 window.fmfCustody=open;
 let n=0;const t=setInterval(async()=>{try{if(!ME){if(++n>90){clearInterval(t);return}if(!C.engClient||!C.api||!C.api.me)return;const p=await C.api.me();if(!p||!['supervisor','contractor','engineer'].includes(p.role))return;ME=p;try{await load();on=true}catch(e){X=null}}
  if(on)homeCard()}catch(e){}},1500);

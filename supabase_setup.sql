@@ -4557,6 +4557,59 @@ create or replace function public.fm_my_manager() returns jsonb language sql sta
 revoke all on function public.fm_my_manager() from public, anon;
 grant execute on function public.fm_my_manager() to authenticated;
 
+-- ---------- 33) spare-parts catalog with the client's codes and photos (V207, field F39) ----------
+-- ext_code = the item code in the client's system (Logix); thumb = a small JPEG (≤ 60 000 chars) shown in lists and in the
+-- field request picker. fm_wh_catalog_import(rows) adds / updates items from a catalog file and returns each row's item id
+-- so the platform can upload the row's photos (fm_mat_photo). New items follow the normal approval (fm_mat_save).
+alter table public.wo_materials add column if not exists ext_code text;
+alter table public.wo_materials add column if not exists thumb text;
+alter table public.wo_materials drop constraint if exists wo_materials_thumb_check;
+alter table public.wo_materials add constraint wo_materials_thumb_check check (thumb is null or (thumb ~ '^data:image/(jpeg|png|webp);base64,' and length(thumb) <= 60000));
+create index if not exists wo_materials_ext_idx on public.wo_materials (lower(ext_code));
+-- set the client code and / or the thumbnail of an item: p {ext_code?, thumb?} (a key present = set it, empty = clear)
+create or replace function public.fm_mat_extra(p_id uuid, p jsonb) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_wh_edit() then raise exception 'not allowed'; end if;
+  if not exists(select 1 from public.wo_materials where id = p_id) then raise exception 'not found'; end if;
+  if p ? 'ext_code' then update public.wo_materials set ext_code = left(nullif(btrim(coalesce(p->>'ext_code','')),''),60), updated_at = now() where id = p_id; end if;
+  if p ? 'thumb' then update public.wo_materials set thumb = nullif(p->>'thumb',''), updated_at = now() where id = p_id; end if;
+end $$;
+-- rows [{i, name, ext_code, unit, category, specs}] (≤ 500 a call) → [{i, id, st: new | updated | skipped, err?}]
+-- match: the name, else the client code when exactly one item has it (and the row has no nocode flag)
+create or replace function public.fm_wh_catalog_import(p_rows jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare x jsonb; mid uuid; n int; out jsonb := '[]'; ec text; nm text; st text;
+begin
+  if auth.uid() is null or not public.fm_wh_edit() then raise exception 'not allowed'; end if;
+  if jsonb_array_length(coalesce(p_rows,'[]')) > 500 then raise exception 'too many rows'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p_rows,'[]')) loop
+    ec := nullif(btrim(coalesce(x->>'ext_code','')),''); nm := btrim(coalesce(x->>'name','')); mid := null;
+    if nm = '' then out := out || jsonb_build_object('i', x->'i', 'st', 'skipped', 'err', 'name required'); continue; end if;
+    begin
+      select id into mid from public.wo_materials where lower(name) = lower(nm) limit 1;
+      -- a renamed item is found by its client code (not when the code repeats in the file: nocode)
+      if mid is null and ec is not null and not coalesce((x->>'nocode')::boolean, false) then
+        select count(*) into n from public.wo_materials where lower(ext_code) = lower(ec);
+        if n = 1 then select id into mid from public.wo_materials where lower(ext_code) = lower(ec); end if;
+      end if;
+      if mid is null then
+        mid := public.fm_mat_save(jsonb_strip_nulls(jsonb_build_object('name', nm, 'unit', x->>'unit', 'category', x->>'category', 'specs', nullif(btrim(coalesce(x->>'specs','')),''))));
+        st := 'new';
+      else
+        perform public.fm_mat_save(jsonb_strip_nulls(jsonb_build_object('id', mid, 'name', (select name from public.wo_materials where id = mid),
+          'unit', nullif(btrim(coalesce(x->>'unit','')),''), 'category', nullif(btrim(coalesce(x->>'category','')),''), 'specs', nullif(btrim(coalesce(x->>'specs','')),''))));
+        st := 'updated';
+      end if;
+      if ec is not null then update public.wo_materials set ext_code = left(ec,60) where id = mid; end if;
+      out := out || jsonb_build_object('i', x->'i', 'id', mid, 'st', st, 'photos', (select count(*) from public.wo_material_photos where material_id = mid));
+    exception when others then
+      out := out || jsonb_build_object('i', x->'i', 'st', 'skipped', 'err', left(sqlerrm, 200));
+    end;
+  end loop;
+  return out;
+end $$;
+revoke all on function public.fm_mat_extra(uuid, jsonb), public.fm_wh_catalog_import(jsonb) from public, anon;
+grant execute on function public.fm_mat_extra(uuid, jsonb), public.fm_wh_catalog_import(jsonb) to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
 
 
