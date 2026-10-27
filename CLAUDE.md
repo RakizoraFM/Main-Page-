@@ -158,3 +158,11 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 - 119 local regressions pass. Native PostgreSQL/PGlite executes the full schema plus rerun with a Supabase-shaped Auth/Storage bootstrap and RLS actor roles: 198 company +10 control checks. Credentials/auth/REST/storage delivery are adapters, not live Supabase. No external database writes.
 - Reusable tests/integration (PGlite 0.3.14, Playwright 1.62.1), JSON evidence and QA_REPORT_V197.md included. Baseline test now allows only explicitly hashed V197 changes to unnamed main script index7 and v321 index15; other business scripts stay identical to V195 apart from version log/manual.
 - Remaining acceptance: real Auth/Storage, managed extensions, pg_cron/pg_net/Edge delivery, phones/GPS/camera/offline restart, concurrency/first-admin bootstrap, and real pg_dump restore. Do not certify every function or production readiness from this local result.
+
+## V201 — sidebar by category
+- V123 `GROUPS` rewritten into 11 groups by subject (sla, tickets, maint, schools, staff, wh, fin, analysis, reports, data, system); every old nav id kept, none duplicated. `fm-v201-nav-guard` re-runs `fmV123Rebuild()` every 1.5 s when the nav lost `fm123-ready` or has a loose `.v2-nav-btn` (sign-in recreates the sidebar after the V123 observer stopped watching).
+
+## V202 — reset that works on a real project
+- Section 31 of `supabase_setup.sql`: `fm_wipe_plan(parts)` (tables + row counts + app_kv) and `fm_wipe_backup_page(table, offset, limit ≤ 1000)` (only tables listed in `fm_wipe_parts`, sysadmin only). The reset card reads the backup in pages of 500 (one `fm_wipe_backup` call ≈ 70 MB for 6 000 tickets); falls back to `fm_wipe_backup` when section 31 is missing. A failed backup asks «متابعة بدون نسخة احتياطية؟»; cancel = nothing deleted.
+- `fm_wipe` sets `fm.wipe = '1'` (transaction-local); the V197 `fm_mod_guard` lets DELETE through when that flag is set and `fm_wipe_ok()` (before, a part turned off in `fm_plan.modules` made the reset fail with «module disabled»). Same change in `migration_v197.sql`.
+- Errors show as a red box (Arabic reason + raw message) and an `alert`; a hint line says to tick a part / type «تصفير».

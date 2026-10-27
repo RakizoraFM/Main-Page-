@@ -11,6 +11,8 @@ $$;
 create or replace function public.fm_mod_guard() returns trigger
 language plpgsql security definer set search_path=public as $$
 begin
+ -- V202: the admin data reset (fm_wipe) may empty a table even when the plan or the part is off
+ if tg_op='DELETE' and current_setting('fm.wipe',true)='1' and public.fm_wipe_ok() then return old;end if;
  if not public.fm_plan_ok() then raise exception 'subscription expired' using errcode='42501';end if;
  if not public.fm_mod(tg_argv[0]) then raise exception 'module disabled: %',tg_argv[0] using errcode='42501';end if;
  if tg_op='DELETE' then return old;end if;

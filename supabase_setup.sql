@@ -4437,6 +4437,7 @@ begin
   if btrim(coalesce(p_confirm,'')) <> 'تصفير' then raise exception 'confirm required'; end if;
   select coalesce(array_agg(distinct x), '{}') into parts from unnest(coalesce(p_parts,'{}')) x where P ? x;
   if cardinality(parts) = 0 then raise exception 'no parts'; end if;
+  perform set_config('fm.wipe', '1', true);   -- V202: let fm_mod_guard allow these deletes (this transaction only)
   -- the warehouse catalog cannot go without its moves
   if 'wh_catalog' = any(parts) and not 'wh_moves' = any(parts) then parts := parts || 'wh_moves'::text; end if;
   -- the order of the parts: what refers to others first
@@ -4471,6 +4472,41 @@ end $$;
 revoke all on function public.fm_wipe_parts(), public.fm_wipe_kv_match(text, text), public.fm_wipe_ok() from public, anon, authenticated;
 revoke all on function public.fm_wipe_counts(), public.fm_wipe_backup(text[]), public.fm_wipe(text[], text) from public, anon;
 grant execute on function public.fm_wipe_counts(), public.fm_wipe_backup(text[]), public.fm_wipe(text[], text) to authenticated;
+
+-- ---------- 31) reset backup in pages (V202) ----------
+-- One call with every row (fm_wipe_backup) can pass the API's time / size limits on a real project (≈ 40 MB for 6 000
+-- tickets), and then the reset stopped before deleting anything. The platform now reads the backup in pages.
+-- fm_wipe_plan(parts) → {tables:[{t, n}], kv:{…}} ; fm_wipe_backup_page(table, offset, limit) → rows (≤ 1000)
+create or replace function public.fm_wipe_plan(p_parts text[]) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare P jsonb := public.fm_wipe_parts(); k text; t text; n bigint; tabs jsonb := '[]'; seen text[] := '{}'; kv jsonb := '{}'; v jsonb;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  foreach k in array coalesce(p_parts,'{}') loop
+    if not P ? k then continue; end if;
+    for t in select jsonb_array_elements_text(P->k) loop
+      if to_regclass('public.' || t) is not null and not t = any(seen) then
+        execute format('select count(*) from public.%I', t) into n; tabs := tabs || jsonb_build_object('t', t, 'n', n); seen := seen || t;
+      end if;
+    end loop;
+    if k in ('tickets','schooldb') then
+      select coalesce(jsonb_object_agg(a.key, a.value), '{}') into v from public.app_kv a where public.fm_wipe_kv_match(k, a.key);
+      kv := kv || jsonb_build_object(k, v);
+    end if;
+  end loop;
+  return jsonb_build_object('at', now(), 'parts', to_jsonb(p_parts), 'tables', tabs, 'kv', kv);
+end $$;
+create or replace function public.fm_wipe_backup_page(p_table text, p_offset int, p_limit int) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ok boolean; r jsonb;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  select exists(select 1 from jsonb_each(public.fm_wipe_parts()) e, jsonb_array_elements_text(e.value) x where x = p_table) into ok;
+  if not ok or to_regclass('public.' || p_table) is null then raise exception 'unknown table'; end if;
+  execute format('select coalesce(jsonb_agg(to_jsonb(x)), ''[]'') from (select * from public.%I order by ctid offset %s limit %s) x',
+                 p_table, greatest(coalesce(p_offset,0),0), least(greatest(coalesce(p_limit,500),1),1000)) into r;
+  return r;
+end $$;
+revoke all on function public.fm_wipe_plan(text[]), public.fm_wipe_backup_page(text, int, int) from public, anon;
+grant execute on function public.fm_wipe_plan(text[]), public.fm_wipe_backup_page(text, int, int) to authenticated;
 
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
 
@@ -4799,6 +4835,8 @@ $$;
 create or replace function public.fm_mod_guard() returns trigger
 language plpgsql security definer set search_path=public as $$
 begin
+ -- V202: the admin data reset (fm_wipe) may empty a table even when the plan or the part is off
+ if tg_op='DELETE' and current_setting('fm.wipe',true)='1' and public.fm_wipe_ok() then return old;end if;
  if not public.fm_plan_ok() then raise exception 'subscription expired' using errcode='42501';end if;
  if not public.fm_mod(tg_argv[0]) then raise exception 'module disabled: %',tg_argv[0] using errcode='42501';end if;
  if tg_op='DELETE' then return old;end if;
