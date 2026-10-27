@@ -166,3 +166,7 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 - Section 31 of `supabase_setup.sql`: `fm_wipe_plan(parts)` (tables + row counts + app_kv) and `fm_wipe_backup_page(table, offset, limit ≤ 1000)` (only tables listed in `fm_wipe_parts`, sysadmin only). The reset card reads the backup in pages of 500 (one `fm_wipe_backup` call ≈ 70 MB for 6 000 tickets); falls back to `fm_wipe_backup` when section 31 is missing. A failed backup asks «متابعة بدون نسخة احتياطية؟»; cancel = nothing deleted.
 - `fm_wipe` sets `fm.wipe = '1'` (transaction-local); the V197 `fm_mod_guard` lets DELETE through when that flag is set and `fm_wipe_ok()` (before, a part turned off in `fm_plan.modules` made the reset fail with «module disabled»). Same change in `migration_v197.sql`.
 - Errors show as a red box (Arabic reason + raw message) and an `alert`; a hint line says to tick a part / type «تصفير».
+
+## V203 — logo goes home; reset DELETE fix
+- `fm-v203-brand-home`: the sidebar `.v2-brand` (class `fm203`, role button, Enter / Space) calls `window.fmV203Home()`: closes `.fm103-page`, the V92 contractor page, `#eng-page`, `#fm157-portal`, `#fm158-qa`, clears the active nav button and a `#wo…` hash, scrolls to the top. Full-screen pages that cover the sidebar (QA, engagement, report modal) keep their own close buttons.
+- `fm_wipe` deletes with `where true`: Supabase's pg_safeupdate refuses a DELETE without WHERE («DELETE requires a WHERE clause»). Never write a bare `delete from t` in a function called through the API.
