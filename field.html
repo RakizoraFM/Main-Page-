@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F36">
+<meta name="fm-version" content="F37">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -652,7 +652,7 @@ async function drawMap(rows,openSchool){
   const mk=L.circleMarker(ll,{radius:8+Math.min(10,Math.sqrt(r.open+(r.wos?r.wos.length:0))*2.5),color:'#fff',weight:2,fillColor:col(r),fillOpacity:.92}).addTo(map)
    .bindTooltip(`${esc(r.name)}${r.open?` · 📂 ${fmt(r.open)}`:''}${r.wos&&r.wos.length?` · 🛠️ ${fmt(r.wos.length)}`:''}`,{direction:'top',offset:[0,-6]});
   mk.on('click',()=>schoolSheet(r.name));D.mk.set(r.name,mk)});
- if(D.myPos){const ll=[D.myPos.lat,D.myPos.lng];bounds.push(ll);L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).addTo(map).bindTooltip('موقعي')}
+ if(D.myPos)bounds.push([D.myPos.lat,D.myPos.lng]);   /* F37: the blue «موقعي» dot is drawn by fmf-37-mylocation */
  if(bounds.length)map.fitBounds(bounds,{padding:[30,30],maxZoom:15});else map.setView([24.71,46.68],10);
  box.addEventListener('click',e=>{const b=e.target.closest('[data-psch]');if(b)openSchool(b.dataset.psch)});
  setTimeout(()=>map.invalidateSize(),200);
@@ -1922,6 +1922,39 @@ function render(d){if(!scope||scope!==identity()){list=[];d.close();return}const
 async function load(d){scope=identity();list=[];d.querySelector('[data-items]').textContent='';d.querySelector('[data-state]').textContent='جارٍ القراءة من السحابة…';const mine=window.__fmField?.D?.me?.id,initial=scope;if(!scope){d.querySelector('[data-state]').textContent='سجّل الدخول أولاً';return}try{const db=await C.engClient(),r=await db.rpc('fm_parts_list');if(r.error)throw Error(r.error.message);if(initial!==identity()||!d.isConnected)return;list=(r.data||[]).filter(x=>x.holder===mine||x.requested_by===mine);render(d)}catch(e){if(!d.isConnected)return;d.querySelector('[data-state]').textContent='تعذرت القراءة؛ يلزم الاتصال وتثبيت تحديث V193. '+e.message}}
 window.fmfPartsTracking=()=>{all=false;load(panel())};
 function button(){if(scope&&scope!==identity()){list=[];scope='';document.getElementById('fm193-field-parts')?.close()}const home=document.querySelector('#app .card.hello');if(!identity()){document.getElementById('f36-parts')?.remove();document.getElementById('fm193-field-parts')?.close();return}if(!home||document.getElementById('f36-parts'))return;const b=document.createElement('button');b.id='f36-parts';b.className='big';b.textContent='🧩 متابعة طلبات قطع الغيار';b.onclick=window.fmfPartsTracking;home.appendChild(b)}setInterval(button,1800);button();
+})();
+</script>
+<script id="fmf-37-mylocation">/* F37 */(function(){'use strict';
+/* Every Leaflet map shows where the user is: a blue dot (+ accuracy circle) and a «📍» button that centres the map on it.
+   Leaflet is loaded lazily, so the hook is installed the moment window.L is set. One shared position watch while maps are open. */
+const maps=new Set();let pos=null,watch=null,denied=false,asked=false;
+const geo=()=>typeof navigator!=='undefined'&&navigator.geolocation&&window.isSecureContext!==false;
+function draw(m){if(!pos||!m._fmMe)return;const ll=[pos.lat,pos.lng],L=window.L;
+ try{if(!m._fmMe.dot){m._fmMe.acc=L.circle(ll,{radius:pos.acc,color:'#2563eb',weight:1,fillColor:'#3b82f6',fillOpacity:.12,interactive:false});
+   m._fmMe.dot=L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).bindTooltip('📍 موقعي',{direction:'top',offset:[0,-6]});
+   m._fmMe.dot.addTo(m);if(pos.acc<3000)m._fmMe.acc.addTo(m)}
+  else{m._fmMe.dot.setLatLng(ll);m._fmMe.acc.setLatLng(ll).setRadius(pos.acc);if(pos.acc<3000&&!m.hasLayer(m._fmMe.acc))m._fmMe.acc.addTo(m)}
+  if(m._fmMe.go){m._fmMe.go=false;m.setView(ll,Math.max(m.getZoom()||0,15))}}catch(e){}}
+function got(p){pos={lat:p.coords.latitude,lng:p.coords.longitude,acc:Math.max(5,p.coords.accuracy||50)};denied=false;maps.forEach(draw)}
+function fail(e){if(e&&e.code===1)denied=true;maps.forEach(m=>{if(m._fmMe&&m._fmMe.go){m._fmMe.go=false;tell(e)}})}
+function tell(e){const t=!geo()?'تحديد الموقع غير متاح في هذا المتصفح.':e&&e.code===1?'تحديد الموقع مرفوض. اسمح للموقع من إعدادات المتصفح (رمز القفل بجوار العنوان) ثم أعد المحاولة.':'تعذّر تحديد موقعك الآن. تأكد من تشغيل الموقع (GPS) وأعد المحاولة.';
+ try{(window.toast||window.showToast)?(window.toast||window.showToast)(t,'warning'):alert(t)}catch(x){alert(t)}}
+function start(){if(watch!==null||!geo())return;asked=true;
+ try{watch=navigator.geolocation.watchPosition(got,fail,{enableHighAccuracy:true,maximumAge:30000,timeout:20000})}catch(e){}}
+function stop(){if(watch!==null&&!maps.size){try{navigator.geolocation.clearWatch(watch)}catch(e){}watch=null}}
+function hook(L){if(!L||!L.Map||L.__fmMe)return;L.__fmMe=true;
+ const Btn=L.Control.extend({options:{position:'topleft'},onAdd(m){const b=L.DomUtil.create('a','leaflet-bar fm-me-btn');b.href='#';b.title='موقعي';b.setAttribute('role','button');b.setAttribute('aria-label','موقعي');b.textContent='📍';
+  b.style.cssText='display:block;width:34px;height:34px;line-height:34px;text-align:center;font-size:17px;background:#fff;cursor:pointer;text-decoration:none';
+  L.DomEvent.disableClickPropagation(b);L.DomEvent.on(b,'click',ev=>{L.DomEvent.preventDefault(ev);if(!geo()||denied)return tell(denied?{code:1}:null);
+   if(pos){m._fmMe.go=false;m.setView([pos.lat,pos.lng],Math.max(m.getZoom()||0,15))}else{m._fmMe.go=true;start();
+    try{navigator.geolocation.getCurrentPosition(got,fail,{enableHighAccuracy:true,timeout:20000,maximumAge:60000})}catch(e){}}});return b}});
+ L.Map.addInitHook(function(){const m=this;m._fmMe={};maps.add(m);try{new Btn().addTo(m)}catch(e){}
+  m.on('unload',()=>{maps.delete(m);setTimeout(stop,60000)});
+  setTimeout(()=>{if(!maps.has(m))return;if(pos)draw(m);if(!denied)start()},300)});
+}
+window.fmMyLocation={get pos(){return pos},start};
+if(window.L)hook(window.L);
+else{let v;try{Object.defineProperty(window,'L',{configurable:true,enumerable:true,get(){return v},set(x){v=x;try{hook(x)}catch(e){}}})}catch(e){const t=setInterval(()=>{if(window.L){clearInterval(t);hook(window.L)}},50)}}
 })();
 </script>
 </body>

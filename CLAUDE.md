@@ -173,3 +173,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V204 — no «مسح كافة البيانات» in the sidebar
 - `fm-v204-no-clear-all` (CSS) hides `#fm-v38-clear-all-nav` and the V123 `.fm123-danger-wrap`; `fmClearAllPlatformData` stays defined. The reset is the V190 card in «الإعدادات» ← السحابة.
+
+## V205 / field F37 — my location on every map
+- `fm-v205-mylocation` (platform) and `fmf-37-mylocation` (field) are the same code: a setter on `window.L` installs `L.Map.addInitHook` the moment the lazy Leaflet loads, so every Leaflet map gets a «📍» control (top left; centres on me, zoom ≥ 15) and a blue dot + accuracy circle (< 3 km). One shared `watchPosition` (high accuracy, maximumAge 30 s) starts when a map opens and stops 60 s after the last map unloads; `window.fmMyLocation` {pos, start}. The view is not moved by itself. Denied / unavailable → a toast with the fix. The field `drawMap` no longer draws its own «موقعي» marker (it still adds `D.myPos` to the bounds). Google Maps links are unchanged (they show the location themselves).

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V204">
+<meta name="fm-version" content="V205">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25618,10 +25618,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V204',date:'2026-10-27',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V205',date:'2026-10-27',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V205',d:'2026-10-27',t:'موقعي على الخرائط',i:['كل خريطة في المنصة وتطبيق الميدان تُظهر موقعك الحالي بنقطة زرقاء (مع دائرة الدقة)','زر «📍» في الخريطة يحرّكها إلى موقعك','يطلب المتصفح إذن الموقع أول مرة']},
 {v:'V204',d:'2026-10-27',t:'إزالة زر «مسح كافة البيانات»',i:['حُذف زر «مسح كافة البيانات» من أسفل القائمة الجانبية؛ التصفير لمدير النظام من الإعدادات ← السحابة ← «🧹 تصفير بيانات المنصة»']},
 {v:'V203',d:'2026-10-27',t:'الشعار يعود للرئيسية وإصلاح التصفير',i:['الضغط على شعار RakizoraFM أعلى القائمة الجانبية يغلق أي صفحة مفتوحة ويعود إلى الصفحة الرئيسية (لوحة البلاغات)','إصلاح رسالة «DELETE requires a WHERE clause» عند التصفير: Supabase يرفض الحذف بدون شرط، فأصبح الحذف بشرط صريح (يتطلب تشغيل آخر نسخة من supabase_setup.sql)']},
 {v:'V202',d:'2026-10-27',t:'إصلاح تصفير البيانات',i:['النسخة الاحتياطية قبل التصفير تُجهَّز على دفعات (500 سجل) بدل طلب واحد ضخم كان يتوقف على الخادم فيُلغى التصفير','إن تعذّرت النسخة الاحتياطية يُسأل المدير: متابعة التصفير بدونها أم الإلغاء','التصفير لم يعد يتوقف بسبب فحص الاشتراك / الأجزاء عند الحذف','رسالة خطأ واضحة بالعربية (مع نافذة تنبيه) وتلميح عند عدم اختيار أي بيانات']},
@@ -31841,7 +31842,7 @@ html::-webkit-scrollbar,nav.v2-nav::-webkit-scrollbar{display:none;width:0;heigh
    reach it, what = what it is for, how = steps, who = who uses it, tips, v = version that added / last changed it.
    RULE: every version that adds or changes a feature updates its entry here (and its v). */
 const MANUAL=[
- {g:'تصميم الصفحات الفرعية',icon:'🧩',items:[{id:'brand-home',t:'العودة للصفحة الرئيسية',where:'شعار RakizoraFM أعلى القائمة الجانبية',what:'يغلق أي صفحة فرعية أو صفحة كاملة مفتوحة (التواصل، البوابة، الجودة…) ويعود إلى لوحة البلاغات الرئيسية.',how:['اضغط على الشعار أو اسم RakizoraFM أعلى القائمة الجانبية.'],who:'الجميع',v:'V203'},{id:'layout-subpages',t:'البوكسات والجداول والنوافذ',where:'جميع الصفحات الفرعية داخل المنصة',what:'تخطيط متجاوب للبطاقات والعناوين والفلاتر، مع تمرير مستقل للجداول العريضة وبنود المستخلصات.',how:['صغّر عرض النافذة؛ تنتقل الحقول والبطاقات إلى أسطر إضافية.','استخدم تمرير الجدول لعرض الأعمدة، أو Tab ثم أسهم لوحة المفاتيح.','تظل أزرار الإغلاق والتكبير والتصغير والتصدير بوظائفها السابقة.'],who:'كل مستخدمي المنصة وفق صلاحيات الصفحات',tips:['هذه تحسينات عرض؛ لا تغير حساب المؤشرات أو قواعد SLA.','تظل قوالب الطباعة والتصدير السابقة مستقلة عن تنسيق الشاشة.'],v:'V196'}]},
+ {g:'تصميم الصفحات الفرعية',icon:'🧩',items:[{id:'map-me',t:'موقعي على الخريطة',where:'كل الخرائط (خريطة المدارس، ملف المدرسة، تطبيق الميدان)',what:'تظهر نقطة زرقاء في مكانك الحالي مع دائرة توضح دقة التحديد.',how:['افتح أي خريطة واسمح للمتصفح بمعرفة موقعك عند السؤال.','اضغط زر «📍» أعلى يسار الخريطة لتحريكها إلى موقعك.'],who:'الجميع',tips:['إن رفضت الإذن: اضغط رمز القفل بجوار عنوان الموقع واسمح بالموقع.','على الجوال شغّل الموقع (GPS) لدقة أعلى.'],v:'V205'},{id:'brand-home',t:'العودة للصفحة الرئيسية',where:'شعار RakizoraFM أعلى القائمة الجانبية',what:'يغلق أي صفحة فرعية أو صفحة كاملة مفتوحة (التواصل، البوابة، الجودة…) ويعود إلى لوحة البلاغات الرئيسية.',how:['اضغط على الشعار أو اسم RakizoraFM أعلى القائمة الجانبية.'],who:'الجميع',v:'V203'},{id:'layout-subpages',t:'البوكسات والجداول والنوافذ',where:'جميع الصفحات الفرعية داخل المنصة',what:'تخطيط متجاوب للبطاقات والعناوين والفلاتر، مع تمرير مستقل للجداول العريضة وبنود المستخلصات.',how:['صغّر عرض النافذة؛ تنتقل الحقول والبطاقات إلى أسطر إضافية.','استخدم تمرير الجدول لعرض الأعمدة، أو Tab ثم أسهم لوحة المفاتيح.','تظل أزرار الإغلاق والتكبير والتصغير والتصدير بوظائفها السابقة.'],who:'كل مستخدمي المنصة وفق صلاحيات الصفحات',tips:['هذه تحسينات عرض؛ لا تغير حساب المؤشرات أو قواعد SLA.','تظل قوالب الطباعة والتصدير السابقة مستقلة عن تنسيق الشاشة.'],v:'V196'}]},
  {g:'التشغيل المتكامل V195',icon:'📊',items:[{id:'v2-nav-fm195-alerts',t:'مركز التنبيهات والتصعيد',where:'القائمة الجانبية',what:'تنبيهات المصادر الحالية وسجل مسؤول وموعد واستلام وتصعيد.',how:['شغّل migration_v195.sql بعد V194.','اختر المنطقة والفترة وراجع تغطية المصادر.','افتح التفاصيل أو صدّر النتائج حسب الحاجة.'],who:'الإدارة والمهندسون والأدوار الرقابية وفق صلاحيات المصادر',tips:'البيانات غير المتاحة ليست صفراً. التنبيهات تتجدد أثناء فتح الصفحة؛ Push يتطلب تهيئة قائمة الإرسال وخدمتها. اللقطات محلية والتقارير تنشأ عند الطلب.',v:'V195'},{id:'v2-nav-fm195-ppm',t:'متابعة الصيانة الوقائية',where:'القائمة الجانبية',what:'متابعة الأوامر الوقائية الأصلية وخطط التكرار والفحص والصور والاعتماد.',how:['شغّل migration_v195.sql بعد V194.','اختر المنطقة والفترة وراجع تغطية المصادر.','افتح التفاصيل أو صدّر النتائج حسب الحاجة.'],who:'الإدارة والمهندسون والأدوار الرقابية وفق صلاحيات المصادر',tips:'البيانات غير المتاحة ليست صفراً. التنبيهات تتجدد أثناء فتح الصفحة؛ Push يتطلب تهيئة قائمة الإرسال وخدمتها. اللقطات محلية والتقارير تنشأ عند الطلب.',v:'V195'},{id:'v2-nav-fm195-exec',t:'اللوحة التنفيذية الموحدة',where:'القائمة الجانبية',what:'قراءة مؤشرات البلاغات والوقائية والفرق والمواد والمستحقات بنطاق معلوم.',how:['شغّل migration_v195.sql بعد V194.','اختر المنطقة والفترة وراجع تغطية المصادر.','افتح التفاصيل أو صدّر النتائج حسب الحاجة.'],who:'الإدارة والمهندسون والأدوار الرقابية وفق صلاحيات المصادر',tips:'البيانات غير المتاحة ليست صفراً. التنبيهات تتجدد أثناء فتح الصفحة؛ Push يتطلب تهيئة قائمة الإرسال وخدمتها. اللقطات محلية والتقارير تنشأ عند الطلب.',v:'V195'},{id:'v2-nav-fm195-reports',t:'التقارير الدورية',where:'القائمة الجانبية',what:'فترات أسبوعية وشهرية وتفاصيل كاملة في Excel وطباعة وحفظ PDF ولقطات محلية.',how:['شغّل migration_v195.sql بعد V194.','اختر المنطقة والفترة وراجع تغطية المصادر.','افتح التفاصيل أو صدّر النتائج حسب الحاجة.'],who:'الإدارة والمهندسون والأدوار الرقابية وفق صلاحيات المصادر',tips:'البيانات غير المتاحة ليست صفراً. التنبيهات تتجدد أثناء فتح الصفحة؛ Push يتطلب تهيئة قائمة الإرسال وخدمتها. اللقطات محلية والتقارير تنشأ عند الطلب.',v:'V195'}]},
 
  {g:'الاعتمادية V194',icon:'🛡️',items:[{id:'v2-nav-fm194-quality',t:'جودة الإغلاق',where:'التقارير ← جودة الإغلاق',what:'مراجعة عودة عطل مشابه ببلاغ جديد بعد إغلاق السابق خلال 7 أيام.',how:['اختر فترة إنشاء البلاغ الجديد وحد التشابه.','راجع النصين وافتح أعمال وصور البلاغين.','دوّن نتيجة المراجعة والإجراء؛ الحفظ السحابي يتطلب رفع البلاغين وترحيل V194.'],who:'الإدارة والجودة ومهندس المنطقة حسب الصلاحية',tips:'لا يثبت التشابه أصل العطل ولا ينشئ خصماً تلقائياً. الأرقام المتطابقة منفصلة عن فحص جودة الإغلاق.',v:'V194'},{id:'v2-nav-fm194-claims',t:'مستحقات المقاولين',where:'المالية والتكاليف ← مستحقات المقاولين',what:'مستندات المستخلص ومسؤول متابعة التأخير والموعد والأثر على التشغيل.',how:['أنشئ المستخلص من المسار الحالي.','حدّد المستندات المطلوبة والمستلمة ومراجعها والمسؤول وموعد المعالجة.','راجع سجل المتابعة ومسار اعتماد المستخلص الأصلي.'],who:'المحاسبة والإدارة والمهندس حسب الصلاحية؛ المقاول يقرأ مستخلصاته',tips:'تسجيل المستند ليس تحققاً من الختم والتوقيع ولا ينفذ دفعة مالية.',v:'V194'},{id:'v2-nav-fm194-backup',t:'النسخ والاستعادة',where:'النظام ← النسخ والاستعادة',what:'فحص نسخة مشفرة محلياً؛ أداة تشغيل خارج المتصفح لنسخ public والمرفقات واستعادتها لنفس المشروع.',how:['اقرأ BACKUP_GUIDE_V194.md.','أنشئ نسخة بالأداة خارج المتصفح ثم افحص المجلد هنا أو بالأداة.','اختبر الاستعادة على بيئة مخصصة؛ وضع عرض الخطة هو الافتراضي.'],who:'مدير النظام ومشغل النسخ الموثوق',tips:'لا تدخل مفاتيح الخدمة هنا. Auth وسياسات Storage خارج النطاق وتحتاج خطة مستقلة. فحص ملفات النسخة لا يثبت تنفيذ PostgreSQL.',v:'V194'}]},
@@ -35401,5 +35402,38 @@ wire();window.addEventListener('load',wire);setInterval(wire,2000);
 /* V204 — the sidebar button «مسح كافة البيانات» is removed (hidden; its function stays). The admin reset is in الإعدادات ← السحابة «🧹 تصفير بيانات المنصة». */
 #fm-v38-clear-all-nav,nav.v2-nav .fm123-danger-wrap{display:none!important}
 </style>
+<script id="fm-v205-mylocation">/* V205 */(function(){'use strict';
+/* Every Leaflet map shows where the user is: a blue dot (+ accuracy circle) and a «📍» button that centres the map on it.
+   Leaflet is loaded lazily, so the hook is installed the moment window.L is set. One shared position watch while maps are open. */
+const maps=new Set();let pos=null,watch=null,denied=false,asked=false;
+const geo=()=>typeof navigator!=='undefined'&&navigator.geolocation&&window.isSecureContext!==false;
+function draw(m){if(!pos||!m._fmMe)return;const ll=[pos.lat,pos.lng],L=window.L;
+ try{if(!m._fmMe.dot){m._fmMe.acc=L.circle(ll,{radius:pos.acc,color:'#2563eb',weight:1,fillColor:'#3b82f6',fillOpacity:.12,interactive:false});
+   m._fmMe.dot=L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1}).bindTooltip('📍 موقعي',{direction:'top',offset:[0,-6]});
+   m._fmMe.dot.addTo(m);if(pos.acc<3000)m._fmMe.acc.addTo(m)}
+  else{m._fmMe.dot.setLatLng(ll);m._fmMe.acc.setLatLng(ll).setRadius(pos.acc);if(pos.acc<3000&&!m.hasLayer(m._fmMe.acc))m._fmMe.acc.addTo(m)}
+  if(m._fmMe.go){m._fmMe.go=false;m.setView(ll,Math.max(m.getZoom()||0,15))}}catch(e){}}
+function got(p){pos={lat:p.coords.latitude,lng:p.coords.longitude,acc:Math.max(5,p.coords.accuracy||50)};denied=false;maps.forEach(draw)}
+function fail(e){if(e&&e.code===1)denied=true;maps.forEach(m=>{if(m._fmMe&&m._fmMe.go){m._fmMe.go=false;tell(e)}})}
+function tell(e){const t=!geo()?'تحديد الموقع غير متاح في هذا المتصفح.':e&&e.code===1?'تحديد الموقع مرفوض. اسمح للموقع من إعدادات المتصفح (رمز القفل بجوار العنوان) ثم أعد المحاولة.':'تعذّر تحديد موقعك الآن. تأكد من تشغيل الموقع (GPS) وأعد المحاولة.';
+ try{(window.toast||window.showToast)?(window.toast||window.showToast)(t,'warning'):alert(t)}catch(x){alert(t)}}
+function start(){if(watch!==null||!geo())return;asked=true;
+ try{watch=navigator.geolocation.watchPosition(got,fail,{enableHighAccuracy:true,maximumAge:30000,timeout:20000})}catch(e){}}
+function stop(){if(watch!==null&&!maps.size){try{navigator.geolocation.clearWatch(watch)}catch(e){}watch=null}}
+function hook(L){if(!L||!L.Map||L.__fmMe)return;L.__fmMe=true;
+ const Btn=L.Control.extend({options:{position:'topleft'},onAdd(m){const b=L.DomUtil.create('a','leaflet-bar fm-me-btn');b.href='#';b.title='موقعي';b.setAttribute('role','button');b.setAttribute('aria-label','موقعي');b.textContent='📍';
+  b.style.cssText='display:block;width:34px;height:34px;line-height:34px;text-align:center;font-size:17px;background:#fff;cursor:pointer;text-decoration:none';
+  L.DomEvent.disableClickPropagation(b);L.DomEvent.on(b,'click',ev=>{L.DomEvent.preventDefault(ev);if(!geo()||denied)return tell(denied?{code:1}:null);
+   if(pos){m._fmMe.go=false;m.setView([pos.lat,pos.lng],Math.max(m.getZoom()||0,15))}else{m._fmMe.go=true;start();
+    try{navigator.geolocation.getCurrentPosition(got,fail,{enableHighAccuracy:true,timeout:20000,maximumAge:60000})}catch(e){}}});return b}});
+ L.Map.addInitHook(function(){const m=this;m._fmMe={};maps.add(m);try{new Btn().addTo(m)}catch(e){}
+  m.on('unload',()=>{maps.delete(m);setTimeout(stop,60000)});
+  setTimeout(()=>{if(!maps.has(m))return;if(pos)draw(m);if(!denied)start()},300)});
+}
+window.fmMyLocation={get pos(){return pos},start};
+if(window.L)hook(window.L);
+else{let v;try{Object.defineProperty(window,'L',{configurable:true,enumerable:true,get(){return v},set(x){v=x;try{hook(x)}catch(e){}}})}catch(e){const t=setInterval(()=>{if(window.L){clearInterval(t);hook(window.L)}},50)}}
+})();
+</script>
 </body>
 </html>
