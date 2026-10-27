@@ -4508,6 +4508,55 @@ end $$;
 revoke all on function public.fm_wipe_plan(text[]), public.fm_wipe_backup_page(text, int, int) from public, anon;
 grant execute on function public.fm_wipe_plan(text[]), public.fm_wipe_backup_page(text, int, int) to authenticated;
 
+-- ---------- 32) personal file of each account (V206, field F38) ----------
+-- emp_no (الرقم الوظيفي) is set by the system admin only. personal = the person's own data, written only through
+-- fm_update_my_profile (whitelisted keys, trimmed, ≤ 200 chars each). The person cannot change his name or emp_no himself.
+alter table public.profiles add column if not exists emp_no   text;
+alter table public.profiles add column if not exists personal jsonb not null default '{}'::jsonb;
+drop policy if exists p_profiles_self on public.profiles;
+create policy p_profiles_self on public.profiles for update using (id = auth.uid())
+  with check (id = auth.uid() and role = (select role from public.profiles where id = auth.uid())
+              and job_title is not distinct from (select job_title from public.profiles where id = auth.uid())
+              and person_names = (select person_names from public.profiles where id = auth.uid())
+              and regions = (select regions from public.profiles where id = auth.uid())
+              and active = (select active from public.profiles where id = auth.uid())
+              and reports_to is not distinct from (select reports_to from public.profiles where id = auth.uid())
+              and full_name is not distinct from (select full_name from public.profiles where id = auth.uid())
+              and emp_no is not distinct from (select emp_no from public.profiles where id = auth.uid())
+              and personal = (select personal from public.profiles where id = auth.uid()));
+create or replace function public.fm_profile_keys() returns text[] language sql immutable as $$
+  select array['phone2','nid','nid_exp','nationality','birth','blood','marital','city','district','address',
+               'emerg_name','emerg_rel','emerg_phone','license_no','license_exp','qualification','specialty','experience','hire_date','bank_iban','notes'] $$;
+create or replace function public.fm_update_my_profile(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare k text; v text; outv jsonb := '{}'; cur jsonb;
+begin
+  if auth.uid() is null then raise exception 'not allowed' using errcode = '42501'; end if;
+  select personal into cur from public.profiles where id = auth.uid();
+  if not found then raise exception 'not allowed' using errcode = '42501'; end if;
+  outv := coalesce(cur, '{}');
+  for k in select unnest(public.fm_profile_keys()) loop
+    if p ? k then
+      v := left(btrim(coalesce(p->>k, '')), 200);
+      if k in ('nid_exp','birth','license_exp','hire_date') and v <> '' and v !~ '^\d{4}-\d{2}-\d{2}$' then raise exception 'bad date: %', k; end if;
+      if v = '' then outv := outv - k; else outv := outv || jsonb_build_object(k, v); end if;
+    end if;
+  end loop;
+  update public.profiles set personal = outv, updated_at = now() where id = auth.uid();
+  if p ? 'phone' then
+    update public.profiles set phone = nullif(left(btrim(p->>'phone'), 30), '') where id = auth.uid();
+    perform public.fm_apply_contact(auth.uid());
+  end if;
+  return outv;
+end $$;
+revoke all on function public.fm_update_my_profile(jsonb) from public, anon;
+grant execute on function public.fm_update_my_profile(jsonb) to authenticated;
+-- the person's own manager line (name and phone) for his profile page
+create or replace function public.fm_my_manager() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('id', b.id, 'name', coalesce(b.full_name, b.email), 'phone', b.phone, 'title', b.job_title)
+  from public.profiles m join public.profiles b on b.id = m.reports_to where m.id = auth.uid() $$;
+revoke all on function public.fm_my_manager() from public, anon;
+grant execute on function public.fm_my_manager() to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
 
 

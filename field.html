@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F37">
+<meta name="fm-version" content="F38">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -419,11 +419,17 @@ function fromCache(){try{const scope=outbox.scope();if(!scope)return false;const
 function shell(inner,title,sub,back){return `<div class="top">${back?'<button id="bk">→</button>':`<img class="bm" src="${FM_BRAND.mark}" alt="${FM_BRAND.name}">`}<h1>${title}<small>${sub||''}</small></h1>${back?'':'<button id="rf" title="تحديث">🔄</button><button id="lo" title="خروج">خروج</button>'}</div><div class="wrap"><div class="q" id="qb"></div>${inner}</div>`}
 /* ---------- main screens (F4): home, tickets, schools, profile ---------- */
 const VIEWS=[['home','🏠','الرئيسية'],['list','🎫','البلاغات'],['wo','📋','الأوامر'],['schools','🏫','المدارس'],['eng','💬','التواصل'],['me','👤','حسابي']];
-const navHtml=()=>`<nav class="bnav">${VIEWS.filter(([k])=>k!=='eng'||['admin','engineer','supervisor'].includes(D.me&&D.me.role)).map(([k,ic,t])=>`<button data-v="${k}" class="${D.view===k?'on':''}"><i>${ic}</i>${t}${k==='wo'?`<em style="display:${woBadge()?'':'none'}">${woBadge()?fmt(woBadge()):''}</em>`:''}</button>`).join('')}</nav>`;
+const SBX=[['cus','🧰','عهدتي','fmfCustody'],['parts','📦','متابعة قطع الغيار','fmfPartsTracking'],['sync','⏳','مركز المزامنة','fmFieldSyncOpen'],['push','🔔','الإشعارات','fmPushOpen']];
+/* F38: on a wide screen the bottom bar becomes a sidebar (brand, the signed-in person, the pages, tools) */
+const sbHead=()=>{const me=D.me||{};return `<div class="sbh"><div class="sbb"><img src="${FM_BRAND.mark}" alt=""><div><b>${esc(FM_BRAND.name)}</b><small>تطبيق الميدان</small></div></div>
+ <button class="sbu" data-v="me">${avatarHtml(me,'av')}<div><b>${esc(myName())}</b><small>${esc(typeof jobLbl==='function'?jobLbl(me):'')}</small></div></button><div class="sbt">القائمة</div></div>`};
+const sbTools=()=>`<div class="sbx"><div class="sbt">أدوات</div>${SBX.filter(x=>typeof window[x[3]]==='function').map(([k,ic,t,f])=>`<button data-sx="${f}"><i>${ic}</i>${t}</button>`).join('')}<button data-sx="__out" class="out"><i>🚪</i>تسجيل الخروج</button></div>`;
+const navHtml=()=>`<nav class="bnav">${sbHead()}${VIEWS.filter(([k])=>k!=='eng'||['admin','engineer','supervisor'].includes(D.me&&D.me.role)).map(([k,ic,t])=>`<button data-v="${k}" class="${D.view===k?'on':''}"><i>${ic}</i>${t}${k==='wo'?`<em style="display:${woBadge()?'':'none'}">${woBadge()?fmt(woBadge()):''}</em>`:''}</button>`).join('')}${sbTools()}</nav>`;
 function main(){D.cur=null;D.curWo=null;({home:homeView,list:listView,wo:woView,schools:schoolsView,me:profileView}[D.view]||homeView)()}
 function go(v){if(v==='eng'){window.fmEngOpen?.();return}D.view=v;window.scrollTo(0,0);main()}
 function bindTop(){
  document.querySelectorAll('.bnav [data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
+ document.querySelectorAll('.bnav [data-sx]').forEach(b=>b.onclick=()=>{const f=b.dataset.sx;if(f==='__out')return signOutNow();try{window[f]()}catch(e){toast(C.msg(e.message),'e')}});
  $('#rf')&&($('#rf').onclick=async()=>{toast('جارٍ التحديث…');try{await flush();await pull()}catch(e){toast(C.msg(e.message),'e')}});
  $('#lo')&&($('#lo').onclick=signOutNow);
 }
@@ -749,7 +755,92 @@ function avatarData(file){return new Promise((res,rej)=>{const fr=new FileReader
  c.getContext('2d').drawImage(im,(im.naturalWidth-s)/2,(im.naturalHeight-s)/2,s,s,0,0,256,256);res(c.toDataURL('image/jpeg',.82))};im.onerror=()=>rej(new Error('img'));im.src=fr.result};fr.readAsDataURL(file)})}
 const needSql=e=>/function .*does not exist|Could not find the function|schema cache|column .* does not exist/i.test(e.message)?'هذه الميزة تحتاج تشغيل ملف supabase_setup.sql المحدَّث — أبلغ مدير النظام':C.msg(e.message);
 
-function profileView(){
+/* ---------- F38: account page — personal file (tabs «بياناتي / أدائي / الإعدادات») ---------- */
+const PT_LBL={sysadmin:'مدير النظام',dept_manager:'مدير الإدارة',project_manager:'مدير المشروع',ops_manager:'مدير العمليات',area_manager:'مدير المنطقة',area_engineer:'مهندس المنطقة',supervisor:'مشرف صيانة',contractor:'مقاول',hse_manager:'مدير الأمن والسلامة',qa_manager:'مدير الجودة والتخطيط',accountant:'المحاسب',storekeeper:'أمين المستودع',owner_rep:'ممثل الجهة المالكة'};
+const jobLbl=me=>PT_LBL[me&&me.job_title]||C.ROLE[me&&me.role]||(me&&me.role)||'';
+/* the personal fields, in sections: [key, label, type, options] — keys match fm_profile_keys() in supabase_setup.sql */
+const PF=[
+ ['📞','التواصل',[['phone','رقم الجوال','tel'],['phone2','جوال بديل','tel']]],
+ ['🪪','الهوية',[['nid','رقم الهوية / الإقامة','num'],['nid_exp','تاريخ انتهاء الهوية','date'],['nationality','الجنسية','text'],['birth','تاريخ الميلاد','date'],['blood','فصيلة الدم','sel',['A+','A-','B+','B-','AB+','AB-','O+','O-']],['marital','الحالة الاجتماعية','sel',['أعزب','متزوج','أخرى']]]],
+ ['🏠','العنوان',[['city','المدينة','text'],['district','الحي','text'],['address','العنوان التفصيلي','text']]],
+ ['🚨','جهة اتصال للطوارئ',[['emerg_name','الاسم','text'],['emerg_rel','صلة القرابة','text'],['emerg_phone','الجوال','tel']]],
+ ['🎓','المؤهل والخبرة',[['qualification','المؤهل','sel',['ثانوي','دبلوم','بكالوريوس','ماجستير','أخرى']],['specialty','التخصص','text'],['experience','سنوات الخبرة','num'],['hire_date','تاريخ الالتحاق','date']]],
+ ['🚗','رخصة القيادة',[['license_no','رقم الرخصة','num'],['license_exp','تاريخ انتهاء الرخصة','date']]],
+ ['🏦','البنك',[['bank_iban','رقم الآيبان (IBAN)','iban']]],
+ ['📝','ملاحظات',[['notes','ملاحظات','text']]]];
+const PKEY=['phone','nid','nationality','birth','city','emerg_name','emerg_phone','qualification'];   // the completeness score
+const pval=(me,k)=>k==='phone'?S(me.phone):S((me.personal||{})[k]);
+const pDone=me=>Math.round(PKEY.filter(k=>pval(me,k)).length/PKEY.length*100);
+const daysTo=d=>d?Math.round((new Date(d+'T00:00:00')-d0(new Date()))/864e5):null;
+function profHead(){
+ const me=D.me||{},regions=(me.regions||[]).map(r=>RN[r]||r).join('، ')||'كل المناطق',pc=pDone(me),t=D.pt||'info';
+ return `<div class="pfh"><div class="pfh-cover"></div><div class="pfh-body">
+  <label class="pfh-av" title="تغيير الصورة">${avatarHtml(me,'av')}<span class="cam">📷</span><input type="file" accept="image/*" id="p-av" hidden></label>
+  <div class="pfh-id"><b>${esc(myName())}</b><span>${esc(jobLbl(me))}</span>
+   <div class="pfh-chips">${me.emp_no?`<i>🪪 ${esc(me.emp_no)}</i>`:''}<i>📍 ${esc(regions)}</i>${me.phone?`<i dir="ltr">📞 ${esc(me.phone)}</i>`:''}</div></div>
+  <div class="pfh-pc" title="اكتمال الملف"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" fill="none" stroke="#e2e8f0" stroke-width="3.2"/><circle cx="18" cy="18" r="15.9" fill="none" stroke="${pc>=80?'#16a34a':pc>=50?'#f59e0b':'#dc2626'}" stroke-width="3.2" stroke-dasharray="${pc} 100" stroke-linecap="round" transform="rotate(-90 18 18)"/></svg><b>${pc}%</b><small>اكتمال الملف</small></div></div>
+  <div class="ptabs">${[['info','👤 بياناتي'],['perf','⭐ أدائي'],['set','⚙️ الإعدادات']].map(([k,l])=>`<button data-pt="${k}" class="${t===k?'on':''}">${l}</button>`).join('')}</div></div>`;
+}
+function bindProfHead(){
+ document.querySelectorAll('[data-pt]').forEach(b=>b.onclick=()=>{D.pt=b.dataset.pt;window.scrollTo(0,0);profileView()});
+ const av=$('#p-av');if(av)av.onchange=async e=>{const f=e.target.files[0];if(!f)return;if(!/^image\//.test(f.type)){toast('اختر صورة','w');return}
+  try{toast('جارٍ رفع الصورة…');const d=await avatarData(f);await C.api.saveProfile(D.me.id,{avatar:d});D.me.avatar=d;toast('تم تحديث الصورة');const y=window.scrollY;profileView();window.scrollTo(0,y)}catch(er){toast(needSql(er),'e')}};
+}
+function profileView(){const t=D.pt||'info';if(t==='perf')return perfView();if(t==='set')return setView();return infoView()}
+function infoView(){
+ const me=D.me||{},P=me.personal||{},mg=D.mgr,has=('personal' in me);
+ const ro=(l,v,ltr)=>`<div class="ro"><span>${l}</span><b ${ltr?'dir="ltr"':''}>${v?esc(v):'<em>—</em>'}</b><i>🔒</i></div>`;
+ const warn=[['nid_exp','الهوية'],['license_exp','رخصة القيادة']].map(([k,l])=>{const d=daysTo(P[k]);return d==null||d>60?'':`<div class="pwarn ${d<0?'bad':''}">⚠️ ${d<0?`انتهت ${l} منذ ${fmt(-d)} يوم`:`تنتهي ${l} خلال ${fmt(d)} يوم`} — حدّثها بعد التجديد.</div>`}).join('');
+ const inp=([k,l,ty,op])=>{const v=k==='phone'?S(me.phone):S(P[k]);
+  const ctl=ty==='sel'?`<select class="in" data-pk="${k}"><option value="">—</option>${op.map(o=>`<option ${v===o?'selected':''}>${esc(o)}</option>`).join('')}${v&&!op.includes(v)?`<option selected>${esc(v)}</option>`:''}</select>`
+   :`<input class="in" data-pk="${k}" value="${esc(v)}" ${ty==='date'?'type="date"':ty==='tel'?'type="tel" dir="ltr" placeholder="05xxxxxxxx"':ty==='num'?'inputmode="numeric" dir="ltr"':ty==='iban'?'dir="ltr" placeholder="SA…" autocapitalize="characters"':''} ${k==='notes'||k==='address'?'':''}>`;
+  return `<label class="pf ${k==='address'||k==='notes'?'w':''}"><span>${l}</span>${ctl}</label>`};
+ $('#app').innerHTML=shell(`${profHead()}${warn}
+  <div class="card"><h3>🔒 البيانات الأساسية</h3><div class="muted" style="margin:-4px 0 8px">لا يمكن تعديلها من حسابك — يعدّلها مدير النظام.</div>
+   <div class="ros">${ro('الاسم',myName())}${ro('الرقم الوظيفي',me.emp_no)}${ro('المسمى الوظيفي',jobLbl(me))}${ro('المناطق',(me.regions||[]).map(r=>RN[r]||r).join('، ')||'كل المناطق')}${ro('المدير المباشر',mg?mg.name+(mg.phone?' • '+mg.phone:''):(mg===null?'':'…'))}${ro('البريد الإلكتروني',me.email,1)}</div></div>
+  ${has?'':`<div class="pwarn">ℹ️ حفظ البيانات الشخصية يحتاج تشغيل ملف supabase_setup.sql المحدَّث — أبلغ مدير النظام. يمكنك الآن تحديث الجوال والصورة فقط.</div>`}
+  ${PF.map(([ic,t,fs])=>`<div class="card"><h3>${ic} ${t}</h3><div class="pfg">${fs.map(inp).join('')}</div></div>`).join('')}
+  <div class="card"><h3>✉️ تغيير البريد الإلكتروني</h3><div style="display:flex;gap:8px"><input class="in" id="p-em" type="email" dir="ltr" value="${esc(me.email||'')}"><button class="big p" id="p-ems" style="flex:none;padding:10px 16px">تغيير</button></div>
+   <div class="muted" style="margin-top:4px">يتطلب الضغط على رابط التأكيد الذي يصلك على البريد الجديد.</div></div>
+  <div class="psave" id="p-bar"><span id="p-dirty">لا توجد تعديلات</span><button class="big p" id="p-save" disabled>💾 حفظ بياناتي</button></div>`
+ +navHtml(),'حسابي','');
+ qBanner();bindTop();bindProfHead();
+ if(D.mgr===undefined)C.engClient&&C.engClient().then(c=>c.rpc('fm_my_manager')).then(r=>{D.mgr=r&&!r.error?r.data||null:null;if(D.view==='me'&&(D.pt||'info')==='info'){const y=window.scrollY;infoView();window.scrollTo(0,y)}}).catch(()=>{D.mgr=null});
+ const dirty=()=>{const ch={};document.querySelectorAll('[data-pk]').forEach(i=>{const k=i.dataset.pk,v=S(i.value);if(v!==pval(me,k))ch[k]=v});return ch};
+ const upd=()=>{const n=Object.keys(dirty()).length;$('#p-save').disabled=!n;$('#p-dirty').textContent=n?`${fmt(n)} تعديل غير محفوظ`:'لا توجد تعديلات';$('#p-bar').classList.toggle('on',!!n)};
+ document.querySelectorAll('[data-pk]').forEach(i=>{i.oninput=upd;i.onchange=upd});
+ $('#p-save').onclick=async()=>{const ch=dirty(),b=$('#p-save');
+  for(const k of ['phone','phone2','emerg_phone'])if(ch[k]&&!/^[+\d][\d\s-]{6,}$/.test(ch[k])){toast('رقم الجوال غير صحيح','w');return}
+  if(ch.nid&&!/^\d{10}$/.test(ch.nid)){toast('رقم الهوية / الإقامة 10 أرقام','w');return}
+  if(ch.bank_iban&&!/^SA\d{22}$/i.test(ch.bank_iban.replace(/\s/g,''))){toast('الآيبان يبدأ بـ SA ثم 22 رقماً','w');return}
+  if(ch.bank_iban)ch.bank_iban=ch.bank_iban.replace(/\s/g,'').toUpperCase();
+  b.disabled=true;try{
+   if(has){const c=await C.engClient();const r=await c.rpc('fm_update_my_profile',{p:ch});if(r.error)throw Error(r.error.message);D.me.personal=r.data||{};if('phone' in ch)D.me.phone=ch.phone}
+   else{const keys=Object.keys(ch);if(keys.some(k=>k!=='phone'))throw Error('function fm_update_my_profile does not exist');await C.api.updateContact(ch.phone);D.me.phone=ch.phone}
+   toast('تم حفظ بياناتك');const y=window.scrollY;infoView();window.scrollTo(0,y)}catch(er){toast(needSql(er),'e');b.disabled=false}};
+ $('#p-ems').onclick=async()=>{const v=S($('#p-em').value).toLowerCase();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){toast('البريد غير صحيح','w');return}if(v===S(me.email).toLowerCase()){toast('لا توجد تعديلات','w');return}
+  const b2=$('#p-ems');b2.disabled=true;try{await C.api.changeEmail(v);toast('أرسلنا رابط تأكيد إلى '+v+' — افتحه لإتمام التغيير')}catch(er){toast(C.msg(er.message),'e')}b2.disabled=false};
+}
+function setView(){
+ const ver=(document.querySelector('meta[name="fm-version"]')||{}).content||'';
+ $('#app').innerHTML=shell(`${profHead()}
+  <div class="card"><h3>🔑 تغيير كلمة المرور</h3><input class="in" id="p-p1" type="password" dir="ltr" placeholder="كلمة المرور الجديدة" autocomplete="new-password"><input class="in" id="p-p2" type="password" dir="ltr" placeholder="تأكيد كلمة المرور" autocomplete="new-password" style="margin-top:8px"><button class="big" id="p-ps" style="width:100%;margin-top:10px">تغيير كلمة المرور</button></div>
+  <div class="card"><h3>🔔 التنبيهات</h3><label class="sw"><span>نبّهني عند اقتراب بلاغ من الاختراق (أقل من 3 ساعات)</span><input type="checkbox" id="p-al" ${notifOn()?'checked':''}></label>
+   <div class="muted" style="margin-top:6px">${'Notification' in window?(Notification.permission==='denied'?'⚠️ الإشعارات محظورة في إعدادات المتصفح — سيظهر التنبيه داخل التطبيق فقط.':'يظهر إشعار على الجهاز وتنبيه داخل التطبيق.'):'يظهر التنبيه داخل التطبيق.'} يعمل التنبيه ما دام التطبيق مفتوحاً (ولو في الخلفية).</div>
+   ${window.fmPushOpen?'<button class="big" id="p-push" style="width:100%;margin-top:10px">🔔 إشعارات الجوال (أوامر العمل والمستودع)</button>':''}</div>
+  <div class="card"><h3>⚙️ التطبيق</h3><button class="big" onclick="fmFieldSyncOpen()">⏳ مركز المزامنة</button><div class="kv"><span>آخر مزامنة</span><b>${D.syncAt?dts(D.syncAt):'—'}</b><span>بانتظار الإرسال</span><b>${fmt(qLoad().length)} تحديث</b><span>الإصدار</span><b>${esc(ver)}</b></div>
+   <div class="btns" style="margin-top:12px"><button class="big" id="p-sync">🔄 مزامنة الآن</button><a class="big" href="start.html">🏠 صفحة البدء</a></div>
+   <button class="big" id="p-out" style="width:100%;margin-top:8px;color:var(--bad)">🚪 تسجيل الخروج</button></div>`
+ +navHtml(),'حسابي','');
+ qBanner();bindTop();bindProfHead();
+ $('#p-ps').onclick=async()=>{const x=$('#p-p1').value,y=$('#p-p2').value;if(x.length<8){toast('كلمة المرور 8 أحرف على الأقل','w');return}if(x!==y){toast('كلمتا المرور غير متطابقتين','w');return}
+  const b2=$('#p-ps');b2.disabled=true;try{await C.api.setPassword(x);toast('تم تغيير كلمة المرور');$('#p-p1').value=$('#p-p2').value=''}catch(er){toast(C.msg(er.message),'e')}b2.disabled=false};
+ $('#p-sync').onclick=async()=>{toast('جارٍ المزامنة…');try{await flush();await pull(true);toast('تمت المزامنة')}catch(er){toast(C.msg(er.message),'e')}};
+ $('#p-out').onclick=signOutNow;
+ $('#p-al').onchange=async e=>{await setAlerts(e.target.checked);setView()};
+ const pu=$('#p-push');if(pu)pu.onclick=()=>window.fmPushOpen();
+}
+function perfView(){
  const me=D.me||{},name=myName(),regions=(me.regions||[]).map(r=>RN[r]||r).join('، '),p=D.p;
  const R=myRating(),[a,b]=range(p.k,p.from,p.to),[ca,cb]=cmpRange(a,b),cur=pstats(a,b),prv=p.cmp==='none'?null:pstats(ca,cb);
  const weakest=[['comp','نسبة الإنجاز','أغلق البلاغات المحلولة وحدّث مراحلها أولاً بأول'],['sla','الالتزام بالمهلة','ابدأ بالبلاغات التي تقترب من الاختراق (تبويب «خلال 3 س»)'],['crit','البلاغات الحرجة','أعطِ الطارئ والعالي الأولوية في زياراتك'],['pend','العوالق قيد المعالجة','تابع البلاغات المُسندة وقيد التنفيذ حتى إغلاقها'],...(R.cov!=null?[['cov','التواصل مع المدارس','أكمل تواصل كل مدارسك في كل دورة من تبويب «التواصل»']]:[]),...(R.sat!=null?[['sat','رضا المدارس','اطلب تقييم مدير المدرسة بعد كل زيارة وعالج ملاحظاته']]:[])].sort((x,y)=>R[x[0]]-R[y[0]])[0];
@@ -759,7 +850,7 @@ function profileView(){
  const topMax=top.length?top[0][1].n:1,S1=series(a,b),ver=(document.querySelector('meta[name="fm-version"]')||{}).content||'';
  const sR=S1.R.reduce((x,y)=>x+y,0),sZ=S1.Z.reduce((x,y)=>x+y,0);
  $('#app').innerHTML=shell(`
-  <div class="card hello"><label class="avw" title="تغيير الصورة">${avatarHtml(me)}<span class="cam">📷</span><input type="file" accept="image/*" id="p-av" hidden></label><div><b>${esc(name)}</b><span>${esc(C.ROLE[me.role]||me.role||'')}${regions?' • '+esc(regions):''}</span><small dir="ltr" style="text-align:right">${esc(me.email||'')}${me.phone?' • '+esc(me.phone):''}</small></div></div>
+  ${profHead()}
   <div class="card"><h3>⭐ تقييمي الحالي</h3><div class="rate"><div class="rv r-${R.cls}"><b>${fmt(R.score,R.score%1?1:0)}</b><span>${R.label}</span></div><div class="rbars">${bar('نسبة الإنجاز',R.comp,fmt(35*R.f,1)+'%')}${bar('الالتزام بالمهلة',R.sla,fmt(35*R.f,1)+'%')}${bar('البلاغات الحرجة',R.crit,fmt(15*R.f,1)+'%')}${bar('تصفية العوالق',R.pend,fmt(15*R.f,1)+'%')}${R.cov!=null?bar('التواصل مع المدارس',R.cov,fmt(R.wc)+'%'):''}${R.sat!=null?bar('رضا المدارس',R.sat,fmt(R.ws)+'%'):''}</div></div>
    <div class="muted" style="margin-top:6px">نفس معادلة تقييم المشرفين في المنصة، على كل بلاغاتك (${fmt(R.total)} بلاغ)${R.f<1?`، مع التواصل مع المدارس (${D.eng.tot?fmt(D.eng.hit)+' من '+fmt(D.eng.tot)+' دورة مدرسة':'—'}${D.eng.n?' · '+fmt(D.eng.n)+' تقييم':''})`:''}.</div>
    ${rankHtml()}
@@ -784,21 +875,10 @@ function profileView(){
    <div class="lg"><span><i style="background:#2a78d6"></i>مستلمة (${fmt(sR)})</span><span><i style="background:#eb6834"></i>محلولة (${fmt(sZ)})</span><button class="link" id="p-tbl" style="border:0;background:none">عرض كجدول</button></div>
    <div class="cbox" dir="ltr">${chartSvg(S1)}<div class="ctip" dir="rtl"></div></div>
    <div id="p-tv" style="display:none"><table class="pt"><thead><tr><th>${S1.step>1?'الأسبوع':'اليوم'}</th><th>مستلمة</th><th>محلولة</th></tr></thead><tbody>${S1.X.map((d,i)=>S1.R[i]||S1.Z[i]?`<tr><td>${dshow(d)}</td><td>${fmt(S1.R[i])}</td><td>${fmt(S1.Z[i])}</td></tr>`:'').join('')||'<tr><td colspan="3" class="muted">لا توجد بيانات</td></tr>'}</tbody></table></div></div>
-  <div class="card"><h3>🏫 أكثر المدارس بلاغات في الفترة</h3>${top.length?top.map(([s,r])=>`<button class="tsch" data-sch="${esc(s)}"><div class="r1"><b>${esc(s)}</b><span>${fmt(r.n)}</span></div><div class="tb"><i style="width:${Math.max(4,r.n/topMax*100)}%"></i></div><div class="chips">${r.open?`<span class="chip c-pri">📂 ${fmt(r.open)} مفتوح</span>`:''}${r.br?`<span class="chip c-bad">⛔ ${fmt(r.br)} مخترق</span>`:''}</div></button>`).join(''):'<div class="empty" style="padding:12px">لا توجد بلاغات في هذه الفترة</div>'}</div>
-  <div class="card"><h3>📞 بيانات التواصل</h3><div class="muted" style="margin-bottom:6px">تُحدَّث تلقائياً في قاعدة المدارس وكل الصفحات المرتبطة باسمك.</div>
-   <label class="l">رقم الجوال</label><div style="display:flex;gap:8px"><input class="in" id="p-ph" type="tel" dir="ltr" value="${esc(me.phone||'')}" placeholder="05xxxxxxxx"><button class="big p" id="p-phs" style="flex:none;padding:10px 16px">حفظ</button></div>
-   <label class="l">البريد الإلكتروني</label><div style="display:flex;gap:8px"><input class="in" id="p-em" type="email" dir="ltr" value="${esc(me.email||'')}"><button class="big p" id="p-ems" style="flex:none;padding:10px 16px">تغيير</button></div>
-   <div class="muted" style="margin-top:4px">تغيير البريد يتطلب الضغط على رابط التأكيد الذي يصلك على البريد الجديد.</div></div>
-  <div class="card"><h3>✏️ الاسم الظاهر</h3><div style="display:flex;gap:8px"><input class="in" id="p-n" value="${esc(me.full_name||'')}" autocomplete="name"><button class="big p" id="p-ns" style="flex:none;padding:10px 16px">حفظ</button></div></div>
-  <div class="card"><h3>🔑 تغيير كلمة المرور</h3><input class="in" id="p-p1" type="password" dir="ltr" placeholder="كلمة المرور الجديدة" autocomplete="new-password"><input class="in" id="p-p2" type="password" dir="ltr" placeholder="تأكيد كلمة المرور" autocomplete="new-password" style="margin-top:8px"><button class="big" id="p-ps" style="width:100%;margin-top:10px">تغيير كلمة المرور</button></div>
-  <div class="card"><h3>🔔 التنبيهات</h3><label class="sw"><span>نبّهني عند اقتراب بلاغ من الاختراق (أقل من 3 ساعات)</span><input type="checkbox" id="p-al" ${notifOn()?'checked':''}></label>
-   <div class="muted" style="margin-top:6px">${'Notification' in window?(Notification.permission==='denied'?'⚠️ الإشعارات محظورة في إعدادات المتصفح — سيظهر التنبيه داخل التطبيق فقط.':'يظهر إشعار على الجهاز وتنبيه داخل التطبيق.'):'يظهر التنبيه داخل التطبيق.'} يعمل التنبيه ما دام التطبيق مفتوحاً (ولو في الخلفية).</div></div>
-  <div class="card"><h3>⚙️ التطبيق</h3><button class="big" onclick="fmFieldSyncOpen()">⏳ مركز المزامنة</button><div class="kv"><span>آخر مزامنة</span><b>${D.syncAt?dts(D.syncAt):'—'}</b><span>بانتظار الإرسال</span><b>${fmt(qLoad().length)} تحديث</b><span>الإصدار</span><b>${esc(ver)}</b></div>
-   <div class="btns" style="margin-top:12px"><button class="big" id="p-sync">🔄 مزامنة الآن</button><a class="big" href="start.html">🏠 صفحة البدء</a></div>
-   <button class="big" id="p-out" style="width:100%;margin-top:8px;color:var(--bad)">🚪 تسجيل الخروج</button></div>`
+  <div class="card"><h3>🏫 أكثر المدارس بلاغات في الفترة</h3>${top.length?top.map(([s,r])=>`<button class="tsch" data-sch="${esc(s)}"><div class="r1"><b>${esc(s)}</b><span>${fmt(r.n)}</span></div><div class="tb"><i style="width:${Math.max(4,r.n/topMax*100)}%"></i></div><div class="chips">${r.open?`<span class="chip c-pri">📂 ${fmt(r.open)} مفتوح</span>`:''}${r.br?`<span class="chip c-bad">⛔ ${fmt(r.br)} مخترق</span>`:''}</div></button>`).join(''):'<div class="empty" style="padding:12px">لا توجد بلاغات في هذه الفترة</div>'}</div>`
  +navHtml(),'حسابي','');
- qBanner();bindTop();bindChart($('.cbox'),S1);
- const re=()=>{const y=window.scrollY;profileView();window.scrollTo(0,y)};
+ qBanner();bindTop();bindProfHead();bindChart($('.cbox'),S1);
+ const re=()=>{const y=window.scrollY;perfView();window.scrollTo(0,y)};
  $('#p-k').onchange=e=>{p.k=e.target.value;if(p.k==='c'&&!p.from){p.from=ymd(addD(new Date(),-29));p.to=ymd(new Date())}re()};
  $('#p-c').onchange=e=>{p.cmp=e.target.value;if(p.cmp==='c'&&!p.cfrom){const [x,y]=cmpRange(a,b);p.cfrom=ymd(x);p.cto=ymd(addD(y,-1))}re()};
  [['p-f','from'],['p-t','to'],['p-cf','cfrom'],['p-ct','cto']].forEach(([id,k])=>{const i=$('#'+id);if(i)i.onchange=e=>{p[k]=e.target.value;re()}});
@@ -808,19 +888,7 @@ function profileView(){
   if(k==='br')openSet('المخترقة: '+lab,cur.rec.filter(t=>slaP(t).breached).map(key));if(k==='rep')openSet('المكررة: '+lab,[...cur.rep.keys]);if(k==='reo')openSet('المعاد فتحها: '+lab,[...cur.reo])});
  document.querySelectorAll('.tsch[data-sch]').forEach(b2=>b2.onclick=()=>openSet(b2.dataset.sch+' — '+lab,cur.rec.filter(t=>(S(t.school)||'—')===b2.dataset.sch).map(key)));
  $('#p-tbl').onclick=()=>{const v=$('#p-tv');v.style.display=v.style.display==='none'?'block':'none'};
- $('#p-av').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=await avatarData(f);await C.api.saveProfile(me.id,{avatar:d});D.me.avatar=d;toast('تم تحديث الصورة');re()}catch(er){toast(needSql(er),'e')}};
- $('#p-phs').onclick=async()=>{const v=S($('#p-ph').value);if(v&&!/^[+\d][\d\s-]{6,}$/.test(v)){toast('رقم الجوال غير صحيح','w');return}const b2=$('#p-phs');b2.disabled=true;
-  try{await C.api.updateContact(v);D.me.phone=v;toast('تم حفظ رقم الجوال وتحديثه في قاعدة المدارس');re()}catch(er){toast(needSql(er),'e');b2.disabled=false}};
- $('#p-ems').onclick=async()=>{const v=S($('#p-em').value).toLowerCase();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){toast('البريد غير صحيح','w');return}if(v===S(me.email).toLowerCase()){toast('لا توجد تعديلات','w');return}
-  const b2=$('#p-ems');b2.disabled=true;try{await C.api.changeEmail(v);toast('أرسلنا رابط تأكيد إلى '+v+' — افتحه لإتمام التغيير')}catch(er){toast(C.msg(er.message),'e')}b2.disabled=false};
- $('#p-ns').onclick=async()=>{const n=S($('#p-n').value);if(!n){toast('اكتب الاسم','w');return}if(n===S(me.full_name)){toast('لا توجد تعديلات','w');return}
-  const b2=$('#p-ns');b2.disabled=true;try{await C.api.saveProfile(me.id,{full_name:n});D.me.full_name=n;toast('تم حفظ الاسم');re()}catch(er){toast(C.msg(er.message),'e');b2.disabled=false}};
- $('#p-ps').onclick=async()=>{const x=$('#p-p1').value,y=$('#p-p2').value;if(x.length<8){toast('كلمة المرور 8 أحرف على الأقل','w');return}if(x!==y){toast('كلمتا المرور غير متطابقتين','w');return}
-  const b2=$('#p-ps');b2.disabled=true;try{await C.api.setPassword(x);toast('تم تغيير كلمة المرور');$('#p-p1').value=$('#p-p2').value=''}catch(er){toast(C.msg(er.message),'e')}b2.disabled=false};
- $('#p-sync').onclick=async()=>{toast('جارٍ المزامنة…');try{await flush();await pull(true);toast('تمت المزامنة')}catch(er){toast(C.msg(er.message),'e')}};
- $('#p-out').onclick=signOutNow;
  $('#p-pdf').onclick=reportPdf;
- $('#p-al').onchange=async e=>{await setAlerts(e.target.checked);re()};
 }
 /* ---------- F7: weekly goal, anonymous ranking, near-breach alerts, PDF report, today's visit plan ---------- */
 const weekStart=()=>{const t=d0(new Date());return addD(t,-t.getDay())};
@@ -1957,5 +2025,47 @@ if(window.L)hook(window.L);
 else{let v;try{Object.defineProperty(window,'L',{configurable:true,enumerable:true,get(){return v},set(x){v=x;try{hook(x)}catch(e){}}})}catch(e){const t=setInterval(()=>{if(window.L){clearInterval(t);hook(window.L)}},50)}}
 })();
 </script>
+<style id="fmf-38-style">
+/* F38 — account page (personal file) and the sidebar on wide screens */
+.bnav .sbh,.bnav .sbx{display:none}
+.pfh{background:#fff;border:1px solid var(--line);border-radius:18px;overflow:hidden;margin-bottom:12px;box-shadow:0 4px 18px rgba(15,23,42,.06)}
+.pfh-cover{height:78px;background:linear-gradient(120deg,#1e3a8a,#2563eb 55%,#7c3aed)}
+.pfh-body{display:flex;align-items:flex-end;gap:14px;padding:0 16px 12px;margin-top:-40px;flex-wrap:wrap}
+.pfh-av{position:relative;cursor:pointer;flex:none}
+.pfh-av .av{width:88px!important;height:88px!important;border-radius:50%;border:4px solid #fff;box-shadow:0 4px 12px rgba(15,23,42,.18);background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;display:grid;place-items:center;font-weight:900;font-size:34px;object-fit:cover}
+.pfh-av .cam{position:absolute;bottom:2px;left:2px;width:30px;height:30px;border-radius:50%;background:#0f172a;color:#fff;display:grid;place-items:center;font-size:14px;border:2px solid #fff}
+.pfh-id{flex:1;min-width:170px;padding:46px 0 2px}.pfh-id b{display:block;font-size:19px;font-weight:900}.pfh-id>span{display:block;color:var(--pri);font-weight:800;font-size:13px}
+.pfh-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.pfh-chips i{font-style:normal;background:#f1f5f9;border:1px solid var(--line);border-radius:99px;padding:2px 10px;font-size:12px;font-weight:800;color:#334155}
+.pfh-pc{position:relative;width:74px;text-align:center;flex:none}.pfh-pc svg{width:58px;height:58px;display:block;margin:0 auto}.pfh-pc b{position:absolute;top:18px;left:0;right:0;font-size:13px;font-weight:900}.pfh-pc small{display:block;font-size:10.5px;color:var(--mut);font-weight:800}
+.ptabs{display:flex;border-top:1px solid var(--line);background:#f8fafc}.ptabs button{flex:1;border:0;background:none;padding:11px 6px;font:800 14px Cairo,Tahoma,sans-serif;color:var(--mut);border-bottom:3px solid transparent;cursor:pointer}
+.ptabs button.on{color:var(--pri);border-bottom-color:var(--pri);background:#fff}
+.ros{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ro{position:relative;background:#f8fafc;border:1px solid var(--line);border-radius:11px;padding:8px 12px}
+.ro span{display:block;font-size:11.5px;color:var(--mut);font-weight:800}.ro b{display:block;font-size:14px;font-weight:900;word-break:break-word}.ro b em{color:#cbd5e1;font-style:normal}.ro i{position:absolute;top:7px;left:9px;font-style:normal;font-size:11px;opacity:.55}
+.pfg{display:grid;grid-template-columns:1fr 1fr;gap:10px}.pf{display:block}.pf.w{grid-column:1/-1}.pf span{display:block;font-weight:800;font-size:12.5px;color:#475569;margin-bottom:4px}
+.pwarn{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:12px;padding:9px 12px;font-weight:800;font-size:13px;margin-bottom:10px}.pwarn.bad{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+.psave{position:sticky;bottom:calc(70px + env(safe-area-inset-bottom));z-index:15;display:flex;align-items:center;gap:10px;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px 10px 8px 14px;box-shadow:0 6px 20px rgba(15,23,42,.1);font-weight:800;color:var(--mut);font-size:13px}
+.psave.on{border-color:#93c5fd;color:var(--pri)}.psave button{flex:none;padding:10px 18px}
+@media (max-width:520px){.ros,.pfg{grid-template-columns:1fr}.pfh-pc{display:none}}
+@media (min-width:900px){
+ body{--sbw:264px}
+ .bnav{inset:var(--fm167h,0px) 0 0 auto;width:var(--sbw);flex-direction:column;align-items:stretch;gap:2px;padding:14px 12px;border-top:0;border-left:1px solid #1e293b;background:#0f172a;box-shadow:none;overflow-y:auto;overflow-x:hidden}
+ .bnav .sbh,.bnav .sbx{display:block}
+ .sbb{display:flex;align-items:center;gap:10px;padding:2px 6px 14px;border-bottom:1px solid #1e293b;margin-bottom:12px}.sbb img{width:38px;height:38px;border-radius:10px;background:#fff;padding:3px}.sbb b{display:block;color:#fff;font-size:16px;font-weight:900}.sbb small{display:block;color:#94a3b8;font-size:11.5px;font-weight:700}
+ .bnav .sbu{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:10px;width:100%;padding:10px;border-radius:12px;background:#1e293b;cursor:pointer;margin-bottom:12px}
+ .bnav .sbu .av{width:40px!important;height:40px!important;border-radius:50%;flex:none;object-fit:cover;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;display:grid;place-items:center;font-weight:900}
+ .bnav .sbu b{display:block;color:#fff;font-size:13.5px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:165px}.bnav .sbu small{display:block;color:#93c5fd;font-size:11.5px;font-weight:700}
+ .sbt{color:#64748b;font-size:11px;font-weight:900;letter-spacing:.4px;padding:4px 10px 6px}
+ .bnav>button,.bnav .sbx button{flex:none;flex-direction:row;justify-content:flex-start;gap:12px;min-width:0;width:100%;padding:11px 12px;font-size:14px;font-weight:800;color:#cbd5e1;border-radius:11px;text-align:right;border:0;background:none;cursor:pointer;display:flex;align-items:center;font-family:Cairo,Tahoma,sans-serif}
+ .bnav>button i,.bnav .sbx button i{font-style:normal;font-size:18px;filter:none;opacity:1;width:24px;text-align:center}
+ .bnav>button:hover,.bnav .sbx button:hover{background:#1e293b;color:#fff}
+ .bnav>button.on{background:linear-gradient(90deg,#2563eb,#3b82f6);color:#fff;box-shadow:0 4px 14px rgba(37,99,235,.35)}
+ .bnav>button em{position:static;margin-inline-start:auto}
+ .sbx{margin-top:14px;padding-top:10px;border-top:1px solid #1e293b}.bnav .sbx button.out{color:#fca5a5}
+ .top{margin-right:var(--sbw)}
+ .wrap{padding:18px 22px 40px;max-width:980px;margin-right:calc(var(--sbw) + max(0px,(100vw - var(--sbw) - 980px) / 2));margin-left:auto}
+ .psave{bottom:14px}
+}
+@media print{.bnav{display:none!important}.top,.wrap{margin-right:0!important}}
+</style>
 </body>
 </html>
