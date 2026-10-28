@@ -6376,3 +6376,225 @@ do $do$ begin
 end $do$;
 notify pgrst, 'reload schema';
 commit;
+
+-- ---------- 42) parts kits for preventive maintenance, tool kits per job title and clearance, scrap disposal (V221) ----------
+-- (1) wo_kits (KIT-###): a named set of parts per order (one school) for a preventive template («match» = text found in the
+--     order / campaign title); fm_kit_save(p); fm_kit_request(p {kit_id, wo_ids[], store_id?}) raises one issue request per order
+--     for its assignee (through fm_issue_req_new, so the usual permissions, approval limit and notifications apply), skipping
+--     closed orders, orders without an assignee and orders that already have a live request for that kit.
+-- (2) fm_settings.tool_kits {job title: [{name, qty}]} (the basic tools of each title, compared in the browser);
+--     fm_clearance(user) = what the person still holds (tools, parts in custody, scrap owed, open requests, open tool reports);
+--     fm_clearance_sign(user, p) records a clearance (wo_clearances, CLR-YYYY-####) only when nothing is left.
+-- (3) wo_scrap_disposals (SCR-YYYY-####): a disposal record for scrap kept in a store (sell / destroy / return to the supplier,
+--     committee, party, proceeds, photo); approval by the area manager / ops / project manager lowers wo_stock.scrap_qty and
+--     writes «dispose» moves.
+begin;
+-- (1) parts kits
+create sequence if not exists public.wo_kit_seq;
+create table if not exists public.wo_kits (
+  id         uuid primary key default gen_random_uuid(),
+  code       text unique not null default ('KIT-' || lpad(nextval('public.wo_kit_seq')::text, 3, '0')),
+  name       text not null check (length(btrim(name)) between 1 and 200),
+  match      text,                               -- text of the template / order title this kit is for
+  tpl        text,                               -- template id (ppm:NN or wo_templates id), informative
+  lines      jsonb not null default '[]',        -- [{material_id, qty}] per order (one school)
+  note       text,
+  active     boolean not null default true,
+  created_by uuid default auth.uid(), updated_by_name text,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+alter table public.wo_kits enable row level security;
+revoke insert, update, delete on public.wo_kits from anon, authenticated;
+grant select on public.wo_kits to authenticated;
+drop policy if exists p_kits_read on public.wo_kits;
+create policy p_kits_read on public.wo_kits for select to authenticated using (public.fm_role() <> 'pending' and public.fm_mod('wh'));
+create or replace function public.fm_kit_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare k public.wo_kits; x jsonb; L jsonb := '[]'; m public.wo_materials; q numeric; id_ uuid := nullif(p->>'id','')::uuid;
+begin
+  if auth.uid() is null or not (public.fm_wh_edit() or public.fm_wh_admin()) or not public.fm_mod('wh') then raise exception 'not allowed'; end if;
+  if btrim(coalesce(p->>'name','')) = '' then raise exception 'name required'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    select * into m from public.wo_materials where id = nullif(x->>'material_id','')::uuid;
+    if not found or not m.active or m.approved_at is null then raise exception 'item not approved: %', coalesce(m.name, x->>'material_id'); end if;
+    q := nullif(x->>'qty','')::numeric;
+    if q is null or q <= 0 or q > 100000 then raise exception 'invalid qty'; end if;
+    if exists(select 1 from jsonb_array_elements(L) e where e->>'material_id' = m.id::text) then raise exception 'duplicate item: %', m.name; end if;
+    L := L || jsonb_build_object('material_id', m.id, 'qty', q);
+  end loop;
+  if jsonb_array_length(L) = 0 then raise exception 'no lines'; end if;
+  if id_ is null then
+    insert into public.wo_kits(name, match, tpl, lines, note, updated_by_name)
+    values (left(btrim(p->>'name'),200), left(nullif(btrim(coalesce(p->>'match','')),''),200), left(nullif(p->>'tpl',''),80), L,
+            left(nullif(btrim(coalesce(p->>'note','')),''),500), public.fm_me_name()) returning * into k;
+  else
+    update public.wo_kits set name = left(btrim(p->>'name'),200), match = left(nullif(btrim(coalesce(p->>'match','')),''),200), tpl = left(nullif(p->>'tpl',''),80),
+      lines = L, note = left(nullif(btrim(coalesce(p->>'note','')),''),500), active = coalesce((p->>'active')::boolean, active),
+      updated_by_name = public.fm_me_name(), updated_at = now() where id = id_ returning * into k;
+    if not found then raise exception 'not found'; end if;
+  end if;
+  return k.id;
+end $$;
+create or replace function public.fm_kit_request(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare k public.wo_kits; w public.work_orders; wid uuid; made int := 0; sk int := 0; errs jsonb := '[]'; r jsonb;
+begin
+  if auth.uid() is null or not public.fm_mod('wh') then raise exception 'not allowed'; end if;
+  select * into k from public.wo_kits where id = nullif(p->>'kit_id','')::uuid and active;
+  if not found then raise exception 'kit not found'; end if;
+  if jsonb_array_length(coalesce(p->'wo_ids','[]')) > 300 then raise exception 'too many orders'; end if;
+  for wid in select (e #>> '{}')::uuid from jsonb_array_elements(coalesce(p->'wo_ids','[]')) e loop
+    select * into w from public.work_orders where id = wid;
+    if not found or w.assignee is null or w.status in ('closed','cancelled','rejected','done') then sk := sk + 1; continue; end if;
+    if exists(select 1 from public.wo_issue_requests q where q.wo_id = w.id and q.status not in ('cancelled','rejected') and q.note like k.code || '%') then sk := sk + 1; continue; end if;
+    begin
+      r := public.fm_issue_req_new(jsonb_build_object('holder', w.assignee, 'source', 'wo', 'wo_id', w.id, 'store_id', nullif(p->>'store_id',''),
+             'lines', k.lines, 'note', k.code || ' — طقم: ' || k.name));
+      made := made + 1;
+    exception when others then
+      errs := errs || jsonb_build_object('code', w.code, 'err', sqlerrm);
+    end;
+  end loop;
+  return jsonb_build_object('created', made, 'skipped', sk, 'errors', errs);
+end $$;
+revoke all on function public.fm_kit_save(jsonb), public.fm_kit_request(jsonb) from public, anon;
+grant execute on function public.fm_kit_save(jsonb), public.fm_kit_request(jsonb) to authenticated;
+
+-- (2) clearance
+insert into public.fm_settings(key, value) values ('tool_kits', '{}') on conflict (key) do nothing;
+create sequence if not exists public.wo_clearance_seq;
+create table if not exists public.wo_clearances (
+  id        uuid primary key default gen_random_uuid(),
+  code      text unique not null default ('CLR-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_clearance_seq')::text, 4, '0')),
+  at        timestamptz not null default now(),
+  user_id   uuid not null references public.profiles(id) on delete cascade,
+  user_name text,
+  reason    text check (reason in ('transfer','resign','end','other')),
+  note      text,
+  snapshot  jsonb not null default '{}',
+  by_id     uuid default auth.uid(), by_name text
+);
+alter table public.wo_clearances enable row level security;
+revoke insert, update, delete on public.wo_clearances from anon, authenticated;
+grant select on public.wo_clearances to authenticated;
+drop policy if exists p_clearances_read on public.wo_clearances;
+create policy p_clearances_read on public.wo_clearances for select to authenticated using (user_id = auth.uid() or public.fm_wh_sees_holder(user_id));
+create or replace function public.fm_clearance(p_user uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare t jsonb; c jsonb; r jsonb; tr jsonb;
+begin
+  if auth.uid() is null or not public.fm_wh_sees_holder(p_user) then raise exception 'not allowed'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'code', code, 'name', name, 'due_back', due_back, 'price', price)), '[]') into t from public.wo_tools where holder = p_user and status = 'out';
+  select coalesce(jsonb_agg(jsonb_build_object('material_id', material_id, 'qty', qty, 'scrap', scrap)), '[]') into c from public.wo_custody where holder = p_user and (qty <> 0 or scrap <> 0);
+  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'code', code, 'status', status)), '[]') into r from public.wo_issue_requests
+    where holder = p_user and (status in ('requested','partial') or (status = 'issued' and received_at is null));
+  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'code', code, 'kind', kind)), '[]') into tr from public.wo_tool_reports where holder = p_user and status = 'open';
+  return jsonb_build_object('user', p_user, 'name', (select coalesce(full_name, email) from public.profiles where id = p_user), 'tools', t, 'custody', c, 'requests', r, 'reports', tr,
+    'clear', jsonb_array_length(t) = 0 and jsonb_array_length(c) = 0 and jsonb_array_length(r) = 0 and jsonb_array_length(tr) = 0,
+    'last', (select jsonb_build_object('code', code, 'at', at, 'by_name', by_name) from public.wo_clearances where user_id = p_user order by at desc limit 1));
+end $$;
+create or replace function public.fm_clearance_sign(p_user uuid, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s jsonb := public.fm_clearance(p_user); x public.wo_clearances;
+begin
+  if not (public.fm_wh_admin() or public.fm_my_pos() in ('storekeeper','area_manager')) then raise exception 'not allowed'; end if;
+  if p_user = auth.uid() then raise exception 'not allowed'; end if;
+  if not (s->>'clear')::boolean then raise exception 'not clear'; end if;
+  insert into public.wo_clearances(user_id, user_name, reason, note, snapshot, by_name)
+  values (p_user, s->>'name', coalesce(nullif(p->>'reason',''), 'other'), left(nullif(btrim(coalesce(p->>'note','')),''),500), s, public.fm_me_name()) returning * into x;
+  return jsonb_build_object('id', x.id, 'code', x.code);
+end $$;
+revoke all on function public.fm_clearance(uuid), public.fm_clearance_sign(uuid, jsonb) from public, anon;
+grant execute on function public.fm_clearance(uuid), public.fm_clearance_sign(uuid, jsonb) to authenticated;
+
+-- (3) scrap disposal
+alter table public.wo_stock_moves drop constraint if exists wo_stock_moves_kind_check;
+alter table public.wo_stock_moves add constraint wo_stock_moves_kind_check check (kind in ('in','out','adjust','transfer','issue','return','scrap','dispose'));
+create sequence if not exists public.wo_scrap_disp_seq;
+create table if not exists public.wo_scrap_disposals (
+  id           uuid primary key default gen_random_uuid(),
+  code         text unique not null default ('SCR-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_scrap_disp_seq')::text, 4, '0')),
+  at           timestamptz not null default now(),
+  store_id     uuid not null references public.wo_stores(id) on delete cascade,
+  region       text,
+  method       text not null check (method in ('sell','destroy','return_supplier')),
+  lines        jsonb not null default '[]',      -- [{material_id, qty}]
+  party        text,                             -- buyer / supplier / disposal company
+  amount       numeric(14,2),                    -- sale proceeds or supplier credit
+  ref          text,                             -- receipt / credit note number
+  committee    text[] not null default '{}',
+  note         text,
+  photo        text check (photo is null or length(photo) <= 420000),
+  status       text not null default 'pending' check (status in ('pending','approved','rejected')),
+  by_id        uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name      text,
+  decided_by   uuid references public.profiles(id) on delete set null,
+  decided_name text, decided_at timestamptz, response text
+);
+alter table public.wo_scrap_disposals enable row level security;
+revoke insert, update, delete on public.wo_scrap_disposals from anon, authenticated;
+grant select on public.wo_scrap_disposals to authenticated;
+drop policy if exists p_scrap_disp_read on public.wo_scrap_disposals;
+create policy p_scrap_disp_read on public.wo_scrap_disposals for select to authenticated using (
+  public.fm_mod('wh') and (by_id = auth.uid() or public.fm_stock_can(region) or public.fm_wh_keeper(store_id) or public.fm_adj_approver(region)
+    or public.fm_my_pos() in ('dept_manager','qa_manager','owner_rep','accountant')));
+do $do$ begin
+  if to_regprocedure('public.fm_mod_guard()') is not null then
+    drop trigger if exists fm_mod_guard on public.wo_scrap_disposals;
+    create trigger fm_mod_guard before insert on public.wo_scrap_disposals for each row execute function public.fm_mod_guard('wh');
+  end if;
+end $do$;
+create or replace function public.fm_scrap_dispose_new(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; x record; L jsonb := '[]'; avail numeric; d public.wo_scrap_disposals; u uuid; mn text;
+begin
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if auth.uid() is null or not found or not (public.fm_stock_can(st.region) or public.fm_wh_keeper(st.id)) then raise exception 'not allowed'; end if;
+  if coalesce(p->>'method','') not in ('sell','destroy','return_supplier') then raise exception 'invalid method'; end if;
+  if length(coalesce(p->>'photo','')) > 420000 then raise exception 'photo too large'; end if;
+  for x in select nullif(e->>'material_id','')::uuid m, sum(nullif(e->>'qty','')::numeric) q from jsonb_array_elements(coalesce(p->'lines','[]')) e group by 1 loop
+    if x.q is null or x.q <= 0 then raise exception 'invalid qty'; end if;
+    avail := coalesce((select scrap_qty from public.wo_stock where store_id = st.id and material_id = x.m), 0)
+      - coalesce((select sum((dl->>'qty')::numeric) from public.wo_scrap_disposals s, jsonb_array_elements(s.lines) dl
+                  where s.store_id = st.id and s.status = 'pending' and dl->>'material_id' = x.m::text), 0);
+    if x.q > avail then select name into mn from public.wo_materials where id = x.m; raise exception 'more than scrap: % (%)', mn, avail; end if;
+    L := L || jsonb_build_object('material_id', x.m, 'qty', x.q);
+  end loop;
+  if jsonb_array_length(L) = 0 then raise exception 'no lines'; end if;
+  insert into public.wo_scrap_disposals(store_id, region, method, lines, party, amount, ref, committee, note, photo, by_name)
+  values (st.id, st.region, p->>'method', L, left(nullif(btrim(coalesce(p->>'party','')),''),200), nullif(p->>'amount','')::numeric,
+          left(nullif(btrim(coalesce(p->>'ref','')),''),80), coalesce(array(select left(btrim(v),100) from jsonb_array_elements_text(coalesce(p->'committee','[]')) v where btrim(v) <> '' limit 6), '{}'),
+          left(nullif(btrim(coalesce(p->>'note','')),''),500), nullif(p->>'photo',''), public.fm_me_name()) returning * into d;
+  begin
+    for u in select * from public.fm_adj_approvers(st.region) loop
+      perform public.fm_push_add(u, 'appr', '♻️ محضر تخلص من تالف بانتظار اعتمادك ' || d.code, st.name || ' • ' || jsonb_array_length(L) || ' صنف', 'wh=scr', 'scr-' || d.id);
+    end loop;
+  exception when others then null; end;
+  return jsonb_build_object('id', d.id, 'code', d.code);
+end $$;
+create or replace function public.fm_scrap_dispose_act(p_id uuid, p_action text, p_note text) returns text language plpgsql security definer set search_path = public as $$
+declare d public.wo_scrap_disposals; x jsonb; q numeric; cur numeric; nm text := public.fm_me_name(); nt text := nullif(btrim(coalesce(p_note,'')),''); mn text;
+  M jsonb := '{"sell":"بيع","destroy":"إتلاف","return_supplier":"إرجاع للمورد"}';
+begin
+  select * into d from public.wo_scrap_disposals where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if d.status <> 'pending' then raise exception 'not pending'; end if;
+  if not public.fm_adj_approver(d.region) then raise exception 'not allowed'; end if;
+  if d.by_id = auth.uid() and public.fm_role() <> 'admin' and public.fm_my_pos() <> 'sysadmin' then raise exception 'not allowed'; end if;
+  if p_action = 'approve' then
+    for x in select * from jsonb_array_elements(d.lines) loop
+      q := (x->>'qty')::numeric;
+      select scrap_qty into cur from public.wo_stock where store_id = d.store_id and material_id = (x->>'material_id')::uuid for update;
+      if coalesce(cur,0) < q then select name into mn from public.wo_materials where id = (x->>'material_id')::uuid; raise exception 'more than scrap: % (%)', mn, coalesce(cur,0); end if;
+      update public.wo_stock set scrap_qty = scrap_qty - q, updated_at = now() where store_id = d.store_id and material_id = (x->>'material_id')::uuid;
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, ref, note, by_id, by_name)
+      values (d.store_id, (x->>'material_id')::uuid, -q, 'dispose', d.code, left(concat_ws(' — ', d.code || ' ' || (M->>d.method) || ' تالف', d.party), 300), auth.uid(), nm);
+    end loop;
+    update public.wo_scrap_disposals set status = 'approved', decided_by = auth.uid(), decided_name = nm, decided_at = now(), response = left(nt,300) where id = p_id;
+  elsif p_action = 'reject' then
+    if nt is null then raise exception 'note required'; end if;
+    update public.wo_scrap_disposals set status = 'rejected', decided_by = auth.uid(), decided_name = nm, decided_at = now(), response = left(nt,300) where id = p_id;
+  else raise exception 'invalid action'; end if;
+  begin perform public.fm_push_add(d.by_id, 'wh_adj', case when p_action = 'approve' then '✅ اعتُمد محضر التخلص ' else '⛔ رُفض محضر التخلص ' end || d.code, coalesce(nt,''), 'wh=scr', 'scr-' || d.id);
+  exception when others then null; end;
+  return (select status from public.wo_scrap_disposals where id = p_id);
+end $$;
+revoke all on function public.fm_scrap_dispose_new(jsonb), public.fm_scrap_dispose_act(uuid, text, text) from public, anon;
+grant execute on function public.fm_scrap_dispose_new(jsonb), public.fm_scrap_dispose_act(uuid, text, text) to authenticated;
+notify pgrst, 'reload schema';
+commit;
