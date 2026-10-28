@@ -35988,10 +35988,10 @@ const LV={h:'عالية',m:'متوسطة',l:'منخفضة'};
 /* ---- roadmap: phases of proposals (status: «مقترح» until shipped) ---- */
 const RM=[
 {t:'المرحلة 1 — ضبط الأرصدة',s:'قريباً • يمنع أخطاء الأرصدة والفقد',c:'#dc2626',it:[
- {id:'R1',t:'حجز الكمية عند طلب الصرف',p:'«محجوز» و«متاح للصرف» لكل صنف ومستودع؛ الطلب الجديد يرى المتاح فقط، والحجز يُفك عند الصرف أو الرفض أو الحذف.',z:'M',pr:'P1'},
- {id:'R2',t:'اعتماد فروقات الجرد',p:'فرق جرد فوق نسبة التسامح (أو فوق قيمة محددة) يبقى «بانتظار الاعتماد» عند مدير المنطقة / العمليات، مع سبب وصورة، ثم يُرحَّل.',z:'M',pr:'P1'},
- {id:'R3',t:'تنبيه الرصيد السالب',p:'إشعار فوري لأمين المستودع ومدير المنطقة عند أي رصيد سالب، وقائمة «أرصدة سالبة» للتسوية بتوريد أو جرد.',z:'S',pr:'P1'},
- {id:'R4',t:'سند استلام بضاعة (GRN) وصورة الفاتورة',p:'سند مطبوع لكل توريد (المورد، الفاتورة، الأصناف، القيمة، توقيعات)، وإرفاق صورة الفاتورة في التوريد المباشر.',z:'S',pr:'P1'}]},
+ {id:'R1',done:'V216',t:'حجز الكمية عند طلب الصرف',p:'«محجوز» و«متاح للصرف» لكل صنف ومستودع؛ الطلب الجديد يرى المتاح فقط، والحجز يُفك عند الصرف أو الرفض أو الحذف.',z:'M',pr:'P1'},
+ {id:'R2',done:'V216',t:'اعتماد فروقات الجرد',p:'فرق جرد فوق نسبة التسامح (أو فوق قيمة محددة) يبقى «بانتظار الاعتماد» عند مدير المنطقة / العمليات، مع سبب وصورة، ثم يُرحَّل.',z:'M',pr:'P1'},
+ {id:'R3',done:'V216',t:'تنبيه الرصيد السالب',p:'إشعار فوري لأمين المستودع ومدير المنطقة عند أي رصيد سالب، وقائمة «أرصدة سالبة» للتسوية بتوريد أو جرد.',z:'S',pr:'P1'},
+ {id:'R4',done:'V216',t:'سند استلام بضاعة (GRN) وصورة الفاتورة',p:'سند مطبوع لكل توريد (المورد، الفاتورة، الأصناف، القيمة، توقيعات)، وإرفاق صورة الفاتورة في التوريد المباشر.',z:'S',pr:'P1'}]},
 {t:'المرحلة 2 — سرعة الميدان والمستودع',s:'بعدها • توفير وقت أمين المستودع والفني',c:'#f59e0b',it:[
  {id:'R8',t:'ملصق QR لكل صنف ورف',p:'طباعة ملصقات من بطاقة الصنف، ومسحها بكاميرا الجوال عند الصرف والجرد والإرجاع (يدمج البندين 13 و20).',z:'M',pr:'P2'},
  {id:'R7',t:'طلب القطع دون اتصال',p:'طلب القطع وتأكيد الاستلام وتوقيع الجرد يُحفظ في صندوق الانتظار ويُرسل عند عودة الاتصال.',z:'M',pr:'P2'},
@@ -36033,7 +36033,7 @@ function raciHtml(){return `<div style="overflow:auto"><table class="fm212-tbl">
  <div class="fm212-note"><b style="color:#1d4ed8">ن</b> ينفذ • <b style="color:#15803d">ع</b> يعتمد / يقرر • <b style="color:#b45309">ط</b> يطلب / يقدّم • <b style="color:#64748b">ر</b> يطّلع. مدير المنطقة ومهندسها وأمين المستودع في مناطقهم فقط. الصلاحيات الفعلية يفرضها الخادم (RLS والإجراءات)؛ الجدول ملخص لها.</div>`}
 function gapsHtml(){return `<h4 style="margin:0 0 6px">✅ ما يعمل جيداً</h4><div class="fm212-good">${GOOD.map(g=>`<div>${esc(g)}</div>`).join('')}</div>
  <h4 style="margin:0 0 6px">⚠️ الفجوات (${GAPS.length})</h4>${GAPS.map(g=>`<div class="fm212-gap ${g.l}" id="fm212-g-${g.id}"><span class="k">${g.id} • أهمية ${LV[g.l]}</span><b>${esc(g.t)}</b><p>${esc(g.p)}</p><p><a href="#" class="fm212-gapref" data-rm="${g.r}">المعالجة: ${g.r}</a> ${esc(RM.flatMap(x=>x.it).find(x=>x.id===g.r)?.t||'')}</p></div>`).join('')}`}
-function rmHtml(){return `<div class="fm212-rm">${RM.map(c=>`<div class="fm212-col" style="border-top:4px solid ${c.c}"><h4>${esc(c.t)}</h4><small>${esc(c.s)}</small>${c.it.map(x=>`<div class="fm212-it" id="fm212-r-${x.id}"><b>${x.id} — ${esc(x.t)}</b><p>${esc(x.p)}</p><div class="tags"><span class="${x.pr.toLowerCase()}">${x.pr}</span><span>الحجم ${x.z}</span><span>مقترح</span>${GAPS.filter(g=>g.r===x.id).map(g=>`<span>يعالج ${g.id}</span>`).join('')}</div></div>`).join('')}</div>`).join('')}</div>
+function rmHtml(){return `<div class="fm212-rm">${RM.map(c=>`<div class="fm212-col" style="border-top:4px solid ${c.c}"><h4>${esc(c.t)}</h4><small>${esc(c.s)}</small>${c.it.map(x=>`<div class="fm212-it" id="fm212-r-${x.id}"><b>${x.id} — ${esc(x.t)}</b><p>${esc(x.p)}</p><div class="tags"><span class="${x.pr.toLowerCase()}">${x.pr}</span><span>الحجم ${x.z}</span>${x.done?`<span class="done">✅ نُفّذ ${x.done}</span>`:'<span>مقترح</span>'}${GAPS.filter(g=>g.r===x.id).map(g=>`<span>يعالج ${g.id}</span>`).join('')}</div></div>`).join('')}</div>`).join('')}</div>
  <div class="fm212-note">الأولوية: P1 التالي مباشرة • P2 قريباً • P3 لاحقاً — مقترحة وتُعتمد بالاتفاق. الحجم: S يوم عمل تقريباً • M إصدار واحد • L أكثر من إصدار. البنود محفوظة أيضاً في ROADMAP.md.</div>`}
 async function liveHtml(box){box.innerHTML='';const L=await live();if(!L||!L.length){box.hidden=true;return}box.hidden=false;
  box.innerHTML=L.map(x=>`<button type="button" data-go="${x[3]}" title="افتح"><b class="${x[2]>0?x[4]:''}">${num(x[2])}</b><small>${x[0]} ${esc(x[1])}</small></button>`).join('');box.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>GO[b.dataset.go]?.())}
