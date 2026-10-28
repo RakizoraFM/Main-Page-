@@ -205,3 +205,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## Field F42 — parts follow-up panel redesigned
 - `fmf-36-parts` `panel()` / `render()` only (data, `load`, `FM193Model` unchanged): dialog `#fm193-field-parts.f42` with a dark sticky header and ✕, a toggle «النشطة / كل طلباتي» (`all`), 🔄, «🧰 عهدتي وتأكيد الاستلام», four counts (requests, waiting, issued awaiting receipt, late), and one card per request: code, status chip (`STC`), date, source / school, items table (requested / issued / remaining), issued % bar, follow-up grid (owner, due — red when late, team, stage) and the note. Styles `.f42-*` in `fmf-36-parts-style`. The dialog now has the id the scope guard in `button()` already looked for.
+
+## V211 — category picker in the stock receipt / transfer dialogs
+- The V210 block exposes `window.fmMatPick(done, opts)` (loads the V180 warehouse data when it is older than a minute, then `matPick`). V173 `moveDlg` (📥 توريد / 🔁 تحويل): button «🗂️ اختيار حسب الفئة» (`[data-pickc]`) — each pick fills the first empty row (or adds one) with the item name, qty 1 and, for a receipt, its approved price; picking an item already in the list adds 1. The datalist labels carry the SP and Logix codes, and save also accepts a typed SP / Logix code.
