@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S10">
+<meta name="fm-version" content="S11">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -60,6 +60,12 @@ const CKEY='fm_cloud_v136';
 const LIB='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
 const LOGO=document.querySelector('#app .logo').src;
 /* where each role goes after sign-in */
+/* S11: where each job title lands — fm_settings.routes {title: index | field | choose} set by the system admin, else RT_DEF */
+const RT_DEF={sysadmin:'choose',dept_manager:'index',project_manager:'index',ops_manager:'index',area_manager:'index',area_engineer:'index',supervisor:'field',contractor:'field',hse_manager:'index',qa_manager:'index',accountant:'index',storekeeper:'index',owner_rep:'index'};
+const RT_ROLE={admin:'sysadmin',manager:'project_manager',engineer:'area_engineer',supervisor:'supervisor',contractor:'contractor',viewer:'dept_manager',staff:'accountant'};
+const rtTitle=p=>p&&(p.job_title||RT_ROLE[p.role])||'';
+const rtMode=(p,R)=>{const v=(R||{})[rtTitle(p)];return /^(index|field|choose)$/.test(v||'')?v:(RT_DEF[rtTitle(p)]||(['supervisor','contractor'].includes(p.role)?'field':'index'))};
+const prefKey=p=>'fm_route_pref:'+(p&&p.id||'');
 const ROUTE={admin:'index.html',manager:'index.html',staff:'index.html',engineer:'index.html',viewer:'index.html',supervisor:'field.html',contractor:'field.html'};
 const ROLE={admin:'مدير النظام',manager:'مدير',staff:'إدارة مساندة',engineer:'مهندس',supervisor:'مشرف',contractor:'مقاول',viewer:'مشاهد (إدارة)',pending:'بانتظار التفعيل'};
 /* S4: the job title shown under the name (the role follows it) */
@@ -111,7 +117,8 @@ const API=window.FMStartAPI=window.FMStartAPI||{
  async signUp(em,pw,name){const c=await sb();return chk(await c.auth.signUp({email:em,password:pw,options:{data:{full_name:name}}}))},
  async reset(em){const c=await sb();return chk(await c.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname}))},
  async setPassword(pw){const c=await sb();chk(await c.auth.updateUser({password:pw}));try{chk(await c.rpc('fm_password_changed'))}catch(e){}return true},
- async signOut(){const c=await sb();await c.auth.signOut()}
+ async signOut(){const c=await sb();await c.auth.signOut()},
+ async routes(){try{const c=await sb();const r=await c.from('fm_settings').select('value').eq('key','routes').maybeSingle();return (r&&!r.error&&r.data&&r.data.value)||{}}catch(e){return {}}}
 };
 
 /* ---------- views ---------- */
@@ -194,19 +201,24 @@ function pendingView(p){
 }
 
 let timer=null;
-function welcomeView(p,dest){
+function welcomeView(p,mode){
  const name=S(p.full_name)||S(p.email);const regions=(p.regions||[]).map(r=>RN[r]||r).join('، ');
- const other=p.role==='admin'?(dest==='index.html'?'field.html':'index.html'):'';
+ /* mode: index | field = one workspace (opens by itself); choose (or the system admin) = both, with «remember my choice» */
+ const both=mode==='choose'||p.role==='admin',dest=mode==='field'?'field.html':'index.html',other=both?(dest==='index.html'?'field.html':'index.html'):'';
+ let pref='';try{pref=localStorage.getItem(prefKey(p))||''}catch(e){}if(!/^(index|field)\.html$/.test(pref)||!both)pref='';
+ const first=pref||dest,second=first==='index.html'?'field.html':'index.html';
  frame(`<div class="who"><div class="av">${esc(name.charAt(0))}</div><div><b>${esc(name)}</b><span>${esc(POS[p.job_title]||ROLE[p.role]||p.role)}${regions?' • '+esc(regions):''}</span></div></div>
-  <div class="sub" style="margin:10px 0 0">${other?'اختر ما تريد فتحه':`جارٍ فتح ${DEST[dest]}…`}</div>
-  <button class="go" id="w-go">فتح ${DEST[dest]}</button>
-  ${other?`<button class="go sec" id="w-alt">فتح ${DEST[other]}</button>`:''}
+  <div class="sub" style="margin:10px 0 0">${both&&!pref?'اختر ما تريد فتحه':`جارٍ فتح ${DEST[first]}…`}</div>
+  <button class="go" id="w-go">${first==='field.html'?'📱':'🖥️'} فتح ${DEST[first]}</button>
+  ${both?`<button class="go sec" id="w-alt">${second==='field.html'?'📱':'🖥️'} فتح ${DEST[second]}</button>
+   <label class="rem" style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:10px;font-weight:700;font-size:13.5px;color:#475569"><input type="checkbox" id="w-rem" ${pref?'checked':''} style="width:auto;margin:0"> تذكّر اختياري على هذا الجهاز</label>`:''}
   <div class="links"><a href="#" class="mut" id="w-out">ليس أنت؟ تسجيل الخروج</a></div>`);
- const open=u=>{clearTimeout(timer);try{localStorage.setItem('fm_last_app',u)}catch(e){}location.href=u};
- $('#w-go').onclick=()=>open(dest);if(other)$('#w-alt').onclick=()=>open(other);
+ const open=u=>{clearTimeout(timer);try{localStorage.setItem('fm_last_app',u);const r=document.getElementById('w-rem');if(r){r.checked?localStorage.setItem(prefKey(p),u):localStorage.removeItem(prefKey(p))}}catch(e){}location.href=u};
+ $('#w-go').onclick=()=>open(first);if(both)$('#w-alt').onclick=()=>open(second);
+ const rem=document.getElementById('w-rem');if(rem)rem.onchange=()=>{if(!rem.checked){clearTimeout(timer);try{localStorage.removeItem(prefKey(p))}catch(e){}}};
  $('#w-out').onclick=e=>{e.preventDefault();clearTimeout(timer);signOut()};
- /* the admin chooses; a role with one workspace opens it automatically */
- clearTimeout(timer);if(!other)timer=setTimeout(()=>open(dest),1500);
+ /* one workspace, or a remembered choice: open it by itself */
+ clearTimeout(timer);if(!both||pref)timer=setTimeout(()=>open(first),1500);
 }
 
 async function signOut(){try{await API.signOut()}catch(e){}loginView('in')}
@@ -215,7 +227,7 @@ async function route(){
  const p=await API.me();if(!p)return loginView('in');
  if(p.role==='pending'||p.active===false||!ROUTE[p.role])return pendingView(p);
  if(p.must_change_pw)return newPasswordView('',true);
- welcomeView(p,ROUTE[p.role]);
+ const R=API.routes?await API.routes():{};welcomeView(p,rtMode(p,R));
 }
 
 /* S10: no connection — open the last app used on this device from its saved copy (sw.js) */
