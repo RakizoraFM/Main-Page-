@@ -6598,3 +6598,339 @@ revoke all on function public.fm_scrap_dispose_new(jsonb), public.fm_scrap_dispo
 grant execute on function public.fm_scrap_dispose_new(jsonb), public.fm_scrap_dispose_act(uuid, text, text) to authenticated;
 notify pgrst, 'reload schema';
 commit;
+
+-- ---------- 43) offline-safe parts requests, warranty claims / supplier returns, quotations (RFQ), weighted average cost (V222) ----------
+-- (1) wo_issue_requests.client_id: the field app queues a request made without a connection and sends it later through
+--     fm_issue_req_new_once(p {…, client_id}) — the same request is never created twice (unique per requester).
+-- (2) wo_claims (WC-YYYY-####): a defective part sent back to the supplier under warranty, or a supplier return; optional serial
+--     (warranty date from wo_serials), «from_stock» takes the quantity out of the store now (move claim_out); the supplier's answer
+--     brings it back (replaced / repaired → claim_in), credits an amount, or rejects it (the part goes to the store's scrap).
+-- (3) wo_rfqs + wo_rfq_quotes (RFQ-YYYY-####): ask suppliers for quotations, record each quotation (prices per item, delivery
+--     days, validity), compare and award — the award creates the purchase request (fm_po_save) with the winning prices; fewer
+--     quotations than stock_rules.rfq_min (default 3) need a written reason.
+-- (4) weighted average cost per store × item (wo_stock.avg_cost): every receipt / incoming transfer / return with a price updates
+--     it; with stock_rules.costing = 'avg' (default) issues, work-order consumption and outgoing transfers are priced at the
+--     average of that moment, so past consumption keeps its value when the item price changes later.
+begin;
+insert into public.fm_settings(key, value) values ('stock_rules', '{"scrap_days":7,"esc_days":[7,14],"block_overdue":true,"variance_pct":5,"adj_value":200,"issue_appr":0,"idle_days":[30,60],"abc":{"a":30,"b":90,"c":180},"rfq_min":3,"costing":"avg","cap":{"supervisor":0,"contractor":0,"area_engineer":0}}')
+  on conflict (key) do update set value = public.fm_settings.value || jsonb_build_object('rfq_min', coalesce(public.fm_settings.value->'rfq_min', '3'::jsonb), 'costing', coalesce(public.fm_settings.value->'costing', '"avg"'::jsonb));
+
+-- (1) offline-safe requests
+alter table public.wo_issue_requests add column if not exists client_id text;
+create unique index if not exists wo_issue_requests_client_uq on public.wo_issue_requests (requested_by, client_id) where client_id is not null;
+create or replace function public.fm_issue_req_new_once(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare cid text := left(nullif(btrim(coalesce(p->>'client_id','')),''), 80); r public.wo_issue_requests; x jsonb;
+begin
+  if auth.uid() is null then raise exception 'not allowed'; end if;
+  if cid is not null then
+    select * into r from public.wo_issue_requests where requested_by = auth.uid() and client_id = cid;
+    if found then return jsonb_build_object('id', r.id, 'code', r.code, 'dup', true); end if;
+  end if;
+  x := public.fm_issue_req_new(p - 'client_id');
+  if cid is not null then
+    begin
+      update public.wo_issue_requests set client_id = cid where id = (x->>'id')::uuid;
+    exception when unique_violation then
+      raise exception 'duplicate request';
+    end;
+  end if;
+  return x;
+end $$;
+revoke all on function public.fm_issue_req_new_once(jsonb) from public, anon;
+grant execute on function public.fm_issue_req_new_once(jsonb) to authenticated;
+
+-- move kinds used below
+alter table public.wo_stock_moves drop constraint if exists wo_stock_moves_kind_check;
+alter table public.wo_stock_moves add constraint wo_stock_moves_kind_check check (kind in ('in','out','adjust','transfer','issue','return','scrap','dispose','claim_out','claim_in'));
+
+-- (2) warranty claims / supplier returns
+create sequence if not exists public.wo_claim_seq;
+create table if not exists public.wo_claims (
+  id             uuid primary key default gen_random_uuid(),
+  code           text unique not null default ('WC-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_claim_seq')::text, 4, '0')),
+  at             timestamptz not null default now(),
+  kind           text not null check (kind in ('warranty','return')),
+  store_id       uuid not null references public.wo_stores(id) on delete cascade,
+  region         text,
+  material_id    uuid not null references public.wo_materials(id) on delete cascade,
+  qty            numeric(14,3) not null check (qty > 0),
+  serial_id      uuid references public.wo_serials(id) on delete set null,
+  serial         text,
+  warranty_until date,
+  supplier_id    uuid references public.wo_suppliers(id) on delete set null,
+  supplier_name  text,
+  reason         text not null,
+  photo          text check (photo is null or length(photo) <= 420000),
+  from_stock     boolean not null default false,
+  status         text not null default 'open' check (status in ('open','sent','replaced','repaired','credited','rejected','cancelled')),
+  sent_at        timestamptz,
+  ref            text,
+  amount         numeric(14,2),
+  result_note    text,
+  closed_at      timestamptz,
+  by_id          uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name        text,
+  decided_name   text
+);
+create index if not exists wo_claims_st_idx on public.wo_claims (status, at desc);
+alter table public.wo_claims enable row level security;
+revoke insert, update, delete on public.wo_claims from anon, authenticated;
+grant select on public.wo_claims to authenticated;
+drop policy if exists p_claims_read on public.wo_claims;
+create policy p_claims_read on public.wo_claims for select to authenticated using (
+  public.fm_mod('wh') and (by_id = auth.uid() or public.fm_stock_can(region) or public.fm_wh_keeper(store_id)
+    or public.fm_my_pos() in ('dept_manager','qa_manager','owner_rep','accountant')));
+do $do$ begin
+  if to_regprocedure('public.fm_mod_guard()') is not null then
+    drop trigger if exists fm_mod_guard on public.wo_claims;
+    create trigger fm_mod_guard before insert on public.wo_claims for each row execute function public.fm_mod_guard('wh');
+  end if;
+end $do$;
+create or replace function public.fm_claim_new(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; m public.wo_materials; s public.wo_serials; q numeric := nullif(p->>'qty','')::numeric; cur numeric; c public.wo_claims;
+  sup uuid := nullif(p->>'supplier_id','')::uuid; fs boolean := coalesce((p->>'from_stock')::boolean, false); nm text := public.fm_me_name();
+begin
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if auth.uid() is null or not found or not (public.fm_stock_can(st.region) or public.fm_wh_keeper(st.id)) then raise exception 'not allowed'; end if;
+  select * into m from public.wo_materials where id = nullif(p->>'material_id','')::uuid;
+  if not found then raise exception 'unknown material'; end if;
+  if coalesce(p->>'kind','') not in ('warranty','return') then raise exception 'invalid kind'; end if;
+  if q is null or q <= 0 then raise exception 'invalid qty'; end if;
+  if btrim(coalesce(p->>'reason','')) = '' then raise exception 'reason required'; end if;
+  if length(coalesce(p->>'photo','')) > 420000 then raise exception 'photo too large'; end if;
+  if nullif(p->>'serial_id','') is not null then
+    select * into s from public.wo_serials where id = (p->>'serial_id')::uuid and material_id = m.id;
+    if not found then raise exception 'unknown serial'; end if;
+    sup := coalesce(sup, s.supplier_id);
+  end if;
+  if fs then
+    select qty into cur from public.wo_stock where store_id = st.id and material_id = m.id for update;
+    if coalesce(cur,0) < q then raise exception 'insufficient: % (%)', m.name, coalesce(cur,0); end if;
+  end if;
+  insert into public.wo_claims(kind, store_id, region, material_id, qty, serial_id, serial, warranty_until, supplier_id, supplier_name, reason, photo, from_stock, by_name)
+  values (p->>'kind', st.id, st.region, m.id, q, s.id, coalesce(s.serial, left(nullif(btrim(coalesce(p->>'serial','')),''),80)), s.warranty_until, sup,
+          coalesce((select name from public.wo_suppliers where id = sup), left(nullif(btrim(coalesce(p->>'supplier_name','')),''),200)),
+          left(btrim(p->>'reason'),500), nullif(p->>'photo',''), fs, nm) returning * into c;
+  if fs then
+    update public.wo_stock set qty = qty - q, updated_at = now() where store_id = st.id and material_id = m.id;
+    insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, supplier_id, supplier, ref, note, by_id, by_name)
+    values (st.id, m.id, -q, 'claim_out', m.price, sup, c.supplier_name, c.code, left(c.code || ' ' || case when c.kind = 'warranty' then 'مطالبة ضمان' else 'إرجاع للمورد' end, 300), auth.uid(), nm);
+  end if;
+  if s.id is not null then update public.wo_serials set status = 'claim', updated_at = now() where id = s.id; end if;
+  return jsonb_build_object('id', c.id, 'code', c.code, 'in_warranty', s.warranty_until >= (now() at time zone 'Asia/Riyadh')::date);
+end $$;
+-- send (p {ref, note}), replaced / repaired (back into the store when it left it), credited (p {amount}), rejected (note; the part
+-- goes to the store's scrap when it left the store), cancel (still open; the quantity goes back)
+create or replace function public.fm_claim_act(p_id uuid, p_action text, p jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare c public.wo_claims; nm text := public.fm_me_name(); nt text := nullif(btrim(coalesce(p->>'note','')),''); pr numeric;
+begin
+  select * into c from public.wo_claims where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if not (public.fm_stock_can(c.region) or public.fm_wh_keeper(c.store_id)) then raise exception 'not allowed'; end if;
+  select price into pr from public.wo_materials where id = c.material_id;
+  if p_action = 'send' then
+    if c.status <> 'open' then raise exception 'invalid status'; end if;
+    update public.wo_claims set status = 'sent', sent_at = now(), ref = left(nullif(btrim(coalesce(p->>'ref','')),''),80), result_note = left(nt,500) where id = p_id;
+  elsif p_action in ('replaced','repaired','credited','rejected') then
+    if c.status not in ('open','sent') then raise exception 'invalid status'; end if;
+    if p_action = 'rejected' and nt is null then raise exception 'note required'; end if;
+    if p_action = 'credited' and nullif(p->>'amount','') is null then raise exception 'amount required'; end if;
+    if c.from_stock and p_action in ('replaced','repaired') then
+      insert into public.wo_stock(store_id, material_id, qty) values (c.store_id, c.material_id, c.qty)
+        on conflict (store_id, material_id) do update set qty = public.wo_stock.qty + c.qty, updated_at = now();
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, supplier_id, supplier, ref, note, by_id, by_name)
+      values (c.store_id, c.material_id, c.qty, 'claim_in', (select unit_price from public.wo_stock_moves where ref = c.code and kind = 'claim_out' limit 1), c.supplier_id, c.supplier_name, c.code,
+              left(c.code || case when p_action = 'replaced' then ' استبدلها المورد' else ' أصلحها المورد' end || coalesce(' — ' || nt, ''), 300), auth.uid(), nm);
+    elsif c.from_stock and p_action = 'rejected' then
+      insert into public.wo_stock(store_id, material_id) values (c.store_id, c.material_id) on conflict do nothing;
+      update public.wo_stock set scrap_qty = scrap_qty + c.qty, updated_at = now() where store_id = c.store_id and material_id = c.material_id;
+    end if;
+    update public.wo_claims set status = p_action, amount = case when p_action = 'credited' then (p->>'amount')::numeric else amount end,
+      result_note = left(coalesce(nt, result_note),500), closed_at = now(), decided_name = nm where id = p_id;
+    if c.serial_id is not null then
+      update public.wo_serials set status = case when p_action in ('replaced','repaired') then 'store' when p_action = 'rejected' then 'scrapped' else 'returned' end, updated_at = now() where id = c.serial_id;
+    end if;
+  elsif p_action = 'cancel' then
+    if c.status <> 'open' then raise exception 'invalid status'; end if;
+    if c.from_stock then
+      insert into public.wo_stock(store_id, material_id, qty) values (c.store_id, c.material_id, c.qty)
+        on conflict (store_id, material_id) do update set qty = public.wo_stock.qty + c.qty, updated_at = now();
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, ref, note, by_id, by_name)
+      values (c.store_id, c.material_id, c.qty, 'claim_in', (select unit_price from public.wo_stock_moves where ref = c.code and kind = 'claim_out' limit 1), c.code, left(c.code || ' أُلغيت المطالبة', 300), auth.uid(), nm);
+    end if;
+    if c.serial_id is not null then update public.wo_serials set status = 'store', updated_at = now() where id = c.serial_id; end if;
+    update public.wo_claims set status = 'cancelled', closed_at = now(), decided_name = nm, result_note = left(nt,500) where id = p_id;
+  else raise exception 'invalid action'; end if;
+  return (select status from public.wo_claims where id = p_id);
+end $$;
+revoke all on function public.fm_claim_new(jsonb), public.fm_claim_act(uuid, text, jsonb) from public, anon;
+grant execute on function public.fm_claim_new(jsonb), public.fm_claim_act(uuid, text, jsonb) to authenticated;
+
+-- (3) quotations
+create sequence if not exists public.wo_rfq_seq;
+create table if not exists public.wo_rfqs (
+  id            uuid primary key default gen_random_uuid(),
+  code          text unique not null default ('RFQ-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_rfq_seq')::text, 4, '0')),
+  at            timestamptz not null default now(),
+  store_id      uuid not null references public.wo_stores(id) on delete cascade,
+  region        text,
+  lines         jsonb not null default '[]',       -- [{material_id, qty}]
+  due_date      date,
+  note          text,
+  status        text not null default 'open' check (status in ('open','awarded','cancelled')),
+  award_supplier_id uuid references public.wo_suppliers(id) on delete set null,
+  award_name    text,
+  award_note    text,
+  po_id         uuid,
+  po_code       text,
+  by_id         uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name       text,
+  decided_name  text,
+  decided_at    timestamptz
+);
+create table if not exists public.wo_rfq_quotes (
+  id            uuid primary key default gen_random_uuid(),
+  rfq_id        uuid not null references public.wo_rfqs(id) on delete cascade,
+  supplier_id   uuid not null references public.wo_suppliers(id) on delete cascade,
+  supplier_name text,
+  prices        jsonb not null default '[]',       -- [{material_id, price}]
+  total         numeric(14,2),
+  delivery_days int,
+  valid_until   date,
+  note          text,
+  photo         text check (photo is null or length(photo) <= 420000),
+  at            timestamptz not null default now(),
+  by_name       text,
+  unique (rfq_id, supplier_id)
+);
+alter table public.wo_rfqs enable row level security;
+alter table public.wo_rfq_quotes enable row level security;
+revoke insert, update, delete on public.wo_rfqs, public.wo_rfq_quotes from anon, authenticated;
+grant select on public.wo_rfqs, public.wo_rfq_quotes to authenticated;
+drop policy if exists p_rfqs_read on public.wo_rfqs;
+create policy p_rfqs_read on public.wo_rfqs for select to authenticated using (
+  public.fm_mod('wh') and (by_id = auth.uid() or public.fm_stock_can(region) or public.fm_wh_keeper(store_id) or public.fm_wh_admin()
+    or public.fm_my_pos() in ('dept_manager','qa_manager','owner_rep','accountant')));
+drop policy if exists p_rfq_quotes_read on public.wo_rfq_quotes;
+create policy p_rfq_quotes_read on public.wo_rfq_quotes for select to authenticated using (exists(select 1 from public.wo_rfqs r where r.id = rfq_id));
+do $do$ begin
+  if to_regprocedure('public.fm_mod_guard()') is not null then
+    drop trigger if exists fm_mod_guard on public.wo_rfqs;
+    create trigger fm_mod_guard before insert on public.wo_rfqs for each row execute function public.fm_mod_guard('wh');
+  end if;
+end $do$;
+create or replace function public.fm_rfq_save(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; x record; L jsonb := '[]'; r public.wo_rfqs;
+begin
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if auth.uid() is null or not found or not (public.fm_stock_can(st.region) or public.fm_wh_keeper(st.id)) then raise exception 'not allowed'; end if;
+  for x in select nullif(e->>'material_id','')::uuid m, sum(nullif(e->>'qty','')::numeric) q from jsonb_array_elements(coalesce(p->'lines','[]')) e group by 1 loop
+    if x.m is null or not exists(select 1 from public.wo_materials where id = x.m and active) then raise exception 'unknown material'; end if;
+    if x.q is null or x.q <= 0 then raise exception 'invalid qty'; end if;
+    L := L || jsonb_build_object('material_id', x.m, 'qty', x.q);
+  end loop;
+  if jsonb_array_length(L) = 0 then raise exception 'no lines'; end if;
+  insert into public.wo_rfqs(store_id, region, lines, due_date, note, by_name)
+  values (st.id, st.region, L, nullif(p->>'due_date','')::date, left(nullif(btrim(coalesce(p->>'note','')),''),500), public.fm_me_name()) returning * into r;
+  return jsonb_build_object('id', r.id, 'code', r.code);
+end $$;
+-- add or replace one supplier's quotation: p {supplier_id, prices:[{material_id, price}], delivery_days, valid_until, note, photo}
+create or replace function public.fm_rfq_quote(p_rfq uuid, p jsonb) returns numeric language plpgsql security definer set search_path = public as $$
+declare r public.wo_rfqs; s public.wo_suppliers; ln jsonb; pr numeric; PQ jsonb := '[]'; t numeric := 0;
+begin
+  select * into r from public.wo_rfqs where id = p_rfq for update;
+  if auth.uid() is null or not found or not (public.fm_stock_can(r.region) or public.fm_wh_keeper(r.store_id)) then raise exception 'not allowed'; end if;
+  if r.status <> 'open' then raise exception 'invalid status'; end if;
+  select * into s from public.wo_suppliers where id = nullif(p->>'supplier_id','')::uuid and active;
+  if not found then raise exception 'unknown supplier'; end if;
+  if length(coalesce(p->>'photo','')) > 420000 then raise exception 'photo too large'; end if;
+  for ln in select * from jsonb_array_elements(r.lines) loop
+    pr := (select nullif(e->>'price','')::numeric from jsonb_array_elements(coalesce(p->'prices','[]')) z(e) where e->>'material_id' = ln->>'material_id' limit 1);
+    if pr is not null and pr < 0 then raise exception 'invalid price'; end if;
+    PQ := PQ || jsonb_build_object('material_id', ln->>'material_id', 'price', pr);
+    t := t + coalesce(pr, 0) * (ln->>'qty')::numeric;
+  end loop;
+  if not exists(select 1 from jsonb_array_elements(PQ) e where e->>'price' is not null) then raise exception 'no prices'; end if;
+  insert into public.wo_rfq_quotes(rfq_id, supplier_id, supplier_name, prices, total, delivery_days, valid_until, note, photo, by_name)
+  values (r.id, s.id, s.name, PQ, round(t,2), nullif(p->>'delivery_days','')::int, nullif(p->>'valid_until','')::date, left(nullif(btrim(coalesce(p->>'note','')),''),500), nullif(p->>'photo',''), public.fm_me_name())
+  on conflict (rfq_id, supplier_id) do update set prices = excluded.prices, total = excluded.total, delivery_days = excluded.delivery_days,
+    valid_until = excluded.valid_until, note = excluded.note, photo = coalesce(excluded.photo, public.wo_rfq_quotes.photo), at = now(), by_name = excluded.by_name;
+  return round(t,2);
+end $$;
+-- award: the purchase request takes the winning supplier and his prices; a supplier who did not price an item leaves it out
+create or replace function public.fm_rfq_award(p_rfq uuid, p_supplier uuid, p_note text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.wo_rfqs; q public.wo_rfq_quotes; n int; mn int := coalesce(nullif(public.fm_setting('stock_rules')->>'rfq_min','')::int, 3); L jsonb := '[]'; ln jsonb; pr numeric; po jsonb;
+  nt text := nullif(btrim(coalesce(p_note,'')),''); lowest uuid;
+begin
+  select * into r from public.wo_rfqs where id = p_rfq for update;
+  if auth.uid() is null or not found or not (public.fm_stock_can(r.region) or public.fm_wh_keeper(r.store_id)) then raise exception 'not allowed'; end if;
+  if r.status <> 'open' then raise exception 'invalid status'; end if;
+  select * into q from public.wo_rfq_quotes where rfq_id = r.id and supplier_id = p_supplier;
+  if not found then raise exception 'no quote'; end if;
+  select count(*) into n from public.wo_rfq_quotes where rfq_id = r.id;
+  if n < mn and nt is null then raise exception 'too few quotes: %', mn; end if;
+  -- the lowest is taken among complete quotations (every item priced); a partial or higher one needs a reason
+  select z.supplier_id into lowest from public.wo_rfq_quotes z where z.rfq_id = r.id
+    and not exists(select 1 from jsonb_array_elements(z.prices) e where e->>'price' is null)
+    and jsonb_array_length(z.prices) = jsonb_array_length(r.lines) order by z.total asc limit 1;
+  if (lowest is null or lowest <> p_supplier) and nt is null then raise exception 'not lowest'; end if;
+  for ln in select * from jsonb_array_elements(r.lines) loop
+    pr := (select nullif(e->>'price','')::numeric from jsonb_array_elements(q.prices) z(e) where e->>'material_id' = ln->>'material_id' limit 1);
+    if pr is not null then L := L || jsonb_build_object('material_id', ln->>'material_id', 'qty', ln->'qty', 'price', pr); end if;
+  end loop;
+  po := public.fm_po_save(jsonb_build_object('store_id', r.store_id, 'supplier_id', p_supplier, 'lines', L,
+          'note', left(r.code || ' — ' || n || ' عروض' || coalesce(' — ' || nt, ''), 500)));
+  update public.wo_rfqs set status = 'awarded', award_supplier_id = p_supplier, award_name = q.supplier_name, award_note = nt,
+    po_id = (po->>'id')::uuid, po_code = po->>'code', decided_name = public.fm_me_name(), decided_at = now() where id = r.id;
+  return po;
+end $$;
+create or replace function public.fm_rfq_cancel(p_rfq uuid, p_note text) returns text language plpgsql security definer set search_path = public as $$
+declare r public.wo_rfqs;
+begin
+  select * into r from public.wo_rfqs where id = p_rfq for update;
+  if auth.uid() is null or not found or not (public.fm_stock_can(r.region) or public.fm_wh_keeper(r.store_id)) then raise exception 'not allowed'; end if;
+  if r.status <> 'open' then raise exception 'invalid status'; end if;
+  update public.wo_rfqs set status = 'cancelled', award_note = left(nullif(btrim(coalesce(p_note,'')),''),300), decided_name = public.fm_me_name(), decided_at = now() where id = r.id;
+  return 'cancelled';
+end $$;
+revoke all on function public.fm_rfq_save(jsonb), public.fm_rfq_quote(uuid, jsonb), public.fm_rfq_award(uuid, uuid, text), public.fm_rfq_cancel(uuid, text) from public, anon;
+grant execute on function public.fm_rfq_save(jsonb), public.fm_rfq_quote(uuid, jsonb), public.fm_rfq_award(uuid, uuid, text), public.fm_rfq_cancel(uuid, text) to authenticated;
+
+-- (4) weighted average cost
+alter table public.wo_stock add column if not exists avg_cost numeric(14,4);
+update public.wo_stock s set avg_cost = m.price from public.wo_materials m where m.id = s.material_id and s.avg_cost is null and m.price is not null;
+-- price outgoing moves at the average (costing = avg); an incoming transfer takes the price of its outgoing half
+create or replace function public.fm_move_cost() returns trigger language plpgsql security definer set search_path = public as $$
+declare a numeric;
+begin
+  if new.qty < 0 and new.kind in ('out','issue','transfer','claim_out','dispose')
+     and coalesce(public.fm_setting('stock_rules')->>'costing', 'avg') = 'avg' then
+    select avg_cost into a from public.wo_stock where store_id = new.store_id and material_id = new.material_id;
+    if a is not null then new.unit_price := round(a, 4); end if;
+  elsif new.qty > 0 and new.kind = 'transfer' and new.ref is not null then
+    select v.unit_price into a from public.wo_stock_moves v where v.ref = new.ref and v.material_id = new.material_id and v.qty < 0 order by v.at limit 1;
+    if a is not null then new.unit_price := a; end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_move_cost on public.wo_stock_moves;
+create trigger fm_move_cost before insert on public.wo_stock_moves for each row execute function public.fm_move_cost();
+-- blend priced incoming quantities into the average (the balance already includes them when the move is written)
+create or replace function public.fm_move_avg() returns trigger language plpgsql security definer set search_path = public as $$
+declare s public.wo_stock; old_q numeric; base numeric;
+begin
+  if new.qty > 0 and new.unit_price is not null and new.kind in ('in','transfer','return','claim_in') then
+    select * into s from public.wo_stock where store_id = new.store_id and material_id = new.material_id for update;
+    if not found then return null; end if;
+    old_q := greatest(coalesce(s.qty, 0) - new.qty, 0);
+    base := coalesce(s.avg_cost, (select price from public.wo_materials where id = new.material_id), new.unit_price);
+    update public.wo_stock set avg_cost = round((old_q * base + new.qty * new.unit_price) / nullif(old_q + new.qty, 0), 4)
+    where store_id = new.store_id and material_id = new.material_id;
+  end if;
+  return null;
+exception when others then return null;
+end $$;
+drop trigger if exists fm_move_avg on public.wo_stock_moves;
+create trigger fm_move_avg after insert on public.wo_stock_moves for each row execute function public.fm_move_avg();
+notify pgrst, 'reload schema';
+commit;
