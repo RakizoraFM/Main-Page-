@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F41">
+<meta name="fm-version" content="F42">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -2039,7 +2039,27 @@ const C=window.FMCloud;if(!C)return;let n=0;const t=setInterval(async()=>{if(++n
  const r=await d.from('fm_settings').select('value').eq('key','wipe').limit(1);const w=((r.data||[])[0]||{}).value;if(!w||!w.at)return;
  let seen='';try{seen=localStorage.getItem('fm190_wipe_seen')||''}catch(e){}if(seen&&seen>=w.at)return;try{localStorage.setItem('fm190_wipe_seen',w.at)}catch(e){}
  window.fmFieldCacheClear?.();if(!sessionStorage.getItem('fm190_reloaded')){localStorage.removeItem('fmf_cache_v1');sessionStorage.setItem('fm190_reloaded','1');location.reload()}}catch(e){}},2000)})();</script>
-<style id="fmf-36-parts-style">body.fmm-no-wh #f36-parts{display:none!important}.fm193-field{direction:rtl;width:min(600px,94vw);max-height:90vh;overflow:auto;border:1px solid #cbd5e1;border-radius:16px;background:var(--bg,#f8fafc);color:var(--ink,#0f172a);padding:16px}.fm193-field::backdrop{background:#0f172a99}</style>
+<style id="fmf-36-parts-style">.fm193-field.f42{padding:0;width:min(680px,96vw)}
+.f42-hd{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#0f172a;color:#fff;padding:12px 16px}.f42-hd h3{margin:0;font-size:17px}.f42-hd form{margin:0}
+.f42-x{border:0;background:rgba(255,255,255,.15);color:#fff;border-radius:10px;width:34px;height:34px;font-size:16px;cursor:pointer}
+.f42-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 14px 4px}
+.f42-seg{display:flex;background:#e2e8f0;border-radius:12px;padding:3px}.f42-seg button{border:0;background:none;padding:7px 14px;border-radius:9px;font:800 13.5px Cairo,Tahoma,sans-serif;color:#475569;cursor:pointer}.f42-seg button.on{background:#fff;color:#1d4ed8;box-shadow:0 1px 4px rgba(15,23,42,.12)}
+.f42-ic{border:1px solid #cbd5e1;background:#fff;border-radius:10px;width:38px;height:36px;cursor:pointer}.f42-cus{margin-inline-start:auto;border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;border-radius:10px;padding:7px 12px;font:800 13px Cairo,Tahoma,sans-serif;cursor:pointer}
+.f42-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:8px 14px}.f42-sum div{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:8px;text-align:center}.f42-sum i{font-style:normal;display:block;font-size:16px}.f42-sum b{display:block;font-size:20px}.f42-sum span{font-size:11px;color:#64748b;font-weight:800}
+.f42-sum .y b{color:#b45309}.f42-sum .b b{color:#1d4ed8}.f42-sum .r b{color:#b91c1c}
+.f42-st:empty{display:none}.f42 [data-items]{padding:4px 14px 6px;display:grid;gap:10px}
+.f42-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px;box-shadow:0 1px 3px rgba(15,23,42,.05)}.f42-card.late{border-color:#fecaca;box-shadow:inset 4px 0 0 #dc2626}
+.f42-top{display:flex;align-items:center;gap:8px}.f42-top b{font-size:15px;direction:ltr}.f42-top small{margin-inline-start:auto;color:#64748b;font-weight:700}
+.f42-chip{border-radius:99px;padding:2px 10px;font-size:12px;font-weight:800;background:#f1f5f9;color:#475569}.f42-chip.y{background:#fef3c7;color:#92400e}.f42-chip.b{background:#dbeafe;color:#1e40af}.f42-chip.g{background:#dcfce7;color:#166534}.f42-chip.r{background:#fee2e2;color:#b91c1c}
+.f42-meta{color:#475569;font-size:13px;font-weight:700;margin:4px 0 8px}
+.f42-t{width:100%;border-collapse:collapse;font-size:13px}.f42-t th{background:#f8fafc;color:#475569;font-size:11.5px;font-weight:800;padding:6px;border-bottom:1px solid #e2e8f0;text-align:center}.f42-t th:first-child,.f42-t td:first-child{text-align:right}
+.f42-t td{padding:7px 6px;border-bottom:1px dashed #e2e8f0;text-align:center;font-weight:700}.f42-t td small{color:#64748b;font-weight:600}.f42-t td.w{color:#b45309}.f42-t td.ok{color:#15803d}
+.f42-pg{height:7px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin-top:8px}.f42-pg i{display:block;height:100%;background:linear-gradient(90deg,#22c55e,#16a34a)}.f42-pgl{font-size:11.5px;color:#64748b;font-weight:700;margin-top:3px}
+.f42-fu{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}.f42-fu div{background:#f8fafc;border-radius:10px;padding:6px 9px}.f42-fu span{display:block;font-size:11px;color:#64748b;font-weight:800}.f42-fu b{font-size:13px}.f42-fu b.r{color:#b91c1c}
+.f42-n{margin-top:8px;font-size:13px;color:#334155;background:#fffbeb;border-radius:10px;padding:6px 9px}
+.f42-empty{text-align:center;color:#64748b;font-weight:700;padding:24px 10px;background:#fff;border:1px dashed #cbd5e1;border-radius:14px}
+.f42-note{font-size:11.5px;color:#94a3b8;text-align:center;margin:4px 14px 14px}
+@media(max-width:480px){.f42-sum{grid-template-columns:repeat(2,1fr);gap:6px}.f42-sum div{display:flex;align-items:center;gap:6px;padding:7px 9px;text-align:right}.f42-sum b{font-size:17px}.f42-sum span{font-size:11px;line-height:1.3}.f42-cus{margin-inline-start:0;width:100%}}body.fmm-no-wh #f36-parts{display:none!important}.fm193-field{direction:rtl;width:min(600px,94vw);max-height:90vh;overflow:auto;border:1px solid #cbd5e1;border-radius:16px;background:var(--bg,#f8fafc);color:var(--ink,#0f172a);padding:16px}.fm193-field::backdrop{background:#0f172a99}</style>
 <script id="fmf-36-parts-model">(function(root){'use strict';
 const active=r=>['requested','partial','issued'].includes(r.status);
 function metrics(r,now=Date.now()){const f=r.followup||null,open=active(r),when=f?.due_at?Date.parse(f.due_at):NaN,at=Date.parse(r.at),end=r.status==='received'?Date.parse(r.received_at):now;
@@ -2052,8 +2072,29 @@ root.FM193Model={active,metrics,summary,filtered};
 <script id="fmf-36-parts">(function(){'use strict';const C=window.FMCloud,E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])),dt=v=>v?new Date(v).toLocaleString('ar-SA-u-ca-gregory'):'غير محدد';
 const ST={stock:'متابعة المستودع',purchase:'طلب شراء',ordered:'بانتظار المورد',available:'متاحة ولم يؤكد صرفها',hold:'متوقفة'},RQ={requested:'بانتظار الصرف',partial:'صرف جزء',issued:'صرفت — أكّد الاستلام',received:'تم الاستلام',rejected:'مرفوض',cancelled:'ملغى'};
 let list=[],all=false,scope='';const identity=()=>{const u=C?.cfg?.().url,id=window.__fmField?.D?.me?.id;return u&&id?u+':'+id:''};
-function panel(){let d=document.getElementById('fm193-field-parts');if(d)d.remove();d=document.createElement('dialog');d.className='fm193-field';d.innerHTML='<form method="dialog"><button class="big">إغلاق</button></form><h3>🧩 متابعة طلبات قطع الغيار</h3><button class="big p" data-reload>تحديث</button><button class="big" data-all>تبديل النشطة / كل طلباتي</button><button class="big" data-source>عهدتي وتأكيد الاستلام</button><p data-state></p><div data-items></div>';document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();d.querySelector('[data-reload]').onclick=()=>load(d);d.querySelector('[data-all]').onclick=()=>{all=!all;render(d)};d.querySelector('[data-source]').onclick=()=>{d.close();window.fmfCustody?.()};return d}
-function render(d){if(!scope||scope!==identity()){list=[];d.close();return}const a=list.filter(r=>all||FM193Model.active(r));d.querySelector('[data-state]').textContent=(all?'كل طلباتي':'الطلبات النشطة')+' — '+a.length+' طلب. المتابعة لا تعني الصرف أو إيقاف SLA.';d.querySelector('[data-items]').innerHTML=a.map(r=>{const x=FM193Model.metrics(r),f=r.followup;return `<div class="card"><h3>${E(r.code)}</h3><p>${E(r.school||'')} · ${E(r.ticket_ref||r.wo_code||'')}</p><b>${E(RQ[r.status]||r.status)}</b><p>${(r.items||[]).map(l=>`${E(l.name)}: ${E(l.qty)} / ${E(l.issued||0)} ${E(l.unit)}`).join('<br>')}</p><p>المسؤول: ${E(f?.owner_name||'لم يحدد')}<br>الموعد: ${dt(f?.due_at)}${x.late?' ⚠️ تجاوز الموعد':''}<br>الفريق: ${E(f?.team_name||'لم يربط')}<br>المتابعة: ${E(ST[f?.stage]||'لم تسجل')}<br>${E(f?.note||'')}</p></div>`}).join('')||'<p>لا توجد طلبات مطابقة.</p>'}
+/* F42: the panel as a header, a toggle, summary counts and one card per request (items table with progress) */
+const STC={requested:'y',partial:'y',issued:'b',received:'g',rejected:'r',cancelled:'n'};
+const num=v=>(+v||0).toLocaleString('en-US',{maximumFractionDigits:2}),dd=v=>v?new Date(v).toLocaleDateString('ar-SA-u-ca-gregory',{day:'numeric',month:'short'}):'';
+function panel(){let d=document.getElementById('fm193-field-parts');if(d)d.remove();d=document.createElement('dialog');d.id='fm193-field-parts';d.className='fm193-field f42';
+ d.innerHTML=`<div class="f42-hd"><h3>🧩 متابعة طلبات قطع الغيار</h3><form method="dialog"><button class="f42-x" title="إغلاق">✕</button></form></div>
+  <div class="f42-bar"><div class="f42-seg"><button type="button" data-v="0" class="on">النشطة</button><button type="button" data-v="1">كل طلباتي</button></div><button type="button" class="f42-ic" data-reload title="تحديث">🔄</button><button type="button" class="f42-cus" data-source>🧰 عهدتي وتأكيد الاستلام</button></div>
+  <div class="f42-sum" data-sum></div><p class="f42-st" data-state></p><div data-items></div><p class="f42-note">المتابعة لا تعني الصرف ولا توقف مهلة البلاغ (SLA).</p>`;
+ document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();
+ d.querySelector('[data-reload]').onclick=()=>load(d);d.querySelectorAll('.f42-seg [data-v]').forEach(b=>b.onclick=()=>{all=b.dataset.v==='1';render(d)});d.querySelector('[data-source]').onclick=()=>{d.close();window.fmfCustody?.()};return d}
+function render(d){if(!scope||scope!==identity()){list=[];d.close();return}
+ d.querySelectorAll('.f42-seg [data-v]').forEach(b=>b.classList.toggle('on',(b.dataset.v==='1')===all));
+ const a=list.filter(r=>all||FM193Model.active(r)),M=a.map(r=>FM193Model.metrics(r));
+ const cnt=k=>a.filter(r=>r.status===k).length,late=M.filter(x=>x.late).length;
+ d.querySelector('[data-sum]').innerHTML=[['📨','الطلبات',a.length,''],['⏳','بانتظار الصرف',cnt('requested')+cnt('partial'),'y'],['📦','صرفت — أكّد الاستلام',cnt('issued'),'b'],['⚠️','تجاوزت الموعد',late,late?'r':'']].map(([i,l,v,c])=>`<div class="${c}"><i>${i}</i><b>${num(v)}</b><span>${l}</span></div>`).join('');
+ d.querySelector('[data-state]').textContent=a.length?'':'';
+ d.querySelector('[data-items]').innerHTML=a.map((r,k)=>{const x=M[k],f=r.followup||{},items=r.items||[],q=items.reduce((t,l)=>t+(+l.qty||0),0),g=items.reduce((t,l)=>t+Math.min(+l.issued||0,+l.qty||0),0),pc=q?Math.round(g*100/q):0;
+  const src=r.wo_code?'🛠️ '+E(r.wo_code):r.ticket_ref?'🎫 بلاغ '+E(r.ticket_ref):'👤 صرف مباشر';
+  return `<div class="f42-card ${x.late?'late':''}"><div class="f42-top"><b>${E(r.code)}</b><span class="f42-chip ${STC[r.status]||'n'}">${E(RQ[r.status]||r.status)}</span>${r.at||r.created_at?`<small>${dd(r.at||r.created_at)}</small>`:''}</div>
+   <div class="f42-meta">${src}${r.school?' • 🏫 '+E(r.school):''}</div>
+   <table class="f42-t"><thead><tr><th>الصنف</th><th>المطلوب</th><th>صُرف</th><th>المتبقي</th></tr></thead><tbody>${items.map(l=>{const rem=Math.max(0,(+l.qty||0)-(+l.issued||0));return `<tr><td>${E(l.name)}${l.unit?` <small>${E(l.unit)}</small>`:''}</td><td>${num(l.qty)}</td><td>${num(l.issued||0)}</td><td class="${rem?'w':'ok'}">${rem?num(rem):'✓'}</td></tr>`}).join('')}</tbody></table>
+   <div class="f42-pg"><i style="width:${pc}%"></i></div><div class="f42-pgl">صُرف ${pc}% من الكمية المطلوبة</div>
+   <div class="f42-fu"><div><span>👤 المسؤول</span><b>${E(f.owner_name||'لم يُحدَّد')}</b></div><div><span>📅 الموعد</span><b class="${x.late?'r':''}">${f.due_at?dt(f.due_at):'غير محدد'}${x.late?' ⚠️':''}</b></div><div><span>👥 الفريق</span><b>${E(f.team_name||'لم يُربط')}</b></div><div><span>📍 المتابعة</span><b>${E(ST[f.stage]||'لم تُسجَّل')}</b></div></div>
+   ${f.note?`<div class="f42-n">📝 ${E(f.note)}</div>`:''}</div>`}).join('')||`<div class="f42-empty">${all?'لا توجد طلبات':'لا توجد طلبات نشطة — اضغط «كل طلباتي» لعرض السابقة'}</div>`}
 async function load(d){scope=identity();list=[];d.querySelector('[data-items]').textContent='';d.querySelector('[data-state]').textContent='جارٍ القراءة من السحابة…';const mine=window.__fmField?.D?.me?.id,initial=scope;if(!scope){d.querySelector('[data-state]').textContent='سجّل الدخول أولاً';return}try{const db=await C.engClient(),r=await db.rpc('fm_parts_list');if(r.error)throw Error(r.error.message);if(initial!==identity()||!d.isConnected)return;list=(r.data||[]).filter(x=>x.holder===mine||x.requested_by===mine);render(d)}catch(e){if(!d.isConnected)return;d.querySelector('[data-state]').textContent='تعذرت القراءة؛ يلزم الاتصال وتثبيت تحديث V193. '+e.message}}
 window.fmfPartsTracking=()=>{all=false;load(panel())};
 function button(){if(scope&&scope!==identity()){list=[];scope='';document.getElementById('fm193-field-parts')?.close()}const home=document.querySelector('#app .card.hello');if(!identity()){document.getElementById('f36-parts')?.remove();document.getElementById('fm193-field-parts')?.close();return}if(!home||document.getElementById('f36-parts'))return;const b=document.createElement('button');b.id='f36-parts';b.className='big';b.textContent='🧩 متابعة طلبات قطع الغيار';b.onclick=window.fmfPartsTracking;home.appendChild(b)}setInterval(button,1800);button();
