@@ -212,3 +212,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 ## V212 — warehouse procedures map and roadmap
 - `fm-v212-wh-map` (+ `fm-v212-wh-map-css`): page «🗺️ إجراءات المستودع» (`#v2-nav-fm212-whmap`, first in group `wh`, also in V181 `FM_MODS.wh`; `window.fmV212WhMap(tab, proc)`). Static content in `P` (15 procedures in 5 phases: steps, rules, status chains, who, push, outputs, linked gaps, «افتح الشاشة» via `fmV180Open(section, tab)` / nav clicks), `RX` (responsibility matrix ن / ع / ط / ر × 8 titles), `GOOD`, `GAPS` (G1–G14) and `RM` (R1–R15 in 4 phases, also in ROADMAP.md); `window.fmV212Data` exposes them. Live counts are head-count queries through `FMCloud.engClient()` (RLS decides) plus `fm_custody_overdue`; a failed query hides that box. «🖨️ طباعة / PDF» writes the whole document into a new window. Update `P` / `GAPS` / `RM` when a warehouse procedure changes or a roadmap item ships.
 
+## V213 — no stacked layers on phones
+- `fm-v213-mobile-stack` (CSS only): ≤ 1024 px `.alerts-sidebar-column.actions-sidebar` is static (the old mobile rule lost on specificity, so the quick-actions sidebar stayed sticky over the one-column dashboard). ≤ 760 px `#fm41-regionbar` is not sticky (scrolls away) with 56 px left padding, and `#fm77-regionbar-toggle` is a 40 px icon (▴ / ☰) absolutely placed inside it. Desktop unchanged.
+
