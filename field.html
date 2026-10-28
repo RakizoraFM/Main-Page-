@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F43">
+<meta name="fm-version" content="F44">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1761,7 +1761,7 @@ async function load(){const db=await C.engClient();const since=new Date(Date.now
 const mat=id=>(X.mats.find(m=>m.id===id)||{name:'صنف'});
 const late=()=>X.mv.filter(m=>m.kind==='use'&&+m.scrap_open>0&&m.scrap_due&&m.scrap_due<today());
 const owe=()=>X.cus.reduce((t,c)=>t+(+c.scrap||0),0);
-function homeCard(){if(!X)return;const h=document.querySelector('#app .card.hello');if(!h||document.getElementById('f29-h'))return;const held=X.cus.filter(c=>+c.qty>0).length,L=late().length,toRecv=X.req.filter(r=>r.holder===ME.id&&['issued','partial'].includes(r.status)&&!r.received_at).length,toSign=X.cnt.filter(c=>c.status==='open').length;
+function homeCard(){if(!X)return;const h=document.querySelector('#app .card.hello');if(!h||document.getElementById('f29-h'))return;const held=X.cus.filter(c=>+c.qty>0).length,L=late().length,toRecv=X.req.filter(r=>r.holder===ME.id&&['issued','partial'].includes(r.status)&&(!r.received_at||(r.issued_at&&r.received_at<r.issued_at&&'signed_at' in r))).length,toSign=X.cnt.filter(c=>c.status==='open').length;
  if(!held&&!owe()&&!toRecv&&!toSign&&!X.req.some(r=>r.status==='requested'))return homeLink(h);
  const b=document.createElement('button');b.id='f29-h';b.type='button';b.className=L?'bad':'';
  b.innerHTML=`<span>🧰 عهدتي: ${fmt(held)} صنف${owe()?` • ♻️ تالف مطلوب ${fmt(owe())}`:''}${L?` • ⛔ ${fmt(L)} متأخر`:''}${toRecv?` • 📦 ${fmt(toRecv)} بانتظار تأكيد استلامك`:''}${toSign?` • ✍️ جرد للتوقيع`:''}</span><span>فتح ←</span>`;b.onclick=open;(h.nextElementSibling&&h.nextElementSibling.classList.contains('kpis')?h.nextElementSibling:h).after(b)}
@@ -1770,7 +1770,7 @@ function sheet(){let s=document.getElementById('f29');if(!s){s=document.createEl
 async function open(){const s=sheet();s.classList.add('open');s.innerHTML='<div class="hd"><button type="button" data-x>→</button><h2>🧰 عهدتي</h2></div><div class="bd"><div class="cd">جارٍ التحميل…</div></div>';s.querySelector('[data-x]').onclick=close;
  try{await load()}catch(e){s.querySelector('.bd').innerHTML=`<div class="al bad">${esc(ERR(e))}</div>`;return}draw()}
 function close(){const s=document.getElementById('f29');if(s){s.classList.remove('open');s.innerHTML=''}document.getElementById('f29-h')?.remove();homeCard()}
-function draw(){const s=sheet(),L=late(),recv=X.req.filter(r=>r.holder===ME.id&&['issued','partial'].includes(r.status)&&!r.received_at),sign=X.cnt.filter(c=>c.status==='open');
+function draw(){const s=sheet(),L=late(),recv=X.req.filter(r=>r.holder===ME.id&&['issued','partial'].includes(r.status)&&(!r.received_at||(r.issued_at&&r.received_at<r.issued_at&&'signed_at' in r))),sign=X.cnt.filter(c=>c.status==='open');
  const due=mid=>X.mv.filter(m=>m.kind==='use'&&m.material_id===mid&&+m.scrap_open>0).map(m=>m.scrap_due).sort()[0];
  s.innerHTML=`<div class="hd"><button type="button" data-x>→</button><h2>🧰 عهدتي</h2><button type="button" data-rf>🔄</button></div><div class="bd">
   ${L.length?`<div class="al bad">⛔ تالف متأخر: ${L.map(m=>`${esc(mat(m.material_id).name)} ×${fmt(m.scrap_open)} (${esc(m.wo_code||'')} — كان مطلوباً ${dd(m.scrap_due)})`).join('، ')}. سلّمه لأمين المستودع؛ لا يُصرف لك نفس الصنف قبل ذلك.</div>`:''}
@@ -2261,5 +2261,41 @@ setInterval(async()=>{try{if(!ME){if(++n>120)return;if(!C.engClient||!C.api||!C.
  home();if(document.querySelector('.wo-c[data-wo]')){await wLoad();badges()}}catch(e){}},1500);
 setInterval(()=>{if(ME&&!document.hidden&&navigator.onLine&&!document.getElementById('f43')?.classList.contains('open'))load().catch(()=>{})},5*60e3);
 })();</script>
+<style id="fmf-44-sign-css">
+#f44-pad{position:fixed;inset:0;z-index:80;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:14px}
+#f44-pad .bx{background:#fff;color:#0f172a;border-radius:16px;padding:14px;width:100%;max-width:560px;font-family:Cairo,Tahoma,sans-serif}
+#f44-pad h3{margin:0 0 4px;font-size:16px}#f44-pad p{margin:0 0 8px;color:#475569;font-size:12.5px}
+#f44-pad canvas{width:100%;height:200px;border:2px dashed #94a3b8;border-radius:12px;background:#fff;touch-action:none;display:block}
+#f44-pad .bt2{display:flex;gap:8px;margin-top:10px}#f44-pad .bt2 button{flex:1;padding:11px;border-radius:12px;border:1px solid #cbd5e1;background:#f8fafc;font:800 14px Cairo,Tahoma,sans-serif}
+#f44-pad .bt2 .p{background:#0f766e;color:#fff;border-color:#0f766e}
+</style>
+<script id="fmf-44-sign">(function(){'use strict';
+/* F44 — the holder signs the custody receipt on the screen: «✅ استلمت» in «🧰 عهدتي» opens a signature pad and calls
+   fm_issue_req_sign (section 39: the signature is kept with the request and printed on the receipt; signing also confirms the
+   receipt). Without section 39 it falls back to the plain fm_issue_req_act('receive'). */
+const C=window.FMCloud;if(!C)return;
+const toast=m=>{const t=document.getElementById('toast');if(!t){try{alert(m)}catch(e){}return}t.textContent=m;t.className='toast';t.style.display='block';t.style.zIndex='90';setTimeout(()=>t.style.display='none',3500)};
+const missing=e=>/does not exist|schema cache|Could not find/i.test(String(e&&e.message||e));
+function pad(title){return new Promise(ok=>{document.getElementById('f44-pad')?.remove();const w=document.createElement('div');w.id='f44-pad';w.dir='rtl';
+ w.innerHTML=`<div class="bx"><h3>✍️ ${String(title).replace(/[<>&]/g,'')}</h3><p>وقّع بإصبعك داخل المربع لتأكيد استلام القطع وأنها في عهدتك.</p><canvas width="520" height="200"></canvas><div class="bt2"><button type="button" class="p" data-ok>✅ أوقّع وأستلم</button><button type="button" data-cl>🧽 مسح</button><button type="button" data-x>إلغاء</button></div></div>`;
+ document.body.appendChild(w);const c=w.querySelector('canvas'),g=c.getContext('2d');g.lineWidth=2.6;g.lineCap='round';g.lineJoin='round';g.strokeStyle='#0f172a';g.fillStyle='#0f172a';let last=null,drawn=false;
+ const pt=e=>{const r=c.getBoundingClientRect();return [(e.clientX-r.left)*c.width/r.width,(e.clientY-r.top)*c.height/r.height]};
+ c.onpointerdown=e=>{c.setPointerCapture?.(e.pointerId);last=pt(e);g.beginPath();g.arc(last[0],last[1],1.2,0,7);g.fill();drawn=true;e.preventDefault()};
+ c.onpointermove=e=>{if(!last)return;const p=pt(e);g.beginPath();g.moveTo(last[0],last[1]);g.lineTo(p[0],p[1]);g.stroke();last=p;e.preventDefault()};
+ c.onpointerup=c.onpointercancel=()=>{last=null};
+ const end=v=>{w.remove();ok(v)};
+ w.querySelector('[data-cl]').onclick=()=>{g.clearRect(0,0,c.width,c.height);drawn=false};
+ w.querySelector('[data-x]').onclick=()=>end(null);
+ w.querySelector('[data-ok]').onclick=()=>{if(!drawn){toast('وقّع أولاً');return}end(c.toDataURL('image/png'))}})}
+window.fmfSignPad=pad;
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('#f29 [data-rc]');if(!b)return;e.stopImmediatePropagation();e.preventDefault();
+ const al=b.closest('.al'),code=((al&&al.textContent)||'').match(/IR-\d{4}-\d+/);
+ const sg=await pad('توقيع استلام '+(code?code[0]:'القطع'));if(!sg)return;b.disabled=true;
+ try{const db=await C.engClient();let r=await db.rpc('fm_issue_req_sign',{p_id:b.dataset.rc,p_sign:sg,p_inperson:false});
+  if(r.error&&missing(r.error))r=await db.rpc('fm_issue_req_act',{p_id:b.dataset.rc,p_action:'receive',p:{}});
+  if(r.error)throw Error(r.error.message);toast('تم التوقيع وتأكيد الاستلام ✅');document.querySelector('#f29 [data-rf]')?.click()}
+ catch(er){b.disabled=false;const m=String(er.message||er);toast(/already signed/.test(m)?'السند موقّع بالفعل':/not allowed/.test(m)?'غير مسموح':/Failed to fetch|NetworkError/i.test(m)?'لا يوجد اتصال — أعد المحاولة':m)}},true);
+})();</script>
+
 </body>
 </html>
