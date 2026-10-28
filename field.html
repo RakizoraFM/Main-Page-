@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F40">
+<meta name="fm-version" content="F41">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -421,7 +421,7 @@ function fromCache(){try{const scope=outbox.scope();if(!scope)return false;const
 function shell(inner,title,sub,back){return `<div class="top">${back?'<button id="bk">→</button>':`<img class="bm" src="${FM_BRAND.mark}" alt="${FM_BRAND.name}">`}<h1>${title}<small>${sub||''}</small></h1>${back?'':'<button id="rf" title="تحديث">🔄</button><button id="lo" title="خروج">خروج</button>'}</div><div class="wrap"><div class="q" id="qb"></div>${inner}</div>`}
 /* ---------- main screens (F4): home, tickets, schools, profile ---------- */
 const VIEWS=[['home','🏠','الرئيسية'],['list','🎫','البلاغات'],['wo','📋','الأوامر'],['schools','🏫','المدارس'],['eng','💬','التواصل'],['me','👤','حسابي']];
-const SBX=[['cus','🧰','عهدتي','fmfCustody'],['parts','📦','متابعة قطع الغيار','fmfPartsTracking'],['sync','⏳','مركز المزامنة','fmFieldSyncOpen'],['push','🔔','الإشعارات','fmPushOpen']];
+const SBX=[['plat','🖥️','المنصة الإدارية','fmfToPlatform'],['cus','🧰','عهدتي','fmfCustody'],['parts','📦','متابعة قطع الغيار','fmfPartsTracking'],['sync','⏳','مركز المزامنة','fmFieldSyncOpen'],['push','🔔','الإشعارات','fmPushOpen']];
 /* F38: on a wide screen the bottom bar becomes a sidebar (brand, the signed-in person, the pages, tools) */
 const sbHead=()=>{const me=D.me||{};return `<div class="sbh"><div class="sbb"><img src="${FM_BRAND.mark}" alt=""><div><b>${esc(FM_BRAND.name)}</b><small>تطبيق الميدان</small></div></div>
  <button class="sbu" data-v="me">${avatarHtml(me,'av')}<div><b>${esc(myName())}</b><small>${esc(typeof jobLbl==='function'?jobLbl(me):'')}</small></div></button><div class="sbt">القائمة</div></div>`};
@@ -830,6 +830,7 @@ function setView(){
   <div class="card"><h3>🔔 التنبيهات</h3><label class="sw"><span>نبّهني عند اقتراب بلاغ من الاختراق (أقل من 3 ساعات)</span><input type="checkbox" id="p-al" ${notifOn()?'checked':''}></label>
    <div class="muted" style="margin-top:6px">${'Notification' in window?(Notification.permission==='denied'?'⚠️ الإشعارات محظورة في إعدادات المتصفح — سيظهر التنبيه داخل التطبيق فقط.':'يظهر إشعار على الجهاز وتنبيه داخل التطبيق.'):'يظهر التنبيه داخل التطبيق.'} يعمل التنبيه ما دام التطبيق مفتوحاً (ولو في الخلفية).</div>
    ${window.fmPushOpen?'<button class="big" id="p-push" style="width:100%;margin-top:10px">🔔 إشعارات الجوال (أوامر العمل والمستودع)</button>':''}</div>
+  ${window.fmfToPlatform?'<div class="card"><h3>🖥️ المنصة الإدارية</h3><div class="muted" style="margin-bottom:8px">حسابك مسموح له بالمنصتين.</div><button class="big p" onclick="fmfToPlatform()" style="width:100%">🖥️ الانتقال إلى المنصة الإدارية</button></div>':''}
   <div class="card"><h3>⚙️ التطبيق</h3><button class="big" onclick="fmFieldSyncOpen()">⏳ مركز المزامنة</button><div class="kv"><span>آخر مزامنة</span><b>${D.syncAt?dts(D.syncAt):'—'}</b><span>بانتظار الإرسال</span><b>${fmt(qLoad().length)} تحديث</b><span>الإصدار</span><b>${esc(ver)}</b></div>
    <div class="btns" style="margin-top:12px"><button class="big" id="p-sync">🔄 مزامنة الآن</button><a class="big" href="start.html">🏠 صفحة البدء</a></div>
    <button class="big" id="p-out" style="width:100%;margin-top:8px;color:var(--bad)">🚪 تسجيل الخروج</button></div>`
@@ -2137,5 +2138,22 @@ else{let v;try{Object.defineProperty(window,'L',{configurable:true,enumerable:tr
 /* F40: «.cb» is also the round call button of the school card (F25: 42 px circle); give the material search box its full row back */
 .mr .cb,.ndr .cb{width:auto;height:auto;border-radius:0;display:block;place-items:normal;font-size:inherit;flex:initial}
 </style>
+<script id="fmf-41-routes">(function(){'use strict';
+/* F41: the login routing of V209 — fm_settings.routes {title: index | field | choose}. A title set to the platform only is sent
+   there; «choose» (and the system admin) get «🖥️ المنصة الإدارية» in the sidebar tools and the settings tab. */
+const C=window.FMCloud;
+const RT_DEF={sysadmin:'choose',dept_manager:'index',project_manager:'index',ops_manager:'index',area_manager:'index',area_engineer:'index',supervisor:'field',contractor:'field',hse_manager:'index',qa_manager:'index',accountant:'index',storekeeper:'index',owner_rep:'index'};
+const RT_ROLE={admin:'sysadmin',manager:'project_manager',engineer:'area_engineer',supervisor:'supervisor',contractor:'contractor',viewer:'dept_manager',staff:'accountant'};
+const rtTitle=p=>p&&(p.job_title||RT_ROLE[p.role])||'';
+async function routes(db){try{const r=await db.from('fm_settings').select('value').eq('key','routes').maybeSingle();if(r&&!r.error&&r.data&&r.data.value)return r.data.value}catch(e){}
+ try{const k=await db.from('app_kv').select('value').eq('key','fm_platform_access_v144').maybeSingle();let v=k&&!k.error&&k.data&&k.data.value;if(typeof v==='string')v=JSON.parse(v);
+  if(Array.isArray(v))return {supervisor:v.includes('supervisor')?'choose':'field',contractor:v.includes('contractor')?'choose':'field',area_engineer:v.includes('engineer')?'index':'field'}}catch(e){}return {}}
+let n=0;const t=setInterval(async()=>{try{if(++n>60){clearInterval(t);return}if(!C||!C.engClient||!C.api||!C.api.me)return;const p=await C.api.me();if(!p||!p.id||p.role==='pending')return;clearInterval(t);
+ const db=await C.engClient(),R=await routes(db),v=R[rtTitle(p)],mode=/^(index|field|choose)$/.test(v||'')?v:(RT_DEF[rtTitle(p)]||(['supervisor','contractor'].includes(p.role)?'field':'index'));
+ if(mode==='index'&&p.role!=='admin'){try{localStorage.setItem('fm_last_app','index.html')}catch(e){}location.replace('index.html'+(location.hash||''));return}
+ if(mode==='choose'||p.role==='admin'){window.fmfToPlatform=()=>{try{localStorage.setItem('fm_last_app','index.html');const k='fm_route_pref:'+p.id;if(localStorage.getItem(k))localStorage.setItem(k,'index.html')}catch(e){}location.href='index.html'};
+  const x=document.querySelector('.bnav .sbx');if(x&&!x.querySelector('[data-sx=fmfToPlatform]')){const b=document.createElement('button');b.dataset.sx='fmfToPlatform';b.innerHTML='<i>🖥️</i>المنصة الإدارية';b.onclick=window.fmfToPlatform;x.querySelector('.sbt')?.after(b)}}
+}catch(e){}},1000);
+})();</script>
 </body>
 </html>
