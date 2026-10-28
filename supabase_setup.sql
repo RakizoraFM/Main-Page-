@@ -6064,3 +6064,315 @@ revoke all on function public.fm_stock_bin(uuid, jsonb) from public, anon;
 grant execute on function public.fm_stock_bin(uuid, jsonb) to authenticated;
 notify pgrst, 'reload schema';
 commit;
+
+
+-- ---------- 41) tool inspection / calibration, tool loss or damage reports, cycle counts by ABC class (V220) ----------
+-- (1) wo_tools.insp_kind (calib = معايرة / safety = فحص سلامة), insp_every (days), insp_last, insp_due; fm_tool_insp(id, p) sets
+--     the schedule or records an inspection (result ok / fail; fail sends the tool to maintenance); a tool past its inspection date
+--     cannot be handed over (trigger fm_tool_insp_guard). Reminders in fm_v220_daily.
+-- (2) wo_tool_reports (TLR-YYYY-####): the holder (or the storekeeper) reports a tool lost or damaged with a note and a photo; the
+--     tool goes to «lost» / «maint»; the area manager / ops / project manager decides: writeoff (retired), deduct (retired + amount
+--     charged to the holder), repair (stays in maintenance), found (available again) or reject.
+-- (3) every counted line is logged in wo_stock_counts (fm_stock_move redefined: same behaviour + the log, held lines flagged);
+--     fm_cycle_plan(store): A / B / C by 365-day consumption value (80 % / 15 % / 5 %), counted every stock_rules.abc {a, b, c}
+--     days (30 / 90 / 180), due = last count + days (never counted = due now). Weekly reminder (Sunday) to the storekeepers.
+begin;
+insert into public.fm_settings(key, value) values ('stock_rules', '{"scrap_days":7,"esc_days":[7,14],"block_overdue":true,"variance_pct":5,"adj_value":200,"issue_appr":0,"idle_days":[30,60],"abc":{"a":30,"b":90,"c":180},"cap":{"supervisor":0,"contractor":0,"area_engineer":0}}')
+  on conflict (key) do update set value = public.fm_settings.value || jsonb_build_object('abc', coalesce(public.fm_settings.value->'abc', '{"a":30,"b":90,"c":180}'::jsonb));
+
+-- (1) inspection
+alter table public.wo_tools add column if not exists insp_kind text;
+alter table public.wo_tools add column if not exists insp_every int;
+alter table public.wo_tools add column if not exists insp_last date;
+alter table public.wo_tools add column if not exists insp_due date;
+do $do$ begin
+  alter table public.wo_tools add constraint wo_tools_insp_kind_check check (insp_kind in ('calib','safety'));
+exception when duplicate_object then null; end $do$;
+alter table public.wo_tool_moves drop constraint if exists wo_tool_moves_kind_check;
+alter table public.wo_tool_moves add constraint wo_tool_moves_kind_check check (kind in ('add','edit','out','in','extend','maint','fixed','lost','found','retire','transfer','inspect','report'));
+create or replace function public.fm_tool_insp(p_id uuid, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare t public.wo_tools; nm text := public.fm_me_name(); nt text := nullif(btrim(coalesce(p->>'note','')),''); today date := (now() at time zone 'Asia/Riyadh')::date;
+  k text; ev int; d date; res text := nullif(p->>'result','');
+begin
+  select * into t from public.wo_tools where id = p_id for update;
+  if auth.uid() is null or not found or not public.fm_tool_can(t.region) then raise exception 'not allowed'; end if;
+  k := case when p ? 'kind' then nullif(p->>'kind','') else t.insp_kind end;
+  ev := case when p ? 'every' then nullif(p->>'every','')::int else t.insp_every end;
+  if k is not null and k not in ('calib','safety') then raise exception 'invalid kind'; end if;
+  if ev is not null and (ev < 1 or ev > 3650) then raise exception 'invalid period'; end if;
+  if res is null then
+    d := case when p ? 'last' then nullif(p->>'last','')::date else t.insp_last end;
+    update public.wo_tools set insp_kind = k, insp_every = ev, insp_last = d,
+      insp_due = case when k is null then null when d is null then (case when p ? 'due' then nullif(p->>'due','')::date else today end) when ev is null then nullif(p->>'due','')::date else d + ev end,
+      updated_at = now() where id = p_id returning * into t;
+  else
+    if res not in ('ok','fail') then raise exception 'invalid result'; end if;
+    if res = 'fail' and nt is null then raise exception 'note required'; end if;
+    d := coalesce(nullif(p->>'date','')::date, today);
+    if d > today then raise exception 'invalid date'; end if;
+    insert into public.wo_tool_moves(tool_id, kind, holder, holder_name, cond, note, by_name)
+    values (t.id, 'inspect', t.holder, t.holder_name, case when res = 'fail' then 'damaged' else t.cond end,
+            left(concat_ws(' — ', case when k = 'calib' then 'معايرة' else 'فحص' end || ' ' || to_char(d,'YYYY-MM-DD') || case when res = 'ok' then ' ✅ صالح' else ' ⛔ غير صالح' end,
+                           nullif(btrim(coalesce(p->>'cert','')),''), nt), 300), nm);
+    update public.wo_tools set insp_kind = coalesce(k, 'safety'), insp_every = ev, insp_last = d,
+      insp_due = case when res = 'ok' and ev is not null then d + ev when res = 'ok' then nullif(p->>'due','')::date else insp_due end,
+      status = case when res = 'fail' and status in ('available','out') then 'maint' else status end,
+      holder = case when res = 'fail' and status in ('available','out') then null else holder end,
+      holder_name = case when res = 'fail' and status in ('available','out') then null else holder_name end,
+      out_at = case when res = 'fail' and status in ('available','out') then null else out_at end,
+      due_back = case when res = 'fail' and status in ('available','out') then null else due_back end,
+      cond = case when res = 'fail' then 'damaged' else cond end, updated_at = now() where id = p_id returning * into t;
+  end if;
+  return jsonb_build_object('status', t.status, 'insp_due', t.insp_due);
+end $$;
+revoke all on function public.fm_tool_insp(uuid, jsonb) from public, anon;
+grant execute on function public.fm_tool_insp(uuid, jsonb) to authenticated;
+create or replace function public.fm_tool_insp_guard() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.status = 'out' and old.status is distinct from 'out' and new.insp_due is not null and new.insp_due < (now() at time zone 'Asia/Riyadh')::date then
+    raise exception 'inspection overdue';
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_tool_insp_guard on public.wo_tools;
+create trigger fm_tool_insp_guard before update of status on public.wo_tools for each row execute function public.fm_tool_insp_guard();
+
+-- (2) loss / damage reports
+create sequence if not exists public.wo_tool_rep_seq;
+create table if not exists public.wo_tool_reports (
+  id           uuid primary key default gen_random_uuid(),
+  code         text unique not null default ('TLR-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_tool_rep_seq')::text, 4, '0')),
+  at           timestamptz not null default now(),
+  tool_id      uuid not null references public.wo_tools(id) on delete cascade,
+  region       text,
+  kind         text not null check (kind in ('lost','damaged')),
+  note         text not null,
+  photo        text check (photo is null or length(photo) <= 420000),
+  by_id        uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name      text,
+  holder       uuid references public.profiles(id) on delete set null,
+  holder_name  text,
+  status       text not null default 'open' check (status in ('open','writeoff','deduct','repair','found','rejected')),
+  amount       numeric(14,2),
+  decided_by   uuid references public.profiles(id) on delete set null,
+  decided_name text,
+  decided_at   timestamptz,
+  response     text
+);
+create index if not exists wo_tool_reports_st_idx on public.wo_tool_reports (status, at desc);
+alter table public.wo_tool_reports enable row level security;
+revoke insert, update, delete on public.wo_tool_reports from anon, authenticated;
+grant select on public.wo_tool_reports to authenticated;
+drop policy if exists p_tool_reports_read on public.wo_tool_reports;
+create policy p_tool_reports_read on public.wo_tool_reports for select to authenticated using (
+  public.fm_mod('wh') and (by_id = auth.uid() or holder = auth.uid() or public.fm_tool_can(region) or public.fm_adj_approver(region)
+    or public.fm_my_pos() in ('dept_manager','qa_manager','hse_manager','owner_rep','accountant')));
+do $do$ begin
+  if to_regprocedure('public.fm_mod_guard()') is not null then
+    drop trigger if exists fm_mod_guard on public.wo_tool_reports;
+    create trigger fm_mod_guard before insert on public.wo_tool_reports for each row execute function public.fm_mod_guard('wh');
+  end if;
+end $do$;
+create or replace function public.fm_tool_report(p_tool uuid, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare t public.wo_tools; r public.wo_tool_reports; k text := p->>'kind'; nt text := nullif(btrim(coalesce(p->>'note','')),''); nm text := public.fm_me_name(); u uuid;
+begin
+  select * into t from public.wo_tools where id = p_tool for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if not (t.holder = auth.uid() or public.fm_tool_can(t.region)) then raise exception 'not allowed'; end if;
+  if k not in ('lost','damaged') then raise exception 'invalid kind'; end if;
+  if nt is null then raise exception 'note required'; end if;
+  if t.status in ('lost','retired') then raise exception 'invalid status'; end if;
+  if length(coalesce(p->>'photo','')) > 420000 then raise exception 'photo too large'; end if;
+  if exists(select 1 from public.wo_tool_reports where tool_id = t.id and status = 'open') then raise exception 'already reported'; end if;
+  insert into public.wo_tool_reports(tool_id, region, kind, note, photo, by_name, holder, holder_name)
+  values (t.id, t.region, k, left(nt, 500), nullif(p->>'photo',''), nm, t.holder, t.holder_name) returning * into r;
+  insert into public.wo_tool_moves(tool_id, kind, holder, holder_name, cond, note, by_name)
+  values (t.id, 'report', t.holder, t.holder_name, case when k = 'damaged' then 'damaged' else t.cond end, left(r.code || ' ' || case when k = 'lost' then 'بلاغ فقد' else 'بلاغ تلف' end || ' — ' || nt, 300), nm);
+  update public.wo_tools set status = case when k = 'lost' then 'lost' else 'maint' end, cond = case when k = 'damaged' then 'damaged' else cond end,
+    holder = null, holder_name = null, out_at = null, due_back = null, updated_at = now() where id = t.id;
+  begin
+    for u in select * from public.fm_adj_approvers(t.region) union select * from public.fm_wh_keepers_of(t.region) loop
+      perform public.fm_push_add(u, 'tools', case when k = 'lost' then '⚠️ بلاغ فقد أداة ' else '⚠️ بلاغ تلف أداة ' end || r.code, t.code || ' ' || t.name || ' • ' || coalesce(nm,'') || ' — ' || left(nt, 120), 'tools', 'tlr-' || r.id);
+    end loop;
+  exception when others then null; end;
+  return jsonb_build_object('id', r.id, 'code', r.code);
+end $$;
+create or replace function public.fm_tool_report_act(p_id uuid, p_action text, p jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare r public.wo_tool_reports; t public.wo_tools; nm text := public.fm_me_name(); nt text := nullif(btrim(coalesce(p->>'note','')),''); am numeric;
+begin
+  select * into r from public.wo_tool_reports where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if r.status <> 'open' then raise exception 'not pending'; end if;
+  if not public.fm_adj_approver(r.region) then raise exception 'not allowed'; end if;
+  if r.by_id = auth.uid() and public.fm_role() <> 'admin' and public.fm_my_pos() <> 'sysadmin' then raise exception 'not allowed'; end if;
+  select * into t from public.wo_tools where id = r.tool_id for update;
+  if p_action in ('writeoff','deduct') then
+    if nt is null then raise exception 'note required'; end if;
+    am := case when p_action = 'deduct' then coalesce(nullif(p->>'amount','')::numeric, t.price) end;
+    if p_action = 'deduct' and (am is null or am < 0) then raise exception 'amount required'; end if;
+    update public.wo_tools set status = 'retired', holder = null, holder_name = null, out_at = null, due_back = null, updated_at = now() where id = t.id;
+    insert into public.wo_tool_moves(tool_id, kind, note, by_name) values (t.id, 'retire', left(r.code || case when p_action = 'deduct' then ' شطب مع خصم ' || am || ' ر.س على ' || coalesce(r.holder_name,'المسؤول') else ' شطب' end || ' — ' || nt, 300), nm);
+  elsif p_action = 'repair' then
+    if r.kind <> 'damaged' then raise exception 'invalid action'; end if;
+  elsif p_action = 'found' then
+    if r.kind <> 'lost' then raise exception 'invalid action'; end if;
+    update public.wo_tools set status = 'available', updated_at = now() where id = t.id and status = 'lost';
+    insert into public.wo_tool_moves(tool_id, kind, cond, note, by_name) values (t.id, 'found', t.cond, left(concat_ws(' — ', r.code || ' وُجدت', nt), 300), nm);
+  elsif p_action = 'reject' then
+    if nt is null then raise exception 'note required'; end if;
+  else raise exception 'invalid action'; end if;
+  update public.wo_tool_reports set status = case when p_action = 'reject' then 'rejected' else p_action end, amount = am,
+    decided_by = auth.uid(), decided_name = nm, decided_at = now(), response = left(nt, 300) where id = p_id;
+  begin
+    perform public.fm_push_add(r.by_id, 'tools', 'قرار بلاغ ' || r.code, t.name || ' — ' || case p_action when 'writeoff' then 'شُطبت' when 'deduct' then 'شُطبت مع خصم ' || am || ' ر.س' when 'repair' then 'تُصلح' when 'found' then 'وُجدت' else 'رُفض البلاغ' end || coalesce(' — ' || nt, ''), 'tools', 'tlr-' || r.id);
+    if r.holder is not null and r.holder <> r.by_id then
+      perform public.fm_push_add(r.holder, 'tools', 'قرار بلاغ ' || r.code, t.name || ' — ' || case p_action when 'deduct' then 'خصم ' || am || ' ر.س' when 'writeoff' then 'شُطبت' else p_action end, 'tools', 'tlr-' || r.id);
+    end if;
+  exception when others then null; end;
+  return (select status from public.wo_tool_reports where id = p_id);
+end $$;
+revoke all on function public.fm_tool_report(uuid, jsonb), public.fm_tool_report_act(uuid, text, jsonb) from public, anon;
+grant execute on function public.fm_tool_report(uuid, jsonb), public.fm_tool_report_act(uuid, text, jsonb) to authenticated;
+
+-- (3) count log and cycle counts
+create table if not exists public.wo_stock_counts (
+  id          bigint generated always as identity primary key,
+  at          timestamptz not null default now(),
+  store_id    uuid not null references public.wo_stores(id) on delete cascade,
+  material_id uuid not null references public.wo_materials(id) on delete cascade,
+  book        numeric(14,3), counted numeric(14,3), diff numeric(14,3), price numeric(14,2),
+  held        boolean not null default false,
+  by_id       uuid default auth.uid(), by_name text
+);
+create index if not exists wo_stock_counts_idx on public.wo_stock_counts (store_id, material_id, at desc);
+alter table public.wo_stock_counts enable row level security;
+revoke insert, update, delete on public.wo_stock_counts from anon, authenticated;
+grant select on public.wo_stock_counts to authenticated;
+drop policy if exists p_stock_counts_read on public.wo_stock_counts;
+create policy p_stock_counts_read on public.wo_stock_counts for select to authenticated using (public.fm_role() in ('admin','manager','staff','engineer','viewer'));
+create or replace function public.fm_stock_move(p jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare k text := p->>'kind'; st public.wo_stores; st2 public.wo_stores; x jsonb; q numeric; cur numeric; n int := 0; m uuid; pr numeric;
+  me uuid := auth.uid(); nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid());
+  hold jsonb := '[]'; hv numeric := 0; mp numeric; ap boolean; a public.wo_stock_adj; u uuid;
+begin
+  if me is null or k not in ('in','adjust','transfer') then raise exception 'invalid kind'; end if;
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if not found or not public.fm_stock_can(st.region) then raise exception 'not allowed'; end if;
+  ap := public.fm_adj_approver(st.region) or coalesce(current_setting('fm.adj_ok', true), '') = '1';
+  if k = 'transfer' then
+    select * into st2 from public.wo_stores where id = nullif(p->>'to_store','')::uuid and active;
+    if not found or st2.id = st.id or not public.fm_stock_can(st2.region) then raise exception 'invalid store'; end if;
+  end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    m := nullif(x->>'material_id','')::uuid;
+    if m is null or not exists(select 1 from public.wo_materials where id = m) then raise exception 'unknown material'; end if;
+    pr := nullif(x->>'price','')::numeric;
+    insert into public.wo_stock(store_id, material_id) values (st.id, m) on conflict do nothing;
+    select qty into cur from public.wo_stock where store_id = st.id and material_id = m for update;
+    if k = 'adjust' then q := nullif(x->>'count','')::numeric; if q is null or q < 0 then raise exception 'invalid count'; end if; q := q - cur;
+      insert into public.wo_stock_counts(store_id, material_id, book, counted, diff, price, by_id, by_name, held)
+      values (st.id, m, cur, cur + q, q, (select price from public.wo_materials where id = m), me, nm,
+              q <> 0 and not ap and public.fm_adj_needs(cur, q, (select price from public.wo_materials where id = m)));
+    else q := nullif(x->>'qty','')::numeric; if q is null or q <= 0 or q > 1000000 then raise exception 'invalid qty'; end if; end if;
+    if q = 0 then continue; end if;
+    if k = 'adjust' and not ap then
+      select price into mp from public.wo_materials where id = m;
+      if public.fm_adj_needs(cur, q, mp) then
+        hold := hold || jsonb_build_object('material_id', m, 'book', cur, 'counted', cur + q, 'diff', q, 'price', mp, 'value', round(abs(q) * coalesce(mp,0), 2));
+        hv := hv + abs(q) * coalesce(mp,0);
+        continue;
+      end if;
+    end if;
+    if k = 'transfer' then
+      update public.wo_stock set qty = qty - q, updated_at = now() where store_id = st.id and material_id = m;
+      insert into public.wo_stock(store_id, material_id, qty) values (st2.id, m, q)
+        on conflict (store_id, material_id) do update set qty = public.wo_stock.qty + q, updated_at = now();
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, note, by_id, by_name) values
+        (st.id, m, -q, 'transfer', left(concat_ws(' — ', '← إلى ' || st2.name, nullif(btrim(coalesce(p->>'note','')),'')),300), me, nm),
+        (st2.id, m, q, 'transfer', left(concat_ws(' — ', '→ من ' || st.name, nullif(btrim(coalesce(p->>'note','')),'')),300), me, nm);
+    else
+      update public.wo_stock set qty = qty + q, updated_at = now() where store_id = st.id and material_id = m;
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, supplier, invoice_no, note, by_id, by_name)
+      values (st.id, m, q, k, case when k = 'in' then pr end, left(nullif(btrim(coalesce(p->>'supplier','')),''),200),
+              left(nullif(btrim(coalesce(p->>'invoice_no','')),''),80), left(nullif(btrim(coalesce(p->>'note','')),''),300), me, nm);
+      if k = 'in' and pr is not null and pr >= 0 and coalesce((p->>'update_price')::boolean,false) then
+        update public.wo_materials set price = pr, updated_at = now() where id = m; end if;
+    end if;
+    n := n + 1;
+  end loop;
+  if jsonb_array_length(hold) > 0 then
+    insert into public.wo_stock_adj(store_id, region, lines, value, note, by_name)
+    values (st.id, st.region, hold, round(hv, 2), left(nullif(btrim(coalesce(p->>'note','')),''),300), nm) returning * into a;
+    begin
+      for u in select * from public.fm_adj_approvers(st.region) loop
+        perform public.fm_push_add(u, 'wh_adj', '⚖️ فرق جرد بانتظار اعتمادك — ' || a.code, st.name || ' • ' || jsonb_array_length(hold) || ' صنف • ' || round(hv) || ' ر.س • ' || coalesce(nm,''), 'wh=adj', 'adj');
+      end loop;
+    exception when others then null; end;
+  end if;
+  return n;
+end $$;
+create or replace function public.fm_cycle_rows(p_store uuid) returns table(material_id uuid, cls text, value numeric, qty numeric, last_count timestamptz, due date)
+language sql stable security definer set search_path = public as $$
+  with r as (select coalesce(public.fm_setting('stock_rules')->'abc', '{"a":30,"b":90,"c":180}'::jsonb) j),
+  items as (select m.id, coalesce(s.qty, 0) qty,
+      coalesce((select sum(abs(v.qty) * coalesce(v.unit_price, m.price, 0)) from public.wo_stock_moves v
+        where v.store_id = p_store and v.material_id = m.id and v.kind in ('out','issue') and v.at >= now() - interval '365 days'), 0) val
+    from public.wo_materials m left join public.wo_stock s on s.store_id = p_store and s.material_id = m.id
+    where m.active is not false and (coalesce(s.qty, 0) <> 0 or coalesce(s.min_qty, 0) > 0
+      or exists(select 1 from public.wo_stock_moves v where v.store_id = p_store and v.material_id = m.id and v.at >= now() - interval '365 days'))),
+  ranked as (select i.*, sum(val) over (order by val desc, id rows unbounded preceding) cum, sum(val) over () tot from items i)
+  select x.id, x.c, round(x.val, 2), x.qty, lc.at,
+         coalesce((lc.at at time zone 'Asia/Riyadh')::date + (select coalesce(nullif(j->>lower(x.c),'')::int, 90) from r), (now() at time zone 'Asia/Riyadh')::date)
+  from (select ranked.*, case when tot <= 0 or val <= 0 then 'C' when cum - val < 0.8 * tot then 'A' when cum - val < 0.95 * tot then 'B' else 'C' end c from ranked) x
+  left join lateral (select max(c.at) at from public.wo_stock_counts c where c.store_id = p_store and c.material_id = x.id) lc on true $$;
+revoke all on function public.fm_cycle_rows(uuid) from public, anon, authenticated;
+create or replace function public.fm_cycle_plan(p_store uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_mod('wh') or public.fm_role() not in ('admin','manager','staff','engineer','viewer') then raise exception 'not allowed'; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('material_id', material_id, 'cls', cls, 'value', value, 'qty', qty, 'last_count', last_count, 'due', due) order by due, cls, value desc)
+    from public.fm_cycle_rows(p_store)), '[]'::jsonb);
+end $$;
+revoke all on function public.fm_cycle_plan(uuid) from public, anon;
+grant execute on function public.fm_cycle_plan(uuid) to authenticated;
+
+-- the cycle-count reminder (called on Sundays by fm_v220_daily)
+create or replace function public.fm_v220_cnt_push() returns int language plpgsql security definer set search_path = public as $$
+declare x record; u uuid; n int := 0; k int; today date := (now() at time zone 'Asia/Riyadh')::date;
+begin
+  for x in select s.id, s.name, s.region, s.keeper from public.wo_stores s where s.active loop
+    select count(*) into k from public.fm_cycle_rows(x.id) c where c.due <= today;
+    if k > 0 then
+      for u in select kk from public.fm_wh_keepers_of(x.region) kk where x.keeper is null or kk = x.keeper loop
+        perform public.fm_push_add(u, 'wh_cnt', '🔁 الجرد الدوري: ' || k || ' صنف مستحق', x.name || ' — افتح «🔁 الجرد الدوري» في المخزون', 'wh=cnt', 'cnt-' || x.id, true);
+        n := n + 1;
+      end loop;
+    end if;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_v220_cnt_push() from public, anon, authenticated;
+-- daily (pg_cron fm-v220-daily 05:40 UTC): inspections due in 14 / 7 / 0 days or overdue (weekly) → storekeepers of the region and
+-- the holder; on Sundays the number of items due for the cycle count → the storekeepers of each store
+create or replace function public.fm_v220_daily() returns int language plpgsql security definer set search_path = public as $$
+declare x record; u uuid; n int := 0; today date := (now() at time zone 'Asia/Riyadh')::date; k int;
+begin
+  if not public.fm_mod('wh') then return 0; end if;
+  for x in select * from public.wo_tools where insp_due is not null and status not in ('retired','lost')
+             and ((insp_due - today) in (14, 7, 0) or (today > insp_due and (today - insp_due) % 7 = 0)) loop
+    for u in select * from public.fm_wh_keepers_of(x.region) union select x.holder where x.holder is not null loop
+      perform public.fm_push_add(u, 'tools', case when x.insp_due < today then '⛔ انتهى موعد ' else '🔬 يقترب موعد ' end || case when x.insp_kind = 'calib' then 'معايرة ' else 'فحص ' end || x.name,
+        x.code || ' • ' || to_char(x.insp_due, 'YYYY-MM-DD') || case when x.insp_due < today then ' — لا تُسلَّم قبل الفحص' else '' end, 'tools', 'insp-' || x.id, true);
+      n := n + 1;
+    end loop;
+  end loop;
+  if extract(dow from now() at time zone 'Asia/Riyadh') = 0 then n := n + public.fm_v220_cnt_push(); end if;
+  return n;
+end $$;
+revoke all on function public.fm_v220_daily() from public, anon, authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v220-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v220-daily'', ''40 5 * * *'', ''select public.fm_v220_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: inspection / cycle-count reminders are not sent (the platform still shows them)'; end;
+end $do$;
+notify pgrst, 'reload schema';
+commit;
