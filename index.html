@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V213">
+<meta name="fm-version" content="V214">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25618,10 +25618,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V213',date:'2026-10-28',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V214',date:'2026-10-28',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V214',d:'2026-10-28',t:'ترتيب رأس الصفحات والتبويبات على الجوال',i:['أزرار الصفحة على الجوال في شبكة منتظمة من 3 أعمدة بدل تراكمها بأحجام مختلفة','أزرار التنزيل والتصغير والتكبير والإغلاق في سطر واحد، وزر التحديث صغير','التبويبات في شريط واحد مرتّب يُسحب جانبياً بدل الكبسولات الكبيرة فوق بعضها']},
 {v:'V213',d:'2026-10-28',t:'إصلاح تداخل الصفحة على الجوال',i:['لوحة «الأكشنات والإجراءات السريعة» لم تعد تبقى ثابتة فوق محتوى اللوحة عند التمرير على الجوال والتابلت','شريط المناطق على الجوال يتحرك مع الصفحة بدل أن يغطي ثلث الشاشة، وزر «إخفاء شريط المناطق» صار أيقونة صغيرة داخل الشريط']},
 {v:'V212',d:'2026-10-28',t:'إجراءات المستودع وخارطة الطريق',i:['صفحة «🗺️ إجراءات المستودع» في مجموعة المستودعات: الدورة الكاملة في خمس مراحل (15 إجراءً) مع الخطوات والقواعد والحالات والإشعارات ومن يفعل ماذا','مراجعة الإجراءات: ما يعمل جيداً و14 فجوة بأهميتها، وخارطة طريق من أربع مراحل (15 مقترحاً) بالأولوية والحجم','أرقام حية حسب صلاحيتك: أصناف بانتظار الاعتماد، طلبات صرف وشراء، تالف متأخر، أرصدة تحت الحد وبالسالب — كل رقم يفتح شاشته','طباعة / PDF للمستند كاملاً']},
 {v:'V211',d:'2026-10-28',t:'اختيار الصنف بالفئة في التوريد والتحويل',i:['نافذة «📥 توريد» و«🔁 تحويل» في المخزون: زر «🗂️ اختيار حسب الفئة» — الفئات ثم الأصناف بالصور، مع البحث بالاسم أو الكود أو كود Logix، والرصيد في المستودع المختار','الصنف المختار يُضاف كسطر بكمية 1 وسعره المعتمد (في التوريد)، واختياره مرة أخرى يزيد الكمية','الكتابة في خانة الصنف تبحث أيضاً بالكود وكود Logix']},
@@ -36069,6 +36070,28 @@ setInterval(()=>{try{nav()}catch(e){}},1500);setTimeout(nav,300);
  #fm77-regionbar-toggle{position:absolute!important;top:calc(var(--fm167h,0px) + 9px)!important;left:8px!important;width:40px;height:38px;padding:0!important;font-size:0!important;display:grid;place-items:center}
  #fm77-regionbar-toggle::before{content:'▴';font-size:18px;line-height:1}
  body.fm77-regionbar-collapsed #fm77-regionbar-toggle::before{content:'☰'}
+}
+</style>
+<style id="fm-v214-phone-head">
+/* V214 — phone layout of sub-page headers and tabs (all .fm103-page pages): action buttons in an even 3-column grid of
+   compact tiles, 🔄 / print as small buttons, the V119 window controls (region, download, minimise, zoom, close) in one row,
+   and page tabs as one segmented row that scrolls sideways instead of wrapping into big pills. Desktop unchanged. */
+@media (max-width:760px){
+ .fm103-page .fm103-actions{display:flex!important;flex-wrap:wrap!important;gap:6px!important;align-items:center!important;justify-content:flex-start!important}
+ .fm103-page .fm103-actions>.extra{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;flex:1 1 100%!important;width:100%!important;margin:0!important}
+ .fm103-page .fm103-actions>.extra:empty{display:none!important}
+ .fm103-page .fm103-actions>.extra>*{min-width:0!important;width:auto!important;max-width:none!important;margin:0!important}
+ .fm103-page .fm103-actions>.extra>:is(button,a,.fm103-btn){min-height:50px!important;height:auto!important;padding:6px 4px!important;font-size:12px!important;line-height:1.35!important;white-space:normal!important;text-align:center!important;display:flex!important;align-items:center!important;justify-content:center!important;border-radius:12px!important;overflow-wrap:anywhere}
+ .fm103-page .fm103-actions>.extra>:is(select,input,label,div,span:not(.fm103-btn)){grid-column:1/-1}
+ .fm103-page .fm103-actions>:is(button,.fm103-btn){flex:0 0 auto!important;width:auto!important;min-height:36px!important;padding:6px 14px!important;font-size:12.5px!important}
+ :is(.fm196-surface,body) .fm119-ctl{display:flex!important;flex-wrap:nowrap!important;gap:5px!important;align-items:center!important;width:100%!important}
+ :is(.fm196-surface,body) .fm119-ctl .fm119-region{flex:0 0 auto!important}
+ :is(.fm196-surface,body) .fm119-ctl .fm119-b{flex:1 1 0!important;min-width:0!important;width:auto!important;height:34px!important;padding:0 4px!important;font-size:11.5px!important;gap:3px!important;justify-content:center!important}
+ :is(.fm196-surface,body) .fm119-ctl .fm119-b svg{width:13px!important;height:13px!important}
+ .fm103-page :is(.fm173-tabs,.fm180-tabs,.fm171-tabs,.fm146-tabs,.fm103-tabs,.fm212-tabs){display:flex!important;flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;gap:3px!important;row-gap:0!important;background:#eef2f7!important;border:1px solid #e2e8f0!important;border-radius:14px!important;padding:4px!important;margin:0 0 12px!important;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+ .fm103-page :is(.fm173-tabs,.fm180-tabs,.fm171-tabs,.fm146-tabs,.fm103-tabs,.fm212-tabs)::-webkit-scrollbar{display:none}
+ .fm103-page :is(.fm173-tabs,.fm180-tabs,.fm171-tabs,.fm146-tabs,.fm103-tabs,.fm212-tabs)>button{flex:1 0 auto!important;width:auto!important;min-width:0!important;white-space:nowrap!important;border:0!important;background:transparent!important;color:#475569!important;border-radius:10px!important;padding:8px 12px!important;font-size:13px!important;min-height:0!important;box-shadow:none!important}
+ .fm103-page :is(.fm173-tabs,.fm180-tabs,.fm171-tabs,.fm146-tabs,.fm103-tabs,.fm212-tabs)>button:is(.on,.active,[aria-selected="true"]){background:#fff!important;color:#1d4ed8!important;box-shadow:0 1px 5px rgba(15,23,42,.14)!important}
 }
 </style>
 </body>
