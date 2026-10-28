@@ -4724,6 +4724,47 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: the daily low-stock alert is not sent (the platform still shows it)'; end;
 end $do$;
 
+-- ---------- 35) the storekeeper issues directly, edits or deletes a pending request (V210) ----------
+-- The storekeeper may now raise a request for a supervisor / contractor / area engineer of his regions (and issue it at once),
+-- and edit (lines, note) or delete a request that has not been issued yet. A deleted request stays as «cancelled» with the reason.
+create or replace function public.fm_wh_may_direct(h uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select exists(select 1 from public.profiles p where p.id = h and p.active and public.fm_posx(p.role, p.job_title) in ('supervisor','contractor','area_engineer'))
+    and ((coalesce(public.fm_my_pos() in ('sysadmin','project_manager','ops_manager','area_manager','area_engineer') or public.fm_role() = 'admin', false)
+      and (public.fm_is_under(h, auth.uid()) or public.fm_wh_admin()
+        or (public.fm_my_pos() = 'area_manager' and exists(select 1 from public.profiles p where p.id = h
+              and (cardinality(public.fm_regions()) = 0 or p.regions && public.fm_regions())))))
+     or (public.fm_my_pos() = 'storekeeper' and exists(select 1 from public.profiles p where p.id = h
+              and (cardinality(public.fm_regions()) = 0 or cardinality(p.regions) = 0 or p.regions && public.fm_regions())))) $$;
+-- p {lines:[{material_id, qty}], note} | {delete: true, note}
+create or replace function public.fm_issue_req_edit(p_id uuid, p jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare r public.wo_issue_requests; x jsonb; L jsonb := '[]'; m public.wo_materials; q numeric; nm text := public.fm_me_name();
+begin
+  select * into r from public.wo_issue_requests where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if not (public.fm_wh_keeper(r.store_id) or r.requested_by = auth.uid()) then raise exception 'not allowed'; end if;
+  if r.status <> 'requested' then raise exception 'invalid status'; end if;
+  if coalesce((p->>'delete')::boolean, false) then
+    if btrim(coalesce(p->>'note','')) = '' and r.requested_by <> auth.uid() then raise exception 'note required'; end if;
+    update public.wo_issue_requests set status = 'cancelled', response = left('حُذف بواسطة ' || coalesce(nm,'') || coalesce(': ' || nullif(btrim(p->>'note'),''), ''), 500) where id = p_id;
+    return 'cancelled';
+  end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    select * into m from public.wo_materials where id = nullif(x->>'material_id','')::uuid;
+    if not found or not m.active or m.approved_at is null then raise exception 'item not approved: %', coalesce(m.name, x->>'material_id'); end if;
+    q := nullif(x->>'qty','')::numeric;
+    if q is null or q <= 0 or q > 100000 then raise exception 'invalid qty'; end if;
+    if exists(select 1 from jsonb_array_elements(L) e where e->>'material_id' = m.id::text) then raise exception 'duplicate item: %', m.name; end if;
+    L := L || jsonb_build_object('material_id', m.id, 'qty', q, 'issued', 0);
+  end loop;
+  if jsonb_array_length(L) = 0 then raise exception 'no lines'; end if;
+  if jsonb_array_length(L) > 60 then raise exception 'too many lines'; end if;
+  update public.wo_issue_requests set lines = L, note = case when p ? 'note' then left(nullif(btrim(coalesce(p->>'note','')),''),500) else note end,
+    response = left(coalesce(nullif(response,'') || ' • ', '') || 'عدّله ' || coalesce(nm,''), 500) where id = p_id;
+  return 'edited';
+end $$;
+revoke all on function public.fm_issue_req_edit(uuid, jsonb) from public, anon;
+grant execute on function public.fm_issue_req_edit(uuid, jsonb) to authenticated;
+
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
 
 
