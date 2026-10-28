@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V212">
+<meta name="fm-version" content="V213">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25618,10 +25618,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V212',date:'2026-10-28',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V213',date:'2026-10-28',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V213',d:'2026-10-28',t:'إصلاح تداخل الصفحة على الجوال',i:['لوحة «الأكشنات والإجراءات السريعة» لم تعد تبقى ثابتة فوق محتوى اللوحة عند التمرير على الجوال والتابلت','شريط المناطق على الجوال يتحرك مع الصفحة بدل أن يغطي ثلث الشاشة، وزر «إخفاء شريط المناطق» صار أيقونة صغيرة داخل الشريط']},
 {v:'V212',d:'2026-10-28',t:'إجراءات المستودع وخارطة الطريق',i:['صفحة «🗺️ إجراءات المستودع» في مجموعة المستودعات: الدورة الكاملة في خمس مراحل (15 إجراءً) مع الخطوات والقواعد والحالات والإشعارات ومن يفعل ماذا','مراجعة الإجراءات: ما يعمل جيداً و14 فجوة بأهميتها، وخارطة طريق من أربع مراحل (15 مقترحاً) بالأولوية والحجم','أرقام حية حسب صلاحيتك: أصناف بانتظار الاعتماد، طلبات صرف وشراء، تالف متأخر، أرصدة تحت الحد وبالسالب — كل رقم يفتح شاشته','طباعة / PDF للمستند كاملاً']},
 {v:'V211',d:'2026-10-28',t:'اختيار الصنف بالفئة في التوريد والتحويل',i:['نافذة «📥 توريد» و«🔁 تحويل» في المخزون: زر «🗂️ اختيار حسب الفئة» — الفئات ثم الأصناف بالصور، مع البحث بالاسم أو الكود أو كود Logix، والرصيد في المستودع المختار','الصنف المختار يُضاف كسطر بكمية 1 وسعره المعتمد (في التوريد)، واختياره مرة أخرى يزيد الكمية','الكتابة في خانة الصنف تبحث أيضاً بالكود وكود Logix']},
 {v:'V210',d:'2026-10-28',t:'صرف أمين المستودع وسند استلام العهدة',i:['اختيار الصنف في طلب الصرف: الفئة أولاً ثم الصنف بالصورة، مع البحث بالاسم أو الكود أو كود Logix، والرصيد في المستودع المختار','أمين المستودع يصرف مباشرة للمشرفين والمقاولين والمهندسين في منطقته («📤 صرف فوراً»)','تعديل طلب الصرف أو حذفه قبل صرفه (أمين المستودع أو من أنشأه)، والحذف يُسجَّل بالسبب','«🖨️ سند الاستلام»: ورقة استلام العهدة بالأصناف والكميات والقيم وإقرار المستلم والتوقيعات، تُطبع بعد الصرف أو من قائمة الطلبات']},
@@ -36054,5 +36055,21 @@ function nav(){const n=document.querySelector('nav.v2-nav');if(!n||document.getE
 setInterval(()=>{try{nav()}catch(e){}},1500);setTimeout(nav,300);
 })();</script>
 
+<style id="fm-v213-mobile-stack">
+/* V213 — phone / tablet: no stacked "pages" over the dashboard.
+   1) The V1 mobile rule `.alerts-sidebar-column{position:static}` lost to `.alerts-sidebar-column.actions-sidebar{position:sticky}`
+      (more specific), so in the one-column layout the quick-actions sidebar stayed stuck and the dashboard scrolled under it.
+   2) The region bar (sticky, ~230 px tall on a phone, under the news ticker) covered a third of the screen; on phones it now scrolls away,
+      and its «إخفاء شريط المناطق» button becomes a small icon inside the bar instead of floating over the buttons. */
+@media (max-width:1024px){
+ .alerts-sidebar-column.actions-sidebar{position:static!important;top:auto!important}
+}
+@media (max-width:760px){
+ #fm41-regionbar{position:relative!important;top:auto!important;z-index:5!important;padding-left:56px!important}
+ #fm77-regionbar-toggle{position:absolute!important;top:calc(var(--fm167h,0px) + 9px)!important;left:8px!important;width:40px;height:38px;padding:0!important;font-size:0!important;display:grid;place-items:center}
+ #fm77-regionbar-toggle::before{content:'▴';font-size:18px;line-height:1}
+ body.fm77-regionbar-collapsed #fm77-regionbar-toggle::before{content:'☰'}
+}
+</style>
 </body>
 </html>
