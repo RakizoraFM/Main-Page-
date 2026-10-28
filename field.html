@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F42">
+<meta name="fm-version" content="F43">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1891,7 +1891,7 @@ const IOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='
 const STANDALONE=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
 const KINDS=[['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
  ['wo_esc','⏫ تصعيد أمر متأخر إليّ'],['wo_stop','⛔ إيقاف عمل'],['wh_req','📦 طلب صرف جديد (أمين المستودع)'],['wh_issued','🧰 صُرفت قطع لعهدتي أو رُفض طلبي'],
- ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات']];
+ ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات'],['parts_due','⏱️ متابعة طلبات القطع (مسؤول / تصعيد / تأخير)'],['tools','🛠️ العُدد والأدوات (تسليم / موعد الإرجاع)']];
 const b64u=buf=>{let s='';const b=new Uint8Array(buf);for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
 const unb64u=s=>{s=S(s);const t=atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4));const b=new Uint8Array(t.length);for(let i=0;i<t.length;i++)b[i]=t.charCodeAt(i);return b};
 let SET=null,SETAT=0;
@@ -1969,6 +1969,8 @@ const css=document.createElement('style');css.id='fm187-css';css.textContent=`
 function go(h){h=S(h).replace(/^#/,'');if(!h)return false;if(h.startsWith('wo=')){const id=h.slice(3);if(window.fmfOpenWo)window.fmfOpenWo(id);else document.querySelector('.bnav button[data-v="wo"]')?.click()}
  else if(h==='wo')document.querySelector('.bnav button[data-v="wo"]')?.click();
  else if(h==='cus'||h.startsWith('wh='))window.fmfCustody?.();
+ else if(h==='tools')window.fmfTools?.();
+ else if(h==='parts')window.fmfPartsTracking?.();
  else return false;return true}
 navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.fmPush)go(e.data.hash)});
 function refreshHome(){const h=document.querySelector('#app .card.hello');let b=document.getElementById('f32-h');
@@ -2195,6 +2197,69 @@ let n=0;const t=setInterval(async()=>{try{if(++n>60){clearInterval(t);return}if(
  if(mode==='choose'||p.role==='admin'){window.fmfToPlatform=()=>{try{localStorage.setItem('fm_last_app','index.html');const k='fm_route_pref:'+p.id;if(localStorage.getItem(k))localStorage.setItem(k,'index.html')}catch(e){}location.href='index.html'};
   const x=document.querySelector('.bnav .sbx');if(x&&!x.querySelector('[data-sx=fmfToPlatform]')){const b=document.createElement('button');b.dataset.sx='fmfToPlatform';b.innerHTML='<i>🖥️</i>المنصة الإدارية';b.onclick=window.fmfToPlatform;x.querySelector('.sbt')?.after(b)}}
 }catch(e){}},1000);
+})();</script>
+<style id="fmf-43-tools-css">
+#f43{z-index:45}#f43 .hd{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;padding:12px 14px;background:var(--ink,#0f172a);color:#fff}
+#f43 .hd button{border:0;background:rgba(255,255,255,.15);color:#fff;border-radius:10px;padding:6px 12px;font:800 14px Cairo,Tahoma,sans-serif}#f43 .hd h2{margin:0;font-size:17px;flex:1}
+#f43 .bd{padding:12px;display:grid;gap:10px;max-width:760px;margin:0 auto}
+#f43 .cd{background:#fff;border:1px solid var(--line,#e2e8f0);border-radius:16px;padding:12px}#f43 .cd h3{margin:0 0 8px;font-size:15px}
+#f43 .tl{display:grid;grid-template-columns:52px 1fr;gap:10px;align-items:center;padding:8px 0;border-bottom:1px dashed #e2e8f0}#f43 .tl:last-child{border:0}
+#f43 .tl img,#f43 .tl .ni{width:52px;height:52px;border-radius:10px;object-fit:cover;background:#f1f5f9;display:grid;place-items:center;font-size:24px}
+#f43 .tl b{display:block;font-size:14px}#f43 .tl small{display:block;color:#64748b;font-size:12px;font-weight:700}
+#f43 .late{color:#b91c1c!important;font-weight:900!important}
+#f43 .al{border-radius:14px;padding:10px 12px;font-weight:800;font-size:13.5px;line-height:1.8;background:#fee2e2;color:#991b1b}
+#f43 .mv{font-size:12.5px;padding:5px 0;border-bottom:1px dashed #e2e8f0}
+#f43-h{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid #fed7aa;background:#fff7ed;color:#7c2d12;border-radius:16px;padding:12px 14px;font:800 14px Cairo,Tahoma,sans-serif;margin:10px 0;text-align:right}
+#f43-h.bad{background:#fee2e2;border-color:#fca5a5;color:#991b1b}
+.f43-wp{background:#ffedd5!important;color:#9a3412!important;border:1px solid #fdba74}
+</style>
+<script id="fmf-43-tools">(function(){
+'use strict';
+/* F43 (V215): «🛠️ عُددي» — the tools in my custody (section 36 wo_tools, read by RLS: the holder sees his own) with their
+   return date and history, a home card when I hold tools (red when one is late); «⏳ بانتظار قطع» on my work-order cards
+   (fm_parts_waiting(): my open issue requests); notification links #tools / #parts. */
+if(window.__f43)return;window.__f43=1;
+const C=window.FMCloud;if(!C)return;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const GREG='ar-SA-u-ca-gregory',dd=v=>v?new Date(String(v).length===10?v+'T12:00:00':v).toLocaleDateString(GREG,{day:'numeric',month:'short',year:'numeric'}):'—';
+const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
+const CD={new:'جديدة',good:'جيدة',fair:'مقبولة',damaged:'تالفة'};
+const MK={out:'📤 استلمتها',in:'📥 أرجعتها',extend:'📅 مُدّد الموعد',maint:'🔧 صيانة',lost:'❓ فقد'};
+const late=t=>t.due_back&&t.due_back<today();
+let ME=null,T=null,MV=[],W=null,WAT=0;
+async function load(){const db=await C.engClient();const r=await db.from('wo_tools').select('*').eq('holder',ME.id).eq('status','out').order('due_back');if(r.error){T=null;return}T=r.data||[];
+ if(T.length){try{const m=await db.from('wo_tool_moves').select('*').in('tool_id',T.map(t=>t.id)).order('at',{ascending:false}).limit(100);MV=(!m.error&&m.data)||[]}catch(e){MV=[]}}else MV=[]}
+function sheet(){let s=document.getElementById('f43');if(!s){s=document.createElement('div');s.id='f43';s.className='sheet';s.dir='rtl';document.body.appendChild(s)}return s}
+async function open(){const s=sheet();s.classList.add('open');s.innerHTML='<div class="hd"><button type="button" data-x>→</button><h2>🛠️ عُددي</h2></div><div class="bd"><div class="cd">جارٍ التحميل…</div></div>';s.querySelector('[data-x]').onclick=close;
+ if(!ME){try{ME=await C.api.me()}catch(e){}}if(!ME){s.querySelector('.bd').innerHTML='<div class="al">سجّل الدخول أولاً</div>';return}
+ if(!navigator.onLine&&T==null){s.querySelector('.bd').innerHTML='<div class="al">تحتاج اتصالاً بالإنترنت</div>';return}try{await load()}catch(e){}draw()}
+function close(){const s=document.getElementById('f43');if(s){s.classList.remove('open');s.innerHTML=''}home()}
+function draw(){const s=sheet(),L=(T||[]).filter(late);
+ s.innerHTML=`<div class="hd"><button type="button" data-x>→</button><h2>🛠️ عُددي</h2><button type="button" data-rf>🔄</button></div><div class="bd">
+  ${T==null?'<div class="al">سجل العُدد غير مفعّل بعد على السحابة</div>':''}
+  ${L.length?`<div class="al">⏰ تجاوزت موعد الإرجاع: ${L.map(t=>`${esc(t.name)} (${esc(t.code)})`).join('، ')}. أرجعها لأمين المستودع أو اطلب تمديد الموعد.</div>`:''}
+  <div class="cd"><h3>🛠️ الأدوات في عهدتي (${(T||[]).length})</h3>${(T||[]).map(t=>`<div class="tl">${t.thumb?`<img src="${esc(t.thumb)}" alt="">`:'<span class="ni">🛠️</span>'}<div><b>${esc(t.name)}</b><small>${esc(t.code)}${t.serial?' • '+esc(t.serial):''}${t.brand?' • '+esc(t.brand):''}</small>
+   <small>استلمتها ${dd(t.out_at)} • الحالة ${esc(CD[t.cond]||'')}</small><small class="${late(t)?'late':''}">${t.due_back?(late(t)?'⏰ كان موعد الإرجاع ':'📅 أرجعها قبل ')+dd(t.due_back):'بدون موعد إرجاع'}</small></div></div>`).join('')||'<div style="color:#64748b">لا توجد أدوات في عهدتك.</div>'}
+   <div style="color:#64748b;font-size:12px;margin-top:6px">الأدوات تُسلَّم وتُستلم عند أمين المستودع؛ أنت مسؤول عنها حتى تُرجعها.</div></div>
+  ${MV.length?`<div class="cd"><h3>🕘 آخر الحركات</h3>${MV.slice(0,20).map(m=>{const t=(T||[]).find(x=>x.id===m.tool_id)||{};return `<div class="mv">${dd(m.at)} — <b>${esc(MK[m.kind]||m.kind)}</b> ${esc(t.name||'')}${m.due_back?' • حتى '+dd(m.due_back):''}${m.note?' • '+esc(m.note):''}</div>`}).join('')}</div>`:''}</div>`;
+ s.querySelector('[data-x]').onclick=close;s.querySelector('[data-rf]').onclick=open}
+function home(){const h=document.querySelector('#app .card.hello');let b=document.getElementById('f43-h');if(!h||!T||!T.length){b?.remove();return}
+ const L=T.filter(late).length,txt=`<span>🛠️ عُددي: ${T.length} أداة${L?` • ⏰ ${L} تجاوزت موعد الإرجاع`:''}</span><span>فتح ←</span>`;
+ if(!b||!b.isConnected){b=document.createElement('button');b.id='f43-h';b.type='button';b.onclick=open;const a=document.getElementById('f29-h');(a&&a.isConnected?a:h).after(b)}
+ b.className=L?'bad':'';if(b.innerHTML!==txt)b.innerHTML=txt}
+/* «⏳ بانتظار قطع» on my work-order cards */
+async function wLoad(){if(Date.now()-WAT<180000||!navigator.onLine)return;WAT=Date.now();try{const db=await C.engClient();const r=await db.rpc('fm_parts_waiting');if(!r.error)W=r.data||[]}catch(e){}}
+function badges(){if(!W)return;const M=new Map();for(const r of W)if(r.wo_id)M.set(r.wo_id,Math.max(M.get(r.wo_id)||0,+r.days||0));
+ document.querySelectorAll('.wo-c[data-wo]').forEach(c=>{const d=M.get(c.dataset.wo),ch=c.querySelector('.chips'),ex=c.querySelector('.f43-wp');if(!ch)return;
+  if(d==null){ex&&ex.remove();return}const t=`⏳ بانتظار قطع · ${d} يوم`;if(ex){if(ex.textContent!==t)ex.textContent=t;return}const s=document.createElement('span');s.className='chip f43-wp';s.textContent=t;ch.appendChild(s)})}
+window.fmfTools=open;
+function go(h){h=S(h).replace(/^#/,'');if(h==='tools'){open();return true}if(h==='parts'){window.fmfPartsTracking?.();return true}return false}
+navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.fmPush)go(e.data.hash)});
+let hashDone=false,n=0;
+setInterval(async()=>{try{if(!ME){if(++n>120)return;if(!C.engClient||!C.api||!C.api.me)return;const p=await C.api.me();if(!p||p.role==='pending')return;ME=p;try{await load()}catch(e){T=null}}
+ if(!hashDone&&(location.hash==='#tools'||location.hash==='#parts')){hashDone=true;setTimeout(()=>go(location.hash),1200)}
+ home();if(document.querySelector('.wo-c[data-wo]')){await wLoad();badges()}}catch(e){}},1500);
+setInterval(()=>{if(ME&&!document.hidden&&navigator.onLine&&!document.getElementById('f43')?.classList.contains('open'))load().catch(()=>{})},5*60e3);
 })();</script>
 </body>
 </html>
