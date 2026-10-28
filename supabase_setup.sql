@@ -5642,3 +5642,247 @@ revoke all on function public.fm_po_receive(uuid, jsonb) from public, anon;
 grant execute on function public.fm_po_receive(uuid, jsonb) to authenticated;
 notify pgrst, 'reload schema';
 commit;
+
+-- ---------- 39) transfers in transit, signed custody receipts, stagnant items, what partial issues still need (V218) ----------
+-- (1) A transfer between stores leaves the source at once and waits «في الطريق» (wo_stock_transfers, TR-YYYY-####) until the
+--     destination's storekeeper / manager confirms what arrived (fm_transfer_act receive; a shortage needs a note and is not added
+--     anywhere) or the sender cancels it (the quantities go back). Push kind wh_tr.
+-- (2) The holder signs the custody receipt on the screen (fm_issue_req_sign; signatures in wo_issue_signs so the request rows stay
+--     small); the storekeeper may record a signature made in front of him. Signing also confirms the receipt.
+-- (3) fm_wh_stagnant(days): items with a balance and no consumption (out / issue) in the period, with the stores that used them.
+-- (4) fm_issue_remaining(): what open issue requests still wait for, with the store balance and what is on order; a balance that
+--     now covers the remainder of a partial request notifies the storekeepers (wh_req).
+begin;
+create sequence if not exists public.wo_stock_tr_seq;
+create table if not exists public.wo_stock_transfers (
+  id          uuid primary key default gen_random_uuid(),
+  code        text unique not null default ('TR-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_stock_tr_seq')::text, 4, '0')),
+  at          timestamptz not null default now(),
+  from_store  uuid not null references public.wo_stores(id) on delete cascade,
+  to_store    uuid not null references public.wo_stores(id) on delete cascade,
+  from_region text,
+  to_region   text,
+  lines       jsonb not null default '[]',   -- [{material_id, qty, price, recv, short}]
+  value       numeric(14,2) not null default 0,
+  status      text not null default 'transit' check (status in ('transit','received','cancelled')),
+  note        text,
+  by_id       uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name     text,
+  recv_by     uuid references public.profiles(id) on delete set null,
+  recv_name   text,
+  recv_at     timestamptz,
+  recv_note   text,
+  short_value numeric(14,2) not null default 0
+);
+create index if not exists wo_stock_transfers_st_idx on public.wo_stock_transfers (status, at desc);
+alter table public.wo_stock_transfers enable row level security;
+revoke insert, update, delete on public.wo_stock_transfers from anon, authenticated;
+grant select on public.wo_stock_transfers to authenticated;
+drop policy if exists p_stock_tr_read on public.wo_stock_transfers;
+create policy p_stock_tr_read on public.wo_stock_transfers for select to authenticated using (
+  public.fm_mod('wh') and public.fm_role() <> 'pending' and (by_id = auth.uid() or public.fm_stock_can(from_region) or public.fm_stock_can(to_region)
+    or public.fm_wh_keeper(from_store) or public.fm_wh_keeper(to_store) or public.fm_my_pos() in ('dept_manager','qa_manager','owner_rep','accountant')));
+do $do$ begin
+  if to_regprocedure('public.fm_mod_guard()') is not null then
+    drop trigger if exists fm_mod_guard on public.wo_stock_transfers;
+    create trigger fm_mod_guard before insert on public.wo_stock_transfers for each row execute function public.fm_mod_guard('wh');
+  end if;
+end $do$;
+
+-- send: p {store_id, to_store, lines:[{material_id, qty}], note} → {id, code}
+create or replace function public.fm_transfer_send(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; st2 public.wo_stores; t public.wo_stock_transfers; x record; cur numeric; L jsonb := '[]'; v numeric := 0;
+  nm text := public.fm_me_name(); u uuid; mn text;
+begin
+  if auth.uid() is null or not public.fm_mod('wh') then raise exception 'not allowed'; end if;
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if not found or not (public.fm_stock_can(st.region) or public.fm_wh_keeper(st.id)) then raise exception 'not allowed'; end if;
+  select * into st2 from public.wo_stores where id = nullif(p->>'to_store','')::uuid and active;
+  if not found or st2.id = st.id then raise exception 'invalid store'; end if;
+  insert into public.wo_stock_transfers(from_store, to_store, from_region, to_region, note, by_name)
+  values (st.id, st2.id, st.region, st2.region, left(nullif(btrim(coalesce(p->>'note','')),''),300), nm) returning * into t;
+  for x in select nullif(e->>'material_id','')::uuid m, sum(nullif(e->>'qty','')::numeric) q
+           from jsonb_array_elements(coalesce(p->'lines','[]')) e group by 1 loop
+    if x.m is null or not exists(select 1 from public.wo_materials where id = x.m) then raise exception 'unknown material'; end if;
+    if x.q is null or x.q <= 0 or x.q > 1000000 then raise exception 'invalid qty'; end if;
+    select qty into cur from public.wo_stock where store_id = st.id and material_id = x.m for update;
+    if coalesce(cur,0) < x.q then select name into mn from public.wo_materials where id = x.m; raise exception 'insufficient: % (%)', mn, coalesce(cur,0); end if;
+    update public.wo_stock set qty = qty - x.q, updated_at = now() where store_id = st.id and material_id = x.m;
+    insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, ref, note, by_id, by_name)
+    values (st.id, x.m, -x.q, 'transfer', (select price from public.wo_materials where id = x.m), t.code,
+            left(concat_ws(' — ', t.code || ' 🚚 في الطريق إلى ' || st2.name, t.note),300), auth.uid(), nm);
+    L := L || jsonb_build_object('material_id', x.m, 'qty', x.q, 'price', (select price from public.wo_materials where id = x.m));
+    v := v + x.q * coalesce((select price from public.wo_materials where id = x.m), 0);
+  end loop;
+  if jsonb_array_length(L) = 0 then raise exception 'no lines'; end if;
+  update public.wo_stock_transfers set lines = L, value = round(v, 2) where id = t.id;
+  begin
+    for u in select * from public.fm_wh_keepers_of(st2.region) loop
+      perform public.fm_push_add(u, 'wh_tr', '🚚 تحويل في الطريق إليك — ' || t.code, st.name || ' ← ' || st2.name || ' • ' || jsonb_array_length(L) || ' صنف • أكّد الاستلام عند الوصول', 'wh=tr', 'tr-' || t.id);
+    end loop;
+  exception when others then null; end;
+  return jsonb_build_object('id', t.id, 'code', t.code);
+end $$;
+
+-- receive (p {lines:[{material_id, qty}], note}; a missing line = all of it) or cancel (p {note})
+create or replace function public.fm_transfer_act(p_id uuid, p_action text, p jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare t public.wo_stock_transfers; st public.wo_stores; st2 public.wo_stores; x jsonb; g jsonb; q numeric; s numeric; L jsonb := '[]'; sv numeric := 0;
+  nm text := public.fm_me_name(); u uuid; nt text := nullif(btrim(coalesce(p->>'note','')),'');
+begin
+  select * into t from public.wo_stock_transfers where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if t.status <> 'transit' then raise exception 'not in transit'; end if;
+  select * into st from public.wo_stores where id = t.from_store;
+  select * into st2 from public.wo_stores where id = t.to_store;
+  if p_action = 'receive' then
+    if not (public.fm_stock_can(t.to_region) or public.fm_wh_keeper(t.to_store)) then raise exception 'not allowed'; end if;
+    for x in select * from jsonb_array_elements(t.lines) loop
+      g := (select e from jsonb_array_elements(coalesce(p->'lines','[]')) z(e) where e->>'material_id' = x->>'material_id' limit 1);
+      q := case when g is null then (x->>'qty')::numeric else nullif(g->>'qty','')::numeric end;
+      if q is null or q < 0 or q > (x->>'qty')::numeric then raise exception 'invalid qty'; end if;
+      s := (x->>'qty')::numeric - q;
+      if q > 0 then
+        insert into public.wo_stock(store_id, material_id, qty) values (t.to_store, (x->>'material_id')::uuid, q)
+          on conflict (store_id, material_id) do update set qty = public.wo_stock.qty + q, updated_at = now();
+        insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, ref, note, by_id, by_name)
+        values (t.to_store, (x->>'material_id')::uuid, q, 'transfer', nullif(x->>'price','')::numeric, t.code,
+                left(concat_ws(' — ', t.code || ' 🚚 وصل من ' || st.name, nt),300), auth.uid(), nm);
+      end if;
+      sv := sv + s * coalesce(nullif(x->>'price','')::numeric, 0);
+      L := L || (x || jsonb_build_object('recv', q, 'short', s));
+    end loop;
+    if exists(select 1 from jsonb_array_elements(L) e where (e->>'short')::numeric > 0) and nt is null then raise exception 'note required'; end if;
+    update public.wo_stock_transfers set lines = L, status = 'received', recv_by = auth.uid(), recv_name = nm, recv_at = now(), recv_note = nt,
+      short_value = round(sv, 2) where id = p_id;
+    begin
+      perform public.fm_push_add(t.by_id, 'wh_tr', case when sv > 0 or exists(select 1 from jsonb_array_elements(L) e where (e->>'short')::numeric > 0)
+        then '⚠️ وصل التحويل ' || t.code || ' بنقص' else '✅ وصل التحويل ' || t.code end, st2.name || ' • استلمه ' || coalesce(nm,'') || coalesce(' — ' || nt, ''), 'wh=tr', 'tr-' || t.id);
+      if exists(select 1 from jsonb_array_elements(L) e where (e->>'short')::numeric > 0) then
+        for u in select * from public.fm_adj_approvers(t.from_region) loop
+          perform public.fm_push_add(u, 'wh_tr', '⚠️ نقص في التحويل ' || t.code, st.name || ' ← ' || st2.name || ' • ' || round(sv) || ' ر.س — ' || coalesce(nt,''), 'wh=tr', 'tr-' || t.id);
+        end loop;
+      end if;
+    exception when others then null; end;
+    return 'received';
+  elsif p_action = 'cancel' then
+    if not (t.by_id = auth.uid() or public.fm_stock_can(t.from_region) or public.fm_wh_keeper(t.from_store)) then raise exception 'not allowed'; end if;
+    for x in select * from jsonb_array_elements(t.lines) loop
+      q := (x->>'qty')::numeric;
+      insert into public.wo_stock(store_id, material_id, qty) values (t.from_store, (x->>'material_id')::uuid, q)
+        on conflict (store_id, material_id) do update set qty = public.wo_stock.qty + q, updated_at = now();
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, ref, note, by_id, by_name)
+      values (t.from_store, (x->>'material_id')::uuid, q, 'transfer', nullif(x->>'price','')::numeric, t.code,
+              left(concat_ws(' — ', t.code || ' ↩️ أُلغي التحويل إلى ' || st2.name, nt),300), auth.uid(), nm);
+    end loop;
+    update public.wo_stock_transfers set status = 'cancelled', recv_name = nm, recv_at = now(), recv_note = nt where id = p_id;
+    return 'cancelled';
+  end if;
+  raise exception 'invalid action';
+end $$;
+revoke all on function public.fm_transfer_send(jsonb), public.fm_transfer_act(uuid, text, jsonb) from public, anon;
+grant execute on function public.fm_transfer_send(jsonb), public.fm_transfer_act(uuid, text, jsonb) to authenticated;
+
+-- (2) signed custody receipts
+alter table public.wo_issue_requests add column if not exists signed_at timestamptz;
+alter table public.wo_issue_requests add column if not exists sign_mode text;
+create table if not exists public.wo_issue_signs (
+  id        uuid primary key default gen_random_uuid(),
+  req_id    uuid not null references public.wo_issue_requests(id) on delete cascade,
+  at        timestamptz not null default now(),
+  holder    uuid references public.profiles(id) on delete set null,
+  sign      text not null,                     -- PNG data URL of the drawn signature
+  mode      text not null check (mode in ('self','inperson')),
+  lines     jsonb not null default '[]',        -- [{material_id, issued}] at the time of signing
+  by_id     uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name   text
+);
+create index if not exists wo_issue_signs_req_idx on public.wo_issue_signs (req_id, at desc);
+alter table public.wo_issue_signs enable row level security;
+revoke insert, update, delete on public.wo_issue_signs from anon, authenticated;
+grant select on public.wo_issue_signs to authenticated;
+drop policy if exists p_issue_signs_read on public.wo_issue_signs;
+create policy p_issue_signs_read on public.wo_issue_signs for select to authenticated using (
+  exists(select 1 from public.wo_issue_requests r where r.id = req_id));
+create or replace function public.fm_issue_req_sign(p_id uuid, p_sign text, p_inperson boolean default false) returns text language plpgsql security definer set search_path = public as $$
+declare r public.wo_issue_requests; md text;
+begin
+  select * into r from public.wo_issue_requests where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if coalesce(p_sign,'') !~ '^data:image/(png|jpeg);base64,' or length(p_sign) > 120000 then raise exception 'invalid signature'; end if;
+  if r.status not in ('issued','partial','received') then raise exception 'invalid status'; end if;
+  if r.signed_at is not null and r.signed_at >= coalesce(r.issued_at, r.at) then raise exception 'already signed'; end if;
+  if auth.uid() = r.holder then md := 'self';
+  elsif coalesce(p_inperson,false) and public.fm_wh_keeper(r.store_id) then md := 'inperson';
+  else raise exception 'not allowed'; end if;
+  insert into public.wo_issue_signs(req_id, holder, sign, mode, lines, by_name)
+  values (r.id, r.holder, p_sign, md, coalesce((select jsonb_agg(jsonb_build_object('material_id', l->>'material_id', 'issued', coalesce((l->>'issued')::numeric,0)))
+    from jsonb_array_elements(r.lines) l where coalesce((l->>'issued')::numeric,0) > 0), '[]'), public.fm_me_name());
+  update public.wo_issue_requests set signed_at = now(), sign_mode = md, received_at = now(),
+    status = case when r.status = 'issued' then 'received' else r.status end where id = p_id;
+  return md;
+end $$;
+revoke all on function public.fm_issue_req_sign(uuid, text, boolean) from public, anon;
+grant execute on function public.fm_issue_req_sign(uuid, text, boolean) to authenticated;
+
+-- (3) stagnant items
+create or replace function public.fm_wh_stagnant(p_days int) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare d int := greatest(30, least(coalesce(p_days, 180), 1095)); since timestamptz;
+begin
+  if auth.uid() is null or not public.fm_mod('wh') or public.fm_role() not in ('admin','manager','staff','engineer','viewer') then raise exception 'not allowed'; end if;
+  since := now() - make_interval(days => d);
+  return coalesce((select jsonb_agg(z order by (z->>'value')::numeric desc nulls last) from (
+    select jsonb_build_object('store_id', s.store_id, 'material_id', s.material_id, 'qty', s.qty, 'price', m.price,
+      'value', round(s.qty * coalesce(m.price, 0), 2), 'last_use', u.last_use, 'last_in', u.last_in, 'first_at', u.first_at,
+      'elsewhere', (select coalesce(jsonb_agg(jsonb_build_object('store_id', e.store_id, 'used', e.used, 'qty', coalesce(w.qty,0))), '[]'::jsonb) from (
+          select v.store_id, sum(-v.qty) used from public.wo_stock_moves v
+          where v.material_id = s.material_id and v.store_id <> s.store_id and v.kind in ('out','issue') and v.at >= since
+          group by v.store_id having sum(-v.qty) > 0) e left join public.wo_stock w on w.store_id = e.store_id and w.material_id = s.material_id)) z
+    from public.wo_stock s join public.wo_materials m on m.id = s.material_id
+    left join lateral (select max(v.at) filter (where v.kind in ('out','issue')) last_use,
+        max(v.at) filter (where v.qty > 0 and v.kind in ('in','transfer','return')) last_in, min(v.at) first_at
+      from public.wo_stock_moves v where v.store_id = s.store_id and v.material_id = s.material_id) u on true
+    where s.qty > 0 and coalesce(u.last_use, u.first_at, s.updated_at) < since) q), '[]'::jsonb);
+end $$;
+revoke all on function public.fm_wh_stagnant(int) from public, anon;
+grant execute on function public.fm_wh_stagnant(int) to authenticated;
+
+-- (4) what open issue requests still wait for: one row per request line with remainder > 0
+create or replace function public.fm_issue_remaining() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'code', r.code, 'at', r.at, 'status', r.status, 'holder', r.holder, 'holder_name', r.holder_name,
+      'source', r.source, 'wo_code', r.wo_code, 'ticket_ref', r.ticket_ref, 'school', r.school, 'store_id', r.store_id,
+      'material_id', l->>'material_id', 'qty', coalesce((l->>'qty')::numeric,0), 'issued', coalesce((l->>'issued')::numeric,0),
+      'left', coalesce((l->>'qty')::numeric,0) - coalesce((l->>'issued')::numeric,0),
+      'bal', coalesce((select w.qty from public.wo_stock w where w.store_id = r.store_id and w.material_id = nullif(l->>'material_id','')::uuid), 0),
+      'on_order', coalesce((select sum(greatest(coalesce((pl->>'qty')::numeric,0) - coalesce((pl->>'recv')::numeric,0), 0))
+          from public.wo_purchase_requests po, jsonb_array_elements(po.lines) pl
+          where po.store_id = r.store_id and po.status in ('requested','approved','partial') and pl->>'material_id' = l->>'material_id'), 0))
+      order by r.at), '[]'::jsonb)
+  from public.wo_issue_requests r, jsonb_array_elements(r.lines) l
+  where r.status in ('requested','partial') and r.store_id is not null
+    and coalesce((l->>'qty')::numeric,0) > coalesce((l->>'issued')::numeric,0) and public.fm_parts_can(r.id) $$;
+revoke all on function public.fm_issue_remaining() from public, anon;
+grant execute on function public.fm_issue_remaining() to authenticated;
+-- a receipt that now covers the remainder of a partial request tells the storekeepers
+create or replace function public.fm_issue_rem_notify() returns trigger language plpgsql security definer set search_path = public as $$
+declare r record; u uuid; st public.wo_stores; mn text;
+begin
+  if new.qty <= coalesce(old.qty, 0) then return new; end if;
+  begin
+    select * into st from public.wo_stores where id = new.store_id;
+    select name into mn from public.wo_materials where id = new.material_id;
+    for r in select q.id, q.code, q.holder_name, coalesce((l->>'qty')::numeric,0) - coalesce((l->>'issued')::numeric,0) lft
+             from public.wo_issue_requests q, jsonb_array_elements(q.lines) l
+             where q.status = 'partial' and q.store_id = new.store_id and l->>'material_id' = new.material_id::text loop
+      if r.lft > 0 and coalesce(old.qty, 0) < r.lft and new.qty >= r.lft then
+        for u in select * from public.fm_wh_keepers_of(st.region) loop
+          perform public.fm_push_add(u, 'wh_req', '📦 الرصيد يكفي الآن المتبقي من ' || r.code, coalesce(mn,'صنف') || ' ×' || trim(to_char(r.lft, 'FM999999990.###')) || ' • ' || coalesce(r.holder_name,'') || ' • ' || coalesce(st.name,''), 'wh=req', 'rem-' || r.id);
+        end loop;
+      end if;
+    end loop;
+  exception when others then null; end;
+  return new;
+end $$;
+drop trigger if exists fm_issue_rem_notify on public.wo_stock;
+create trigger fm_issue_rem_notify after update of qty on public.wo_stock for each row execute function public.fm_issue_rem_notify();
+notify pgrst, 'reload schema';
+commit;
