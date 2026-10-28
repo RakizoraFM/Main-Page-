@@ -215,3 +215,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 ## V213 — no stacked layers on phones
 - `fm-v213-mobile-stack` (CSS only): ≤ 1024 px `.alerts-sidebar-column.actions-sidebar` is static (the old mobile rule lost on specificity, so the quick-actions sidebar stayed sticky over the one-column dashboard). ≤ 760 px `#fm41-regionbar` is not sticky (scrolls away) with 56 px left padding, and `#fm77-regionbar-toggle` is a 40 px icon (▴ / ☰) absolutely placed inside it. Desktop unchanged.
 
+
+## V214 — sub-page headers and tabs on phones
+- `fm-v214-phone-head` (CSS only, ≤ 760 px, every `.fm103-page`): `.fm103-actions > .extra` is a 3-column grid of compact tiles (selects / inputs / labels span the row), direct `.fm103-btn` children (🔄, print) stay small, `.fm119-ctl` is one row (beats the V196 2-column grid through `:is(.fm196-surface,body)`), and the tab rows (`.fm173-tabs`, `.fm180-tabs`, `.fm171-tabs`, `.fm146-tabs`, `.fm103-tabs`, `.fm212-tabs`) are one segmented row that scrolls sideways (active = `.on` / `.active` / `aria-selected`). Desktop unchanged.
