@@ -208,3 +208,7 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V211 — category picker in the stock receipt / transfer dialogs
 - The V210 block exposes `window.fmMatPick(done, opts)` (loads the V180 warehouse data when it is older than a minute, then `matPick`). V173 `moveDlg` (📥 توريد / 🔁 تحويل): button «🗂️ اختيار حسب الفئة» (`[data-pickc]`) — each pick fills the first empty row (or adds one) with the item name, qty 1 and, for a receipt, its approved price; picking an item already in the list adds 1. The datalist labels carry the SP and Logix codes, and save also accepts a typed SP / Logix code.
+
+## V212 — warehouse procedures map and roadmap
+- `fm-v212-wh-map` (+ `fm-v212-wh-map-css`): page «🗺️ إجراءات المستودع» (`#v2-nav-fm212-whmap`, first in group `wh`, also in V181 `FM_MODS.wh`; `window.fmV212WhMap(tab, proc)`). Static content in `P` (15 procedures in 5 phases: steps, rules, status chains, who, push, outputs, linked gaps, «افتح الشاشة» via `fmV180Open(section, tab)` / nav clicks), `RX` (responsibility matrix ن / ع / ط / ر × 8 titles), `GOOD`, `GAPS` (G1–G14) and `RM` (R1–R15 in 4 phases, also in ROADMAP.md); `window.fmV212Data` exposes them. Live counts are head-count queries through `FMCloud.engClient()` (RLS decides) plus `fm_custody_overdue`; a failed query hides that box. «🖨️ طباعة / PDF» writes the whole document into a new window. Update `P` / `GAPS` / `RM` when a warehouse procedure changes or a roadmap item ships.
+
