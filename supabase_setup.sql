@@ -5114,3 +5114,531 @@ revoke all on function public.fm_mod_guard() from public,anon,authenticated;
 -- Authenticated calls to renewal remain governed by fm_plan_activate's explicit active-admin check.
 notify pgrst,'reload schema';
 commit;
+
+-- ---------- 36) tools register, parts follow-up notifications, orders waiting for parts (V215, field F43) ----------
+-- Returnable tools (drills, ladders, meters, welders…) are tracked one by one, apart from consumable parts: a code TL-#####,
+-- the store it belongs to, its condition and who holds it until when. Every change is a row in wo_tool_moves.
+-- Parts follow-up (V193) now notifies: the new follow-up owner, the person a request is escalated to, and (daily) the owner of
+-- an overdue follow-up. fm_parts_waiting() lists the open issue requests (requested / partial) with their order / ticket,
+-- so the work orders and tickets held up by parts can be shown. Nothing here changes stock, custody or the SLA.
+begin;
+create sequence if not exists public.wo_tool_seq;
+create table if not exists public.wo_tools (
+  id          uuid primary key default gen_random_uuid(),
+  code        text unique not null default ('TL-' || lpad(nextval('public.wo_tool_seq')::text, 5, '0')),
+  name        text not null check (length(btrim(name)) between 1 and 200),
+  category    text, brand text, model text, serial text,
+  store_id    uuid references public.wo_stores(id) on delete set null,
+  region      text,
+  status      text not null default 'available' check (status in ('available','out','maint','lost','retired')),
+  cond        text not null default 'good' check (cond in ('new','good','fair','damaged')),
+  holder      uuid references public.profiles(id) on delete set null,
+  holder_name text,
+  out_at      timestamptz,
+  due_back    date,
+  price       numeric(14,2),
+  bought_at   date,
+  thumb       text check (thumb is null or length(thumb) <= 60000),
+  notes       text,
+  created_by  uuid default auth.uid(),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists wo_tools_holder_idx on public.wo_tools (holder) where holder is not null;
+create index if not exists wo_tools_status_idx on public.wo_tools (status);
+create table if not exists public.wo_tool_moves (
+  id          bigint generated always as identity primary key,
+  tool_id     uuid not null references public.wo_tools(id) on delete cascade,
+  at          timestamptz not null default now(),
+  kind        text not null check (kind in ('add','edit','out','in','extend','maint','fixed','lost','found','retire','transfer')),
+  holder      uuid, holder_name text, cond text, due_back date, note text,
+  by_id       uuid default auth.uid(), by_name text
+);
+create index if not exists wo_tool_moves_tool_idx on public.wo_tool_moves (tool_id, at desc);
+alter table public.wo_tools enable row level security;
+alter table public.wo_tool_moves enable row level security;
+revoke insert, update, delete on public.wo_tools, public.wo_tool_moves from anon, authenticated;
+grant select on public.wo_tools, public.wo_tool_moves to authenticated;
+-- who manages the tools of a region: the same people who manage its stores (V180 fm_stock_can, storekeeper included)
+create or replace function public.fm_tool_can(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_mod('wh') and public.fm_stock_can(coalesce(p_region,'')), false) $$;
+drop policy if exists p_wo_tools_read on public.wo_tools;
+create policy p_wo_tools_read on public.wo_tools for select to authenticated using (
+  auth.uid() is not null and public.fm_role() <> 'pending' and public.fm_mod('wh') and (
+    public.fm_tool_can(region) or holder = auth.uid() or (holder is not null and public.fm_wh_sees_holder(holder))
+    or public.fm_my_pos() in ('dept_manager','qa_manager','hse_manager','owner_rep','accountant')));
+drop policy if exists p_wo_tool_moves_read on public.wo_tool_moves;
+create policy p_wo_tool_moves_read on public.wo_tool_moves for select to authenticated using (
+  exists(select 1 from public.wo_tools t where t.id = tool_id));
+do $do$ begin
+  if to_regprocedure('public.fm_mod_guard()') is not null then
+    drop trigger if exists fm_mod_guard on public.wo_tool_moves;
+    create trigger fm_mod_guard before insert or update or delete on public.wo_tool_moves for each row execute function public.fm_mod_guard('wh');
+  end if;
+end $do$;
+
+-- add or edit a tool: p {id?, name, category, brand, model, serial, store_id, region, cond, price, bought_at, thumb, notes}
+create or replace function public.fm_tool_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare t public.wo_tools; st public.wo_stores; reg text; tid uuid := nullif(p->>'id','')::uuid; nm text := public.fm_me_name();
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  if nullif(p->>'store_id','') is not null then
+    select * into st from public.wo_stores where id = (p->>'store_id')::uuid;
+    if not found then raise exception 'invalid store'; end if;
+    reg := st.region;
+  else reg := nullif(btrim(coalesce(p->>'region','')),''); end if;
+  if not public.fm_tool_can(reg) then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p->>'name',''))) not between 1 and 200 then raise exception 'name required'; end if;
+  if p ? 'thumb' and length(coalesce(p->>'thumb','')) > 60000 then raise exception 'photo too large'; end if;
+  if tid is null then
+    insert into public.wo_tools(name, category, brand, model, serial, store_id, region, cond, price, bought_at, thumb, notes)
+    values (btrim(p->>'name'), nullif(btrim(coalesce(p->>'category','')),''), nullif(btrim(coalesce(p->>'brand','')),''), nullif(btrim(coalesce(p->>'model','')),''),
+            nullif(btrim(coalesce(p->>'serial','')),''), st.id, reg, coalesce(nullif(p->>'cond',''),'good'), nullif(p->>'price','')::numeric,
+            nullif(p->>'bought_at','')::date, nullif(p->>'thumb',''), nullif(btrim(coalesce(p->>'notes','')),''))
+    returning * into t;
+    insert into public.wo_tool_moves(tool_id, kind, cond, note, by_name) values (t.id, 'add', t.cond, 'إضافة', nm);
+  else
+    select * into t from public.wo_tools where id = tid for update;
+    if not found or not public.fm_tool_can(t.region) then raise exception 'not allowed'; end if;
+    if t.status = 'out' and coalesce(st.id::text,'') <> coalesce(t.store_id::text,'') then raise exception 'tool is out'; end if;
+    update public.wo_tools set name = btrim(p->>'name'), category = nullif(btrim(coalesce(p->>'category','')),''), brand = nullif(btrim(coalesce(p->>'brand','')),''),
+      model = nullif(btrim(coalesce(p->>'model','')),''), serial = nullif(btrim(coalesce(p->>'serial','')),''), store_id = st.id, region = reg,
+      cond = case when p ? 'cond' and t.status <> 'out' then coalesce(nullif(p->>'cond',''), cond) else cond end,
+      price = nullif(p->>'price','')::numeric, bought_at = nullif(p->>'bought_at','')::date,
+      thumb = case when p ? 'thumb' then nullif(p->>'thumb','') else thumb end, notes = nullif(btrim(coalesce(p->>'notes','')),''), updated_at = now()
+    where id = tid returning * into t;
+    insert into public.wo_tool_moves(tool_id, kind, cond, note, by_name) values (t.id, 'edit', t.cond, 'تعديل البيانات', nm);
+  end if;
+  return t.id;
+end $$;
+
+-- p_action: out {holder, due_back?, cond?, note?} | in {cond, note?} | extend {due_back, note?} | maint {note} | fixed {cond?, note?}
+--           | lost {note} | found {note?} | retire {note} | transfer {store_id, note?}
+create or replace function public.fm_tool_act(p_id uuid, p_action text, p jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare t public.wo_tools; h public.profiles; st public.wo_stores; nm text := public.fm_me_name(); nt text := nullif(btrim(coalesce(p->>'note','')),'');
+  cd text := nullif(p->>'cond',''); du date := nullif(p->>'due_back','')::date;
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  select * into t from public.wo_tools where id = p_id for update;
+  if not found or not public.fm_tool_can(t.region) then raise exception 'not allowed'; end if;
+  if cd is not null and cd not in ('new','good','fair','damaged') then raise exception 'invalid condition'; end if;
+  if p_action = 'out' then
+    if t.status <> 'available' then raise exception 'tool not available'; end if;
+    select * into h from public.profiles where id = nullif(p->>'holder','')::uuid and active;
+    if not found or public.fm_posx(h.role, h.job_title) is null then raise exception 'invalid holder'; end if;
+    if du is not null and du < (now() at time zone 'Asia/Riyadh')::date then raise exception 'invalid date'; end if;
+    update public.wo_tools set status = 'out', holder = h.id, holder_name = coalesce(h.full_name, h.email), out_at = now(), due_back = du,
+      cond = coalesce(cd, cond), updated_at = now() where id = p_id returning * into t;
+    insert into public.wo_tool_moves(tool_id, kind, holder, holder_name, cond, due_back, note, by_name) values (t.id, 'out', h.id, t.holder_name, t.cond, du, nt, nm);
+    begin perform public.fm_push_add(h.id, 'tools', '🛠️ سُلّمت لك أداة: ' || t.name, t.code || coalesce(' • الإرجاع ' || to_char(du,'YYYY-MM-DD'),'') || ' • ' || nm, 'tools', 'tool-' || t.id);
+    exception when others then null; end;
+  elsif p_action = 'in' then
+    if t.status <> 'out' then raise exception 'tool not out'; end if;
+    if cd is null then raise exception 'condition required'; end if;
+    insert into public.wo_tool_moves(tool_id, kind, holder, holder_name, cond, note, by_name) values (t.id, 'in', t.holder, t.holder_name, cd, nt, nm);
+    update public.wo_tools set status = 'available', holder = null, holder_name = null, out_at = null, due_back = null, cond = cd, updated_at = now() where id = p_id;
+  elsif p_action = 'extend' then
+    if t.status <> 'out' or du is null or du < (now() at time zone 'Asia/Riyadh')::date then raise exception 'invalid date'; end if;
+    update public.wo_tools set due_back = du, updated_at = now() where id = p_id;
+    insert into public.wo_tool_moves(tool_id, kind, holder, holder_name, due_back, note, by_name) values (t.id, 'extend', t.holder, t.holder_name, du, nt, nm);
+  elsif p_action = 'maint' then
+    if t.status not in ('available','out') or nt is null then raise exception 'note required'; end if;
+    insert into public.wo_tool_moves(tool_id, kind, holder, holder_name, cond, note, by_name) values (t.id, 'maint', t.holder, t.holder_name, coalesce(cd,'damaged'), nt, nm);
+    update public.wo_tools set status = 'maint', holder = null, holder_name = null, out_at = null, due_back = null, cond = coalesce(cd,'damaged'), updated_at = now() where id = p_id;
+  elsif p_action = 'fixed' then
+    if t.status <> 'maint' then raise exception 'tool not in maintenance'; end if;
+    update public.wo_tools set status = 'available', cond = coalesce(cd,'good'), updated_at = now() where id = p_id;
+    insert into public.wo_tool_moves(tool_id, kind, cond, note, by_name) values (t.id, 'fixed', coalesce(cd,'good'), nt, nm);
+  elsif p_action = 'lost' then
+    if t.status not in ('available','out','maint') or nt is null then raise exception 'note required'; end if;
+    insert into public.wo_tool_moves(tool_id, kind, holder, holder_name, note, by_name) values (t.id, 'lost', t.holder, t.holder_name, nt, nm);
+    update public.wo_tools set status = 'lost', holder = null, holder_name = null, out_at = null, due_back = null, updated_at = now() where id = p_id;
+  elsif p_action = 'found' then
+    if t.status <> 'lost' then raise exception 'tool not lost'; end if;
+    update public.wo_tools set status = 'available', cond = coalesce(cd, cond), updated_at = now() where id = p_id;
+    insert into public.wo_tool_moves(tool_id, kind, cond, note, by_name) values (t.id, 'found', coalesce(cd, t.cond), nt, nm);
+  elsif p_action = 'retire' then
+    if t.status = 'out' or nt is null then raise exception 'note required'; end if;
+    update public.wo_tools set status = 'retired', updated_at = now() where id = p_id;
+    insert into public.wo_tool_moves(tool_id, kind, note, by_name) values (t.id, 'retire', nt, nm);
+  elsif p_action = 'transfer' then
+    if t.status = 'out' then raise exception 'tool is out'; end if;
+    select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+    if not found or not public.fm_tool_can(st.region) then raise exception 'invalid store'; end if;
+    update public.wo_tools set store_id = st.id, region = st.region, updated_at = now() where id = p_id;
+    insert into public.wo_tool_moves(tool_id, kind, note, by_name) values (t.id, 'transfer', concat_ws(' — ', '→ ' || st.name, nt), nm);
+  else raise exception 'invalid action'; end if;
+  return (select status from public.wo_tools where id = p_id);
+end $$;
+revoke all on function public.fm_tool_can(text), public.fm_tool_save(jsonb), public.fm_tool_act(uuid, text, jsonb) from public, anon;
+grant execute on function public.fm_tool_can(text), public.fm_tool_save(jsonb), public.fm_tool_act(uuid, text, jsonb) to authenticated;
+
+-- open issue requests (requested / partial) the caller may see, with the order / ticket they hold up
+create or replace function public.fm_parts_waiting() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'code', r.code, 'status', r.status, 'at', r.at,
+      'days', floor(extract(epoch from (now() - r.at)) / 86400)::int, 'source', r.source, 'wo_id', r.wo_id, 'wo_code', coalesce(r.wo_code, w.code),
+      'ticket_ref', r.ticket_ref, 'school', coalesce(r.school, w.school), 'holder', r.holder, 'holder_name', r.holder_name, 'store', s.name,
+      'region', public.fm_parts_region(r.id), 'due_at', f.due_at, 'stage', f.stage, 'owner_name', o.full_name,
+      'items', coalesce((select jsonb_agg(jsonb_build_object('name', m.name, 'unit', m.unit, 'left', greatest(coalesce((l->>'qty')::numeric,0) - coalesce((l->>'issued')::numeric,0), 0)))
+                         from jsonb_array_elements(r.lines) l left join public.wo_materials m on m.id = nullif(l->>'material_id','')::uuid), '[]'::jsonb))
+      order by r.at), '[]'::jsonb)
+  from public.wo_issue_requests r left join public.work_orders w on w.id = r.wo_id left join public.wo_stores s on s.id = r.store_id
+       left join public.fm_parts_followup f on f.request_id = r.id left join public.profiles o on o.id = f.owner_id
+  where r.status in ('requested','partial') and public.fm_parts_can(r.id, false) $$;
+revoke all on function public.fm_parts_waiting() from public, anon;
+grant execute on function public.fm_parts_waiting() to authenticated;
+
+-- notifications of the parts follow-up: a new owner and an escalation, the moment they are saved
+create or replace function public.fm_parts_notify() returns trigger language plpgsql security definer set search_path = public as $$
+declare r public.wo_issue_requests; o uuid := nullif(new.new_value->>'owner_id','')::uuid; oo uuid := nullif(new.old_value->>'owner_id','')::uuid;
+  e uuid := nullif(new.new_value->>'escalated_to','')::uuid; d text := to_char((new.new_value->>'due_at')::timestamptz at time zone 'Asia/Riyadh', 'YYYY-MM-DD');
+  what text;
+begin
+  begin
+    select * into r from public.wo_issue_requests where id = new.request_id;
+    what := concat_ws(' • ', coalesce(r.holder_name,''), coalesce('أمر ' || r.wo_code, 'بلاغ ' || r.ticket_ref, ''), r.school);
+    if new.kind = 'escalation' then
+      perform public.fm_push_add(e, 'parts_due', '⏫ صُعّد إليك طلب قطع ' || r.code, left(concat_ws(' — ', what, new.new_value->>'note'), 280), 'parts', 'parts-' || r.id);
+      if o is not null and o is distinct from e then
+        perform public.fm_push_add(o, 'parts_due', '⏫ صُعّد طلب القطع ' || r.code || ' الذي تتابعه', left(what, 280), 'parts', 'parts-' || r.id);
+      end if;
+    elsif o is not null and o is distinct from oo then
+      perform public.fm_push_add(o, 'parts_due', '📋 أنت مسؤول متابعة طلب القطع ' || r.code, left(concat_ws(' • ', what, 'الموعد ' || d), 280), 'parts', 'parts-' || r.id);
+    end if;
+  exception when others then null; end;
+  return null;
+end $$;
+revoke all on function public.fm_parts_notify() from public, anon, authenticated;
+drop trigger if exists fm_parts_notify on public.fm_parts_events;
+create trigger fm_parts_notify after insert on public.fm_parts_events for each row execute function public.fm_parts_notify();
+
+-- daily (pg_cron fm-v215-daily 05:20 UTC): overdue parts follow-ups (the day they become late, then every 3 days) to the owner and
+-- whoever it was escalated to; tools past their return date to the holder (and one summary per storekeeper of the region)
+create or replace function public.fm_v215_daily() returns int language plpgsql security definer set search_path = public as $$
+declare x record; k uuid; n int := 0; d int; today date := (now() at time zone 'Asia/Riyadh')::date;
+begin
+  for x in select r.id, r.code, r.holder_name, r.school, coalesce(r.wo_code, '') wo, f.owner_id, f.escalated_to, f.due_at
+           from public.fm_parts_followup f join public.wo_issue_requests r on r.id = f.request_id
+           where r.status in ('requested','partial','issued') and f.due_at < now() loop
+    d := floor(extract(epoch from (now() - x.due_at)) / 86400)::int;
+    if d % 3 <> 0 then continue; end if;
+    begin
+      if public.fm_push_add(x.owner_id, 'parts_due', '⏱️ طلب قطع متأخر ' || x.code || ' (' || (d + 1) || ' يوم)', concat_ws(' • ', x.holder_name, nullif(x.wo,''), x.school), 'parts', 'parts-' || x.id, true) then n := n + 1; end if;
+      if x.escalated_to is not null and x.escalated_to <> x.owner_id
+         and public.fm_push_add(x.escalated_to, 'parts_due', '⏱️ طلب قطع متأخر ' || x.code, concat_ws(' • ', x.holder_name, nullif(x.wo,''), x.school), 'parts', 'parts-' || x.id, true) then n := n + 1; end if;
+    exception when others then null; end;
+  end loop;
+  for x in select id, code, name, holder, due_back from public.wo_tools where status = 'out' and due_back is not null and due_back < today loop
+    begin
+      if public.fm_push_add(x.holder, 'tools', '⏰ موعد إرجاع أداة: ' || x.name, x.code || ' • كان مطلوباً ' || to_char(x.due_back, 'YYYY-MM-DD'), 'tools', 'tool-' || x.id, true) then n := n + 1; end if;
+    exception when others then null; end;
+  end loop;
+  for x in select region, count(*) c, string_agg(name || ' (' || coalesce(holder_name,'') || ')', '، ' order by due_back) names
+           from public.wo_tools where status = 'out' and due_back is not null and due_back < today group by region loop
+    for k in select * from public.fm_wh_keepers_of(x.region) loop
+      begin
+        if public.fm_push_add(k, 'tools', '⏰ ' || x.c || ' أداة تجاوزت موعد الإرجاع', left(x.names, 280), 'tools', 'tools-late', true) then n := n + 1; end if;
+      exception when others then null; end;
+    end loop;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_v215_daily() from public, anon, authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v215-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v215-daily'', ''20 5 * * *'', ''select public.fm_v215_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: overdue parts / tools reminders are not sent (the platform still shows them)'; end;
+end $do$;
+notify pgrst, 'reload schema';
+commit;
+
+-- ---------- 37) reserved quantities, count-difference approval, negative-balance alert, goods receipt note (V216) ----------
+-- (1) fm_wh_reserved(): per store and item, what open issue requests (requested / partial) still wait for = «محجوز»;
+--     balance − reserved = «متاح للصرف». Shown only; issuing still checks the balance as before.
+-- (2) A stock count line whose difference is worth more than stock_rules.adj_value (default 200 SAR) — or, for an item without a
+--     price, more than variance_pct % of the book balance — is not applied when the counter is a storekeeper / area engineer:
+--     it waits in wo_stock_adj (ADJ-YYYY-####) for the area manager of the region, the ops / project manager or the system admin,
+--     who approve (the recorded difference is applied) or reject it. Approvers' own counts apply at once.
+-- (3) A balance that becomes negative notifies the storekeepers and area managers of the region (push kind wh_neg).
+-- (4) A direct receipt is saved through fm_grn_save(p): one GRN-YYYY-#### document (supplier, invoice no / date / photo, lines,
+--     total) and the stock «in» moves in one transaction; the moves' note carries the GRN code.
+begin;
+insert into public.fm_settings(key, value) values ('stock_rules', '{"scrap_days":7,"esc_days":[7,14],"block_overdue":true,"variance_pct":5,"adj_value":200,"cap":{"supervisor":0,"contractor":0,"area_engineer":0}}')
+  on conflict (key) do update set value = public.fm_settings.value || jsonb_build_object('adj_value', coalesce(public.fm_settings.value->'adj_value', '200'::jsonb));
+
+-- (1) reserved
+create or replace function public.fm_wh_reserved() returns table(store_id uuid, material_id uuid, qty numeric)
+language sql stable security definer set search_path = public as $$
+  select r.store_id, nullif(l->>'material_id','')::uuid, sum(greatest(coalesce((l->>'qty')::numeric,0) - coalesce((l->>'issued')::numeric,0), 0))
+  from public.wo_issue_requests r, jsonb_array_elements(r.lines) l
+  where r.status in ('requested','partial') and r.store_id is not null and auth.uid() is not null and public.fm_role() <> 'pending' and public.fm_mod('wh')
+  group by 1, 2 having sum(greatest(coalesce((l->>'qty')::numeric,0) - coalesce((l->>'issued')::numeric,0), 0)) > 0 $$;
+revoke all on function public.fm_wh_reserved() from public, anon;
+grant execute on function public.fm_wh_reserved() to authenticated;
+
+-- (2) count differences waiting for approval
+create sequence if not exists public.wo_stock_adj_seq;
+create table if not exists public.wo_stock_adj (
+  id           uuid primary key default gen_random_uuid(),
+  code         text unique not null default ('ADJ-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_stock_adj_seq')::text, 4, '0')),
+  at           timestamptz not null default now(),
+  store_id     uuid not null references public.wo_stores(id) on delete cascade,
+  region       text,
+  lines        jsonb not null default '[]',   -- [{material_id, book, counted, diff, price, value}]
+  value        numeric(14,2) not null default 0,
+  note         text,
+  status       text not null default 'pending' check (status in ('pending','approved','rejected')),
+  by_id        uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name      text,
+  decided_by   uuid references public.profiles(id) on delete set null,
+  decided_name text,
+  decided_at   timestamptz,
+  response     text
+);
+create index if not exists wo_stock_adj_st_idx on public.wo_stock_adj (status, at desc);
+alter table public.wo_stock_adj enable row level security;
+revoke insert, update, delete on public.wo_stock_adj from anon, authenticated;
+grant select on public.wo_stock_adj to authenticated;
+-- who approves a count difference of a region
+create or replace function public.fm_adj_approver(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,''))), false) $$;
+create or replace function public.fm_adj_approvers(p_region text) returns setof uuid language sql stable security definer set search_path = public as $$
+  select p.id from public.profiles p where p.active and (public.fm_posx(p.role, p.job_title) in ('ops_manager','project_manager')
+    or (public.fm_posx(p.role, p.job_title) = 'area_manager' and (p_region is null or cardinality(p.regions) = 0 or p_region = any(p.regions)))) $$;
+revoke all on function public.fm_adj_approvers(text) from public, anon, authenticated;
+drop policy if exists p_stock_adj_read on public.wo_stock_adj;
+create policy p_stock_adj_read on public.wo_stock_adj for select to authenticated using (
+  public.fm_mod('wh') and (by_id = auth.uid() or public.fm_stock_can(region) or public.fm_adj_approver(region)
+    or public.fm_my_pos() in ('dept_manager','qa_manager','owner_rep','accountant')));
+-- does a count line need approval? (value over adj_value, or no price and the difference over variance_pct % of the book)
+create or replace function public.fm_adj_needs(p_book numeric, p_diff numeric, p_price numeric) returns boolean language sql stable security definer set search_path = public as $$
+  select case when coalesce(p_diff,0) = 0 then false
+    when coalesce(p_price,0) > 0 then abs(p_diff) * p_price > coalesce((public.fm_setting('stock_rules')->>'adj_value')::numeric, 200)
+    when coalesce(p_book,0) <= 0 then true
+    else abs(p_diff) / p_book * 100 > coalesce((public.fm_setting('stock_rules')->>'variance_pct')::numeric, 5) end $$;
+-- what a count would do, before saving it: p {store_id, lines:[{material_id, count}]}
+create or replace function public.fm_adj_preview(p jsonb) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare st public.wo_stores; x jsonb; m public.wo_materials; cur numeric; d numeric; R jsonb := '[]'; ap boolean;
+begin
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid;
+  if not found or not public.fm_stock_can(st.region) then raise exception 'not allowed'; end if;
+  ap := public.fm_adj_approver(st.region);
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    select * into m from public.wo_materials where id = nullif(x->>'material_id','')::uuid;
+    if not found then continue; end if;
+    cur := coalesce((select qty from public.wo_stock where store_id = st.id and material_id = m.id), 0);
+    d := coalesce(nullif(x->>'count','')::numeric, cur) - cur;
+    if d = 0 then continue; end if;
+    R := R || jsonb_build_object('material_id', m.id, 'book', cur, 'diff', d, 'value', round(abs(d) * coalesce(m.price,0), 2),
+      'needs', (not ap) and public.fm_adj_needs(cur, d, m.price));
+  end loop;
+  return jsonb_build_object('approver', ap, 'lines', R);
+end $$;
+
+-- fm_stock_move (V173) with the count-approval step: unchanged for «in» and «transfer»
+create or replace function public.fm_stock_move(p jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare k text := p->>'kind'; st public.wo_stores; st2 public.wo_stores; x jsonb; q numeric; cur numeric; n int := 0; m uuid; pr numeric;
+  me uuid := auth.uid(); nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid());
+  hold jsonb := '[]'; hv numeric := 0; mp numeric; ap boolean; a public.wo_stock_adj; u uuid;
+begin
+  if me is null or k not in ('in','adjust','transfer') then raise exception 'invalid kind'; end if;
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if not found or not public.fm_stock_can(st.region) then raise exception 'not allowed'; end if;
+  ap := public.fm_adj_approver(st.region) or coalesce(current_setting('fm.adj_ok', true), '') = '1';
+  if k = 'transfer' then
+    select * into st2 from public.wo_stores where id = nullif(p->>'to_store','')::uuid and active;
+    if not found or st2.id = st.id or not public.fm_stock_can(st2.region) then raise exception 'invalid store'; end if;
+  end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    m := nullif(x->>'material_id','')::uuid;
+    if m is null or not exists(select 1 from public.wo_materials where id = m) then raise exception 'unknown material'; end if;
+    pr := nullif(x->>'price','')::numeric;
+    insert into public.wo_stock(store_id, material_id) values (st.id, m) on conflict do nothing;
+    select qty into cur from public.wo_stock where store_id = st.id and material_id = m for update;
+    if k = 'adjust' then q := nullif(x->>'count','')::numeric; if q is null or q < 0 then raise exception 'invalid count'; end if; q := q - cur;
+    else q := nullif(x->>'qty','')::numeric; if q is null or q <= 0 or q > 1000000 then raise exception 'invalid qty'; end if; end if;
+    if q = 0 then continue; end if;
+    if k = 'adjust' and not ap then
+      select price into mp from public.wo_materials where id = m;
+      if public.fm_adj_needs(cur, q, mp) then
+        hold := hold || jsonb_build_object('material_id', m, 'book', cur, 'counted', cur + q, 'diff', q, 'price', mp, 'value', round(abs(q) * coalesce(mp,0), 2));
+        hv := hv + abs(q) * coalesce(mp,0);
+        continue;
+      end if;
+    end if;
+    if k = 'transfer' then
+      update public.wo_stock set qty = qty - q, updated_at = now() where store_id = st.id and material_id = m;
+      insert into public.wo_stock(store_id, material_id, qty) values (st2.id, m, q)
+        on conflict (store_id, material_id) do update set qty = public.wo_stock.qty + q, updated_at = now();
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, note, by_id, by_name) values
+        (st.id, m, -q, 'transfer', left(concat_ws(' — ', '← إلى ' || st2.name, nullif(btrim(coalesce(p->>'note','')),'')),300), me, nm),
+        (st2.id, m, q, 'transfer', left(concat_ws(' — ', '→ من ' || st.name, nullif(btrim(coalesce(p->>'note','')),'')),300), me, nm);
+    else
+      update public.wo_stock set qty = qty + q, updated_at = now() where store_id = st.id and material_id = m;
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, supplier, invoice_no, note, by_id, by_name)
+      values (st.id, m, q, k, case when k = 'in' then pr end, left(nullif(btrim(coalesce(p->>'supplier','')),''),200),
+              left(nullif(btrim(coalesce(p->>'invoice_no','')),''),80), left(nullif(btrim(coalesce(p->>'note','')),''),300), me, nm);
+      if k = 'in' and pr is not null and pr >= 0 and coalesce((p->>'update_price')::boolean,false) then
+        update public.wo_materials set price = pr, updated_at = now() where id = m; end if;
+    end if;
+    n := n + 1;
+  end loop;
+  if jsonb_array_length(hold) > 0 then
+    insert into public.wo_stock_adj(store_id, region, lines, value, note, by_name)
+    values (st.id, st.region, hold, round(hv, 2), left(nullif(btrim(coalesce(p->>'note','')),''),300), nm) returning * into a;
+    begin
+      for u in select * from public.fm_adj_approvers(st.region) loop
+        perform public.fm_push_add(u, 'wh_adj', '⚖️ فرق جرد بانتظار اعتمادك — ' || a.code, st.name || ' • ' || jsonb_array_length(hold) || ' صنف • ' || round(hv) || ' ر.س • ' || coalesce(nm,''), 'wh=adj', 'adj');
+      end loop;
+    exception when others then null; end;
+  end if;
+  return n;
+end $$;
+-- approve (apply the recorded differences) or reject a held count
+create or replace function public.fm_stock_adj_act(p_id uuid, p_action text, p_note text) returns text language plpgsql security definer set search_path = public as $$
+declare a public.wo_stock_adj; st public.wo_stores; x jsonb; m uuid; q numeric; nm text := public.fm_me_name();
+begin
+  select * into a from public.wo_stock_adj where id = p_id for update;
+  if not found or a.status <> 'pending' then raise exception 'not pending'; end if;
+  if not public.fm_adj_approver(a.region) then raise exception 'not allowed'; end if;
+  if a.by_id = auth.uid() and public.fm_role() <> 'admin' and public.fm_my_pos() <> 'sysadmin' then raise exception 'not allowed'; end if;
+  if p_action = 'reject' then
+    if length(btrim(coalesce(p_note,''))) = 0 then raise exception 'note required'; end if;
+    update public.wo_stock_adj set status = 'rejected', decided_by = auth.uid(), decided_name = nm, decided_at = now(), response = left(btrim(p_note),300) where id = p_id;
+  elsif p_action = 'approve' then
+    select * into st from public.wo_stores where id = a.store_id;
+    for x in select * from jsonb_array_elements(a.lines) loop
+      m := (x->>'material_id')::uuid; q := (x->>'diff')::numeric;
+      insert into public.wo_stock(store_id, material_id, qty) values (a.store_id, m, q)
+        on conflict (store_id, material_id) do update set qty = public.wo_stock.qty + q, updated_at = now();
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, note, by_id, by_name)
+      values (a.store_id, m, q, 'adjust', left(concat_ws(' — ', a.code || ' فرق جرد معتمد (' || coalesce(a.by_name,'') || ')', nullif(btrim(coalesce(p_note,'')),'')),300), auth.uid(), nm);
+    end loop;
+    update public.wo_stock_adj set status = 'approved', decided_by = auth.uid(), decided_name = nm, decided_at = now(), response = left(nullif(btrim(coalesce(p_note,'')),''),300) where id = p_id;
+  else raise exception 'invalid action'; end if;
+  begin perform public.fm_push_add(a.by_id, 'wh_adj', case when p_action = 'approve' then '✅ اعتُمد فرق الجرد ' else '⛔ رُفض فرق الجرد ' end || a.code, coalesce(nullif(btrim(coalesce(p_note,'')),''), st.name, ''), 'wh=adj', 'adj-' || a.id);
+  exception when others then null; end;
+  return (select status from public.wo_stock_adj where id = p_id);
+end $$;
+revoke all on function public.fm_adj_approver(text), public.fm_adj_needs(numeric, numeric, numeric), public.fm_adj_preview(jsonb), public.fm_stock_adj_act(uuid, text, text) from public, anon;
+grant execute on function public.fm_adj_approver(text), public.fm_adj_needs(numeric, numeric, numeric), public.fm_adj_preview(jsonb), public.fm_stock_adj_act(uuid, text, text) to authenticated;
+
+-- (3) a balance turning negative
+create or replace function public.fm_stock_neg_notify() returns trigger language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; mn text; u uuid;
+begin
+  if new.qty < 0 and (tg_op = 'INSERT' or coalesce(old.qty,0) >= 0) then
+    begin
+      select * into st from public.wo_stores where id = new.store_id;
+      select name into mn from public.wo_materials where id = new.material_id;
+      for u in select distinct x from (select * from public.fm_wh_keepers_of(st.region) x
+                 union select p.id from public.profiles p where p.active and public.fm_posx(p.role, p.job_title) = 'area_manager'
+                   and (st.region is null or cardinality(p.regions) = 0 or st.region = any(p.regions))) y(x) loop
+        perform public.fm_push_add(u, 'wh_neg', '➖ رصيد بالسالب: ' || coalesce(mn,'صنف'), coalesce(st.name,'') || ' • الرصيد ' || trim(to_char(new.qty, 'FM999999990.###')) || ' — سجّل توريداً أو جرداً', 'wh=neg', 'neg-' || new.store_id || '-' || new.material_id, true);
+      end loop;
+    exception when others then null; end;
+  end if;
+  return null;
+end $$;
+revoke all on function public.fm_stock_neg_notify() from public, anon, authenticated;
+drop trigger if exists fm_stock_neg_notify on public.wo_stock;
+create trigger fm_stock_neg_notify after insert or update of qty on public.wo_stock for each row execute function public.fm_stock_neg_notify();
+
+-- (4) goods receipt notes
+create sequence if not exists public.wo_grn_seq;
+create table if not exists public.wo_grn (
+  id           uuid primary key default gen_random_uuid(),
+  code         text unique not null default ('GRN-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_grn_seq')::text, 4, '0')),
+  at           timestamptz not null default now(),
+  store_id     uuid not null references public.wo_stores(id) on delete cascade,
+  region       text,
+  supplier     text,
+  invoice_no   text,
+  invoice_date date,
+  photo        text check (photo is null or length(photo) <= 560000),
+  lines        jsonb not null default '[]',   -- [{material_id, name, unit, qty, price}]
+  total        numeric(14,2) not null default 0,
+  note         text,
+  by_id        uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name      text
+);
+create index if not exists wo_grn_at_idx on public.wo_grn (store_id, at desc);
+alter table public.wo_grn enable row level security;
+revoke insert, update, delete on public.wo_grn from anon, authenticated;
+grant select on public.wo_grn to authenticated;
+drop policy if exists p_grn_read on public.wo_grn;
+create policy p_grn_read on public.wo_grn for select to authenticated using (
+  public.fm_mod('wh') and (public.fm_stock_can(region) or public.fm_role() in ('admin','manager','viewer')
+    or public.fm_my_pos() in ('dept_manager','qa_manager','owner_rep','accountant')));
+-- p = the fm_stock_move «in» body + {invoice_date, photo}; returns {id, code, moves}
+create or replace function public.fm_grn_save(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; g public.wo_grn; n int; L jsonb := '[]'; x jsonb; m public.wo_materials; tot numeric := 0;
+begin
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if auth.uid() is null or not found or not public.fm_stock_can(st.region) then raise exception 'not allowed'; end if;
+  if length(coalesce(p->>'photo','')) > 560000 then raise exception 'photo too large'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    select * into m from public.wo_materials where id = nullif(x->>'material_id','')::uuid;
+    if not found then raise exception 'unknown material'; end if;
+    L := L || jsonb_build_object('material_id', m.id, 'name', m.name, 'unit', m.unit, 'code', m.code, 'qty', (x->>'qty')::numeric, 'price', nullif(x->>'price','')::numeric);
+    tot := tot + coalesce((x->>'qty')::numeric,0) * coalesce(nullif(x->>'price','')::numeric,0);
+  end loop;
+  if jsonb_array_length(L) = 0 then raise exception 'invalid qty'; end if;
+  insert into public.wo_grn(store_id, region, supplier, invoice_no, invoice_date, photo, lines, total, note, by_name)
+  values (st.id, st.region, left(nullif(btrim(coalesce(p->>'supplier','')),''),200), left(nullif(btrim(coalesce(p->>'invoice_no','')),''),80),
+          nullif(p->>'invoice_date','')::date, nullif(p->>'photo',''), L, round(tot,2), left(nullif(btrim(coalesce(p->>'note','')),''),300), public.fm_me_name())
+  returning * into g;
+  n := public.fm_stock_move(jsonb_set(p - 'photo' - 'invoice_date', '{note}', to_jsonb(left(concat_ws(' — ', g.code, nullif(btrim(coalesce(p->>'note','')),'')),300))) || '{"kind":"in"}');
+  return jsonb_build_object('id', g.id, 'code', g.code, 'moves', n);
+end $$;
+revoke all on function public.fm_grn_save(jsonb) from public, anon;
+grant execute on function public.fm_grn_save(jsonb) to authenticated;
+do $do$ begin
+  if to_regprocedure('public.fm_mod_guard()') is not null then
+    drop trigger if exists fm_mod_guard on public.wo_stock_adj;
+    create trigger fm_mod_guard before insert or update or delete on public.wo_stock_adj for each row execute function public.fm_mod_guard('wh');
+    drop trigger if exists fm_mod_guard on public.wo_grn;
+    create trigger fm_mod_guard before insert or update or delete on public.wo_grn for each row execute function public.fm_mod_guard('wh');
+  end if;
+end $do$;
+notify pgrst, 'reload schema';
+commit;
+
+-- ---------- 38) goods receipt note for purchase-request receipts (V217) ----------
+-- fm_po_receive(id, p) = fm_po_act(id, 'receive', p) (same checks, stock, variance, serials) + one wo_grn row for what was received
+-- now (supplier of the request, invoice no / date / photo, po_code); the new «in» moves get the GRN code in their note.
+begin;
+alter table public.wo_grn add column if not exists po_code text;
+create or replace function public.fm_po_receive(p_id uuid, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.wo_purchase_requests; st public.wo_stores; s text; g public.wo_grn; before uuid[]; L jsonb := '[]'; x jsonb; ln jsonb; m public.wo_materials;
+  q numeric; pr numeric; tot numeric := 0;
+begin
+  if length(coalesce(p->>'photo','')) > 560000 then raise exception 'photo too large'; end if;
+  select * into r from public.wo_purchase_requests where id = p_id;
+  if not found then raise exception 'not found'; end if;
+  select coalesce(array_agg(id), '{}') into before from public.wo_stock_moves where ref = r.code;
+  s := public.fm_po_act(p_id, 'receive', p - 'photo' - 'invoice_date');
+  select * into st from public.wo_stores where id = r.store_id;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    q := coalesce(nullif(x->>'qty','')::numeric, 0);
+    if q <= 0 then continue; end if;
+    ln := (select e from jsonb_array_elements(r.lines) t(e) where e->>'material_id' = x->>'material_id' limit 1);
+    if ln is null then continue; end if;
+    select * into m from public.wo_materials where id = (x->>'material_id')::uuid;
+    pr := coalesce(nullif(x->>'price','')::numeric, (ln->>'price')::numeric);
+    L := L || jsonb_build_object('material_id', m.id, 'name', m.name, 'unit', m.unit, 'code', m.code, 'qty', q, 'price', pr);
+    tot := tot + q * coalesce(pr, 0);
+  end loop;
+  insert into public.wo_grn(store_id, region, supplier, invoice_no, invoice_date, photo, lines, total, note, by_name, po_code)
+  values (st.id, st.region, r.supplier_name, left(nullif(btrim(coalesce(p->>'invoice_no','')),''),80),
+          coalesce(nullif(p->>'invoice_date','')::date, nullif(p->>'at','')::date), nullif(p->>'photo',''), L, round(tot, 2),
+          'استلام طلب الشراء ' || r.code, public.fm_me_name(), r.code)
+  returning * into g;
+  update public.wo_stock_moves set note = left(concat_ws(' — ', g.code, note), 300) where ref = r.code and not (id = any(before));
+  return jsonb_build_object('status', s, 'id', g.id, 'code', g.code);
+end $$;
+revoke all on function public.fm_po_receive(uuid, jsonb) from public, anon;
+grant execute on function public.fm_po_receive(uuid, jsonb) to authenticated;
+notify pgrst, 'reload schema';
+commit;
