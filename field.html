@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F44">
+<meta name="fm-version" content="F46">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1757,6 +1757,7 @@ async function load(){const db=await C.engClient();const since=new Date(Date.now
  const g=i=>(!R[i].error&&R[i].data)||[];X={cus:g(0),mv:g(1),req:g(2).filter(r=>r.holder===ME.id||r.requested_by===ME.id),cnt:g(3),mats:g(4)};
  try{const g=await db.from('wo_part_suggestions').select('id,code,name,status,note,qty,unit,at,material_id').eq('by_id',ME.id).order('at',{ascending:false}).limit(30);X.sugg=g.error?null:(g.data||[])}catch(e){X.sugg=null}
  try{const e=await db.from('wo_materials').select('id,ext_code');if(!e.error)for(const r of e.data||[]){const m=X.mats.find(x=>x.id===r.id);if(m)m.ext_code=r.ext_code}}catch(e){}
+ try{const i=await db.rpc('fm_custody_idle',{p_days:null});X.idle=i.error?null:(i.data||[]).filter(x=>x.holder===ME.id)}catch(e){X.idle=null}
  window.__fmfCus=new Map(X.cus.filter(c=>+c.qty>0).map(c=>[c.material_id,+c.qty]));return X}
 const mat=id=>(X.mats.find(m=>m.id===id)||{name:'صنف'});
 const late=()=>X.mv.filter(m=>m.kind==='use'&&+m.scrap_open>0&&m.scrap_due&&m.scrap_due<today());
@@ -1774,6 +1775,7 @@ function draw(){const s=sheet(),L=late(),recv=X.req.filter(r=>r.holder===ME.id&&
  const due=mid=>X.mv.filter(m=>m.kind==='use'&&m.material_id===mid&&+m.scrap_open>0).map(m=>m.scrap_due).sort()[0];
  s.innerHTML=`<div class="hd"><button type="button" data-x>→</button><h2>🧰 عهدتي</h2><button type="button" data-rf>🔄</button></div><div class="bd">
   ${L.length?`<div class="al bad">⛔ تالف متأخر: ${L.map(m=>`${esc(mat(m.material_id).name)} ×${fmt(m.scrap_open)} (${esc(m.wo_code||'')} — كان مطلوباً ${dd(m.scrap_due)})`).join('، ')}. سلّمه لأمين المستودع؛ لا يُصرف لك نفس الصنف قبل ذلك.</div>`:''}
+  ${X.idle&&X.idle.length?`<div class="al warn">💤 قطع في عهدتك لم تُستخدم منذ ${fmt(Math.min(...X.idle.map(x=>+x.days)))} يوماً أو أكثر: ${X.idle.map(x=>`${esc(mat(x.material_id).name)} ×${fmt(x.qty)}`).join('، ')}. إن لم تحتجها أرجعها لأمين المستودع.</div>`:''}
   ${recv.map(r=>`<div class="al warn">📦 صرف لك أمين المستودع ${esc(r.code)}: ${(r.lines||[]).filter(l=>+l.issued).map(l=>`${esc(mat(l.material_id).name)} ×${fmt(l.issued)}`).join('، ')} <button type="button" class="bt p" data-rc="${esc(r.id)}">✅ استلمت</button></div>`).join('')}
   ${sign.map(c=>`<div class="cd"><h3>✍️ جرد عهدة ${esc(c.month)} — بواسطة ${esc(c.by_name||'')}</h3>${(c.lines||[]).map(l=>`<div class="row"><span>${esc(mat(l.material_id).name)}</span><span class="n">بالدفاتر ${fmt(l.book)} • المعدود ${fmt(l.counted)}${+l.counted!==+l.book?' ⚠️':''}</span></div>`).join('')}
    <div style="display:flex;gap:6px;margin-top:8px"><button type="button" class="bt p" data-sg="${esc(c.id)}">✅ أوافق وأوقّع</button><button type="button" class="bt r" data-ds="${esc(c.id)}">✋ أعترض</button></div></div>`).join('')}
@@ -1781,7 +1783,7 @@ function draw(){const s=sheet(),L=late(),recv=X.req.filter(r=>r.holder===ME.id&&
    <div style="color:#64748b;font-size:12px;margin-top:6px">عند اعتماد أمر العمل تُخصم المواد المستخدمة من عهدتك؛ تالف الأصناف ♻️ يبقى عليك حتى يؤكد أمين المستودع استلامه.</div></div>
   <div class="cd"><h3>➕ طلب قطع غيار</h3><div data-form></div></div>
   ${X.sugg&&X.sugg.length?`<div class="cd"><h3>💡 أصناف اقترحتها</h3>${X.sugg.slice(0,10).map(g=>`<div class="row"><span>${esc(g.name)}<small>${esc(g.code||'')} • ${dd(g.at)}${g.note?' • '+esc(g.note):''}</small></span><span class="ch ${g.status==='new'?'y':g.status==='rejected'?'r':'g'}">${({new:'بانتظار المراجعة',added:'أُضيف للكتالوج',linked:'رُبط بصنف موجود',rejected:'مرفوض'})[g.status]||esc(g.status)}</span></div>`).join('')}</div>`:''}
-  <div class="cd"><h3>📝 طلباتي</h3>${X.req.slice(0,25).map(r=>`<div class="row"><span>${esc(r.code)} <small>${r.source==='wo'?'أمر '+esc(r.wo_code||''):r.source==='ticket'?'بلاغ '+esc(r.ticket_ref||''):'توجيه '+esc(r.requested_by_name||'')} • ${dd(r.at)}</small><small>${(r.lines||[]).map(l=>`${esc(mat(l.material_id).name)} ×${fmt(l.qty)}${+l.issued?` (صُرف ${fmt(l.issued)})`:''}`).join('، ')}</small>${r.response?`<small>${esc(r.response)}</small>`:''}</span><span><span class="ch ${(RQ[r.status]||[''])[0]}">${(RQ[r.status]||['',r.status])[1]}</span>${r.status==='requested'?` <button type="button" class="bt" data-cn="${esc(r.id)}">إلغاء</button>`:''}</span></div>`).join('')||'<div class="row">لا توجد طلبات</div>'}</div>
+  <div class="cd"><h3>📝 طلباتي</h3>${X.req.slice(0,25).map(r=>`<div class="row"><span>${esc(r.code)} <small>${r.source==='wo'?'أمر '+esc(r.wo_code||''):r.source==='ticket'?'بلاغ '+esc(r.ticket_ref||''):'توجيه '+esc(r.requested_by_name||'')} • ${dd(r.at)}</small><small>${(r.lines||[]).map(l=>`${esc(mat(l.material_id).name)} ×${fmt(l.qty)}${+l.issued?` (صُرف ${fmt(l.issued)})`:''}`).join('، ')}</small>${r.response?`<small>${esc(r.response)}</small>`:''}</span><span>${r.appr_status==='needed'&&r.status==='requested'?'<span class="ch y">🟡 بانتظار اعتماد المهندس</span> ':''}<span class="ch ${(RQ[r.status]||[''])[0]}">${(RQ[r.status]||['',r.status])[1]}</span>${r.status==='requested'?` <button type="button" class="bt" data-cn="${esc(r.id)}">إلغاء</button>`:''}</span></div>`).join('')||'<div class="row">لا توجد طلبات</div>'}</div>
   <div class="cd"><h3>🕘 آخر الحركات</h3>${X.mv.slice(0,30).map(m=>`<div class="row"><span>${({issue:'📤 صُرف لي',use:'🛠️ استُخدم',scrap:'♻️ سلّمت تالفاً',return:'↩️ أرجعت',writeoff:'⚖️ تسوية'})[m.kind]||m.kind} — ${esc(mat(m.material_id).name)}<small>${dd(m.at)} ${esc([m.wo_code,m.school,m.kind==='use'?'':m.ref].filter(Boolean).join(' • '))}</small></span><span class="n" dir="ltr">${+m.qty?(+m.qty>0?'+':'')+fmt(m.qty):''}${+m.scrap?` ♻️${+m.scrap>0?'+':''}${fmt(m.scrap)}`:''}</span></div>`).join('')||'<div class="row">—</div>'}</div></div>`;
  s.querySelector('[data-x]').onclick=close;s.querySelector('[data-rf]').onclick=open;
  const act=async(fn,args,msg)=>{try{const db=await C.engClient();const r=await db.rpc(fn,args);if(r.error)throw Error(r.error.message);toast(msg);await load();draw()}catch(e){toast(ERR(e),'e')}};
@@ -1795,7 +1797,7 @@ async function form(box){let W=[];try{W=(await C.api.woList()||[]).filter(w=>w.a
  box.innerHTML=`<label>السبب<select data-src>${W.length?`<option value="wo">أمر عمل مسند إليّ</option>`:''}<option value="ticket">بلاغ</option></select></label>
   <div data-w="wo" style="margin-top:6px"><select data-wo>${W.map(w=>`<option value="${esc(w.id)}">${esc(w.code||'')} — ${esc(w.school||w.title||'')}</option>`).join('')}</select></div>
   <div data-w="ticket" style="margin-top:6px"><input data-tk placeholder="رقم البلاغ" maxlength="60"><input data-sc placeholder="المدرسة (اختياري)" maxlength="200" style="margin-top:6px"></div>
-  <div style="margin:10px 0 6px;font-weight:800">الأصناف المطلوبة</div><div data-ls></div><button type="button" class="bt p" data-add style="width:100%;padding:10px">➕ اختر صنفاً (حسب التصنيف)</button>
+  <div style="margin:10px 0 6px;font-weight:800">الأصناف المطلوبة</div><div data-ls></div><button type="button" class="bt p" data-add style="width:100%;padding:10px">➕ اختر صنفاً (حسب التصنيف)</button>${window.fmfQrScan?'<button type="button" class="bt" data-scan style="width:100%;padding:10px;margin-top:6px">📷 مسح ملصق الصنف</button>':''}
   <input data-nt placeholder="ملاحظة (اختياري)" maxlength="500" style="margin-top:8px"><button type="button" class="bt p" data-send style="width:100%;margin-top:8px;padding:10px">📤 إرسال الطلب لأمين المستودع</button>`;
  const q=x=>box.querySelector(x),sw=()=>box.querySelectorAll('[data-w]').forEach(e=>e.hidden=e.dataset.w!==q('[data-src]').value);q('[data-src]').onchange=sw;sw();
  const im=m=>m.thumb?`<img src="${esc(m.thumb)}" alt="">`:'<span class="ni">📦</span>';
@@ -1806,6 +1808,9 @@ async function form(box){let W=[];try{W=(await C.api.woList()||[]).filter(w=>w.a
   q('[data-ls]').querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const l=lines[+b.dataset.p];l.q=(+l.q||0)+1;dr()});
   q('[data-ls]').querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.d,1);dr()})};
  dr();q('[data-add]').onclick=()=>pick(M,id=>{const l=lines.find(x=>x.id===id);if(l)l.q=(+l.q||0)+1;else lines.push({id,q:1});dr()},()=>q('[data-src]').value==='wo'?{wo_id:q('[data-wo]').value}:{ticket_ref:S(q('[data-tk]').value)});
+ const scb=q('[data-scan]');if(scb)scb.onclick=async()=>{const c=await window.fmfQrScan('امسح ملصق الصنف');if(!c)return;let k=S(c);const mm=k.match(/^FMI:(.+)$/i);if(mm)k=S(mm[1]);const lc=k.toLowerCase();
+  const m=M.find(x=>S(x.code).toLowerCase()===lc)||M.find(x=>x.id===k)||M.find(x=>S(x.ext_code)===k);if(!m){toast('الصنف غير موجود أو غير معتمد: '+k,'w');return}
+  const l=lines.find(x=>x.id===m.id);if(l)l.q=(+l.q||0)+1;else lines.push({id:m.id,q:1});dr();toast('أُضيف: '+m.name)};
  q('[data-send]').onclick=async ev=>{const L=[];for(const l of lines){const m=mat(l.id);const qt=+S(l.q).replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c));if(!(qt>0)){toast('كمية غير صحيحة: '+m.name,'w');return}L.push({material_id:l.id,qty:qt})}
   if(!L.length){toast('أضف صنفاً','w');return}const src=q('[data-src]').value,p={source:src,lines:L,note:S(q('[data-nt]').value)};
   if(src==='wo')p.wo_id=q('[data-wo]').value;else{p.ticket_ref=S(q('[data-tk]').value);p.school=S(q('[data-sc]').value);if(!p.ticket_ref){toast('اكتب رقم البلاغ','w');return}}
@@ -1891,7 +1896,7 @@ const IOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='
 const STANDALONE=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
 const KINDS=[['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
  ['wo_esc','⏫ تصعيد أمر متأخر إليّ'],['wo_stop','⛔ إيقاف عمل'],['wh_req','📦 طلب صرف جديد (أمين المستودع)'],['wh_issued','🧰 صُرفت قطع لعهدتي أو رُفض طلبي'],
- ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات'],['parts_due','⏱️ متابعة طلبات القطع (مسؤول / تصعيد / تأخير)'],['tools','🛠️ العُدد والأدوات (تسليم / موعد الإرجاع)']];
+ ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات'],['parts_due','⏱️ متابعة طلبات القطع (مسؤول / تصعيد / تأخير)'],['tools','🛠️ العُدد والأدوات (تسليم / موعد الإرجاع)'],['wh_idle','💤 قطع راكدة في عهدتي']];
 const b64u=buf=>{let s='';const b=new Uint8Array(buf);for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
 const unb64u=s=>{s=S(s);const t=atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4));const b=new Uint8Array(t.length);for(let i=0;i<t.length;i++)b[i]=t.charCodeAt(i);return b};
 let SET=null,SETAT=0;
@@ -2224,10 +2229,13 @@ const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;',
 const GREG='ar-SA-u-ca-gregory',dd=v=>v?new Date(String(v).length===10?v+'T12:00:00':v).toLocaleDateString(GREG,{day:'numeric',month:'short',year:'numeric'}):'—';
 const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
 const CD={new:'جديدة',good:'جيدة',fair:'مقبولة',damaged:'تالفة'};
-const MK={out:'📤 استلمتها',in:'📥 أرجعتها',extend:'📅 مُدّد الموعد',maint:'🔧 صيانة',lost:'❓ فقد'};
+const MK={out:'📤 استلمتها',in:'📥 أرجعتها',extend:'📅 مُدّد الموعد',maint:'🔧 صيانة',lost:'❓ فقد',inspect:'🔬 فحص / معايرة',report:'⚠️ بلاغ'};
+const RS={open:'⏳ بانتظار القرار',writeoff:'🗑️ شُطبت',deduct:'💸 شُطبت مع خصم',repair:'🔧 تُصلح',found:'🔎 وُجدت',rejected:'⛔ رُفض البلاغ'};
+let RP=null;
 const late=t=>t.due_back&&t.due_back<today();
 let ME=null,T=null,MV=[],W=null,WAT=0;
 async function load(){const db=await C.engClient();const r=await db.from('wo_tools').select('*').eq('holder',ME.id).eq('status','out').order('due_back');if(r.error){T=null;return}T=r.data||[];
+ try{const x=await db.from('wo_tool_reports').select('id,code,at,kind,status,amount,response,tool_id').eq('by_id',ME.id).order('at',{ascending:false}).limit(10);RP=x.error?null:(x.data||[])}catch(e){RP=null}
  if(T.length){try{const m=await db.from('wo_tool_moves').select('*').in('tool_id',T.map(t=>t.id)).order('at',{ascending:false}).limit(100);MV=(!m.error&&m.data)||[]}catch(e){MV=[]}}else MV=[]}
 function sheet(){let s=document.getElementById('f43');if(!s){s=document.createElement('div');s.id='f43';s.className='sheet';s.dir='rtl';document.body.appendChild(s)}return s}
 async function open(){const s=sheet();s.classList.add('open');s.innerHTML='<div class="hd"><button type="button" data-x>→</button><h2>🛠️ عُددي</h2></div><div class="bd"><div class="cd">جارٍ التحميل…</div></div>';s.querySelector('[data-x]').onclick=close;
@@ -2239,10 +2247,12 @@ function draw(){const s=sheet(),L=(T||[]).filter(late);
   ${T==null?'<div class="al">سجل العُدد غير مفعّل بعد على السحابة</div>':''}
   ${L.length?`<div class="al">⏰ تجاوزت موعد الإرجاع: ${L.map(t=>`${esc(t.name)} (${esc(t.code)})`).join('، ')}. أرجعها لأمين المستودع أو اطلب تمديد الموعد.</div>`:''}
   <div class="cd"><h3>🛠️ الأدوات في عهدتي (${(T||[]).length})</h3>${(T||[]).map(t=>`<div class="tl">${t.thumb?`<img src="${esc(t.thumb)}" alt="">`:'<span class="ni">🛠️</span>'}<div><b>${esc(t.name)}</b><small>${esc(t.code)}${t.serial?' • '+esc(t.serial):''}${t.brand?' • '+esc(t.brand):''}</small>
-   <small>استلمتها ${dd(t.out_at)} • الحالة ${esc(CD[t.cond]||'')}</small><small class="${late(t)?'late':''}">${t.due_back?(late(t)?'⏰ كان موعد الإرجاع ':'📅 أرجعها قبل ')+dd(t.due_back):'بدون موعد إرجاع'}</small></div></div>`).join('')||'<div style="color:#64748b">لا توجد أدوات في عهدتك.</div>'}
+   <small>استلمتها ${dd(t.out_at)} • الحالة ${esc(CD[t.cond]||'')}</small><small class="${late(t)?'late':''}">${t.due_back?(late(t)?'⏰ كان موعد الإرجاع ':'📅 أرجعها قبل ')+dd(t.due_back):'بدون موعد إرجاع'}</small>${t.insp_due?`<small class="${t.insp_due<today()?'late':''}">🔬 ${t.insp_kind==='calib'?'المعايرة':'الفحص'} ${t.insp_due<today()?'انتهى في ':'حتى '}${dd(t.insp_due)}</small>`:''}${window.fmfToolReport?`<button type="button" class="bt" data-rp="${esc(t.id)}" style="margin-top:4px;font-size:12px">⚠️ بلاغ فقد / تلف</button>`:''}</div></div>`).join('')||'<div style="color:#64748b">لا توجد أدوات في عهدتك.</div>'}
    <div style="color:#64748b;font-size:12px;margin-top:6px">الأدوات تُسلَّم وتُستلم عند أمين المستودع؛ أنت مسؤول عنها حتى تُرجعها.</div></div>
+  ${RP&&RP.length?`<div class="cd"><h3>⚠️ بلاغاتي</h3>${RP.map(r=>`<div class="mv">${dd(r.at)} — <b>${esc(r.code)}</b> ${r.kind==='lost'?'فقد':'تلف'} • ${esc(RS[r.status]||r.status)}${r.amount!=null?' '+r.amount+' ر.س':''}${r.response?' — '+esc(r.response):''}</div>`).join('')}</div>`:''}
   ${MV.length?`<div class="cd"><h3>🕘 آخر الحركات</h3>${MV.slice(0,20).map(m=>{const t=(T||[]).find(x=>x.id===m.tool_id)||{};return `<div class="mv">${dd(m.at)} — <b>${esc(MK[m.kind]||m.kind)}</b> ${esc(t.name||'')}${m.due_back?' • حتى '+dd(m.due_back):''}${m.note?' • '+esc(m.note):''}</div>`}).join('')}</div>`:''}</div>`;
- s.querySelector('[data-x]').onclick=close;s.querySelector('[data-rf]').onclick=open}
+ s.querySelector('[data-x]').onclick=close;s.querySelector('[data-rf]').onclick=open;
+ s.querySelectorAll('[data-rp]').forEach(b=>b.onclick=()=>window.fmfToolReport((T||[]).find(x=>x.id===b.dataset.rp),open))}
 function home(){const h=document.querySelector('#app .card.hello');let b=document.getElementById('f43-h');if(!h||!T||!T.length){b?.remove();return}
  const L=T.filter(late).length,txt=`<span>🛠️ عُددي: ${T.length} أداة${L?` • ⏰ ${L} تجاوزت موعد الإرجاع`:''}</span><span>فتح ←</span>`;
  if(!b||!b.isConnected){b=document.createElement('button');b.id='f43-h';b.type='button';b.onclick=open;const a=document.getElementById('f29-h');(a&&a.isConnected?a:h).after(b)}
@@ -2295,6 +2305,75 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
   if(r.error&&missing(r.error))r=await db.rpc('fm_issue_req_act',{p_id:b.dataset.rc,p_action:'receive',p:{}});
   if(r.error)throw Error(r.error.message);toast('تم التوقيع وتأكيد الاستلام ✅');document.querySelector('#f29 [data-rf]')?.click()}
  catch(er){b.disabled=false;const m=String(er.message||er);toast(/already signed/.test(m)?'السند موقّع بالفعل':/not allowed/.test(m)?'غير مسموح':/Failed to fetch|NetworkError/i.test(m)?'لا يوجد اتصال — أعد المحاولة':m)}},true);
+})();</script>
+
+<style id="fmf-45-scan-css">
+#fm219-scan:not([open]){display:none}#fm219-scan::backdrop{background:transparent}#fm219-scan{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;z-index:100000;background:rgba(2,6,23,.82);display:flex;align-items:center;justify-content:center;padding:14px}
+#fm219-scan .bx{background:#fff;color:#0f172a;border-radius:16px;padding:14px;width:100%;max-width:480px;font-family:Cairo,Tahoma,sans-serif}
+#fm219-scan video{width:100%;max-height:60vh;border-radius:12px;background:#000;display:block}
+#fm219-scan .row{display:flex;gap:8px;margin-top:10px}#fm219-scan input{flex:1;padding:10px;border:1px solid #cbd5e1;border-radius:10px;font:600 14px Cairo,Tahoma,sans-serif}
+#fm219-scan button{padding:10px 14px;border-radius:10px;border:1px solid #cbd5e1;background:#f8fafc;font:800 14px Cairo,Tahoma,sans-serif}
+#fm219-scan .p{background:#0f766e;color:#fff;border-color:#0f766e}#fm219-scan small{display:block;color:#64748b;margin-top:6px}
+</style>
+<script id="fmf-45-scan">(function(){'use strict';
+/* F45 — read an item label (QR «FMI:<SP code>») with the camera: BarcodeDetector, else jsQR 1.4.0 (jsdelivr, lazy), or a typed code.
+   Used by «📷 مسح ملصق الصنف» in the parts request of «🧰 عهدتي» (same scanner as the platform's window.fmQrScan). */
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const JSQR='https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+function needJsQR(){if(window.jsQR)return Promise.resolve();return new Promise((ok,no)=>{const s=document.createElement('script');s.src=JSQR;s.onload=()=>window.jsQR?ok():no(Error('jsQR'));s.onerror=()=>no(Error('تعذر تحميل قارئ الملصقات'));document.head.appendChild(s)})}
+window.fmfQrScan=title=>new Promise(done=>{document.getElementById('fm219-scan')?.remove();const w=document.createElement('dialog');w.id='fm219-scan';w.dir='rtl';
+ w.innerHTML=`<div class="bx"><b>📷 ${esc(title||'مسح الملصق')}</b><small>وجّه الكاميرا إلى رمز QR على الملصق، أو اكتب الكود (SP / Logix) أو استخدم قارئ الباركود.</small><video playsinline muted></video><div class="row"><input data-c placeholder="الكود" autocomplete="off"><button type="button" class="p" data-ok>✓</button><button type="button" data-x>إغلاق</button></div><small data-st></small></div>`;
+ document.body.appendChild(w);try{w.showModal()}catch(e){w.setAttribute('open','')}w.addEventListener('cancel',e=>{e.preventDefault();end(null)});const v=w.querySelector('video'),inp=w.querySelector('[data-c]'),st=w.querySelector('[data-st]');let stream=null,stop=false,res=null;
+ const end=r=>{if(stop)return;stop=true;res=r;try{stream&&stream.getTracks().forEach(t=>t.stop())}catch(e){}w.remove();done(res)};
+ w.querySelector('[data-x]').onclick=()=>end(null);w.querySelector('[data-ok]').onclick=()=>{if(S(inp.value))end(S(inp.value))};inp.onkeydown=e=>{if(e.key==='Enter'&&S(inp.value))end(S(inp.value))};setTimeout(()=>inp.focus(),50);
+ (async()=>{if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){v.style.display='none';st.textContent='الكاميرا غير متاحة هنا — اكتب الكود';return}
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false})}catch(e){v.style.display='none';st.textContent='لم يُسمح بالكاميرا — اكتب الكود أو فعّل الإذن';return}
+  if(stop){stream.getTracks().forEach(t=>t.stop());return}v.srcObject=stream;try{await v.play()}catch(e){}
+  let det=null;try{if('BarcodeDetector' in window&&(await BarcodeDetector.getSupportedFormats()).includes('qr_code'))det=new BarcodeDetector({formats:['qr_code']})}catch(e){}
+  if(!det){try{await needJsQR()}catch(e){st.textContent=e.message+' — اكتب الكود';return}}
+  const cv=document.createElement('canvas'),g=cv.getContext('2d',{willReadFrequently:true});
+  const tick=async()=>{if(stop)return;try{if(v.readyState>=2){if(det){const r=await det.detect(v);if(r&&r[0]&&r[0].rawValue)return end(r[0].rawValue)}else{const k=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight));cv.width=Math.round(v.videoWidth*k);cv.height=Math.round(v.videoHeight*k);g.drawImage(v,0,0,cv.width,cv.height);const r=window.jsQR(g.getImageData(0,0,cv.width,cv.height).data,cv.width,cv.height,{inversionAttempts:'dontInvert'});if(r&&r.data)return end(r.data)}}}catch(e){}setTimeout(()=>requestAnimationFrame(tick),120)};tick()})()});
+})();</script>
+
+<style id="fmf-46-tools-css">
+#f46-rp{position:fixed;inset:0;z-index:80;background:rgba(15,23,42,.55);display:flex;align-items:flex-end;justify-content:center}
+#f46-rp .bx{background:#fff;color:#0f172a;border-radius:16px 16px 0 0;padding:14px;width:100%;max-width:560px;font-family:Cairo,Tahoma,sans-serif;max-height:90vh;overflow:auto}
+#f46-rp h3{margin:0 0 6px}#f46-rp label{display:block;font-weight:800;font-size:13px;margin-top:8px}#f46-rp select,#f46-rp textarea{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:10px;font:600 14px Cairo,Tahoma,sans-serif;box-sizing:border-box}
+#f46-rp .cam{display:grid;place-items:center;border:2px dashed #cbd5e1;border-radius:12px;min-height:90px;margin-top:6px;cursor:pointer;color:#475569;font-weight:800}#f46-rp .cam img{max-width:100%;max-height:200px;border-radius:10px}
+#f46-rp .bt2{display:flex;gap:8px;margin-top:12px}#f46-rp .bt2 button{flex:1;padding:11px;border-radius:12px;border:1px solid #cbd5e1;background:#f8fafc;font:800 14px Cairo,Tahoma,sans-serif}#f46-rp .bt2 .p{background:#b91c1c;color:#fff;border-color:#b91c1c}
+.f46-tb{margin:10px 0;border:1px solid #c7d2fe;background:#eef2ff;border-radius:14px;padding:10px 12px;font-size:13.5px;color:#1e293b}.f46-tb b{display:block;margin-bottom:4px}.f46-tb div{margin:3px 0}.f46-tb .ok{color:#166534}.f46-tb .no{color:#b45309}
+</style>
+<script id="fmf-46-tools">(function(){'use strict';
+/* F46 — (30) «⚠️ بلاغ فقد / تلف» for a tool in my custody (fm_tool_report: note + photo; the area manager decides on the platform);
+   (31) the tools a work order needs (checklist «🔧 …») compared with the tools in my custody, shown above the checklist. */
+if(window.__f46)return;window.__f46=1;const C=window.FMCloud;if(!C)return;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=m=>{const t=document.getElementById('toast');if(!t){try{alert(m)}catch(e){}return}t.textContent=m;t.className='toast';t.style.display='block';t.style.zIndex='90';setTimeout(()=>t.style.display='none',3500)};
+const norm=s=>S(s).toLowerCase().replace(/[ً-ْـ]/g,'').replace(/[أإآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\s+/g,' ').trim();
+const STOP=new Set(['عده','اداه','ادوات','جهاز','مع','او','و','في','من','على','لل','ال']);
+const toks=s=>norm(s).split(' ').map(w=>w.replace(/^ال/,'')).filter(w=>w.length>=3&&!STOP.has(w));
+const match=(req,names)=>{const r=norm(req),rt=toks(req);if(!r)return null;for(const n of names||[]){const x=norm(n);if(!x)continue;if(x.includes(r)||r.includes(x))return n;const xt=toks(n);if(rt.some(t=>xt.includes(t)))return n}return null};
+function shrink(file){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=()=>no(Error('تعذر قراءة الصورة'));r.onload=()=>{const im=new Image();im.onerror=()=>no(Error('صورة غير صالحة'));im.onload=()=>{const k=Math.min(1,1100/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);let q=.8,u=c.toDataURL('image/jpeg',q);while(u.length>400000&&q>.3){q-=.1;u=c.toDataURL('image/jpeg',q)}u.length>400000?no(Error('الصورة كبيرة جداً')):ok(u)};im.src=r.result};r.readAsDataURL(file)})}
+window.fmfToolReport=(t,done)=>{if(!t)return;document.getElementById('f46-rp')?.remove();let ph=null;const w=document.createElement('div');w.id='f46-rp';w.dir='rtl';
+ w.innerHTML=`<div class="bx"><h3>⚠️ بلاغ عن أداة: ${esc(t.name)}</h3><div style="color:#64748b;font-size:12.5px">${esc(t.code)} — يصل البلاغ لأمين المستودع ومدير المنطقة ليقرر: إصلاح، أو شطب، أو خصم.</div>
+  <label>نوع البلاغ<select data-k><option value="damaged">💥 تلفت / تعطلت</option><option value="lost">❓ فُقدت</option></select></label>
+  <label>ماذا حدث؟ (مطلوب)<textarea data-n rows="3" maxlength="500" placeholder="متى وأين وكيف"></textarea></label>
+  <label>📷 صورة (اختياري)</label><label class="cam" data-cam>اضغط لالتقاط صورة<input type="file" accept="image/*" capture="environment" hidden></label>
+  <div class="bt2"><button type="button" class="p" data-ok>📤 إرسال البلاغ</button><button type="button" data-x>إلغاء</button></div></div>`;
+ document.body.appendChild(w);const q=x=>w.querySelector(x);q('[data-x]').onclick=()=>w.remove();
+ q('[data-cam] input').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{ph=await shrink(f);q('[data-cam]').innerHTML=`<img src="${esc(ph)}" alt="">`}catch(er){toast(er.message)}};
+ q('[data-ok]').onclick=async ev=>{const n=S(q('[data-n]').value);if(!n){toast('اكتب ماذا حدث');return}if(!navigator.onLine){toast('البلاغ يحتاج اتصالاً بالإنترنت');return}const bt=ev.currentTarget;bt.disabled=true;
+  try{const db=await C.engClient();const r=await db.rpc('fm_tool_report',{p_tool:t.id,p:{kind:q('[data-k]').value,note:n,photo:ph}});if(r.error)throw Error(r.error.message);toast('تم إرسال البلاغ '+(r.data&&r.data.code||''));w.remove();done&&done()}
+  catch(e){bt.disabled=false;const m=String(e.message||e);toast(/does not exist|schema cache|Could not find/i.test(m)?'البلاغات غير مفعّلة بعد على السحابة':/already reported/.test(m)?'يوجد بلاغ مفتوح لهذه الأداة':/not allowed/.test(m)?'غير مسموح':m)}}};
+let ME=null,HELD=null,HAT=0;
+async function held(){if(HELD&&Date.now()-HAT<120000)return HELD;try{if(!ME)ME=await C.api.me();const db=await C.engClient();const r=await db.from('wo_tools').select('name,code').eq('holder',ME.id).eq('status','out');HELD=r.error?null:(r.data||[]);HAT=Date.now()}catch(e){HELD=null}return HELD}
+let busy=false;
+async function deco(){const card=document.getElementById('ci-card');if(!card||busy)return;const need=[];
+ card.querySelectorAll('.ci .t small').forEach(x=>{const t=S(x.textContent).replace(/^🔧\s*/,'');if(!t)return;for(const p of t.split(/[،,+\/؛;]| و /).map(S).filter(Boolean))if(!need.some(y=>norm(y)===norm(p)))need.push(p)});
+ const k=need.join('|'),ex=document.querySelector('.f46-tb');if(ex&&ex.dataset.k===k)return;if(!need.length){ex&&ex.remove();return}
+ busy=true;try{const H=await held();const html=`<div class="f46-tb" data-k="${esc(k)}"><b>🛠️ الأدوات المطلوبة لهذا الأمر</b>${need.map(n=>{const m=H?match(n,H.map(h=>h.name)):null;return `<div class="${m?'ok':'no'}">${m?'✅':'⚠️'} ${esc(n)} — ${H==null?'تعذر قراءة عُددك':m?'في عهدتك: '+esc(m):'ليست في عهدتك — اطلبها من أمين المستودع قبل الذهاب'}</div>`}).join('')}</div>`;
+  const c2=document.getElementById('ci-card');if(!c2)return;const old=document.querySelector('.f46-tb');if(old)old.remove();c2.insertAdjacentHTML('beforebegin',html)}finally{busy=false}}
+setInterval(()=>{try{deco()}catch(e){}},1200);
 })();</script>
 
 </body>
