@@ -5604,3 +5604,41 @@ do $do$ begin
 end $do$;
 notify pgrst, 'reload schema';
 commit;
+
+-- ---------- 38) goods receipt note for purchase-request receipts (V217) ----------
+-- fm_po_receive(id, p) = fm_po_act(id, 'receive', p) (same checks, stock, variance, serials) + one wo_grn row for what was received
+-- now (supplier of the request, invoice no / date / photo, po_code); the new «in» moves get the GRN code in their note.
+begin;
+alter table public.wo_grn add column if not exists po_code text;
+create or replace function public.fm_po_receive(p_id uuid, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.wo_purchase_requests; st public.wo_stores; s text; g public.wo_grn; before uuid[]; L jsonb := '[]'; x jsonb; ln jsonb; m public.wo_materials;
+  q numeric; pr numeric; tot numeric := 0;
+begin
+  if length(coalesce(p->>'photo','')) > 560000 then raise exception 'photo too large'; end if;
+  select * into r from public.wo_purchase_requests where id = p_id;
+  if not found then raise exception 'not found'; end if;
+  select coalesce(array_agg(id), '{}') into before from public.wo_stock_moves where ref = r.code;
+  s := public.fm_po_act(p_id, 'receive', p - 'photo' - 'invoice_date');
+  select * into st from public.wo_stores where id = r.store_id;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    q := coalesce(nullif(x->>'qty','')::numeric, 0);
+    if q <= 0 then continue; end if;
+    ln := (select e from jsonb_array_elements(r.lines) t(e) where e->>'material_id' = x->>'material_id' limit 1);
+    if ln is null then continue; end if;
+    select * into m from public.wo_materials where id = (x->>'material_id')::uuid;
+    pr := coalesce(nullif(x->>'price','')::numeric, (ln->>'price')::numeric);
+    L := L || jsonb_build_object('material_id', m.id, 'name', m.name, 'unit', m.unit, 'code', m.code, 'qty', q, 'price', pr);
+    tot := tot + q * coalesce(pr, 0);
+  end loop;
+  insert into public.wo_grn(store_id, region, supplier, invoice_no, invoice_date, photo, lines, total, note, by_name, po_code)
+  values (st.id, st.region, r.supplier_name, left(nullif(btrim(coalesce(p->>'invoice_no','')),''),80),
+          coalesce(nullif(p->>'invoice_date','')::date, nullif(p->>'at','')::date), nullif(p->>'photo',''), L, round(tot, 2),
+          'استلام طلب الشراء ' || r.code, public.fm_me_name(), r.code)
+  returning * into g;
+  update public.wo_stock_moves set note = left(concat_ws(' — ', g.code, note), 300) where ref = r.code and not (id = any(before));
+  return jsonb_build_object('status', s, 'id', g.id, 'code', g.code);
+end $$;
+revoke all on function public.fm_po_receive(uuid, jsonb) from public, anon;
+grant execute on function public.fm_po_receive(uuid, jsonb) to authenticated;
+notify pgrst, 'reload schema';
+commit;
