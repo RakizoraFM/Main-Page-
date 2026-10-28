@@ -5886,3 +5886,181 @@ drop trigger if exists fm_issue_rem_notify on public.wo_stock;
 create trigger fm_issue_rem_notify after update of qty on public.wo_stock for each row execute function public.fm_issue_rem_notify();
 notify pgrst, 'reload schema';
 commit;
+
+-- ---------- 40) idle custody reminders, approval of large issue requests, shelf locations (V219) ----------
+-- (1) fm_custody_idle(days): parts in a person's custody with no issue / use for that item since `days` (stock_rules.idle_days
+--     [30, 60]); fm_v219_daily (pg_cron fm-v219-daily 05:30 UTC) reminds the holder from the first limit and his manager
+--     (reports_to) from the second, then every 7 days (push kind wh_idle, one per person).
+-- (2) stock_rules.issue_appr (SAR, 0 = off): a new request (or an edit) worth more than the limit, raised by someone who is not an
+--     approver, waits for the area engineer above the holder / of the region, the area manager, or the ops / project manager
+--     (appr_status needed); the storekeeper cannot issue it before (trigger fm_issue_appr_guard). fm_issue_req_approve(id, ok, note);
+--     a rejection rejects the request.
+-- (3) wo_stock.bin = the shelf / location of an item in a store (fm_stock_bin), printed on the QR labels.
+begin;
+insert into public.fm_settings(key, value) values ('stock_rules', '{"scrap_days":7,"esc_days":[7,14],"block_overdue":true,"variance_pct":5,"adj_value":200,"issue_appr":0,"idle_days":[30,60],"cap":{"supervisor":0,"contractor":0,"area_engineer":0}}')
+  on conflict (key) do update set value = public.fm_settings.value
+    || jsonb_build_object('issue_appr', coalesce(public.fm_settings.value->'issue_appr', '0'::jsonb), 'idle_days', coalesce(public.fm_settings.value->'idle_days', '[30,60]'::jsonb));
+
+-- (1) idle custody
+create or replace function public.fm_custody_idle_rows(p_days int) returns table(holder uuid, holder_name text, material_id uuid, qty numeric, price numeric, last_at timestamptz, days int)
+language sql stable security definer set search_path = public as $$
+  select c.holder, coalesce(p.full_name, p.email), c.material_id, c.qty, m.price, l.last_at,
+         floor(extract(epoch from (now() - coalesce(l.last_at, c.updated_at))) / 86400)::int
+  from public.wo_custody c join public.profiles p on p.id = c.holder join public.wo_materials m on m.id = c.material_id
+  left join lateral (select max(v.at) last_at from public.wo_custody_moves v where v.holder = c.holder and v.material_id = c.material_id and v.kind in ('issue','use')) l on true
+  where c.qty > 0 and p.active and coalesce(l.last_at, c.updated_at) < now() - make_interval(days => greatest(1, coalesce(p_days, 30))) $$;
+revoke all on function public.fm_custody_idle_rows(int) from public, anon, authenticated;
+create or replace function public.fm_custody_idle(p_days int default null) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('holder', x.holder, 'holder_name', x.holder_name, 'material_id', x.material_id, 'qty', x.qty, 'price', x.price,
+      'value', round(x.qty * coalesce(x.price, 0), 2), 'last_at', x.last_at, 'days', x.days) order by x.days desc), '[]'::jsonb)
+  from public.fm_custody_idle_rows(coalesce(p_days, nullif(public.fm_setting('stock_rules')->'idle_days'->>0,'')::int, 30)) x
+  where auth.uid() is not null and public.fm_mod('wh') and public.fm_wh_sees_holder(x.holder) $$;
+revoke all on function public.fm_custody_idle(int) from public, anon;
+grant execute on function public.fm_custody_idle(int) to authenticated;
+create or replace function public.fm_v219_daily() returns int language plpgsql security definer set search_path = public as $$
+declare d1 int := coalesce(nullif(public.fm_setting('stock_rules')->'idle_days'->>0,'')::int, 30);
+  d2 int := coalesce(nullif(public.fm_setting('stock_rules')->'idle_days'->>1,'')::int, 60); x record; b uuid; n int := 0;
+begin
+  if not public.fm_mod('wh') or d1 <= 0 then return 0; end if;
+  for x in select holder, max(holder_name) hn, count(*) k, round(sum(qty * coalesce(price,0))) v, max(days) mx,
+                  bool_or(days >= d1 and (days - d1) % 7 = 0) h1, bool_or(d2 > 0 and days >= d2 and (days - d2) % 7 = 0) h2
+           from public.fm_custody_idle_rows(d1) group by holder loop
+    if x.h1 or x.h2 then
+      perform public.fm_push_add(x.holder, 'wh_idle', '💤 قطع في عهدتك لم تُستخدم منذ ' || x.mx || ' يوماً', x.k || ' صنف • ' || x.v || ' ر.س — أرجعها لأمين المستودع إن لم تحتجها', 'cus', 'idle-' || x.holder, true);
+      n := n + 1;
+    end if;
+    if x.h2 then
+      select reports_to into b from public.profiles where id = x.holder;
+      if b is not null then perform public.fm_push_add(b, 'wh_idle', '💤 عهدة راكدة لدى ' || coalesce(x.hn,''), x.k || ' صنف • ' || x.v || ' ر.س منذ ' || x.mx || ' يوماً بلا استخدام', 'wh=idle', 'idle-' || x.holder, true); end if;
+    end if;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_v219_daily() from public, anon, authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v219-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v219-daily'', ''30 5 * * *'', ''select public.fm_v219_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: idle custody reminders are not sent (the platform still shows them)'; end;
+end $do$;
+
+-- (2) approval of large issue requests
+alter table public.wo_issue_requests add column if not exists appr_status text;
+alter table public.wo_issue_requests add column if not exists appr_value numeric(14,2);
+alter table public.wo_issue_requests add column if not exists appr_by_name text;
+alter table public.wo_issue_requests add column if not exists appr_at timestamptz;
+alter table public.wo_issue_requests add column if not exists appr_note text;
+do $do$ begin
+  alter table public.wo_issue_requests add constraint wo_issue_requests_appr_check check (appr_status in ('needed','approved','rejected'));
+exception when duplicate_object then null; end $do$;
+create or replace function public.fm_issue_value(p_lines jsonb) returns numeric language sql stable security definer set search_path = public as $$
+  select coalesce(round(sum(coalesce((l->>'qty')::numeric,0) * coalesce(m.price,0)), 2), 0)
+  from jsonb_array_elements(coalesce(p_lines,'[]')) l left join public.wo_materials m on m.id = nullif(l->>'material_id','')::uuid $$;
+create or replace function public.fm_issue_region(p_store uuid, p_holder uuid) returns text language sql stable security definer set search_path = public as $$
+  select coalesce((select region from public.wo_stores where id = p_store), (select (regions)[1] from public.profiles where id = p_holder)) $$;
+create or replace function public.fm_issue_approver(p_region text, p_holder uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,'')))
+    or (public.fm_my_pos() = 'area_engineer' and (public.fm_is_under(p_holder, auth.uid()) or public.fm_region_ok(coalesce(p_region,'')))), false) $$;
+create or replace function public.fm_issue_approvers(p_region text, p_holder uuid) returns setof uuid language sql stable security definer set search_path = public as $$
+  select p.id from public.profiles p where p.active and p.id <> p_holder and (
+    (public.fm_posx(p.role, p.job_title) = 'area_engineer' and public.fm_is_under(p_holder, p.id))
+    or (public.fm_posx(p.role, p.job_title) = 'area_manager' and (p_region is null or cardinality(p.regions) = 0 or p_region = any(p.regions)))) $$;
+revoke all on function public.fm_issue_approvers(text, uuid), public.fm_issue_value(jsonb), public.fm_issue_region(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.fm_issue_approver(text, uuid) from public, anon;
+grant execute on function public.fm_issue_approver(text, uuid) to authenticated;
+-- a new request / an edit of a request still waiting: does it need approval?
+create or replace function public.fm_issue_appr_check() returns trigger language plpgsql security definer set search_path = public as $$
+declare lim numeric := coalesce(nullif(public.fm_setting('stock_rules')->>'issue_appr','')::numeric, 0); v numeric;
+begin
+  if new.status <> 'requested' then return new; end if;
+  if tg_op = 'UPDATE' and new.lines is not distinct from old.lines then return new; end if;
+  v := public.fm_issue_value(new.lines);
+  if lim <= 0 or v <= lim then
+    if new.appr_status = 'needed' then new.appr_status := null; end if;
+    return new;
+  end if;
+  if tg_op = 'UPDATE' and new.appr_status = 'approved' and v <= coalesce(new.appr_value, 0) then return new; end if;
+  if public.fm_issue_approver(public.fm_issue_region(new.store_id, new.holder), new.holder) then
+    new.appr_status := 'approved'; new.appr_value := v; new.appr_by_name := public.fm_me_name(); new.appr_at := now();
+  else
+    new.appr_status := 'needed'; new.appr_value := v; new.appr_by_name := null; new.appr_at := null;
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_issue_appr_check on public.wo_issue_requests;
+create trigger fm_issue_appr_check before insert or update of lines on public.wo_issue_requests for each row execute function public.fm_issue_appr_check();
+-- nothing is issued while the approval is pending
+create or replace function public.fm_issue_appr_guard() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if old.appr_status = 'needed' and new.status in ('issued','partial') then raise exception 'approval required'; end if;
+  return new;
+end $$;
+drop trigger if exists fm_issue_appr_guard on public.wo_issue_requests;
+create trigger fm_issue_appr_guard before update of status on public.wo_issue_requests for each row execute function public.fm_issue_appr_guard();
+create or replace function public.fm_issue_req_approve(p_id uuid, p_ok boolean, p_note text) returns text language plpgsql security definer set search_path = public as $$
+declare r public.wo_issue_requests; nm text := public.fm_me_name(); nt text := nullif(btrim(coalesce(p_note,'')),'');
+begin
+  select * into r from public.wo_issue_requests where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if r.appr_status is distinct from 'needed' or r.status <> 'requested' then raise exception 'not pending'; end if;
+  if not public.fm_issue_approver(public.fm_issue_region(r.store_id, r.holder), r.holder) then raise exception 'not allowed'; end if;
+  if auth.uid() in (r.holder, coalesce(r.requested_by, r.holder)) and public.fm_role() <> 'admin' and public.fm_my_pos() <> 'sysadmin' then raise exception 'not allowed'; end if;
+  if coalesce(p_ok, false) then
+    update public.wo_issue_requests set appr_status = 'approved', appr_by_name = nm, appr_at = now(), appr_note = left(nt, 300) where id = p_id;
+    return 'approved';
+  end if;
+  if nt is null then raise exception 'note required'; end if;
+  update public.wo_issue_requests set appr_status = 'rejected', appr_by_name = nm, appr_at = now(), appr_note = left(nt, 300),
+    status = 'rejected', response = left('لم يُعتمد: ' || nt, 500) where id = p_id;
+  return 'rejected';
+end $$;
+revoke all on function public.fm_issue_req_approve(uuid, boolean, text) from public, anon;
+grant execute on function public.fm_issue_req_approve(uuid, boolean, text) to authenticated;
+-- notifications: a request waiting for approval goes to the approvers (not yet to the storekeeper); once approved, to the storekeeper
+create or replace function public.fm_push_ir() returns trigger language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; u uuid; n int := jsonb_array_length(coalesce(new.lines,'[]'));
+begin
+  select * into st from public.wo_stores where id = new.store_id;
+  if (tg_op = 'INSERT' and new.appr_status is distinct from 'needed')
+     or (tg_op = 'UPDATE' and new.appr_status = 'approved' and old.appr_status = 'needed' and new.status = 'requested') then
+    for u in select id from public.profiles p where p.active and public.fm_posx(p.role, p.job_title) = 'storekeeper'
+               and (p.id = st.keeper or (st.keeper is null and (cardinality(coalesce(p.regions,'{}')) = 0 or st.region = any(p.regions)))) loop
+      perform public.fm_push_add(u, 'wh_req', case when tg_op = 'INSERT' then '📦 طلب صرف ' else '✅ اعتُمد طلب الصرف ' end || new.code, coalesce(new.holder_name,'') || ' — ' || n || ' صنف' || coalesce(' — ' || new.wo_code, '') || coalesce(' — ' || st.name, ''), 'wh=req', 'ir-' || new.id);
+    end loop;
+  end if;
+  if tg_op = 'INSERT' and new.appr_status = 'needed' then
+    for u in select * from public.fm_issue_approvers(st.region, new.holder) loop
+      perform public.fm_push_add(u, 'appr', '🟡 طلب صرف بانتظار اعتمادك ' || new.code, coalesce(new.holder_name,'') || ' — ' || round(coalesce(new.appr_value,0)) || ' ر.س' || coalesce(' — ' || new.wo_code, ''), 'wh=req', 'irap-' || new.id);
+    end loop;
+  elsif tg_op = 'UPDATE' and new.status is distinct from old.status then
+    if new.status in ('issued','partial') then
+      perform public.fm_push_add(new.holder, 'wh_issued', '🧰 صُرفت قطع لعهدتك ' || new.code, 'أكّد الاستلام من «عهدتي»' || coalesce(' — ' || new.wo_code, ''), 'cus', 'ir-' || new.id);
+    elsif new.status = 'rejected' then
+      perform public.fm_push_add(new.holder, 'wh_issued', '❌ رُفض طلب الصرف ' || new.code, coalesce(new.response, ''), 'cus', 'ir-' || new.id);
+    end if;
+  end if;
+  return null;
+exception when others then return null;
+end $$;
+drop trigger if exists fm_push_ir on public.wo_issue_requests;
+create trigger fm_push_ir after insert or update of status, appr_status on public.wo_issue_requests for each row execute function public.fm_push_ir();
+
+-- (3) shelf / location of an item in a store: p_rows [{material_id, bin}]
+alter table public.wo_stock add column if not exists bin text;
+create or replace function public.fm_stock_bin(p_store uuid, p_rows jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; x jsonb; n int := 0;
+begin
+  select * into st from public.wo_stores where id = p_store and active;
+  if auth.uid() is null or not found or not (public.fm_stock_can(st.region) or public.fm_wh_keeper(st.id)) then raise exception 'not allowed'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p_rows,'[]')) loop
+    if not exists(select 1 from public.wo_materials where id = nullif(x->>'material_id','')::uuid) then continue; end if;
+    insert into public.wo_stock(store_id, material_id, bin) values (st.id, (x->>'material_id')::uuid, left(nullif(btrim(coalesce(x->>'bin','')),''),40))
+      on conflict (store_id, material_id) do update set bin = excluded.bin;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_stock_bin(uuid, jsonb) from public, anon;
+grant execute on function public.fm_stock_bin(uuid, jsonb) to authenticated;
+notify pgrst, 'reload schema';
+commit;
