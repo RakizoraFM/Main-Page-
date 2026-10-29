@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V244">
+<meta name="fm-version" content="V245">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V244',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V245',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V245',d:'2026-10-29',t:'أزرار الصفحات فوق البطاقات على الجوال',i:['على الجوال كانت بطاقات الجدول تخرج من إطاره (ارتفاعه محدود) فتظهر أزرار «السابق / التالي» فوق إحدى البطاقات؛ أصبح الإطار يتسع لكل البطاقات','«سجل البلاغات» على الكمبيوتر يعرض الصفحة كاملة (50 بلاغ) دون تمرير داخلي']},
 {v:'V244',d:'2026-10-29',t:'سجل البلاغات',i:['صفحة جديدة «🗂️ سجل البلاغات» أول «متابعة البلاغات»: كل بلاغات المنطقة في جدول واحد مع بحث وفلاتر (الحالة، المرحلة، الأولوية، المهلة، المنفّذ، المشرف، التاريخ) وعدّادات (مفتوحة، بلا منفّذ، متجاوزة، محلولة)','«🛠️ إدارة» لكل بلاغ تفتح نافذة إدارة البلاغ (المرحلة، الأولوية، التصنيف، الوصف، المنفّذ، الصور والملاحظات)','«👷 إسناد» لبلاغ واحد أو للبلاغات المحددة: اسم المنفّذ مع ملاحظة، وينتقل البلاغ إلى «مُسند للتنفيذ» ويُسجَّل باسمك','تحديث مرحلة عدة بلاغات مرة واحدة، وتصدير Excel، وتظهر على الجوال كبطاقات']},
 {v:'V243',d:'2026-10-29',t:'الرسوم والجداول على الجوال',i:['رسم «تحليل حالات البلاغات» لم يعد يغطي عنوانه على الجوال','على الجوال تظهر «مصفوفة أداء المشرفين» و«جدول البلاغات المفصل» وجداول «التنبيهات والتصعيد» و«الصيانة الوقائية» و«التقارير الدورية» كبطاقات: كل صف بطاقة فيها كل الأعمدة بعناوينها والأزرار بعرضها الكامل، دون تمرير جانبي','زر «📋 عرض كجدول / 🗂️ عرض كبطاقات» فوق كل جدول للتبديل، ويُحفظ الاختيار على الجهاز']},
 {v:'V242',d:'2026-10-29',t:'«البلاغات» تفتح على الجوال',i:['على الجوال كانت القائمة الجانبية تبقى مفتوحة فوق الصفحة بعد الضغط على «البلاغات» (وأزرار لوحة البلاغات الأخرى)، فيبدو أن الصفحة لم تُفتح؛ الآن تُغلق القائمة وتنتقل الشاشة إلى جدول البلاغات']},
@@ -38447,7 +38448,7 @@ window.fmV239={load,save,state:S};
  table.fm243-c tbody td.fm243-act>*{max-width:none}
  table.fm243-c tbody td.fm243-act button{flex:1 1 auto;white-space:nowrap}
  table.fm243-c tbody td.fm243-h{font-weight:900;font-size:14px;color:#1e1b4b}
- .fm243-wrap{overflow:visible!important}
+ .fm243-wrap{overflow:visible!important;max-height:none!important;border:0!important}
 }
 .fm243-tg{display:none}
 @media (max-width:760px){.fm243-tg{display:inline-flex;align-items:center;gap:6px;margin:6px 0 8px;border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;border-radius:999px;padding:6px 14px;font:800 12.5px Cairo,Tahoma,sans-serif;cursor:pointer}}
@@ -38497,6 +38498,7 @@ window.fmV239={load,save,state:S};
 .fm244-st.assigned{background:#e0e7ff;color:#3730a3}.fm244-st.progress,.fm244-st.inspected{background:#fef3c7;color:#92400e}.fm244-st.parts{background:#ffedd5;color:#9a3412}.fm244-st.resolved,.fm244-st.closed{background:#dcfce7;color:#166534}.fm244-st.cancelled{background:#fee2e2;color:#991b1b}.fm244-st.reopened{background:#fce7f3;color:#9d174d}
 .fm244-none{color:#b45309;font-weight:800}
 .fm244-acts{display:flex;gap:6px;justify-content:center;flex-wrap:nowrap}@media (max-width:760px){.fm244-acts{flex-wrap:wrap}}
+#fm244-page .fm103-tw{max-height:none}
 .fm244-pg{display:flex;gap:6px;justify-content:center;align-items:center;margin-top:10px}
 .fm244-sel{position:sticky;bottom:10px;z-index:5;display:none;gap:8px;align-items:center;flex-wrap:wrap;background:#0f172a;color:#fff;border-radius:14px;padding:9px 12px;margin-top:10px;font:800 12.5px Cairo,Tahoma,sans-serif}
 .fm244-sel.on{display:flex}.fm244-sel .fm244-btn{border-color:transparent}
