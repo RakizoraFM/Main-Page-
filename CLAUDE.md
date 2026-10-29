@@ -322,3 +322,7 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V234 — the missing-SQL hint names the right file
 - The V233 dashboard card error used to add «ثبّت migration_v233.sql» to every «schema cache» error. `window.fmV234Sql(message)` maps the missing object to its file: `fm_sla231*` / `fm231*` → migration_v231.sql, `*import232` → v232, `fm_workforce233` / `fm233*` → v233, else «supabase_setup.sql المحدَّث». Use it for new hints.
+
+## V235 — sidebar order
+- V123 `GROUPS`: new first group `wo` «🛠️ أوامر العمل» (`v2-nav-fm145-wo`, `v2-nav-fm195-ppm`, `v2-nav-fm225-ppmcal`; opens by default — the saved open list carries the marker `_wo235` so a user's later choice sticks), then `sla` (without the ops screen); `maint` keeps requests / QA / capex. `TOP` = ops screen, solution, then the hidden portal / actions buttons.
+- `fm-v235-nav-css` hides `#v2-nav-portal`, `#v2-nav-actions` and `#fm157-portal` (the buttons stay: older layers use them as insert anchors). The portal no longer opens. `fm-v235-nav` adds `#v2-nav-fm235-deputy` (staff group) → `fmV166Deputy()`, the deputy dialog that lived in the portal. Manual entries of the portal and the action center were removed.
