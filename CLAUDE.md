@@ -344,3 +344,7 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V240 / field F56 — chart of the approved breach causes
 - Inside `fm-v239-breach` `refreshCard`: under the chips, a doughnut (count per approved cause + «بدون سبب» in grey, legend with n and %) and a horizontal stacked bar (cause × stage from `fmV118BreachStages()`; x reversed for RTL). A click on a slice / bar / legend sets `S.f` (deferred with `setTimeout` — destroying a chart inside its own click handler throws). Instances live in `S.ch` and are destroyed on every re-render. «📊 إخفاء / إظهار الرسم» = `localStorage fm240_chart` ('0' hides). The datalabels plugin is active on these charts; labels show only on segments big enough. Field F56 = dictionary entries only.
+
+## V241 — the «أكبر تجاوز للمهلة» card at full width
+- `fmtTable(t)` adds `.fm241-t` and column classes by header text (`COLS`: id, ov, why, sch, cause, st) to both breach tables: indigo header, zebra rows, wrapped reason / school, select + note on one row (`.fm241-cz` / `.fm241-row`) with the author line under them.
+- `enhanceWorst` (in `fm-v239-breach`) adds `.fm241-wide` to the card holding `table[data-f239w]`; CSS `.fm103-grid>.fm241-wide{grid-column:1/-1}` makes it span the whole grid row (it used to share the row with the categories table) and the table is `width:100%`. Fix: `enhanceWorst` skips tables inside `div[data-f239]` (after «🔄» it used to add the column to the card's own table).
