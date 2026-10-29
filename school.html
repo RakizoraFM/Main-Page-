@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SP2">
+<meta name="fm-version" content="SP3">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -46,6 +46,8 @@ textarea{min-height:100px}
 .rep{margin-top:6px;background:#f8fafc;border-radius:10px;padding:6px 10px;font-size:13px;font-weight:700;color:#0f172a}
 .stars{display:flex;gap:6px;margin-top:8px}.stars button{flex:1;max-width:46px;aspect-ratio:1;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;font:900 20px Cairo,Tahoma,sans-serif;color:#cbd5e1;cursor:pointer;padding:0}.stars button.on{background:#fef3c7;border-color:#f59e0b;color:#f59e0b}
 .empty{text-align:center;color:#64748b;font-weight:700;padding:22px 6px}
+.cf{border:1px solid #fcd34d;background:#fffbeb;border-radius:14px;padding:10px 12px;margin:8px 0}.cf .r1{display:flex;justify-content:space-between;gap:8px;align-items:center}.cf .bt{display:flex;gap:8px;margin-top:8px}.cf .bt button{flex:1;border:0;border-radius:10px;padding:10px;font:900 14px Cairo,Tahoma,sans-serif;cursor:pointer;color:#fff}.cf .ok{background:#16a34a}.cf .no{background:#dc2626}.cf textarea{min-height:70px;margin-top:8px}.bdg{display:inline-block;min-width:20px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;padding:0 6px;margin-inline-start:4px}
+/* SP3 (V223): the principal confirms finished work */
 .foot{text-align:center;color:#94a3b8;font-size:11.5px;margin-top:14px;font-weight:700;line-height:1.8}
 </style>
 </head>
@@ -66,12 +68,12 @@ const token=(new URLSearchParams(location.search).get('k')||'').trim().toLowerCa
 const CATS=['❄️ تكييف','💡 كهرباء','🚰 سباكة','🧹 نظافة','🔥 أمن وسلامة','🚪 أبواب ونوافذ','🧱 مباني وأسوار','📦 أخرى'];
 const RST={new:'جديد — بانتظار المراجعة',accepted:'تم الاستلام',in_progress:'قيد التنفيذ',done:'تم الإنجاز',rejected:'مرفوض'};
 const WST={assigned:'مُسند',accepted:'مقبول',in_progress:'قيد التنفيذ',done:'بانتظار الاعتماد',returned:'قيد التصحيح',stopped:'موقوف'};
-const ERR={'invalid link':'الرابط غير صحيح أو تم إيقافه. اطلب رابطاً جديداً من مشرف الصيانة.','too many requests':'تم إرسال عدد كبير من الطلبات اليوم. حاول غداً أو تواصل مع المشرف.','description required':'اكتب وصفاً واضحاً للطلب.','invalid photos':'تعذّر إرفاق إحدى الصور. جرّب صورة أخرى.','already rated':'تم تقييم هذا الطلب من قبل.','not finished':'يمكن التقييم بعد إنجاز الطلب.'};
+const ERR={'invalid link':'الرابط غير صحيح أو تم إيقافه. اطلب رابطاً جديداً من مشرف الصيانة.','too many requests':'تم إرسال عدد كبير من الطلبات اليوم. حاول غداً أو تواصل مع المشرف.','description required':'اكتب وصفاً واضحاً للطلب.','not waiting':'هذا العمل لم يعد بانتظار تأكيدكم.','reason required':'اكتبوا ما الذي لم يُنجز (3 أحرف على الأقل).','not found':'تعذّر العثور على العمل.','invalid photos':'تعذّر إرفاق إحدى الصور. جرّب صورة أخرى.','already rated':'تم تقييم هذا الطلب من قبل.','not finished':'يمكن التقييم بعد إنجاز الطلب.'};
 async function rpc(fn,body){const r=await fetch(CFG.url+'/rest/v1/rpc/'+fn,{method:'POST',headers:{apikey:CFG.key,Authorization:'Bearer '+CFG.key,'Content-Type':'application/json'},body:JSON.stringify(body)});
  const x=await r.json().catch(()=>null);if(!r.ok){const m=(x&&x.message)||('HTTP '+r.status);throw Error(ERR[m]||m)}return x}
 const date=v=>{try{return new Date(v).toLocaleDateString('ar-SA-u-ca-gregory',{timeZone:'Asia/Riyadh',year:'numeric',month:'short',day:'numeric'})}catch(e){return ''}};
 function fail(t){app.innerHTML='<div class="brand">RakizoraFM · إدارة المرافق</div><h1>بوابة المدرسة</h1><p class="msg">'+esc(t)+'</p>'}
-let I=null,tab='new',form={cat:'',desc:'',urgent:false,name:'',phone:'',photos:[]},sent='';
+let I=null,tab=null,form={cat:'',desc:'',urgent:false,name:'',phone:'',photos:[]},sent='';
 try{const s=JSON.parse(localStorage.getItem('fmsp_contact')||'{}');form.name=s.name||'';form.phone=s.phone||''}catch(e){}
 /* a photo → JPEG data URL, longest side ≤ 1280 px, under 560 000 characters */
 function shrink(file){return new Promise((res,rej)=>{const r=new FileReader();r.onerror=()=>rej(Error('read'));r.onload=()=>{const im=new Image();im.onerror=()=>rej(Error('image'));im.onload=()=>{
@@ -83,10 +85,10 @@ async function start(){
  if(!(await tenantCfg()))return fail('رمز الشركة في الرابط غير صحيح أو تعذّر الاتصال.');if(!/^[0-9a-f]{64}$/.test(token))return fail('الرابط غير صحيح.');
  try{await load()}catch(e){return fail('تعذّر الاتصال. تحقق من الإنترنت ثم أعد فتح الرابط.')}
  if(!I||I.state!=='ok')return fail(ERR['invalid link']);draw()}
-function draw(){const open=(I.requests||[]).filter(r=>['new','accepted','in_progress'].includes(r.status)).length;
+function draw(){const CF=I.confirm||[];if(!tab)tab=CF.length?'conf':'new';const open=(I.requests||[]).filter(r=>['new','accepted','in_progress'].includes(r.status)).length;
  app.innerHTML=`<div class="brand">RakizoraFM · إدارة المرافق</div><h1>🏫 ${esc(I.school)}</h1><div class="sub">بوابة المدرسة — ارفع طلبك وتابع حالته</div>
  <div class="kp"><div><b>${open}</b><span>طلباتي المفتوحة</span></div><div><b>${(I.tickets||[]).length}</b><span>بلاغات مفتوحة</span></div><div><b>${(I.orders||[]).length}</b><span>أعمال جارية</span></div></div>
- <div class="tabs">${[['new','➕ طلب جديد'],['mine','📋 طلباتي'],['open','🛠️ المفتوح على المدرسة']].map(([k,l])=>`<button data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div><div id="pane"></div>
+ <div class="tabs">${[['new','➕ طلب جديد'],['conf','✅ تأكيد الإنجاز'+(CF.length?`<span class="bdg">${CF.length}</span>`:'')],['mine','📋 طلباتي'],['open','🛠️ المفتوح على المدرسة']].map(([k,l])=>`<button data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div><div id="pane"></div>
  <div class="foot">هذا الرابط خاص بمدرستكم — لا تشاركه خارج إدارة المدرسة.</div>`;
  app.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{tab=b.dataset.t;sent='';draw()});
  const p=app.querySelector('#pane');
@@ -98,9 +100,28 @@ function draw(){const open=(I.requests||[]).filter(r=>['new','accepted','in_prog
   p.querySelectorAll('[data-r]').forEach(box=>box.querySelectorAll('[data-v]').forEach(b=>b.onclick=async()=>{const v=+b.dataset.v;box.querySelectorAll('button').forEach(x=>x.classList.toggle('on',+x.dataset.v<=v));
    const c=prompt('ملاحظة على التنفيذ (اختياري):','');if(c===null){box.querySelectorAll('button').forEach(x=>x.classList.remove('on'));return}
    try{await rpc('fm_school_request_rate',{p_token:token,p_id:box.dataset.r,p_score:v,p_comment:c||''});await load();draw()}catch(e){alert(e.message)}}));return}
+ if(tab==='conf')return drawConf(p,CF);
  const T=I.tickets||[],O=I.orders||[];
  p.innerHTML=`<label class="f">بلاغات مفتوحة (${T.length})</label>${T.length?T.map(t=>`<div class="it"><div class="r1"><b>${esc(t.cat||'بلاغ')}</b><span class="st open">${esc(t.status||'')}</span></div><small>رقم ${esc(t.id)} · ${esc(date(t.at))}${t.priority?' · '+esc(t.priority):''}</small></div>`).join(''):'<div class="empty">لا توجد بلاغات مفتوحة ✅</div>'}
-  <label class="f">أعمال صيانة جارية (${O.length})</label>${O.length?O.map(o=>`<div class="it"><div class="r1"><b>${esc(o.title)}</b><span class="st in_progress">${esc(WST[o.status]||o.status)}</span></div><small>${esc(o.code||'')} · ${esc(date(o.at))}</small></div>`).join(''):'<div class="empty">لا توجد أعمال جارية</div>'}`}
+  <label class="f">أعمال صيانة جارية (${O.length})</label>${O.length?O.map(o=>`<div class="it"><div class="r1"><b>${esc(o.title)}</b><span class="st in_progress">${esc(o.sc==='pending'?'بانتظار تأكيدكم':WST[o.status]||o.status)}</span></div><small>${esc(o.code||'')} · ${esc(date(o.at))}</small></div>`).join(''):'<div class="empty">لا توجد أعمال جارية</div>'}`}
+/* SP3: work the maintenance team reported finished — the principal confirms it or says what is still not done */
+function drawConf(p,CF){const H=I.confirmed||[];
+ p.innerHTML=`<div class="sub" style="text-align:right">أبلغ فريق الصيانة أن هذه الأعمال أُنجزت. أكّدوا ذلك بعد المعاينة، أو اكتبوا ما لم يُنجز ليُعاد للفريق.</div>
+  ${CF.length?CF.map(o=>`<div class="cf" data-o="${esc(o.id)}"><div class="r1"><b>${esc(o.title)}</b><span class="st accepted">بانتظار تأكيدكم</span></div>
+   <small>${esc(o.code||'')} · أُبلغ بالإنجاز ${esc(date(o.done_at))}${o.by?' · '+esc(o.by):''}${o.sr?' · طلبكم '+esc(o.sr):''}</small>
+   ${o.items?`<p>البنود المنجزة: ${o.items_done} من ${o.items}</p>`:''}${String(o.note||'').split(' — ').slice(2).join(' — ')?`<div class="rep">💬 ${esc(String(o.note).split(' — ').slice(2).join(' — '))}</div>`:''}
+   <label class="f">اسمكم</label><input type="text" data-n maxlength="100" value="${esc(form.name)}">
+   <textarea data-w maxlength="500" placeholder="عند عدم الإنجاز: ما الذي لم يُنجز؟" hidden></textarea>
+   <div class="bt"><button class="ok" data-ok>✅ تم الإنجاز فعلاً</button><button class="no" data-no>❌ لم يُنجز</button></div><p class="msg" data-e hidden></p></div>`).join(''):'<div class="empty">لا توجد أعمال بانتظار تأكيدكم ✅</div>'}
+  ${H.length?`<label class="f">آخر ما أكدتموه (30 يوماً)</label>${H.map(o=>`<div class="it"><div class="r1"><b>${esc(o.title)}</b><span class="st ${o.sc==='confirmed'?'done':'rejected'}">${o.sc==='confirmed'?'✅ مؤكَّد':'❌ لم يُنجز'}</span></div><small>${esc(o.code||'')} · ${esc(date(o.sc_at))}</small>${o.sc_note?`<p>${esc(o.sc_note)}</p>`:''}</div>`).join('')}`:''}`;
+ p.querySelectorAll('[data-o]').forEach(box=>{const q=s=>box.querySelector(s),e=q('[data-e]');
+  const send=async(ok,b)=>{const nm=q('[data-n]').value.trim(),w=q('[data-w]').value.trim();e.hidden=true;
+   if(!ok&&w.length<3){q('[data-w]').hidden=false;q('[data-w]').focus();e.textContent=ERR['reason required'];e.hidden=false;return}
+   b.disabled=true;try{await rpc('fm_school_wo_confirm',{p_token:token,p_id:box.dataset.o,p_ok:ok,p_note:ok?(w||null):w,p_name:nm||null});
+    if(nm){form.name=nm;try{const s=JSON.parse(localStorage.getItem('fmsp_contact')||'{}');s.name=nm;localStorage.setItem('fmsp_contact',JSON.stringify(s))}catch(_){}}
+    await load().catch(()=>{});draw()}catch(x){e.textContent=x.message==='Failed to fetch'?'تعذّر الإرسال. تحقق من الإنترنت.':x.message;e.hidden=false;b.disabled=false}};
+  q('[data-ok]').onclick=ev=>{if(confirm('تأكيد أن العمل أُنجز فعلاً بعد المعاينة؟'))send(true,ev.currentTarget)};
+  q('[data-no]').onclick=ev=>{const t=q('[data-w]');if(t.hidden){t.hidden=false;t.focus();return}send(false,ev.currentTarget)}})}
 function drawForm(p){if(sent){p.innerHTML=`<div class="okm">✅ تم استلام طلبكم برقم <b>${esc(sent)}</b><br>سيراجعه فريق الصيانة ويمكنكم متابعته من «📋 طلباتي».</div><button class="go" id="again">➕ طلب آخر</button>`;p.querySelector('#again').onclick=()=>{sent='';draw()};return}
  p.innerHTML=`<label class="f">نوع الطلب *</label><div class="cats">${CATS.map(c=>`<button type="button" data-c="${esc(c)}" class="${form.cat===c?'on':''}">${c}</button>`).join('')}</div>
   <label class="f">وصف الطلب *</label><textarea id="d" maxlength="1000" placeholder="مثال: المكيف في الفصل 3/أ لا يبرد منذ يومين">${esc(form.desc)}</textarea>

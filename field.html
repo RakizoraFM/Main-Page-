@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F46">
+<meta name="fm-version" content="F48">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -221,7 +221,7 @@ function ensureLib(){if(window.supabase&&window.supabase.createClient)return Pro
 async function sb(){const c=cfg();if(!c.url||!c.key)throw new Error('لم يتم إعداد الاتصال بالسحابة');if(client)return client;await ensureLib();
  client=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'fm-cloud-auth'}});return client}
 const chk=({data,error})=>{if(error)throw new Error(error.message||String(error));return data};
-const ARmsg=m=>{m=String(m||'');if(/spend approval required/i.test(m))return 'المشتريات فوق سقف الاعتماد — يعتمدها مدير أعلى';if(/reason required/i.test(m))return 'اكتب السبب';if(/Invalid login/i.test(m))return 'البريد أو كلمة المرور غير صحيحة';if(/Email not confirmed/i.test(m))return 'لم يتم تأكيد البريد بعد — افتح رسالة التأكيد في بريدك';if(/already registered/i.test(m))return 'هذا البريد مسجل مسبقاً';if(/row-level security/i.test(m))return 'ليست لديك صلاحية لهذا الإجراء';if(/Failed to fetch|NetworkError|network/i.test(m))return 'تعذر الاتصال بالخادم — تحقق من الإنترنت';if(/Password should/i.test(m))return 'كلمة المرور قصيرة — 6 أحرف على الأقل';return m};
+const ARmsg=m=>{m=String(m||'');if(/school rejected/i.test(m))return 'مدير المدرسة أفاد أن العمل لم يُنجز — أعد الأمر للتصحيح';if(/school confirmation pending/i.test(m))return 'بانتظار تأكيد مدير المدرسة للإنجاز';if(/spend approval required/i.test(m))return 'المشتريات فوق سقف الاعتماد — يعتمدها مدير أعلى';if(/reason required/i.test(m))return 'اكتب السبب';if(/Invalid login/i.test(m))return 'البريد أو كلمة المرور غير صحيحة';if(/Email not confirmed/i.test(m))return 'لم يتم تأكيد البريد بعد — افتح رسالة التأكيد في بريدك';if(/already registered/i.test(m))return 'هذا البريد مسجل مسبقاً';if(/row-level security/i.test(m))return 'ليست لديك صلاحية لهذا الإجراء';if(/Failed to fetch|NetworkError|network/i.test(m))return 'تعذر الاتصال بالخادم — تحقق من الإنترنت';if(/Password should/i.test(m))return 'كلمة المرور قصيرة — 6 أحرف على الأقل';return m};
 function b64ToBlob(d){const [h,b]=d.split(',');const mime=(h.match(/data:([^;]+)/)||[])[1]||'image/jpeg';const bin=atob(b);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:mime})}
 const uuid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16)});
 
@@ -1040,7 +1040,7 @@ window.fmfOpenWo=async id=>{if(!(D.wo||[]).some(x=>x.id===id))await woPull().cat
 
 function woCard(w){const t=WO_T[w.type]||WO_T.task,me=woMine(w);
  return `<button class="card tk wo-c" data-wo="${esc(w.id)}"><div class="r1"><span class="id">${esc(w.code||'')}</span>${woChip(w)}</div>
-  <div class="sch">${t[0]} ${esc(w.title)}</div>${w.transfer_note?`<div class="cat" style="color:#92400e;font-weight:800">${esc(w.transfer_note)}</div>`:''}<div class="cat">${esc(w.school||'')}${w.school?' • ':''}${me?'من: '+esc(w.created_by_name||''):'إلى: '+esc(w.assignee_name||'')}</div>
+  <div class="sch">${t[0]} ${esc(w.title)}${w.sc_status==='rejected'?' <span style="color:#b91c1c;font-size:12px;font-weight:900">🏫 المدرسة: لم يُنجز</span>':w.sc_status==='pending'&&w.status==='done'?' <span style="color:#92400e;font-size:12px;font-weight:900">🏫 بانتظار تأكيد المدرسة</span>':w.sc_status==='confirmed'?' <span style="color:#166534;font-size:12px;font-weight:900">🏫 أكّدت المدرسة</span>':''}</div>${w.transfer_note?`<div class="cat" style="color:#92400e;font-weight:800">${esc(w.transfer_note)}</div>`:''}<div class="cat">${esc(w.school||'')}${w.school?' • ':''}${me?'من: '+esc(w.created_by_name||''):'إلى: '+esc(w.assignee_name||'')}</div>
   <div class="chips">${woDue(w)}<span class="chip">${esc(t[1])}</span>${w.priority&&w.priority!=='متوسط'?`<span class="chip ${w.priority==='طارئ'?'c-bad':'c-warn'}">${esc(w.priority)}</span>`:''}${woNeedsMe(w)?'<span class="chip c-bad">● مطلوب منك</span>':''}</div></button>`}
 function woView(){D.curWo=null;const L=D.wo||[],mine=L.filter(woMine),sent=L.filter(w=>woSent(w)&&!woMine(w)),seg=D.woSeg==='sent'&&(sent.length||canAssign())?'sent':'mine',base=seg==='sent'?sent:mine;
  const F={active:w=>!WO_FINAL(w.status)&&w.status!=='done'&&w.status!=='rejected',approve:w=>w.status==='done',rej:w=>w.status==='rejected',closed:w=>WO_FINAL(w.status),all:()=>true};
@@ -1087,6 +1087,7 @@ async function woDetail(id,keep){
    <div style="font-weight:900;font-size:17px;margin:4px 0">${t[0]} ${esc(w.title)}</div>
    <div class="kv"><span>النوع</span><b>${esc(t[1])}</b>${w.school?`<span>المدرسة</span><b>${esc(w.school)}</b>`:''}<span>الأولوية</span><b>${esc(w.priority||'متوسط')}</b>
     <span>موعد الإنجاز</span><b>${w.due_at?dts(w.due_at):'—'} ${woDue(w)}</b><span>من</span><b>${esc(w.created_by_name||'')}</b><span>إلى</span><b>${esc(w.assignee_name||'')}</b><span>أُنشئ</span><b>${dts(w.created_at)}</b></div>
+   ${w.sc_status?`<div class="card" style="margin-top:8px;line-height:1.9;font-weight:700;${w.sc_status==='rejected'?'background:#fef2f2;border-color:#fca5a5;color:#991b1b':w.sc_status==='confirmed'?'background:#f0fdf4;border-color:#86efac;color:#166534':'background:#fffbeb;border-color:#fcd34d;color:#92400e'}">${w.sc_status==='pending'?'🏫 أُرسل لمدير المدرسة ليؤكد الإنجاز':w.sc_status==='confirmed'?'🏫 أكّد مدير المدرسة إنجاز العمل':'🏫 أفاد مدير المدرسة أن العمل لم يُنجز'}${w.sc_name?' — '+esc(w.sc_name):''}${w.sc_note?'<br>💬 '+esc(w.sc_note):''}</div>`:''}
    ${w.transfer_note?`<div class="card" style="margin-top:8px;background:#fffbeb;border-color:#f59e0b;color:#92400e;font-weight:800;line-height:1.9">${esc(w.transfer_note)}${w.status==='assigned'&&woMine(w)?'<br>اقبل الأمر لتبدأ العمل عليه.':''}</div>`:''}
    ${w.description?`<div class="muted" style="margin-top:8px;line-height:1.9;white-space:pre-wrap">${esc(w.description)}</div>`:''}
    ${lastRet&&['returned','rejected'].includes(w.status)?`<div class="note" style="margin-top:8px;border-color:#fecaca;background:#fef2f2">${esc(lastRet.text)}</div>`:''}
@@ -1749,7 +1750,7 @@ let tT=null;const toast=(m,k)=>{const t=document.getElementById('toast');if(!t){
 const ERR=m=>{m=String(m&&m.message||m);return /does not exist|schema cache|Could not find/i.test(m)?'المستودعات غير مفعّلة بعد على السحابة':/item not approved/.test(m)?'صنف غير معتمد':/invalid order/.test(m)?'أمر العمل غير صالح أو مغلق':/ticket required/.test(m)?'اكتب رقم البلاغ':/no store/.test(m)?'لا يوجد مستودع لمنطقتك':/not allowed/.test(m)?'غير مسموح':/Failed to fetch|NetworkError/i.test(m)?'لا يوجد اتصال':m};
 const RQ={requested:['y','بانتظار الصرف'],partial:['y','صُرف جزء'],issued:['g','صُرف — أكّد الاستلام'],received:['g','استلمته'],rejected:['r','مرفوض'],cancelled:['','ملغى']};
 let ME=null,X=null,on=false;
-async function load(){const db=await C.engClient();const since=new Date(Date.now()-150*864e5).toISOString();
+async function load0(){const db=await C.engClient();const since=new Date(Date.now()-150*864e5).toISOString();
  const R=await Promise.all([db.from('wo_custody').select('*').eq('holder',ME.id),db.from('wo_custody_moves').select('*').eq('holder',ME.id).gte('at',since).order('at',{ascending:false}).limit(500),
   db.from('wo_issue_requests').select('*').gte('at',since).order('at',{ascending:false}).limit(200),db.from('wo_custody_counts').select('*').eq('holder',ME.id).order('at',{ascending:false}).limit(20),
   db.from('wo_materials').select('id,code,name,unit,price,category,scrap_return,approved_at,active').order('name')]);
@@ -1759,10 +1760,15 @@ async function load(){const db=await C.engClient();const since=new Date(Date.now
  try{const e=await db.from('wo_materials').select('id,ext_code');if(!e.error)for(const r of e.data||[]){const m=X.mats.find(x=>x.id===r.id);if(m)m.ext_code=r.ext_code}}catch(e){}
  try{const i=await db.rpc('fm_custody_idle',{p_days:null});X.idle=i.error?null:(i.data||[]).filter(x=>x.holder===ME.id)}catch(e){X.idle=null}
  window.__fmfCus=new Map(X.cus.filter(c=>+c.qty>0).map(c=>[c.material_id,+c.qty]));return X}
+/* F47: the last data is kept on the phone; without a connection the sheet opens on it (requests / receipts are queued by fmfWhOut) */
+const CK=()=>'fmf_cus_cache:'+(ME&&ME.id);
+const netE=e=>!navigator.onLine||/Failed to fetch|NetworkError|network|Load failed/i.test(String(e&&e.message||e));
+async function load(){try{await load0();X.off=false;try{localStorage.setItem(CK(),JSON.stringify({at:Date.now(),X:Object.assign({},X,{sugg:null,idle:null,off:false})}))}catch(e){}return X}
+ catch(e){if(!netE(e))throw e;let c=null;try{c=JSON.parse(localStorage.getItem(CK())||'null')}catch(_){}if(!c||!c.X)throw e;X=c.X;X.off=true;X.offAt=c.at;window.__fmfCus=new Map((X.cus||[]).filter(c=>+c.qty>0).map(c=>[c.material_id,+c.qty]));return X}}
 const mat=id=>(X.mats.find(m=>m.id===id)||{name:'صنف'});
 const late=()=>X.mv.filter(m=>m.kind==='use'&&+m.scrap_open>0&&m.scrap_due&&m.scrap_due<today());
 const owe=()=>X.cus.reduce((t,c)=>t+(+c.scrap||0),0);
-function homeCard(){if(!X)return;const h=document.querySelector('#app .card.hello');if(!h||document.getElementById('f29-h'))return;const held=X.cus.filter(c=>+c.qty>0).length,L=late().length,toRecv=X.req.filter(r=>r.holder===ME.id&&['issued','partial'].includes(r.status)&&(!r.received_at||(r.issued_at&&r.received_at<r.issued_at&&'signed_at' in r))).length,toSign=X.cnt.filter(c=>c.status==='open').length;
+function homeCard(){if(!X)return;const h=document.querySelector('#app .card.hello');if(!h||document.getElementById('f29-h'))return;const held=X.cus.filter(c=>+c.qty>0).length,L=late().length,toRecv=X.req.filter(r=>r.holder===ME.id&&['issued','partial'].includes(r.status)&&(!r.received_at||(r.issued_at&&r.received_at<r.issued_at&&'signed_at' in r))).filter(r=>!(window.fmfWhOut&&window.fmfWhOut.has(r.id))).length,toSign=X.cnt.filter(c=>c.status==='open').length;
  if(!held&&!owe()&&!toRecv&&!toSign&&!X.req.some(r=>r.status==='requested'))return homeLink(h);
  const b=document.createElement('button');b.id='f29-h';b.type='button';b.className=L?'bad':'';
  b.innerHTML=`<span>🧰 عهدتي: ${fmt(held)} صنف${owe()?` • ♻️ تالف مطلوب ${fmt(owe())}`:''}${L?` • ⛔ ${fmt(L)} متأخر`:''}${toRecv?` • 📦 ${fmt(toRecv)} بانتظار تأكيد استلامك`:''}${toSign?` • ✍️ جرد للتوقيع`:''}</span><span>فتح ←</span>`;b.onclick=open;(h.nextElementSibling&&h.nextElementSibling.classList.contains('kpis')?h.nextElementSibling:h).after(b)}
@@ -1771,9 +1777,10 @@ function sheet(){let s=document.getElementById('f29');if(!s){s=document.createEl
 async function open(){const s=sheet();s.classList.add('open');s.innerHTML='<div class="hd"><button type="button" data-x>→</button><h2>🧰 عهدتي</h2></div><div class="bd"><div class="cd">جارٍ التحميل…</div></div>';s.querySelector('[data-x]').onclick=close;
  try{await load()}catch(e){s.querySelector('.bd').innerHTML=`<div class="al bad">${esc(ERR(e))}</div>`;return}draw()}
 function close(){const s=document.getElementById('f29');if(s){s.classList.remove('open');s.innerHTML=''}document.getElementById('f29-h')?.remove();homeCard()}
-function draw(){const s=sheet(),L=late(),recv=X.req.filter(r=>r.holder===ME.id&&['issued','partial'].includes(r.status)&&(!r.received_at||(r.issued_at&&r.received_at<r.issued_at&&'signed_at' in r))),sign=X.cnt.filter(c=>c.status==='open');
+function draw(){const s=sheet(),L=late(),recv=X.req.filter(r=>r.holder===ME.id&&['issued','partial'].includes(r.status)&&(!r.received_at||(r.issued_at&&r.received_at<r.issued_at&&'signed_at' in r))).filter(r=>!(window.fmfWhOut&&window.fmfWhOut.has(r.id))),sign=X.cnt.filter(c=>c.status==='open');
  const due=mid=>X.mv.filter(m=>m.kind==='use'&&m.material_id===mid&&+m.scrap_open>0).map(m=>m.scrap_due).sort()[0];
  s.innerHTML=`<div class="hd"><button type="button" data-x>→</button><h2>🧰 عهدتي</h2><button type="button" data-rf>🔄</button></div><div class="bd">
+  ${X.off?`<div class="al warn">📴 بدون اتصال — تعرض آخر بيانات محفوظة${X.offAt?' ('+dd(new Date(X.offAt).toISOString())+')':''}. طلب القطع وتأكيد الاستلام يُحفظان على الجوال ويُرسلان تلقائياً عند عودة الاتصال.</div>`:''}${window.fmfWhOut?window.fmfWhOut.html(mat):''}
   ${L.length?`<div class="al bad">⛔ تالف متأخر: ${L.map(m=>`${esc(mat(m.material_id).name)} ×${fmt(m.scrap_open)} (${esc(m.wo_code||'')} — كان مطلوباً ${dd(m.scrap_due)})`).join('، ')}. سلّمه لأمين المستودع؛ لا يُصرف لك نفس الصنف قبل ذلك.</div>`:''}
   ${X.idle&&X.idle.length?`<div class="al warn">💤 قطع في عهدتك لم تُستخدم منذ ${fmt(Math.min(...X.idle.map(x=>+x.days)))} يوماً أو أكثر: ${X.idle.map(x=>`${esc(mat(x.material_id).name)} ×${fmt(x.qty)}`).join('، ')}. إن لم تحتجها أرجعها لأمين المستودع.</div>`:''}
   ${recv.map(r=>`<div class="al warn">📦 صرف لك أمين المستودع ${esc(r.code)}: ${(r.lines||[]).filter(l=>+l.issued).map(l=>`${esc(mat(l.material_id).name)} ×${fmt(l.issued)}`).join('، ')} <button type="button" class="bt p" data-rc="${esc(r.id)}">✅ استلمت</button></div>`).join('')}
@@ -1785,14 +1792,14 @@ function draw(){const s=sheet(),L=late(),recv=X.req.filter(r=>r.holder===ME.id&&
   ${X.sugg&&X.sugg.length?`<div class="cd"><h3>💡 أصناف اقترحتها</h3>${X.sugg.slice(0,10).map(g=>`<div class="row"><span>${esc(g.name)}<small>${esc(g.code||'')} • ${dd(g.at)}${g.note?' • '+esc(g.note):''}</small></span><span class="ch ${g.status==='new'?'y':g.status==='rejected'?'r':'g'}">${({new:'بانتظار المراجعة',added:'أُضيف للكتالوج',linked:'رُبط بصنف موجود',rejected:'مرفوض'})[g.status]||esc(g.status)}</span></div>`).join('')}</div>`:''}
   <div class="cd"><h3>📝 طلباتي</h3>${X.req.slice(0,25).map(r=>`<div class="row"><span>${esc(r.code)} <small>${r.source==='wo'?'أمر '+esc(r.wo_code||''):r.source==='ticket'?'بلاغ '+esc(r.ticket_ref||''):'توجيه '+esc(r.requested_by_name||'')} • ${dd(r.at)}</small><small>${(r.lines||[]).map(l=>`${esc(mat(l.material_id).name)} ×${fmt(l.qty)}${+l.issued?` (صُرف ${fmt(l.issued)})`:''}`).join('، ')}</small>${r.response?`<small>${esc(r.response)}</small>`:''}</span><span>${r.appr_status==='needed'&&r.status==='requested'?'<span class="ch y">🟡 بانتظار اعتماد المهندس</span> ':''}<span class="ch ${(RQ[r.status]||[''])[0]}">${(RQ[r.status]||['',r.status])[1]}</span>${r.status==='requested'?` <button type="button" class="bt" data-cn="${esc(r.id)}">إلغاء</button>`:''}</span></div>`).join('')||'<div class="row">لا توجد طلبات</div>'}</div>
   <div class="cd"><h3>🕘 آخر الحركات</h3>${X.mv.slice(0,30).map(m=>`<div class="row"><span>${({issue:'📤 صُرف لي',use:'🛠️ استُخدم',scrap:'♻️ سلّمت تالفاً',return:'↩️ أرجعت',writeoff:'⚖️ تسوية'})[m.kind]||m.kind} — ${esc(mat(m.material_id).name)}<small>${dd(m.at)} ${esc([m.wo_code,m.school,m.kind==='use'?'':m.ref].filter(Boolean).join(' • '))}</small></span><span class="n" dir="ltr">${+m.qty?(+m.qty>0?'+':'')+fmt(m.qty):''}${+m.scrap?` ♻️${+m.scrap>0?'+':''}${fmt(m.scrap)}`:''}</span></div>`).join('')||'<div class="row">—</div>'}</div></div>`;
- s.querySelector('[data-x]').onclick=close;s.querySelector('[data-rf]').onclick=open;
+ s.querySelector('[data-x]').onclick=close;s.querySelector('[data-rf]').onclick=open;window.fmfWhOut&&window.fmfWhOut.bind(s,open);
  const act=async(fn,args,msg)=>{try{const db=await C.engClient();const r=await db.rpc(fn,args);if(r.error)throw Error(r.error.message);toast(msg);await load();draw()}catch(e){toast(ERR(e),'e')}};
  s.querySelectorAll('[data-rc]').forEach(b=>b.onclick=()=>act('fm_issue_req_act',{p_id:b.dataset.rc,p_action:'receive',p:{}},'تم تأكيد الاستلام'));
  s.querySelectorAll('[data-cn]').forEach(b=>b.onclick=()=>confirm('إلغاء الطلب؟')&&act('fm_issue_req_act',{p_id:b.dataset.cn,p_action:'cancel',p:{}},'تم الإلغاء'));
  s.querySelectorAll('[data-sg]').forEach(b=>b.onclick=()=>act('fm_custody_count_sign',{p_id:b.dataset.sg,p_agree:true,p_note:null},'تم التوقيع'));
  s.querySelectorAll('[data-ds]').forEach(b=>b.onclick=()=>{const n=prompt('سبب الاعتراض:');if(S(n))act('fm_custody_count_sign',{p_id:b.dataset.ds,p_agree:false,p_note:n},'تم تسجيل الاعتراض')});
  form(s.querySelector('[data-form]'))}
-async function form(box){let W=[];try{W=(await C.api.woList()||[]).filter(w=>w.assignee===ME.id&&!['closed','cancelled','rejected'].includes(w.status))}catch(e){}
+async function form(box){let W=[];try{W=(await C.api.woList()||[]).filter(w=>w.assignee===ME.id&&!['closed','cancelled','rejected'].includes(w.status));try{localStorage.setItem('fmf_cus_wo:'+ME.id,JSON.stringify(W.map(w=>({id:w.id,code:w.code,school:w.school,title:w.title}))))}catch(e){}}catch(e){try{W=JSON.parse(localStorage.getItem('fmf_cus_wo:'+ME.id)||'[]')}catch(_){W=[]}}
  const M=X.mats.filter(m=>m.approved_at&&m.active!==false);const lines=[];
  box.innerHTML=`<label>السبب<select data-src>${W.length?`<option value="wo">أمر عمل مسند إليّ</option>`:''}<option value="ticket">بلاغ</option></select></label>
   <div data-w="wo" style="margin-top:6px"><select data-wo>${W.map(w=>`<option value="${esc(w.id)}">${esc(w.code||'')} — ${esc(w.school||w.title||'')}</option>`).join('')}</select></div>
@@ -1814,8 +1821,11 @@ async function form(box){let W=[];try{W=(await C.api.woList()||[]).filter(w=>w.a
  q('[data-send]').onclick=async ev=>{const L=[];for(const l of lines){const m=mat(l.id);const qt=+S(l.q).replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c));if(!(qt>0)){toast('كمية غير صحيحة: '+m.name,'w');return}L.push({material_id:l.id,qty:qt})}
   if(!L.length){toast('أضف صنفاً','w');return}const src=q('[data-src]').value,p={source:src,lines:L,note:S(q('[data-nt]').value)};
   if(src==='wo')p.wo_id=q('[data-wo]').value;else{p.ticket_ref=S(q('[data-tk]').value);p.school=S(q('[data-sc]').value);if(!p.ticket_ref){toast('اكتب رقم البلاغ','w');return}}
-  if(!navigator.onLine){toast('الطلب يحتاج اتصالاً بالإنترنت','w');return}ev.currentTarget.disabled=true;
-  try{const db=await C.engClient();const r=await db.rpc('fm_issue_req_new',{p});if(r.error)throw Error(r.error.message);toast('تم إرسال الطلب '+(r.data&&r.data.code||''));await load();draw()}catch(e){toast(ERR(e),'e');ev.currentTarget.disabled=false}}}
+  const qid='q'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),bt=ev.currentTarget;
+  if(!navigator.onLine&&window.fmfWhOut){window.fmfWhOut.add({t:'new',qid,p});toast('📴 حُفظ الطلب على الجوال ويُرسل تلقائياً عند عودة الاتصال','w');draw();return}
+  if(!navigator.onLine){toast('الطلب يحتاج اتصالاً بالإنترنت','w');return}bt.disabled=true;
+  try{const db=await C.engClient();let r=await db.rpc('fm_issue_req_new_once',{p:Object.assign({client_id:qid},p)});if(r.error&&/does not exist|schema cache|Could not find/i.test(r.error.message))r=await db.rpc('fm_issue_req_new',{p});if(r.error)throw Error(r.error.message);toast('تم إرسال الطلب '+(r.data&&r.data.code||''));await load();draw()}
+  catch(e){if(window.fmfWhOut&&netE(e)){window.fmfWhOut.add({t:'new',qid,p});toast('📴 تعذر الإرسال — حُفظ الطلب ويُرسل عند عودة الاتصال','w');draw();return}toast(ERR(e),'e');bt.disabled=false}}}
 /* F40: a part that is not in the catalog — photo + description to the storekeeper */
 function shrinkPh(file){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=()=>no(Error('تعذر قراءة الصورة'));r.onload=()=>{const im=new Image();im.onerror=()=>no(Error('صورة غير صالحة'));im.onload=()=>{let w=im.width,h=im.height;const k=Math.min(1,1100/Math.max(w,h));w=Math.round(w*k);h=Math.round(h*k);
  const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);let q=.8,u=c.toDataURL('image/jpeg',q);while(u.length>400000&&q>.3){q-=.1;u=c.toDataURL('image/jpeg',q)}ok(u)};im.src=r.result};r.readAsDataURL(file)})}
@@ -1852,7 +1862,7 @@ async function pick(M,done,ctx){const s=sheet();const ov=document.createElement(
   ov.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{done(b.dataset.id);toast('أُضيف: '+mat(b.dataset.id).name);close()});const nf=ov.querySelector('[data-nf]');if(nf)nf.onclick=()=>{close();suggest(Object.assign({name:qq&&!/^\d+$/.test(qq)?qi.value:'',category:cat},ctx&&ctx()))}};
  draw()}
 window.fmfCustody=open;
-let n=0;const t=setInterval(async()=>{try{if(!ME){if(++n>90){clearInterval(t);return}if(!C.engClient||!C.api||!C.api.me)return;const p=await C.api.me();if(!p||!['supervisor','contractor','engineer'].includes(p.role))return;ME=p;try{await load();on=true}catch(e){X=null}}
+let n=0;const t=setInterval(async()=>{try{if(!ME){if(++n>90){clearInterval(t);return}if(!C.engClient||!C.api||!C.api.me)return;let p=null;try{p=await C.api.me()}catch(e){}if(p&&p.id){try{localStorage.setItem('fmf_cus_me',JSON.stringify({id:p.id,role:p.role,full_name:p.full_name}))}catch(e){}}else if(!navigator.onLine){try{p=JSON.parse(localStorage.getItem('fmf_cus_me')||'null')}catch(e){}}if(!p||!['supervisor','contractor','engineer'].includes(p.role))return;ME=p;window.__fmfCusMe=p;try{await load();on=true}catch(e){X=null}}
  if(on)homeCard()}catch(e){}},1500);
 setInterval(()=>{if(on&&!document.hidden&&!document.getElementById('f29')?.classList.contains('open'))load().catch(()=>{})},5*60e3);
 })();
@@ -1896,7 +1906,7 @@ const IOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='
 const STANDALONE=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
 const KINDS=[['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
  ['wo_esc','⏫ تصعيد أمر متأخر إليّ'],['wo_stop','⛔ إيقاف عمل'],['wh_req','📦 طلب صرف جديد (أمين المستودع)'],['wh_issued','🧰 صُرفت قطع لعهدتي أو رُفض طلبي'],
- ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات'],['parts_due','⏱️ متابعة طلبات القطع (مسؤول / تصعيد / تأخير)'],['tools','🛠️ العُدد والأدوات (تسليم / موعد الإرجاع)'],['wh_idle','💤 قطع راكدة في عهدتي']];
+ ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات'],['parts_due','⏱️ متابعة طلبات القطع (مسؤول / تصعيد / تأخير)'],['tools','🛠️ العُدد والأدوات (تسليم / موعد الإرجاع)'],['wh_idle','💤 قطع راكدة في عهدتي'],['sla_due','⏰ بلاغ يقترب من تجاوز المهلة (وملخص الصباح)']];
 const b64u=buf=>{let s='';const b=new Uint8Array(buf);for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
 const unb64u=s=>{s=S(s);const t=atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4));const b=new Uint8Array(t.length);for(let i=0;i<t.length;i++)b[i]=t.charCodeAt(i);return b};
 let SET=null,SETAT=0;
@@ -1976,6 +1986,7 @@ function go(h){h=S(h).replace(/^#/,'');if(!h)return false;if(h.startsWith('wo=')
  else if(h==='cus'||h.startsWith('wh='))window.fmfCustody?.();
  else if(h==='tools')window.fmfTools?.();
  else if(h==='parts')window.fmfPartsTracking?.();
+ else if(h==='sla')document.querySelector('.bnav button[data-v="list"]')?.click();
  else return false;return true}
 navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.fmPush)go(e.data.hash)});
 function refreshHome(){const h=document.querySelector('#app .card.hello');let b=document.getElementById('f32-h');
@@ -1985,7 +1996,7 @@ function refreshHome(){const h=document.querySelector('#app .card.hello');let b=
   b.innerHTML=st.on?'<span>🔔 الإشعارات مفعّلة على هذا الجهاز</span><span>الإعدادات ←</span>':'<span>🔔 فعّل الإشعارات لتصلك الأوامر فوراً</span><span>تفعيل ←</span>'}).catch(()=>{})}
 const fcss=document.createElement('style');fcss.textContent='#f32-h{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid #99f6e4;background:#f0fdfa;color:#134e4a;border-radius:16px;padding:12px 14px;font:800 14px Cairo,Tahoma,sans-serif;margin:10px 0;text-align:right}#f32-h.ask{background:#fefce8;border-color:#fde047;color:#713f12}';document.head.appendChild(fcss);
 let n=0;const t=setInterval(async()=>{try{if(++n>120){clearInterval(t);return}if(!C.engClient)return;const d=await db();const u=d.auth&&d.auth.getSession?((await d.auth.getSession()).data||{}).session:true;if(!u)return;clearInterval(t);
- if(/^#(wo=|cus|wh=|bill)/.test(location.hash))setTimeout(()=>{go(location.hash);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}},1500);
+ if(/^#(wo=|cus|wh=|bill|sla)/.test(location.hash))setTimeout(()=>{go(location.hash);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}},1500);
  await settings().catch(()=>null);sync().catch(()=>{});refreshHome();setInterval(refreshHome,3000);}catch(e){}},1500);
 })();
 </script>
@@ -2301,10 +2312,12 @@ window.fmfSignPad=pad;
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('#f29 [data-rc]');if(!b)return;e.stopImmediatePropagation();e.preventDefault();
  const al=b.closest('.al'),code=((al&&al.textContent)||'').match(/IR-\d{4}-\d+/);
  const sg=await pad('توقيع استلام '+(code?code[0]:'القطع'));if(!sg)return;b.disabled=true;
+ const queue=()=>{window.fmfWhOut.add({t:'sign',id:b.dataset.rc,code:code?code[0]:'',sign:sg});toast('📴 حُفظ التوقيع وتأكيد الاستلام على الجوال ويُرسلان عند عودة الاتصال');document.querySelector('#f29 [data-rf]')?.click()};
+ if(!navigator.onLine&&window.fmfWhOut){queue();return}
  try{const db=await C.engClient();let r=await db.rpc('fm_issue_req_sign',{p_id:b.dataset.rc,p_sign:sg,p_inperson:false});
   if(r.error&&missing(r.error))r=await db.rpc('fm_issue_req_act',{p_id:b.dataset.rc,p_action:'receive',p:{}});
   if(r.error)throw Error(r.error.message);toast('تم التوقيع وتأكيد الاستلام ✅');document.querySelector('#f29 [data-rf]')?.click()}
- catch(er){b.disabled=false;const m=String(er.message||er);toast(/already signed/.test(m)?'السند موقّع بالفعل':/not allowed/.test(m)?'غير مسموح':/Failed to fetch|NetworkError/i.test(m)?'لا يوجد اتصال — أعد المحاولة':m)}},true);
+ catch(er){if(window.fmfWhOut&&/Failed to fetch|NetworkError|network|Load failed/i.test(String(er.message||er))){queue();return}b.disabled=false;const m=String(er.message||er);toast(/already signed/.test(m)?'السند موقّع بالفعل':/not allowed/.test(m)?'غير مسموح':/Failed to fetch|NetworkError/i.test(m)?'لا يوجد اتصال — أعد المحاولة':m)}},true);
 })();</script>
 
 <style id="fmf-45-scan-css">
@@ -2374,6 +2387,44 @@ async function deco(){const card=document.getElementById('ci-card');if(!card||bu
  busy=true;try{const H=await held();const html=`<div class="f46-tb" data-k="${esc(k)}"><b>🛠️ الأدوات المطلوبة لهذا الأمر</b>${need.map(n=>{const m=H?match(n,H.map(h=>h.name)):null;return `<div class="${m?'ok':'no'}">${m?'✅':'⚠️'} ${esc(n)} — ${H==null?'تعذر قراءة عُددك':m?'في عهدتك: '+esc(m):'ليست في عهدتك — اطلبها من أمين المستودع قبل الذهاب'}</div>`}).join('')}</div>`;
   const c2=document.getElementById('ci-card');if(!c2)return;const old=document.querySelector('.f46-tb');if(old)old.remove();c2.insertAdjacentHTML('beforebegin',html)}finally{busy=false}}
 setInterval(()=>{try{deco()}catch(e){}},1200);
+})();</script>
+
+<script id="fmf-47-whout">(function(){'use strict';
+/* F47 — the parts-request outbox: a request made without a connection ({t:'new', qid, p}) and a signed receipt confirmation
+   ({t:'sign', id, sign}) are kept in localStorage «fmf_wh_out:<user id>» and sent in order when the connection returns
+   (online event, every minute, opening «🧰 عهدتي»). A request goes through fm_issue_req_new_once with client_id = qid, so a
+   retry after a lost answer never creates it twice. A server refusal stays in the list with its reason (remove it by hand). */
+if(window.__f47)return;window.__f47=1;const C=window.FMCloud;if(!C)return;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>(window.__fmfCusMe&&window.__fmfCusMe.id)||'';
+const KEY=()=>'fmf_wh_out:'+uid();
+const get=()=>{if(!uid())return [];try{return JSON.parse(localStorage.getItem(KEY())||'[]')}catch(e){return []}};
+const put=L=>{try{localStorage.setItem(KEY(),JSON.stringify(L))}catch(e){}};
+const netE=e=>!navigator.onLine||/Failed to fetch|NetworkError|network|Load failed/i.test(String(e&&e.message||e));
+const missing=e=>/does not exist|schema cache|Could not find/i.test(String(e&&e.message||e));
+const toast=m=>{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.className='toast';t.style.display='block';t.style.zIndex='90';setTimeout(()=>t.style.display='none',3500)};
+let busy=false;
+async function flush(){if(busy||!navigator.onLine||!uid())return 0;let L=get().filter(o=>!o.err);if(!L.length)return 0;busy=true;let n=0;
+ try{const db=await C.engClient();
+  for(const o of get()){if(o.err)continue;let r;
+   try{if(o.t==='new'){r=await db.rpc('fm_issue_req_new_once',{p:Object.assign({client_id:o.qid},o.p)});if(r.error&&missing(r.error))r=await db.rpc('fm_issue_req_new',{p:o.p})}
+    else if(o.t==='sign'){r=await db.rpc('fm_issue_req_sign',{p_id:o.id,p_sign:o.sign,p_inperson:false});if(r.error&&missing(r.error))r=await db.rpc('fm_issue_req_act',{p_id:o.id,p_action:'receive',p:{}})}
+    if(r&&r.error){if(netE(r.error))break;const m=String(r.error.message);const done=o.t==='sign'&&/already signed|invalid status/.test(m);
+     const A=get();const i=A.findIndex(x=>x.qid===o.qid&&x.id===o.id&&x.t===o.t);if(i>=0){if(done)A.splice(i,1);else A[i].err=m}put(A);if(done)n++;continue}
+    const A=get();const i=A.findIndex(x=>x.qid===o.qid&&x.id===o.id&&x.t===o.t);if(i>=0)A.splice(i,1);put(A);n++}
+   catch(e){if(netE(e))break;const A=get();const i=A.findIndex(x=>x.qid===o.qid&&x.id===o.id&&x.t===o.t);if(i>=0){A[i].err=String(e.message||e);put(A)}}}}
+ finally{busy=false}
+ if(n){toast(`✅ أُرسل ${n} من المحفوظ على الجوال`);const s=document.getElementById('f29');if(s&&s.classList.contains('open'))s.querySelector('[data-rf]')?.click()}return n}
+const ERRT=m=>/item not approved/.test(m)?'صنف غير معتمد':/invalid order/.test(m)?'أمر العمل مغلق أو غير صالح':/not allowed/.test(m)?'غير مسموح':/approval/.test(m)?'بانتظار الاعتماد':m;
+window.fmfWhOut={list:get,flush,
+ add(o){const L=get();L.push(Object.assign({at:new Date().toISOString(),qid:o.qid||('s'+Date.now().toString(36))},o));put(L)},
+ has(id){return get().some(o=>o.t==='sign'&&o.id===id)},
+ html(mat){const L=get();if(!L.length)return '';return `<div class="cd" id="f47-out"><h3>📤 محفوظ على الجوال بانتظار الإرسال (${L.length})</h3>${L.map((o,i)=>`<div class="row"><span>${o.t==='new'?'📝 طلب قطع':'✅ تأكيد استلام '+esc(o.code||'')} <small>${esc(new Date(o.at).toLocaleString('ar-SA-u-ca-gregory',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))}</small>${o.t==='new'?`<small>${(o.p.lines||[]).map(l=>`${esc(mat(l.material_id).name)} ×${l.qty}`).join('، ')}${o.p.ticket_ref?' • بلاغ '+esc(o.p.ticket_ref):''}</small>`:''}${o.err?`<small style="color:#b91c1c">⛔ رفضه الخادم: ${esc(ERRT(o.err))}</small>`:''}</span><span>${o.err?`<button type="button" class="bt r" data-f47d="${i}">🗑️</button>`:'<span class="ch y">⏳ بانتظار الاتصال</span>'}</span></div>`).join('')}<button type="button" class="bt p" data-f47s style="width:100%;margin-top:6px">🔄 إرسال الآن</button></div>`},
+ bind(root,reopen){root.querySelectorAll('[data-f47d]').forEach(b=>b.onclick=()=>{if(!confirm('حذف هذا المحفوظ نهائياً؟'))return;const L=get();L.splice(+b.dataset.f47d,1);put(L);reopen&&reopen()});
+  const sb=root.querySelector('[data-f47s]');if(sb)sb.onclick=async()=>{if(!navigator.onLine){toast('لا يوجد اتصال بعد');return}const n=await flush();if(!n)reopen&&reopen()}}};
+window.addEventListener('online',()=>setTimeout(flush,1500));
+setInterval(()=>{if(navigator.onLine&&get().some(o=>!o.err))flush()},60000);
+setTimeout(flush,8000);
 })();</script>
 
 </body>
