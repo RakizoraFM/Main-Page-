@@ -289,3 +289,33 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V229 / field F51 — the Back button stays inside the app
 - `fm-v229-back` (index) / `fmf-51-back` (field), same core: on load the current entry becomes `{fmBack:'base'}` and a guard `{fmBack:'top'}` is pushed (same URL). A `popstate` landing on `base` closes, in order: the top window (`fmBack.overlays()`: `dialog[open]`, then fixed elements ≥ half the viewport, highest z-index — close button by `[data-close]` / `.close` / text ✕ / إغلاق …, else `dialog.close()`, Escape, `__fmBackHooks.closeEl`, remove class `open`, remove an id-less node), then the page (`__fmBackHooks.page`: platform → `fmV203Home()` when a `.fm103-page` / contractor / engagement / portal / QA page is visible; field → the «الرئيسية» tab), and pushes the guard again. With nothing open the first Back shows `#fm229-toast` «اضغط رجوع مرة أخرى للخروج»; a second within 2.5 s really goes back. Pages are fixed elements — never test their visibility with `offsetParent` (always null); use the bounding rect. New full-screen pages: add their selector to `skip` and `page` in `fm-v229-back`.
+
+## V230 / F52 — integrity repairs after V229 review
+- Section 47 / migration_v230.sql validates receipt lines and explicit prices before writes, locks PO before GRN snapshot, and routes the legacy stock transfer into fm_transfer_send. Stock count logging and average-cost triggers retained. No historical stock repairs.
+- fm_issue_req_new_once uses per-actor advisory locking and compares stored original payload; old client ids without a recorded payload require review. fm_issue_req_sign_once binds issued_at + exact lines, validates image header, records per-actor operation receipt, and refuses payload reuse. Internal legacy signer revoked; old public signer and plain receive fail closed.
+- F52 uses tenant+user keys and core verified identity. Read/write errors are surfaced, acknowledgement merge preserves concurrent additions, account switches stop flush, and server refusals stay queued. Old unowned queues remain untouched and can be exported; never auto-import them. Cached person / parts / order data now uses verified tenant scope.
+- KPI source reads page through 500 rows with stable ordering, error means unavailable; first issue derives from linked stock move refs. Current-value turnover definition stays explicit.
+- tools/backup194.mjs and local/integration tests restored. No scheduled external backup or actual pg_dump restore claimed. Full ZIP delivery; no main deployment or production SQL writes.
+
+## V231 / F53 — configurable pre-breach escalation
+- Section 48 / migration_v231.sql: fm_sla_rules231 and fm_sla_inbox231. Managerial region scope, recipient eligibility, rule revisions, duplicate overlapping recipient/lead rejection, unique ticket+deadline+recipient+lead event. Inbox delivery independent of device subscriptions.
+- fm_sla231_run(text) is internal and cron-run each minute; fm_sla231_run_now(region) permission checked. Existing SLA deadlines/feed reused, 50k feed limit fails visibly instead of truncating. Closed tickets/ticket_work, expired deadlines, stale feed, disabled rules, inactive recipients, plans/modules excluded. Snapshot remains audit evidence.
+- WhatsApp uses existing fm_wa_add with template key sla_prebreach, six string params. UI setup saves only template key; existing WhatsApp settings card preserves it. Queued state is not confirmed delivery. Claim functions cancel non-current escalation jobs immediately before claim; already claimed network sends cannot be recalled.
+- Common inbox UI in both apps, desktop rules/audit page v2-nav-fm231-sla in SLA/tickets group; field home f53-sla and dialog. Hash sla-escalation. English labels added to both dictionaries. Rules initially absent/disabled; no assumed recipient or deployed provider.
+- Local tests: 31 SQL and 10 Chromium module cases; no live messages or production changes. See RELEASE_V231.md and WHATSAPP_SLA_V231.md for cron/fresh-data/provider prerequisites.
+
+
+## V232 — incremental ticket import
+- fm-v232-import model plus narrow regional/process/cloud/work overlay changes. Stable text ID per region; tenant isolation via Supabase project. No school-code canonicalization of ticket IDs.
+- fm_tickets_import232 is one transaction, validates all rows and duplicates first, returns source counts/conflicts and max source date, writes only tickets and append-only import receipts. No work/event/photo/material writes. Direct client deletes blocked; explicit wipe RPC retained.
+- Only pending incoming rows pushed; concurrent pending imports coalesced and cleared by reference only on success. Source status separate from operational overlay. No automatic superseded work stage when Excel closes a ticket; explicit stage actions retain existing authorization/audit.
+- fm231_open now follows recognized field stage before source status; deadline math unchanged. Partial files never imply closure or deletion.
+- Tests/results/v232 is current evidence; earlier results are historical. No production writes or provider sends.
+
+
+## V233 / F55 — operational homepage
+- fm-v233-home/css is additive. Legacy body container is #fm233-ticket-analysis, hidden only in home mode; original analysis lives behind v2-nav-fm233-analysis in SLA group. Existing v2Go non-solution routes remain; period apply stays in analysis. Brand/home return to operations. Opt-in personal/owner portal landing; disabled ticket module no longer hides home.
+- Read-only independent RLS source readers, stable paginated keys, explicit source errors. Current-time hours-based ticket summary separate from historical file-reference analytics. No core SLA or field work changes. Workforce registry is explicit aggregate deployment, never inferred from login profiles.
+- Section 50 / migration_v233.sql: scoped workforce read/manage, positive integer/zero headcounts, group uniqueness while active, optimistic revisions, reason and append-only audit, no direct client mutation. No default workforce data. Managers enter counts without overlapping individuals.
+- Per-project/user filter, KPI and section preferences; source generation + identity guard clears tenant/user/role/module changes. Warehouse regional only, contractor filter explicitly ticket/workforce only. Missing data not zero; partial price totals labeled.
+- F55 shared dictionary additions only. tests/results/v233 is current evidence. No live credentials, production writes or provider sends.

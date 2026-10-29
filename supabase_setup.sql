@@ -7973,3 +7973,687 @@ do $do$ begin
 end $do$;
 notify pgrst, 'reload schema';
 commit;
+
+-- ---------- 47) V230 integrity ----------
+-- V230 / F52 — data integrity fixes after V229. No historical records rewritten.
+begin;
+
+create or replace function public.fm_lines230(p jsonb) returns void language plpgsql immutable set search_path=public as $$
+declare x jsonb;mid uuid;seen uuid[]:='{}';n numeric;
+begin
+ if jsonb_typeof(p->'lines') is distinct from 'array' then raise exception 'invalid lines';end if;
+ if jsonb_array_length(p->'lines')>3000 then raise exception 'too many lines';end if;
+ for x in select value from jsonb_array_elements(p->'lines') loop
+  mid:=nullif(x->>'material_id','')::uuid;
+  if mid is null then raise exception 'unknown material';end if;
+  if mid=any(seen) then raise exception 'duplicate material';end if;seen:=array_append(seen,mid);
+  if nullif(x->>'price','') is not null then n:=(x->>'price')::numeric;
+   if n<0 or n::text in('NaN','Infinity','-Infinity') then raise exception 'invalid price';end if;
+  end if;
+  if x?'qty' then n:=nullif(x->>'qty','')::numeric;
+   if n is null or n<=0 or n>1000000 or n::text in('NaN','Infinity','-Infinity') then raise exception 'invalid qty';end if;
+  end if;
+  if x?'count' then n:=nullif(x->>'count','')::numeric;
+   if n is null or n<0 or n>100000000 or n::text in('NaN','Infinity','-Infinity') then raise exception 'invalid count';end if;
+  end if;
+ end loop;
+end $$;
+revoke all on function public.fm_lines230(jsonb) from public,anon;
+grant execute on function public.fm_lines230(jsonb) to authenticated;
+
+create or replace function public.fm_stock_move(p jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare k text := p->>'kind'; st public.wo_stores; st2 public.wo_stores; x jsonb; q numeric; cur numeric; n int := 0; m uuid; pr numeric;
+  me uuid := auth.uid(); nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid());
+  hold jsonb := '[]'; hv numeric := 0; mp numeric; ap boolean; a public.wo_stock_adj; u uuid;
+begin
+  perform public.fm_lines230(p);
+  if p->>'kind'='transfer' then perform public.fm_transfer_send(p);return jsonb_array_length(p->'lines');end if;
+  if me is null or k not in ('in','adjust','transfer') then raise exception 'invalid kind'; end if;
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if not found or not public.fm_stock_can(st.region) then raise exception 'not allowed'; end if;
+  ap := public.fm_adj_approver(st.region) or coalesce(current_setting('fm.adj_ok', true), '') = '1';
+  if k = 'transfer' then
+    select * into st2 from public.wo_stores where id = nullif(p->>'to_store','')::uuid and active;
+    if not found or st2.id = st.id or not public.fm_stock_can(st2.region) then raise exception 'invalid store'; end if;
+  end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    m := nullif(x->>'material_id','')::uuid;
+    if m is null or not exists(select 1 from public.wo_materials where id = m) then raise exception 'unknown material'; end if;
+    pr := nullif(x->>'price','')::numeric;
+    insert into public.wo_stock(store_id, material_id) values (st.id, m) on conflict do nothing;
+    select qty into cur from public.wo_stock where store_id = st.id and material_id = m for update;
+    if k = 'adjust' then q := nullif(x->>'count','')::numeric; if q is null or q < 0 then raise exception 'invalid count'; end if; q := q - cur;
+      insert into public.wo_stock_counts(store_id, material_id, book, counted, diff, price, by_id, by_name, held)
+      values (st.id, m, cur, cur + q, q, (select price from public.wo_materials where id = m), me, nm,
+              q <> 0 and not ap and public.fm_adj_needs(cur, q, (select price from public.wo_materials where id = m)));
+    else q := nullif(x->>'qty','')::numeric; if q is null or q <= 0 or q > 1000000 then raise exception 'invalid qty'; end if; end if;
+    if q = 0 then continue; end if;
+    if k = 'adjust' and not ap then
+      select price into mp from public.wo_materials where id = m;
+      if public.fm_adj_needs(cur, q, mp) then
+        hold := hold || jsonb_build_object('material_id', m, 'book', cur, 'counted', cur + q, 'diff', q, 'price', mp, 'value', round(abs(q) * coalesce(mp,0), 2));
+        hv := hv + abs(q) * coalesce(mp,0);
+        continue;
+      end if;
+    end if;
+    if k = 'transfer' then
+      update public.wo_stock set qty = qty - q, updated_at = now() where store_id = st.id and material_id = m;
+      insert into public.wo_stock(store_id, material_id, qty) values (st2.id, m, q)
+        on conflict (store_id, material_id) do update set qty = public.wo_stock.qty + q, updated_at = now();
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, note, by_id, by_name) values
+        (st.id, m, -q, 'transfer', left(concat_ws(' — ', '← إلى ' || st2.name, nullif(btrim(coalesce(p->>'note','')),'')),300), me, nm),
+        (st2.id, m, q, 'transfer', left(concat_ws(' — ', '→ من ' || st.name, nullif(btrim(coalesce(p->>'note','')),'')),300), me, nm);
+    else
+      update public.wo_stock set qty = qty + q, updated_at = now() where store_id = st.id and material_id = m;
+      insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, supplier, invoice_no, note, by_id, by_name)
+      values (st.id, m, q, k, case when k = 'in' then pr end, left(nullif(btrim(coalesce(p->>'supplier','')),''),200),
+              left(nullif(btrim(coalesce(p->>'invoice_no','')),''),80), left(nullif(btrim(coalesce(p->>'note','')),''),300), me, nm);
+      if k = 'in' and pr is not null and pr >= 0 and coalesce((p->>'update_price')::boolean,false) then
+        update public.wo_materials set price = pr, updated_at = now() where id = m; end if;
+    end if;
+    n := n + 1;
+  end loop;
+  if jsonb_array_length(hold) > 0 then
+    insert into public.wo_stock_adj(store_id, region, lines, value, note, by_name)
+    values (st.id, st.region, hold, round(hv, 2), left(nullif(btrim(coalesce(p->>'note','')),''),300), nm) returning * into a;
+    begin
+      for u in select * from public.fm_adj_approvers(st.region) loop
+        perform public.fm_push_add(u, 'wh_adj', '⚖️ فرق جرد بانتظار اعتمادك — ' || a.code, st.name || ' • ' || jsonb_array_length(hold) || ' صنف • ' || round(hv) || ' ر.س • ' || coalesce(nm,''), 'wh=adj', 'adj');
+      end loop;
+    exception when others then null; end;
+  end if;
+  return n;
+end $$;
+
+create or replace function public.fm_po_save(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; s uuid := nullif(p->>'supplier_id','')::uuid; x jsonb; L jsonb := '[]'; t numeric := 0; q numeric; pr numeric; r public.wo_purchase_requests;
+begin
+  perform public.fm_lines230(p);
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if auth.uid() is null or not found or not (public.fm_wh_keeper(st.id) or public.fm_stock_can(st.region)) then raise exception 'not allowed'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    if not exists(select 1 from public.wo_materials where id = nullif(x->>'material_id','')::uuid and active) then raise exception 'unknown material'; end if;
+    q := nullif(x->>'qty','')::numeric; if q is null or q <= 0 or q > 1000000 then raise exception 'invalid qty'; end if;
+    pr := coalesce(nullif(x->>'price','')::numeric, public.fm_wh_agreed((x->>'material_id')::uuid, s), 0);
+    if pr < 0 then raise exception 'invalid price'; end if;
+    L := L || jsonb_build_object('material_id', x->>'material_id', 'qty', q, 'price', pr, 'recv', 0); t := t + q * pr;
+  end loop;
+  if jsonb_array_length(L) = 0 then raise exception 'no lines'; end if;
+  insert into public.wo_purchase_requests(store_id, supplier_id, supplier_name, lines, total, note, requested_by_name)
+  values (st.id, s, (select name from public.wo_suppliers where id = s), L, round(t,2), left(nullif(btrim(coalesce(p->>'note','')),''),500), public.fm_me_name()) returning * into r;
+  return jsonb_build_object('id', r.id, 'code', r.code);
+end $$;
+
+create or replace function public.fm_po_act(p_id uuid, p_action text, p jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare r public.wo_purchase_requests; st public.wo_stores; pos text := public.fm_my_pos(); lim jsonb := coalesce(public.fm_setting('spend_limits'),'{}'); ok boolean;
+  x jsonb; g jsonb; L jsonb := '[]'; q numeric; pr numeric; v numeric; all_done boolean := true; n int := 0; sr text; wm int; at_ timestamptz;
+begin
+  select * into r from public.wo_purchase_requests where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  select * into st from public.wo_stores where id = r.store_id;
+  if p_action in ('approve','reject') then
+    if r.status <> 'requested' then raise exception 'invalid status'; end if;
+    ok := public.fm_role() = 'admin' or pos in ('sysadmin','dept_manager','project_manager')
+      or (pos = 'ops_manager' and (coalesce(nullif(lim->>'ops_manager','')::numeric,0) = 0 or r.total <= (lim->>'ops_manager')::numeric))
+      or (pos = 'area_manager' and public.fm_region_ok(coalesce(st.region,'')) and (coalesce(nullif(lim->>'area_manager','')::numeric,0) = 0 or r.total <= (lim->>'area_manager')::numeric));
+    if not ok then raise exception 'spend approval required'; end if;
+    if p_action = 'reject' and btrim(coalesce(p->>'note','')) = '' then raise exception 'note required'; end if;
+    update public.wo_purchase_requests set status = case when p_action = 'approve' then 'approved' else 'rejected' end, approved_by_name = public.fm_me_name(), approved_at = now(),
+      response = left(nullif(btrim(coalesce(p->>'note','')),''),500) where id = p_id;
+    return p_action;
+  elsif p_action = 'cancel' then
+    if r.requested_by <> auth.uid() or r.status not in ('requested','approved') then raise exception 'not allowed'; end if;
+    update public.wo_purchase_requests set status = 'cancelled' where id = p_id; return 'cancelled';
+  elsif p_action = 'receive' then
+    perform public.fm_lines230(p);
+    if not (public.fm_wh_keeper(st.id) or public.fm_stock_can(st.region)) then raise exception 'not allowed'; end if;
+    if r.status not in ('approved','partial') then raise exception 'invalid status'; end if;
+    at_ := least(now(), coalesce(nullif(p->>'at','')::date + time '12:00', now()));
+    for x in select * from jsonb_array_elements(r.lines) loop
+      g := (select e from jsonb_array_elements(coalesce(p->'lines','[]')) t(e) where e->>'material_id' = x->>'material_id' limit 1);
+      q := coalesce(nullif(g->>'qty','')::numeric, 0);
+      if q < 0 then raise exception 'invalid qty'; end if;
+      if q > 0 then
+        pr := coalesce(nullif(g->>'price','')::numeric, (x->>'price')::numeric);
+        if pr<0 or pr::text in ('NaN','Infinity','-Infinity') then raise exception 'invalid price';end if;
+        v := public.fm_wh_receive_line(st.id, (x->>'material_id')::uuid, q, pr, r.supplier_id, r.supplier_name, p->>'invoice_no', at_, r.code, null);
+        x := x || jsonb_build_object('recv', coalesce((x->>'recv')::numeric,0) + q, 'paid', pr, 'variance', v);
+        select warranty_months into wm from public.wo_materials where id = (x->>'material_id')::uuid;
+        for sr in select btrim(e #>> '{}') from jsonb_array_elements(case when jsonb_typeof(g->'serials') = 'array' then g->'serials' else '[]' end) t(e) loop
+          if sr <> '' then
+            insert into public.wo_serials(material_id, serial, supplier_id, supplier_name, po_code, invoice_no, received_at, warranty_until)
+            values ((x->>'material_id')::uuid, left(sr,80), r.supplier_id, r.supplier_name, r.code, left(nullif(btrim(coalesce(p->>'invoice_no','')),''),80), at_::date,
+                    case when wm > 0 then (at_::date + make_interval(months => wm))::date end)
+            on conflict (material_id, serial) do nothing;
+          end if;
+        end loop;
+        n := n + 1;
+      end if;
+      if coalesce((x->>'recv')::numeric,0) < (x->>'qty')::numeric then all_done := false; end if;
+      L := L || x;
+    end loop;
+    if n = 0 then raise exception 'nothing received'; end if;
+    update public.wo_purchase_requests set lines = L, status = case when all_done then 'received' else 'partial' end, received_at = now() where id = p_id;
+    return case when all_done then 'received' else 'partial' end;
+  end if;
+  raise exception 'invalid action';
+end $$;
+
+create or replace function public.fm_po_receive(p_id uuid, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.wo_purchase_requests; st public.wo_stores; s text; g public.wo_grn; before uuid[]; L jsonb := '[]'; x jsonb; ln jsonb; m public.wo_materials;
+  q numeric; pr numeric; tot numeric := 0;
+begin
+  perform public.fm_lines230(p);
+  if length(coalesce(p->>'photo','')) > 560000 then raise exception 'photo too large'; end if;
+  select * into r from public.wo_purchase_requests where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  select coalesce(array_agg(id), '{}') into before from public.wo_stock_moves where ref = r.code;
+  s := public.fm_po_act(p_id, 'receive', p - 'photo' - 'invoice_date');
+  select * into st from public.wo_stores where id = r.store_id;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    q := coalesce(nullif(x->>'qty','')::numeric, 0);
+    if q <= 0 then continue; end if;
+    ln := (select e from jsonb_array_elements(r.lines) t(e) where e->>'material_id' = x->>'material_id' limit 1);
+    if ln is null then continue; end if;
+    select * into m from public.wo_materials where id = (x->>'material_id')::uuid;
+    pr := coalesce(nullif(x->>'price','')::numeric, (ln->>'price')::numeric);
+    L := L || jsonb_build_object('material_id', m.id, 'name', m.name, 'unit', m.unit, 'code', m.code, 'qty', q, 'price', pr);
+    tot := tot + q * coalesce(pr, 0);
+  end loop;
+  insert into public.wo_grn(store_id, region, supplier, invoice_no, invoice_date, photo, lines, total, note, by_name, po_code)
+  values (st.id, st.region, r.supplier_name, left(nullif(btrim(coalesce(p->>'invoice_no','')),''),80),
+          coalesce(nullif(p->>'invoice_date','')::date, nullif(p->>'at','')::date), nullif(p->>'photo',''), L, round(tot, 2),
+          'استلام طلب الشراء ' || r.code, public.fm_me_name(), r.code)
+  returning * into g;
+  update public.wo_stock_moves set note = left(concat_ws(' — ', g.code, note), 300) where ref = r.code and not (id = any(before));
+  return jsonb_build_object('status', s, 'id', g.id, 'code', g.code);
+end $$;
+
+create or replace function public.fm_grn_save(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; g public.wo_grn; n int; L jsonb := '[]'; x jsonb; m public.wo_materials; tot numeric := 0;
+begin
+  perform public.fm_lines230(p);
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if auth.uid() is null or not found or not public.fm_stock_can(st.region) then raise exception 'not allowed'; end if;
+  if length(coalesce(p->>'photo','')) > 560000 then raise exception 'photo too large'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    select * into m from public.wo_materials where id = nullif(x->>'material_id','')::uuid;
+    if not found then raise exception 'unknown material'; end if;
+    L := L || jsonb_build_object('material_id', m.id, 'name', m.name, 'unit', m.unit, 'code', m.code, 'qty', (x->>'qty')::numeric, 'price', nullif(x->>'price','')::numeric);
+    tot := tot + coalesce((x->>'qty')::numeric,0) * coalesce(nullif(x->>'price','')::numeric,0);
+  end loop;
+  if jsonb_array_length(L) = 0 then raise exception 'invalid qty'; end if;
+  insert into public.wo_grn(store_id, region, supplier, invoice_no, invoice_date, photo, lines, total, note, by_name)
+  values (st.id, st.region, left(nullif(btrim(coalesce(p->>'supplier','')),''),200), left(nullif(btrim(coalesce(p->>'invoice_no','')),''),80),
+          nullif(p->>'invoice_date','')::date, nullif(p->>'photo',''), L, round(tot,2), left(nullif(btrim(coalesce(p->>'note','')),''),300), public.fm_me_name())
+  returning * into g;
+  n := public.fm_stock_move(jsonb_set(p - 'photo' - 'invoice_date', '{note}', to_jsonb(left(concat_ws(' — ', g.code, nullif(btrim(coalesce(p->>'note','')),'')),300))) || '{"kind":"in"}');
+  return jsonb_build_object('id', g.id, 'code', g.code, 'moves', n);
+end $$;
+
+create or replace function public.fm_issue_req_new(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); h uuid := coalesce(nullif(p->>'holder','')::uuid, auth.uid()); src text := coalesce(nullif(p->>'source',''),'direct');
+  w public.work_orders; pos text := public.fm_my_pos(); st uuid := nullif(p->>'store_id','')::uuid; x jsonb; L jsonb := '[]'; m public.wo_materials; q numeric;
+  hr text; r public.wo_issue_requests;
+begin
+  perform public.fm_lines230(p);
+  if me is null or src not in ('wo','ticket','direct') then raise exception 'invalid'; end if;
+  if h = me then
+    if pos not in ('supervisor','contractor','area_engineer') then raise exception 'not allowed'; end if;
+    if src = 'direct' and pos in ('supervisor','contractor') then raise exception 'source required'; end if;
+  elsif not public.fm_wh_may_direct(h) then raise exception 'not allowed'; end if;
+  if src = 'wo' then
+    select * into w from public.work_orders where id = nullif(p->>'wo_id','')::uuid;
+    if not found or w.status in ('closed','cancelled','rejected') then raise exception 'invalid order'; end if;
+    if w.assignee is distinct from h and w.created_by <> me and not public.fm_is_under(w.assignee, me) then raise exception 'invalid order'; end if;
+  elsif src = 'ticket' and btrim(coalesce(p->>'ticket_ref','')) = '' then raise exception 'ticket required'; end if;
+  select (regions)[1] into hr from public.profiles where id = h;
+  st := coalesce(st, public.fm_stock_store_for(coalesce(w.region, hr)));
+  if st is null then raise exception 'no store'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    select * into m from public.wo_materials where id = nullif(x->>'material_id','')::uuid;
+    if not found or not m.active or m.approved_at is null then raise exception 'item not approved: %', coalesce(m.name, x->>'material_id'); end if;
+    q := nullif(x->>'qty','')::numeric;
+    if q is null or q <= 0 or q > 100000 then raise exception 'invalid qty'; end if;
+    L := L || jsonb_build_object('material_id', m.id, 'qty', q, 'issued', 0);
+  end loop;
+  if jsonb_array_length(L) = 0 then raise exception 'no lines'; end if;
+  if jsonb_array_length(L) > 60 then raise exception 'too many lines'; end if;
+  insert into public.wo_issue_requests(holder, holder_name, requested_by, requested_by_name, source, wo_id, wo_code, ticket_ref, school, store_id, lines, note)
+  values (h, (select coalesce(full_name, email) from public.profiles where id = h), me, public.fm_me_name(), src, w.id, w.code,
+          left(nullif(btrim(coalesce(p->>'ticket_ref','')),''),60), left(coalesce(w.school, nullif(btrim(coalesce(p->>'school','')),'')),200), st, L,
+          left(nullif(btrim(coalesce(p->>'note','')),''),500))
+  returning * into r;
+  return jsonb_build_object('id', r.id, 'code', r.code);
+end $$;
+
+create or replace function public.fm_issue_req_act(p_id uuid, p_action text, p jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare r public.wo_issue_requests; st uuid; x jsonb; giv jsonb; L jsonb := '[]'; q numeric; rem numeric; cur numeric; m public.wo_materials;
+  rules jsonb := coalesce(public.fm_setting('stock_rules'),'{}'); cap numeric; hp text; nm text := public.fm_me_name(); any_issued boolean := false; all_done boolean := true; n int := 0;
+begin
+  select * into r from public.wo_issue_requests where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if p_action = 'issue' then
+    st := coalesce(nullif(p->>'store_id','')::uuid, r.store_id);
+    if not public.fm_wh_keeper(st) then raise exception 'storekeeper only'; end if;
+    if r.status not in ('requested','partial') then raise exception 'invalid status'; end if;
+    for x in select * from jsonb_array_elements(r.lines) loop
+      rem := (x->>'qty')::numeric - coalesce((x->>'issued')::numeric,0);
+      giv := (select e from jsonb_array_elements(coalesce(p->'lines','[]')) t(e) where e->>'material_id' = x->>'material_id' limit 1);
+      q := case when jsonb_array_length(coalesce(p->'lines','[]')) = 0 then rem else least(rem, coalesce(nullif(giv->>'qty','')::numeric,0)) end;
+      if q < 0 then raise exception 'invalid qty'; end if;
+      if q > 0 then
+        select * into m from public.wo_materials where id = (x->>'material_id')::uuid;
+        if coalesce((rules->>'block_overdue')::boolean, true) and exists(select 1 from public.wo_custody_moves u where u.holder = r.holder and u.material_id = m.id
+             and u.kind = 'use' and u.scrap_open > 0 and u.scrap_due < current_date) then raise exception 'overdue scrap: %', m.name; end if;
+        select qty into cur from public.wo_stock where store_id = st and material_id = m.id for update;
+        if coalesce(cur,0) < q then raise exception 'insufficient: % (%)', m.name, coalesce(cur,0); end if;
+        update public.wo_stock set qty = qty - q, updated_at = now() where store_id = st and material_id = m.id;
+        insert into public.wo_stock_moves(store_id, material_id, qty, kind, unit_price, wo_id, wo_code, school, holder, holder_name, ref, note, by_id, by_name)
+        values (st, m.id, -q, 'issue', m.price, r.wo_id, r.wo_code, r.school, r.holder, r.holder_name, r.code, r.ticket_ref, auth.uid(), nm);
+        insert into public.wo_custody(holder, material_id, qty) values (r.holder, m.id, q)
+          on conflict (holder, material_id) do update set qty = public.wo_custody.qty + q, updated_at = now();
+        insert into public.wo_custody_moves(holder, holder_name, material_id, kind, qty, unit_price, store_id, wo_id, wo_code, school, ticket_ref, req_id, ref, by_name)
+        values (r.holder, r.holder_name, m.id, 'issue', q, m.price, st, r.wo_id, r.wo_code, r.school, r.ticket_ref, r.id, r.code, nm);
+        n := n + 1;
+      end if;
+      x := jsonb_set(x, '{issued}', to_jsonb(coalesce((x->>'issued')::numeric,0) + q));
+      if (x->>'issued')::numeric > 0 then any_issued := true; end if;
+      if (x->>'issued')::numeric < (x->>'qty')::numeric then all_done := false; end if;
+      L := L || x;
+    end loop;
+    if n = 0 then raise exception 'nothing to issue'; end if;
+    hp := (select public.fm_posx(role, job_title) from public.profiles where id = r.holder);
+    cap := nullif(rules->'cap'->>hp,'')::numeric;
+    if coalesce(cap,0) > 0 and public.fm_custody_value(r.holder) > cap then raise exception 'custody cap: %', cap; end if;
+    update public.wo_issue_requests set lines = L, status = case when all_done then 'issued' else 'partial' end, store_id = st, issued_by_name = nm, issued_at = now() where id = p_id;
+    return case when all_done then 'issued' else 'partial' end;
+  elsif p_action = 'reject' then
+    if not public.fm_wh_keeper(r.store_id) then raise exception 'storekeeper only'; end if;
+    if r.status not in ('requested','partial') then raise exception 'invalid status'; end if;
+    if btrim(coalesce(p->>'note','')) = '' then raise exception 'note required'; end if;
+    update public.wo_issue_requests set status = case when r.status = 'partial' then 'issued' else 'rejected' end, response = left(btrim(p->>'note'),500), issued_by_name = coalesce(issued_by_name, nm) where id = p_id;
+    return 'rejected';
+  elsif p_action = 'cancel' then
+    if auth.uid() not in (r.holder, coalesce(r.requested_by, r.holder)) or r.status <> 'requested' then raise exception 'not allowed'; end if;
+    update public.wo_issue_requests set status = 'cancelled', response = left(nullif(btrim(coalesce(p->>'note','')),''),500) where id = p_id;
+    return 'cancelled';
+  elsif p_action = 'receive' then
+    raise exception 'signature required: update app and use fm_issue_req_sign_once';
+  end if;
+  raise exception 'invalid action';
+end $$;
+
+alter table public.wo_issue_requests add column if not exists client_payload230 jsonb;
+create or replace function public.fm_issue_req_new_once(p jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
+declare cid text:=nullif(btrim(p->>'client_id'),'');r public.wo_issue_requests;x jsonb;body jsonb:=p-'client_id';
+begin
+ if auth.uid() is null or public.fm_role()='pending' or not public.fm_mod('wh') then raise exception 'not allowed';end if;
+ if cid is null or length(cid)>80 then raise exception 'client_id required';end if;
+ perform pg_advisory_xact_lock(hashtextextended(auth.uid()::text||cid,230));
+ select * into r from public.wo_issue_requests where requested_by=auth.uid() and client_id=cid;
+ if found then
+  if r.client_payload230 is null then raise exception 'legacy operation requires review';end if;
+  if r.client_payload230<>body then raise exception 'operation conflict';end if;
+  return jsonb_build_object('id',r.id,'code',r.code,'dup',true);
+ end if;
+ x:=public.fm_issue_req_new(body);
+ update public.wo_issue_requests set client_id=cid,client_payload230=body where id=(x->>'id')::uuid;
+ return x;
+end $$;
+
+create or replace function public.fm_issue_req_sign_legacy230(p_id uuid, p_sign text, p_inperson boolean default false) returns text language plpgsql security definer set search_path = public as $$
+declare r public.wo_issue_requests; md text;
+begin
+  select * into r from public.wo_issue_requests where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if coalesce(p_sign,'') !~ '^data:image/(png|jpeg);base64,' or length(p_sign) > 120000 then raise exception 'invalid signature'; end if;
+  if r.status not in ('issued','partial','received') then raise exception 'invalid status'; end if;
+  if r.signed_at is not null and r.signed_at >= coalesce(r.issued_at, r.at) then raise exception 'already signed'; end if;
+  if auth.uid() = r.holder then md := 'self';
+  elsif coalesce(p_inperson,false) and public.fm_wh_keeper(r.store_id) then md := 'inperson';
+  else raise exception 'not allowed'; end if;
+  insert into public.wo_issue_signs(req_id, holder, sign, mode, lines, by_name)
+  values (r.id, r.holder, p_sign, md, coalesce((select jsonb_agg(jsonb_build_object('material_id', l->>'material_id', 'issued', coalesce((l->>'issued')::numeric,0)))
+    from jsonb_array_elements(r.lines) l where coalesce((l->>'issued')::numeric,0) > 0), '[]'), public.fm_me_name());
+  update public.wo_issue_requests set signed_at = now(), sign_mode = md, received_at = now(),
+    status = case when r.status = 'issued' then 'received' else r.status end where id = p_id;
+  return md;
+end $$;
+revoke all on function public.fm_issue_req_sign_legacy230(uuid,text,boolean) from public,anon,authenticated;
+
+create table if not exists public.fm_receipt_ops230(actor uuid not null references public.profiles(id),op_id text not null,payload jsonb not null,result text not null,at timestamptz not null default now(),primary key(actor,op_id));
+alter table public.fm_receipt_ops230 enable row level security;
+revoke all on public.fm_receipt_ops230 from anon,authenticated;
+create or replace function public.fm_issue_req_sign_once(p jsonb) returns text language plpgsql security definer set search_path=public as $$
+declare r public.wo_issue_requests;old public.fm_receipt_ops230;oid text:=nullif(p->>'op_id','');img bytea;result text;
+begin
+ if auth.uid() is null or public.fm_role()='pending' or not public.fm_mod('wh') then raise exception 'not allowed';end if;
+ if oid is null or length(oid)>100 then raise exception 'operation id required';end if;
+ perform pg_advisory_xact_lock(hashtextextended(auth.uid()::text||oid,230));
+ select * into old from public.fm_receipt_ops230 where actor=auth.uid() and op_id=oid;
+ if found then if old.payload<>p then raise exception 'operation conflict';end if;return old.result;end if;
+ select * into r from public.wo_issue_requests where id=(p->>'id')::uuid for update;
+ if not found then raise exception 'not found';end if;
+ if (p->>'expected_issued_at')::timestamptz is distinct from r.issued_at or p->'expected_lines' is distinct from r.lines or r.issued_at is null then raise exception 'receipt changed: reload and sign again';end if;
+ if coalesce(p->>'sign','') !~ '^data:image/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$' or length(p->>'sign')>120000 then raise exception 'invalid signature';end if;
+ img:=decode(split_part(p->>'sign',',',2),'base64');
+ if octet_length(img)<20 or not((substring(img from 1 for 8)=decode('89504e470d0a1a0a','hex')) or substring(img from 1 for 3)=decode('ffd8ff','hex')) then raise exception 'invalid signature';end if;
+ result:=public.fm_issue_req_sign_legacy230(r.id,p->>'sign',coalesce((p->>'inperson')::boolean,false));
+ insert into public.fm_receipt_ops230(actor,op_id,payload,result) values(auth.uid(),oid,p,result);
+ return result;
+end $$;
+create or replace function public.fm_issue_req_sign(p_id uuid,p_sign text,p_inperson boolean default false) returns text language plpgsql security definer set search_path=public as $$
+begin raise exception 'receipt snapshot required: update app';end $$;
+revoke all on function public.fm_issue_req_sign_once(jsonb) from public,anon;
+grant execute on function public.fm_issue_req_sign_once(jsonb) to authenticated;
+notify pgrst,'reload schema';
+commit;
+
+-- ---------- 48) V231 pre-breach escalation ----------
+-- V231 / F53: configurable pre-breach recipients, durable account inbox, WhatsApp and Push.
+begin;
+create or replace function public.fm231_manage(r text) returns boolean language sql stable security definer set search_path=public as $$
+ select auth.uid() is not null and public.fm_role()<>'pending' and public.fm_mod('tickets') and
+ (public.fm_role()='admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager') or
+ (r is not null and public.fm_my_pos()='area_manager' and public.fm_region_ok(r))) $$;
+create or replace function public.fm231_target(u uuid,r text) returns boolean language sql stable security definer set search_path=public as $$
+ select exists(select 1 from public.profiles p where p.id=u and p.active and p.role<>'pending' and
+ (r is null or cardinality(coalesce(p.regions,'{}'))=0 or r=any(p.regions) or public.fm_posx(p.role,p.job_title) in ('sysadmin','dept_manager','project_manager','ops_manager'))) $$;
+create table if not exists public.fm_sla_rules231(
+ id uuid primary key default gen_random_uuid(),name text not null check(length(name) between 1 and 120),region text,
+ lead_minutes int not null check(lead_minutes between 5 and 10080),recipients uuid[] not null check(cardinality(recipients) between 1 and 30),
+ whatsapp boolean not null default true,push boolean not null default true,enabled boolean not null default false,
+ max_age_hours int not null default 24 check(max_age_hours between 1 and 168),revision int not null default 1,
+ updated_at timestamptz not null default now(),updated_by uuid references public.profiles(id) on delete set null);
+alter table public.fm_sla_rules231 enable row level security;
+revoke insert,update,delete on public.fm_sla_rules231 from anon,authenticated;
+grant select on public.fm_sla_rules231 to authenticated;
+drop policy if exists p_rule231 on public.fm_sla_rules231;
+create policy p_rule231 on public.fm_sla_rules231 for select to authenticated using(public.fm231_manage(region));
+create table if not exists public.fm_sla_inbox231(
+ id uuid primary key default gen_random_uuid(),rule_id uuid references public.fm_sla_rules231(id) on delete set null,
+ region text not null,ticket_id text not null,due_at timestamptz not null,recipient uuid not null references public.profiles(id) on delete cascade,
+ lead_minutes int not null,school text,priority text,descr text,title text not null,body text not null,created_at timestamptz not null default now(),read_at timestamptz,
+ whatsapp boolean not null,push boolean not null,wa_state text not null default 'pending',wa_reason text,wa_id bigint references public.fm_wa_queue(id) on delete set null,
+ push_state text not null default 'pending',push_id bigint references public.fm_push_queue(id) on delete set null,
+ unique(region,ticket_id,due_at,recipient,lead_minutes));
+create index if not exists fm_sla_inbox231_user on public.fm_sla_inbox231(recipient,created_at desc);
+alter table public.fm_sla_inbox231 enable row level security;
+revoke insert,update,delete on public.fm_sla_inbox231 from anon,authenticated;
+grant select on public.fm_sla_inbox231 to authenticated;
+drop policy if exists p_inbox231 on public.fm_sla_inbox231;
+create policy p_inbox231 on public.fm_sla_inbox231 for select to authenticated using(public.fm_role()<>'pending' and public.fm_mod('tickets') and(recipient=auth.uid() or public.fm231_manage(region)));
+create or replace function public.fm231_open(r text,t text) returns boolean language sql stable security definer set search_path=public as $$
+ select not exists(select 1 from public.ticket_work w where w.region=r and w.ticket_id=t and(w.resolved_at is not null or w.stage in('resolved','closed','cancelled')))
+ and not exists(select 1 from public.tickets k where k.region=r and k.ticket_id=t and lower(btrim(coalesce(k.status,''))) in('مغلق','تم حله','ملغى','خارج النطاق','closed','resolved','cancelled','canceled','out of scope')) $$;
+create or replace function public.fm_sla231_rule_save(p jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
+declare old public.fm_sla_rules231;v public.fm_sla_rules231;r text:=nullif(btrim(p->>'region'),'');ids uuid[];u uuid;k uuid:=nullif(p->>'id','')::uuid;
+begin
+ if not public.fm231_manage(r) then raise exception 'not allowed';end if;
+ if jsonb_typeof(p->'recipients') is distinct from 'array' then raise exception 'select recipients';end if;
+ select array_agg(distinct x::uuid) into ids from jsonb_array_elements_text(p->'recipients') x;
+ if cardinality(ids) is null or cardinality(ids) not between 1 and 30 or array_position(ids,null) is not null then raise exception 'select 1 to 30 recipients';end if;
+ foreach u in array ids loop if coalesce((p->>'enabled')::boolean,false) and not public.fm231_target(u,r) then raise exception 'recipient inactive or outside region';end if;end loop;
+ if k is not null then
+  select * into old from public.fm_sla_rules231 where id=k for update;
+  if not found or not public.fm231_manage(old.region) then raise exception 'not allowed';end if;
+  if (p->>'revision')::int is distinct from old.revision then raise exception 'version conflict: reload';end if;
+ else k:=gen_random_uuid();end if;
+ perform pg_advisory_xact_lock(231,2);
+ if coalesce((p->>'enabled')::boolean,false) and exists(select 1 from public.fm_sla_rules231 q where q.id<>k and q.enabled and(q.region is null or r is null or q.region=r) and q.lead_minutes=(p->>'lead_minutes')::int and q.recipients&&ids) then raise exception 'duplicate stage recipient: edit the existing stage';end if;
+ insert into public.fm_sla_rules231(id,name,region,lead_minutes,recipients,whatsapp,push,enabled,max_age_hours,updated_by)
+ values(k,btrim(p->>'name'),r,(p->>'lead_minutes')::int,ids,coalesce((p->>'whatsapp')::boolean,true),coalesce((p->>'push')::boolean,true),coalesce((p->>'enabled')::boolean,false),coalesce((p->>'max_age_hours')::int,24),auth.uid())
+ on conflict(id) do update set name=excluded.name,region=excluded.region,lead_minutes=excluded.lead_minutes,recipients=excluded.recipients,whatsapp=excluded.whatsapp,push=excluded.push,enabled=excluded.enabled,max_age_hours=excluded.max_age_hours,revision=public.fm_sla_rules231.revision+1,updated_at=now(),updated_by=auth.uid() returning * into v;
+ return to_jsonb(v);
+end $$;
+create or replace function public.fm_sla231_template(n text) returns boolean language plpgsql security definer set search_path=public as $$
+declare s jsonb:=coalesce(public.fm_setting('wa'),'{}');
+begin
+ if not public.fm231_manage(null) then raise exception 'not allowed';end if;
+ if n is null or n!~'^[a-z0-9_]{1,100}$' then raise exception 'invalid template name';end if;
+ s:=jsonb_set(s,'{templates}',coalesce(s->'templates','{}')||jsonb_build_object('sla_prebreach',n));
+ insert into public.fm_settings(key,value) values('wa',s) on conflict(key) do update set value=excluded.value;
+ return true;
+end $$;
+-- Only the recipient may acknowledge their alert. Admin visibility does not confer that acknowledgement.
+create or replace function public.fm_sla231_read(k uuid) returns boolean language plpgsql security definer set search_path=public as $$
+begin
+ if public.fm_role()='pending' or not public.fm_mod('tickets') then raise exception 'not allowed';end if;
+ update public.fm_sla_inbox231 set read_at=coalesce(read_at,now()) where id=k and recipient=auth.uid();return found;
+end $$;
+-- Worker and retry loop: one durable inbox event for each ticket/deadline/recipient/threshold.
+create or replace function public.fm_sla231_run(p_region text default null) returns int language plpgsql security definer set search_path=public as $$
+declare rr record;e public.fm_sla_inbox231;n int:=0;ph text;wa jsonb:=coalesce(public.fm_setting('wa'),'{}');ok boolean;event_ref text;pk bigint;
+begin
+ if not public.fm_plan_ok() or not public.fm_mod('tickets') then return 0;end if;
+ if not pg_try_advisory_xact_lock(231,1) then return 0;end if;
+ for rr in select q.id rule_id,q.lead_minutes,q.whatsapp,q.push,w.*,u.uid recipient from public.fm_sla_rules231 q
+ join public.fm_sla_watch w on(q.region is null or q.region=w.region) cross join lateral unnest(q.recipients) u(uid)
+ where q.enabled and(p_region is null or w.region=p_region) and w.due_at>now() and w.due_at<=now()+make_interval(mins=>q.lead_minutes)
+ and w.updated_at>=now()-make_interval(hours=>q.max_age_hours) and public.fm231_target(u.uid,w.region) and public.fm231_open(w.region,w.ticket_id)
+ order by w.region,w.ticket_id,q.id,u.uid loop
+  insert into public.fm_sla_inbox231(rule_id,region,ticket_id,due_at,recipient,lead_minutes,school,priority,descr,title,body,whatsapp,push)
+  values(rr.rule_id,rr.region,rr.ticket_id,rr.due_at,rr.recipient,rr.lead_minutes,rr.school,rr.priority,rr.descr,
+   '⏰ تصعيد قبل اختراق البلاغ '||rr.ticket_id,
+   coalesce(rr.school,'')||' • البلاغ '||rr.ticket_id||' • الأولوية '||coalesce(rr.priority,'')||' • يتبقى '||greatest(1,ceil(extract(epoch from rr.due_at-now())/60))::int||' دقيقة • نهاية المهلة '||to_char(rr.due_at at time zone 'Asia/Riyadh','YYYY-MM-DD HH24:MI'),rr.whatsapp,rr.push)
+  on conflict(region,ticket_id,due_at,recipient,lead_minutes) do nothing;
+  if found then n:=n+1;end if;
+ end loop;
+ for e in select i.* from public.fm_sla_inbox231 i join public.fm_sla_rules231 q on q.id=i.rule_id
+ where q.enabled and(p_region is null or i.region=p_region) and q.lead_minutes=i.lead_minutes and(q.region is null or q.region=i.region) and i.recipient=any(q.recipients) and i.due_at>now() and public.fm231_target(i.recipient,i.region) and public.fm231_open(i.region,i.ticket_id)
+ and exists(select 1 from public.fm_sla_watch w where w.region=i.region and w.ticket_id=i.ticket_id and w.due_at=i.due_at and w.updated_at>=now()-make_interval(hours=>q.max_age_hours))
+ and (i.wa_state in('pending','blocked') or i.push_state='pending') order by i.created_at,i.id for update of i loop
+  event_ref:='sla231-'||e.id::text;
+  if e.push_state='pending' then
+   if not e.push or not (select push from public.fm_sla_rules231 where id=e.rule_id) then update public.fm_sla_inbox231 set push_state='not_requested' where id=e.id;
+   else
+    begin
+     -- Honor the recipient's notification preferences; inbox delivery is independent of Push.
+     if not exists(select 1 from public.fm_push_prefs where user_id=e.recipient and 'sla_due'=any(off)) and not coalesce((public.fm_setting('push')->'off')?'sla_due',false) and public.fm_push_add(e.recipient,'sla_due',e.title,e.body,'sla-escalation',event_ref,true) then
+      select id into pk from public.fm_push_queue where user_id=e.recipient and tag=event_ref order by id desc limit 1;
+      update public.fm_sla_inbox231 set push_state='queued',push_id=pk where id=e.id;
+     else update public.fm_sla_inbox231 set push_state='unavailable' where id=e.id;end if;
+    exception when others then update public.fm_sla_inbox231 set push_state='unavailable' where id=e.id;end;
+   end if;
+  end if;
+  if e.wa_state in('pending','blocked') then
+   if not e.whatsapp or not (select whatsapp from public.fm_sla_rules231 where id=e.rule_id) then update public.fm_sla_inbox231 set wa_state='not_requested',wa_reason=null where id=e.id;
+   else
+    select public.fm_wa_norm(phone) into ph from public.profiles where id=e.recipient;
+    if not coalesce((wa->>'enabled')::boolean,false) then update public.fm_sla_inbox231 set wa_state='blocked',wa_reason='whatsapp_disabled' where id=e.id;
+    elsif ph is null then update public.fm_sla_inbox231 set wa_state='blocked',wa_reason='invalid_profile_phone' where id=e.id;
+    elsif nullif(wa->'templates'->>'sla_prebreach','') is null then update public.fm_sla_inbox231 set wa_state='blocked',wa_reason='template_missing' where id=e.id;
+    elsif not exists(select 1 from public.fm_wa_cfg where id=1 and fn_url is not null and hook_secret is not null) then update public.fm_sla_inbox231 set wa_state='blocked',wa_reason='sender_not_configured' where id=e.id;
+    else
+     begin
+      ok:=public.fm_wa_add(ph,'sla_prebreach',array[coalesce((select coalesce(full_name,email) from public.profiles where id=e.recipient),''),e.ticket_id,coalesce(e.school,''),coalesce(e.priority,''),to_char(e.due_at at time zone 'Asia/Riyadh','YYYY-MM-DD HH24:MI'),greatest(1,ceil(extract(epoch from e.due_at-now())/60))::int::text],'sla_prebreach',event_ref);
+      select id into pk from public.fm_wa_queue where kind='sla_prebreach' and ref=event_ref and phone=ph order by id desc limit 1;
+      if pk is not null then update public.fm_sla_inbox231 set wa_state='queued',wa_reason=null,wa_id=pk where id=e.id;
+      else update public.fm_sla_inbox231 set wa_state='blocked',wa_reason='queue_rejected' where id=e.id;end if;
+     exception when others then update public.fm_sla_inbox231 set wa_state='blocked',wa_reason='queue_error' where id=e.id;end;
+    end if;
+   end if;
+  end if;
+ end loop;
+ return n;
+end $$;
+create or replace function public.fm_sla231_run_now(r text) returns int language plpgsql security definer set search_path=public as $$
+begin if not public.fm231_manage(r) then raise exception 'not allowed';end if;return public.fm_sla231_run(r);end $$;
+-- Expiration/closure check immediately before channel workers claim an escalation message.
+create or replace function public.fm231_valid(k uuid) returns boolean language sql stable security definer set search_path=public as $$
+ select public.fm_plan_ok() and public.fm_mod('tickets') and exists(select 1 from public.fm_sla_inbox231 i join public.fm_sla_rules231 q on q.id=i.rule_id join public.fm_sla_watch w on w.region=i.region and w.ticket_id=i.ticket_id and w.due_at=i.due_at
+ where i.id=k and q.enabled and q.lead_minutes=i.lead_minutes and(q.region is null or q.region=i.region) and i.recipient=any(q.recipients) and public.fm231_target(i.recipient,i.region) and public.fm231_open(i.region,i.ticket_id) and i.due_at>now() and w.updated_at>=now()-make_interval(hours=>q.max_age_hours)) $$;
+create or replace function public.fm_sla231_setup() returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare mgr boolean:=public.fm231_manage(null);wa jsonb:=coalesce(public.fm_setting('wa'),'{}');cron_on boolean:=false;
+begin
+ if auth.uid() is null or public.fm_role()='pending' or not public.fm_mod('tickets') then raise exception 'not allowed';end if;
+ begin execute 'select exists(select 1 from cron.job where jobname=''fm-sla-escalation231'' and active)' into cron_on;exception when undefined_table or invalid_schema_name or insufficient_privilege then cron_on:=false;end;
+ return jsonb_build_object('all_regions',mgr,'can_manage',mgr or public.fm_my_pos()='area_manager',
+ 'regions',case when mgr or cardinality(public.fm_regions())=0 then array['riyadh','qassim'] else public.fm_regions() end,
+ 'rules',coalesce((select jsonb_agg(to_jsonb(q) order by q.updated_at desc) from public.fm_sla_rules231 q where public.fm231_manage(q.region)),'[]'),
+ 'people',coalesce((select jsonb_agg(jsonb_build_object('id',p.id,'name',coalesce(p.full_name,p.email),'title',public.fm_posx(p.role,p.job_title),'regions',p.regions,'phone_ready',public.fm_wa_norm(p.phone) is not null) order by p.full_name) from public.profiles p where p.active and p.role<>'pending' and(mgr or(public.fm_my_pos()='area_manager' and(cardinality(public.fm_regions())=0 or p.regions&&public.fm_regions() or cardinality(coalesce(p.regions,'{}'))=0)))),'[]'),
+ 'meta',coalesce((select jsonb_agg(to_jsonb(m)) from public.fm_sla_watch_meta m where public.fm231_manage(m.region)),'[]'),
+ 'cron',cron_on,'whatsapp_enabled',coalesce((wa->>'enabled')::boolean,false),'template',wa->'templates'->>'sla_prebreach',
+ 'sender_configured',exists(select 1 from public.fm_wa_cfg where id=1 and fn_url is not null and hook_secret is not null));
+end $$;
+create or replace function public.fm_sla231_list(p_all boolean default false,p_offset int default 0) returns jsonb language plpgsql stable security definer set search_path=public as $$
+begin
+ if auth.uid() is null or public.fm_role()='pending' or not public.fm_mod('tickets') then raise exception 'not allowed';end if;
+ return jsonb_build_object('unread',(select count(*) from public.fm_sla_inbox231 where recipient=auth.uid() and read_at is null),
+ 'total',(select count(*) from public.fm_sla_inbox231 i where i.recipient=auth.uid() or(p_all and public.fm231_manage(i.region))),
+ 'items',coalesce((select jsonb_agg(to_jsonb(x) order by x.created_at desc,x.id desc) from(
+ select i.id,i.region,i.ticket_id,i.school,i.priority,i.due_at,i.lead_minutes,i.title,i.body,i.created_at,i.read_at,i.recipient,
+ coalesce(p.full_name,p.email) recipient_name,i.recipient=auth.uid() mine,public.fm231_open(i.region,i.ticket_id) source_open,
+ case when i.wa_id is not null then w.status else i.wa_state end wa_state,coalesce(w.err,i.wa_reason) wa_reason,w.sent_at wa_sent_at,
+ case when q.sent_at is not null then 'sent' when q.tries>=5 then 'failed' else i.push_state end push_state
+ from public.fm_sla_inbox231 i left join public.profiles p on p.id=i.recipient left join public.fm_wa_queue w on w.id=i.wa_id left join public.fm_push_queue q on q.id=i.push_id
+ where i.recipient=auth.uid() or(p_all and public.fm231_manage(i.region)) order by i.created_at desc,i.id desc offset greatest(0,coalesce(p_offset,0)) limit 100)x),'[]'));
+end $$;
+revoke all on function public.fm231_manage(text),public.fm231_target(uuid,text),public.fm231_open(text,text),public.fm_sla231_run(text),public.fm231_valid(uuid),public.fm_sla231_rule_save(jsonb),public.fm_sla231_template(text),public.fm_sla231_read(uuid),public.fm_sla231_run_now(text),public.fm_sla231_setup(),public.fm_sla231_list(boolean,int) from public,anon,authenticated;
+grant execute on function public.fm231_manage(text),public.fm_sla231_rule_save(jsonb),public.fm_sla231_template(text),public.fm_sla231_read(uuid),public.fm_sla231_run_now(text),public.fm_sla231_setup(),public.fm_sla231_list(boolean,int) to authenticated;
+-- The scheduled job does not depend on an open browser. Existing general SLA warnings are preserved.
+do $do$ begin
+ begin execute 'select cron.unschedule(''fm-sla-escalation231'')';exception when others then null;end;
+ begin execute 'select cron.schedule(''fm-sla-escalation231'',''* * * * *'',''select public.fm_sla231_run(null)'')';
+ exception when others then raise notice 'pg_cron is unavailable; configure the job to enable unattended SLA escalations';end;
+end $do$;
+
+create or replace function public.fm_wa_claim(n int) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r jsonb;
+begin
+  update public.fm_wa_queue set status='failed',err='SLA event no longer current' where kind='sla_prebreach' and status='queued' and exists(select 1 from public.fm_sla_inbox231 i where fm_wa_queue.ref='sla231-'||i.id::text and (not public.fm231_valid(i.id) or not (select whatsapp from public.fm_sla_rules231 where id=i.rule_id)));
+  with c as (
+    update public.fm_wa_queue q set claimed_at = now(), tries = q.tries + 1
+     where q.id in (select id from public.fm_wa_queue where status = 'queued' and tries < 5 and created_at > now() - interval '2 days'
+                      and (claimed_at is null or claimed_at < now() - interval '2 minutes') order by id limit greatest(1, least(coalesce(n,50), 200)) for update skip locked)
+    returning q.*)
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'phone', c.phone, 'template', c.template, 'lang', c.lang, 'params', c.params)), '[]'::jsonb) into r from c;
+  return r;
+end $$;
+
+create or replace function public.fm_push_claim(n int) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r jsonb;
+begin
+  update public.fm_push_queue set tries=5,err='SLA event no longer current' where tag like 'sla231-%' and sent_at is null and exists(select 1 from public.fm_sla_inbox231 i where fm_push_queue.tag='sla231-'||i.id::text and (not public.fm231_valid(i.id) or not (select push from public.fm_sla_rules231 where id=i.rule_id)));
+  with c as (
+    update public.fm_push_queue q set claimed_at = now(), tries = q.tries + 1
+     where q.id in (select id from public.fm_push_queue where sent_at is null and tries < 5 and created_at > now() - interval '1 day'
+                      and (claimed_at is null or claimed_at < now() - interval '2 minutes') order by id limit greatest(1, least(coalesce(n,100), 500)) for update skip locked)
+    returning q.*)
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'title', c.title, 'body', c.body, 'url', c.url, 'tag', c.tag, 'kind', c.kind,
+           'subs', coalesce((select jsonb_agg(jsonb_build_object('endpoint', s.endpoint, 'p256dh', s.p256dh, 'auth', s.auth)) from public.fm_push_subs s where s.user_id = c.user_id), '[]'))), '[]')
+    into r from c;
+  return r;
+end $$;
+
+notify pgrst,'reload schema';
+commit;
+
+-- 49: incremental ticket imports V232
+begin;
+-- V232: incremental Excel source import; requires V231. Never writes field work.
+create table if not exists public.fm_ticket_imports232 (
+ id uuid primary key default gen_random_uuid(), region text not null,
+ by_id uuid not null default auth.uid(), at timestamptz not null default now(), summary jsonb not null
+);
+alter table public.fm_ticket_imports232 enable row level security;
+drop policy if exists p_import232 on public.fm_ticket_imports232;
+create policy p_import232 on public.fm_ticket_imports232 for select to authenticated using(public.fm_can_upload(region));
+revoke insert,update,delete on public.fm_ticket_imports232 from anon,authenticated;
+create or replace function public.fm_tickets_import232(p_rows jsonb) returns jsonb
+language plpgsql security definer set search_path=public as $$
+declare r text; x jsonb; n int; added int:=0; updated int:=0; unchanged int:=0; retained int; old public.tickets; v public.tickets; conflicts jsonb; result jsonb;
+begin
+ if auth.uid() is null or not public.fm_plan_ok() or not public.fm_mod('tickets') or coalesce(public.fm_role(),'pending')='pending' then raise exception 'not allowed';end if;
+ if jsonb_typeof(p_rows) is distinct from 'array' then raise exception 'array required';end if;
+ n:=jsonb_array_length(p_rows);if n<1 or n>50000 then raise exception 'import requires 1..50000 rows';end if;
+ r:=p_rows->0->>'region';
+ if r not in ('riyadh','qassim') or r is null or not coalesce(public.fm_can_upload(r),false) then raise exception 'not allowed';end if;
+ if exists(select 1 from jsonb_array_elements(p_rows) a where jsonb_typeof(a)<>'object' or a->>'region' is distinct from r or coalesce(btrim(a->>'ticket_id'),'')='' or jsonb_typeof(a->'raw') is distinct from 'object') then raise exception 'invalid ticket row';end if;
+ if exists(select 1 from jsonb_array_elements(p_rows) a group by btrim(a->>'ticket_id') having count(*)>1) then raise exception 'duplicate ticket id';end if;
+ perform pg_advisory_xact_lock(232,hashtext(r));
+ select count(*) into retained from public.tickets t where t.region=r and not exists(select 1 from jsonb_array_elements(p_rows) a where btrim(a->>'ticket_id')=t.ticket_id);
+ for x in select value from jsonb_array_elements(p_rows) loop
+  v:=jsonb_populate_record(null::public.tickets,x);v.ticket_id:=btrim(v.ticket_id);
+  select * into old from public.tickets t where t.region=r and t.ticket_id=v.ticket_id for update;
+  if not found then added:=added+1;
+  elsif (to_jsonb(old)-array['uploaded_at','uploaded_by'])=(to_jsonb(v)-array['uploaded_at','uploaded_by']) then unchanged:=unchanged+1;continue;
+  else updated:=updated+1;end if;
+  insert into public.tickets(region,ticket_id,school,building_id,supervisor,engineer,contractor,priority,sub_category,status,created_at,raw,uploaded_at,uploaded_by)
+  values(r,v.ticket_id,v.school,v.building_id,v.supervisor,v.engineer,v.contractor,v.priority,v.sub_category,v.status,v.created_at,v.raw,now(),auth.uid())
+  on conflict(region,ticket_id) do update set school=excluded.school,building_id=excluded.building_id,supervisor=excluded.supervisor,engineer=excluded.engineer,contractor=excluded.contractor,priority=excluded.priority,sub_category=excluded.sub_category,status=excluded.status,created_at=excluded.created_at,raw=excluded.raw,uploaded_at=excluded.uploaded_at,uploaded_by=excluded.uploaded_by;
+ end loop;
+ select coalesce(jsonb_agg(jsonb_build_object('ticket_id',t.ticket_id,'source',t.status,'stage',w.stage) order by t.ticket_id),'[]') into conflicts
+ from public.tickets t join public.ticket_work w using(region,ticket_id)
+ where t.region=r and exists(select 1 from jsonb_array_elements(p_rows) a where btrim(a->>'ticket_id')=t.ticket_id)
+ and w.stage in ('assigned','inspected','progress','parts','reopened','resolved','closed','cancelled')
+ and coalesce(t.status,'')<>case w.stage when 'assigned' then 'تم التعيين' when 'resolved' then 'تم حله' when 'closed' then 'مغلق' when 'cancelled' then 'ملغى' else 'قيد التنفيذ' end;
+ result:=jsonb_build_object('received',n,'added',added,'updated',updated,'unchanged',unchanged,'retained',retained,'conflicts',conflicts,'max_created_at',(select max(created_at) from public.tickets where region=r),'at',now());
+ insert into public.fm_ticket_imports232(region,summary) values(r,result);
+ return result;
+end $$;
+revoke all on function public.fm_tickets_import232(jsonb) from public,anon;
+grant execute on function public.fm_tickets_import232(jsonb) to authenticated;
+-- Block old clients' destructive "delete tickets missing from this file" behavior.
+-- Explicit administrative wipe is a separate permission-checked security-definer RPC.
+drop policy if exists p_tickets_write on public.tickets;
+drop policy if exists p_tickets_insert232 on public.tickets;
+drop policy if exists p_tickets_update232 on public.tickets;
+create policy p_tickets_insert232 on public.tickets for insert to authenticated with check(public.fm_can_upload(region));
+create policy p_tickets_update232 on public.tickets for update to authenticated using(public.fm_can_upload(region)) with check(public.fm_can_upload(region));
+
+-- Field stage is authoritative for escalation eligibility as well as field/desktop display.
+create or replace function public.fm231_open(r text,t text) returns boolean language sql stable security definer set search_path=public as $$
+ select case when exists(select 1 from public.ticket_work w where w.region=r and w.ticket_id=t and w.stage in('assigned','inspected','progress','parts','reopened','resolved','closed','cancelled'))
+ then exists(select 1 from public.ticket_work w where w.region=r and w.ticket_id=t and w.resolved_at is null and w.stage in('assigned','inspected','progress','parts','reopened'))
+ else not exists(select 1 from public.ticket_work w where w.region=r and w.ticket_id=t and w.resolved_at is not null)
+ and not exists(select 1 from public.tickets k where k.region=r and k.ticket_id=t and lower(btrim(coalesce(k.status,''))) in('مغلق','تم حله','ملغى','خارج النطاق','closed','resolved','cancelled','canceled','out of scope')) end $$;
+
+commit;
+
+-- 50: operational home / workforce V233
+begin;
+-- V233: explicitly recorded workforce deployment groups. Never infer labour from login accounts.
+create or replace function public.fm233_manage(r text) returns boolean language sql stable security definer set search_path=public as $$
+ select coalesce(auth.uid() is not null and public.fm_role()<>'pending' and
+ (public.fm_role()='admin' or public.fm_my_pos() in('dept_manager','project_manager','ops_manager') or (public.fm_my_pos()='area_manager' and public.fm_region_ok(r))),false) $$;
+create or replace function public.fm233_read(r text) returns boolean language sql stable security definer set search_path=public as $$
+ select coalesce(auth.uid() is not null and public.fm_role()<>'pending' and (public.fm_scope_region(r) or public.fm_role()='admin'),false) $$;
+create table if not exists public.fm_workforce233(
+ id uuid primary key default gen_random_uuid(),region text not null check(region in('riyadh','qassim')),
+ contractor text not null check(length(btrim(contractor)) between 1 and 160),
+ trade text not null check(length(btrim(trade)) between 1 and 160),
+ supervisor text not null default '' check(length(supervisor)<=160),headcount int not null check(headcount between 0 and 100000),
+ active boolean not null default true,note text not null default '',revision int not null default 1,
+ updated_at timestamptz not null default now(),updated_by uuid default auth.uid()
+);
+create unique index if not exists fm_workforce233_group on public.fm_workforce233(region,lower(btrim(contractor)),lower(btrim(trade)),lower(btrim(supervisor))) where active;
+create table if not exists public.fm_workforce_events233(id uuid primary key default gen_random_uuid(),group_id uuid not null,at timestamptz not null default now(),by_id uuid not null default auth.uid(),region text not null,old_value jsonb,new_value jsonb);
+alter table public.fm_workforce233 enable row level security;
+alter table public.fm_workforce_events233 enable row level security;
+drop policy if exists p_workforce233 on public.fm_workforce233;
+create policy p_workforce233 on public.fm_workforce233 for select to authenticated using(public.fm233_read(region));
+drop policy if exists p_workforce_events233 on public.fm_workforce_events233;
+create policy p_workforce_events233 on public.fm_workforce_events233 for select to authenticated using(public.fm233_read(region));
+revoke insert,update,delete on public.fm_workforce233,public.fm_workforce_events233 from anon,authenticated;
+create or replace function public.fm_workforce233_save(p jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
+declare v public.fm_workforce233;old public.fm_workforce233;k uuid:=nullif(p->>'id','')::uuid;r text:=p->>'region';
+begin
+ if not public.fm233_manage(r) then raise exception 'not allowed';end if;
+ if btrim(coalesce(p->>'note',''))='' or length(p->>'note')>2000 then raise exception 'note required';end if;
+ if coalesce(p->>'headcount','')!~'^\d{1,6}$' then raise exception 'invalid headcount';end if;
+ if k is not null then
+  select * into old from public.fm_workforce233 where id=k for update;
+  if not found or not public.fm233_manage(old.region) then raise exception 'not allowed';end if;
+  if old.revision is distinct from (p->>'revision')::int then raise exception 'stale revision';end if;
+ end if;
+ insert into public.fm_workforce233(id,region,contractor,trade,supervisor,headcount,active,note,revision,updated_at,updated_by)
+ values(coalesce(k,gen_random_uuid()),r,btrim(p->>'contractor'),btrim(p->>'trade'),btrim(coalesce(p->>'supervisor','')),(p->>'headcount')::int,coalesce((p->>'active')::boolean,true),btrim(p->>'note'),coalesce(old.revision,0)+1,now(),auth.uid())
+ on conflict(id) do update set region=excluded.region,contractor=excluded.contractor,trade=excluded.trade,supervisor=excluded.supervisor,headcount=excluded.headcount,active=excluded.active,note=excluded.note,revision=excluded.revision,updated_at=excluded.updated_at,updated_by=excluded.updated_by returning * into v;
+ insert into public.fm_workforce_events233(group_id,region,old_value,new_value) values(v.id,r,case when old.id is not null then to_jsonb(old) end,to_jsonb(v));
+ return to_jsonb(v);
+end $$;
+revoke all on function public.fm233_manage(text),public.fm233_read(text),public.fm_workforce233_save(jsonb) from public,anon;
+grant execute on function public.fm233_manage(text),public.fm233_read(text),public.fm_workforce233_save(jsonb) to authenticated;
+commit;

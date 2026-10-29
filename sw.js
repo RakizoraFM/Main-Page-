@@ -7,7 +7,7 @@
      • everything else (Supabase, the version check «?fmc=», uploads) goes to the network untouched.
    A page posts {fmCache:{page, libs}} after registering, so what it loaded before the worker existed is saved too. */
 'use strict';
-const SHELL = 'fm-shell-v197', PAGES = 'fm-pages', LIBS = 'fm-libs', TILES = 'fm-tiles', TILE_MAX = 3000;
+const SHELL = 'fm-shell-v233', PAGES = 'fm-pages', LIBS = 'fm-libs', TILES = 'fm-tiles', TILE_MAX = 3000;
 const SHELL_FILES = ['start.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 const APP_PAGES = new Set(['start.html', 'index.html', 'field.html', 'school.html', 'rate.html', 'try.html', 'saas.html']);
 const LIB_HOST = /^(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)$/;
