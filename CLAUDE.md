@@ -329,3 +329,7 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V236 — pre-breach escalation in Settings
 - `fm-v235-nav-css` also hides `#v2-nav-fm231-sla` and `#v2-nav-fm123-weekfu` (ids kept in `GROUPS`; the V231 button is still created and `#sla-escalation` still opens the page). `fm-v235-nav` adds `#fm236-sla-card` to the settings tab `esc` («⬆️ التصعيد والمتابعة») → `fmV231Sla()`. Manual: the V231 entry id is now `fm231-sla` (not a sidebar button), the weekly-follow-up shortcut entry was removed.
+
+## V237 — one group «📋 متابعة البلاغات» with tabs
+- V123 `GROUPS`: the `tickets` group is gone; `sla` is now «📋 متابعة البلاغات» (icon 📋, same key so saved open state stays): visible table, fm223-sla, fm195-alerts, fm122-follow, sla, recurring, fm233-analysis; the other ids stay listed but hidden by `fm-v237-tickets-css` (fm135-work, fm103-alerts, risk, fm118-breach, fm194-quality, school-analysis, fm122-risk — «توقع الاختراق» is dropped from the UI).
+- `fm-v237-tickets`: `SETS` (`window.fmV237Sets`) = sidebar item → tabs [[button id, label]]. The first button of a set is relabelled with the set name. Every 700 ms (and after nav clicks) the active nav button's set puts `#fm237-tabs` after the `.fm103-head` of the top visible `.fm103-page`, else after `.v2-modal-head` of the open `#v2-overlay`, else at the top of `#detailed-table-section` / `#fm233-ticket-analysis`; a tab closes the current page / modal and clicks the original hidden button. Add new ticket pages to a set (or as a one-tab set).
