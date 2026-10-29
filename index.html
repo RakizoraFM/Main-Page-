@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V226">
+<meta name="fm-version" content="V227">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25618,10 +25618,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V226',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V227',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V227',d:'2026-10-29',t:'جداول أوضح على الجوال',i:['الجداول في الصفحات والنوافذ لم تعد تكسر الكلمات حرفاً حرفاً على الجوال (مثل «حسب المستودع» في مؤشرات المستودع): العناوين في سطر واحد والكلمات كاملة، والجدول العريض يتحرك أفقياً بالسحب']},
 {v:'V226',d:'2026-10-29',t:'المساعد الذكي ورسائل واتساب التلقائية',i:['«🤖 المساعد الذكي»: تصنيف البلاغ وأولويته من نصه، كتابة الملخص التنفيذي وخطة الشهر القادم للتقرير الشهري من أرقامه (ويُوضع في التقرير بضغطة)، وتحليل السبب الجذري للأعطال المتكررة في مدرسة مع الإجراءات المقترحة — عبر دالة fm-ai بمفتاح محفوظ في أسرارها وحد يومي لكل شخص','«💬 واتساب التلقائي»: رسالة لمقدّم طلب بوابة المدرسة عند تغيّر حالة طلبه، ولمدير المدرسة لتأكيد إنجاز العمل، عبر WhatsApp Business ودالة fm-wa بقوالب معتمدة من Meta','تتطلب تشغيل القسم 46 من supabase_setup.sql ونشر الدالتين']},
 {v:'V225',d:'2026-10-29',t:'شاشة غرفة العمليات وتقويم الصيانة الوقائية السنوي',i:['«📺 شاشة غرفة العمليات»: لوحة كبيرة داكنة تتحدث وحدها كل 1–10 دقائق للعرض على شاشة في المكتب: البلاغات المتجاوزة وما ينتهي خلال 6 ساعات، أوامر العمل المتأخرة وبانتظار الاعتماد والمصعّدة، طلبات المدارس الجديدة، مع ملء الشاشة ورابط مباشر index.html#ops','«📅 تقويم الصيانة الوقائية»: جدول سنوي لكل حملة أو مدرسة × 12 شهراً: المنفّذ والمتأخر والجاري من أوامر العمل، والمخطط من الحملات المتكررة؛ طباعة A3 للعميل وExcel']},
 {v:'V224',d:'2026-10-29',t:'الحضور، السيارات، الوثائق والشهادات، عدادات الكهرباء والمياه، ومسار اليوم',i:['«🕒 الحضور وساعات العمل»: الفني يسجّل بدء ونهاية الدوام ووصوله للمدرسة من تطبيق الميدان مع موقعه (يعمل بدون اتصال)، وتقرير ساعات وزيارات لكل موظف مع التنبيه على التسجيل البعيد عن المدرسة','«🚗 السيارات»: السيارات وأوراقها (التأمين، الاستمارة، الفحص)، سجل الوقود والعداد والصيانة من المنصة أو جوال السائق، وتكلفة كل سيارة شهرياً تُسجَّل في مركز التكلفة','«📄 الوثائق والشهادات»: شهادة الدفاع المدني والعقود والضمانات والتراخيص لكل مبنى أو الشركة أو السيارة مع الملف وتنبيه قبل الانتهاء','«⚡ الكهرباء والمياه»: قراءات العدادات الشهرية بالصورة، الاستهلاك ومقارنته بمتوسطه وبمدارس بنفس الحجم','تطبيق الميدان: «🧾 مستخلصاتي» للمقاول، «🚗 سيارتي» للسائق، «⚡ العدادات»، و«خطة اليوم» تشمل أوامر العمل المتأخرة والمستحقة اليوم مع «✅ زرتها» والوقت المتوقع','تتطلب تشغيل القسم 45 من supabase_setup.sql']},
@@ -38088,5 +38089,18 @@ const TPL={req_update:['fm_request_update','📬 تحديث على طلب مدر
   w.querySelector('[data-test]').onclick=async()=>{try{await rpc('fm_wa_test',{p_phone:S(g('tp').value)});toast('أُضيفت رسالة التجربة للإرسال')}catch(e){toast(/invalid phone/.test(e.message)?'رقم غير صحيح':aiMsg(e.message),'error')}}})()});
 })();</script>
 
+<style id="fm-v227-table-words">
+/* V227: tables never split words letter by letter. The V196 surfaces inherit overflow-wrap:anywhere, which lets a table shrink
+   its columns to one letter on a phone instead of using its horizontal scroll wrapper (.fm196-table-scroll / .fm103-tw). */
+@media screen{
+ :is(.fm103-page,dialog,.fm122-dlg,.fm196-surface) :is(table) :is(th,td){overflow-wrap:normal!important;word-break:normal!important}
+ :is(.fm103-page,dialog,.fm122-dlg,.fm196-surface) :is(table) :is(th,td) :is(b,small,span,div,a){overflow-wrap:normal!important;word-break:normal!important}
+}
+@media screen and (max-width:760px){
+ :is(.fm103-page,dialog,.fm122-dlg,.fm196-surface) table th{white-space:nowrap!important}
+ :is(.fm103-page,dialog,.fm122-dlg,.fm196-surface) table td{min-width:3.2em}
+ :is(.fm103-tw,.fm196-table-scroll){-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+}
+</style>
 </body>
 </html>
