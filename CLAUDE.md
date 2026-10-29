@@ -319,3 +319,13 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 - Section 50 / migration_v233.sql: scoped workforce read/manage, positive integer/zero headcounts, group uniqueness while active, optimistic revisions, reason and append-only audit, no direct client mutation. No default workforce data. Managers enter counts without overlapping individuals.
 - Per-project/user filter, KPI and section preferences; source generation + identity guard clears tenant/user/role/module changes. Warehouse regional only, contractor filter explicitly ticket/workforce only. Missing data not zero; partial price totals labeled.
 - F55 shared dictionary additions only. tests/results/v233 is current evidence. No live credentials, production writes or provider sends.
+
+## V234 — the missing-SQL hint names the right file
+- The V233 dashboard card error used to add «ثبّت migration_v233.sql» to every «schema cache» error. `window.fmV234Sql(message)` maps the missing object to its file: `fm_sla231*` / `fm231*` → migration_v231.sql, `*import232` → v232, `fm_workforce233` / `fm233*` → v233, else «supabase_setup.sql المحدَّث». Use it for new hints.
+
+## V235 — sidebar order
+- V123 `GROUPS`: new first group `wo` «🛠️ أوامر العمل» (`v2-nav-fm145-wo`, `v2-nav-fm195-ppm`, `v2-nav-fm225-ppmcal`; opens by default — the saved open list carries the marker `_wo235` so a user's later choice sticks), then `sla` (without the ops screen); `maint` keeps requests / QA / capex. `TOP` = ops screen, solution, then the hidden portal / actions buttons.
+- `fm-v235-nav-css` hides `#v2-nav-portal`, `#v2-nav-actions` and `#fm157-portal` (the buttons stay: older layers use them as insert anchors). The portal no longer opens. `fm-v235-nav` adds `#v2-nav-fm235-deputy` (staff group) → `fmV166Deputy()`, the deputy dialog that lived in the portal. Manual entries of the portal and the action center were removed.
+
+## V236 — pre-breach escalation in Settings
+- `fm-v235-nav-css` also hides `#v2-nav-fm231-sla` and `#v2-nav-fm123-weekfu` (ids kept in `GROUPS`; the V231 button is still created and `#sla-escalation` still opens the page). `fm-v235-nav` adds `#fm236-sla-card` to the settings tab `esc` («⬆️ التصعيد والمتابعة») → `fmV231Sla()`. Manual: the V231 entry id is now `fm231-sla` (not a sidebar button), the weekly-follow-up shortcut entry was removed.
