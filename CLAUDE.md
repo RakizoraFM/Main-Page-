@@ -348,3 +348,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 ## V241 — the «أكبر تجاوز للمهلة» card at full width
 - `fmtTable(t)` adds `.fm241-t` and column classes by header text (`COLS`: id, ov, why, sch, cause, st) to both breach tables: indigo header, zebra rows, wrapped reason / school, select + note on one row (`.fm241-cz` / `.fm241-row`) with the author line under them.
 - `enhanceWorst` (in `fm-v239-breach`) adds `.fm241-wide` to the card holding `table[data-f239w]`; CSS `.fm103-grid>.fm241-wide{grid-column:1/-1}` makes it span the whole grid row (it used to share the row with the categories table) and the table is `width:100%`. Fix: `enhanceWorst` skips tables inside `div[data-f239]` (after «🔄» it used to add the column to the card's own table).
+
+## V242 — «البلاغات» closes the phone menu
+- `fm-v242-nav-close` (before `fm-v228-i18n`): wraps `window.v2Go` (re-checked every 2 s because V233 replaces it) so every call removes `body.v2-mobile-nav` and, except for `solution`, closes open sub-pages / the contractor page first. A capture click listener on `.v2-primary-sidebar .v2-nav-btn[id^="v2-nav-"]` also removes `v2-mobile-nav` after the click. Before, the phone sidebar stayed over the page after «البلاغات» (`v2Go('table')`), so it looked like nothing opened.

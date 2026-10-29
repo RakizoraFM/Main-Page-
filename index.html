@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V241">
+<meta name="fm-version" content="V242">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V241',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V242',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V242',d:'2026-10-29',t:'«البلاغات» تفتح على الجوال',i:['على الجوال كانت القائمة الجانبية تبقى مفتوحة فوق الصفحة بعد الضغط على «البلاغات» (وأزرار لوحة البلاغات الأخرى)، فيبدو أن الصفحة لم تُفتح؛ الآن تُغلق القائمة وتنتقل الشاشة إلى جدول البلاغات']},
 {v:'V241',d:'2026-10-29',t:'جدول «أكبر تجاوز للمهلة» بعرض الصفحة',i:['في صفحة أسباب الاختراق صار جدول «أكبر تجاوز للمهلة» يأخذ كامل عرض الصفحة بدل نصفها، فتظهر أعمدة المدرسة والمقاول وسبب الاختراق المعتمد والملاحظة دون تمرير جانبي','تنسيق أوضح للجدولين: عناوين ملوّنة، صفوف متبادلة، رقم البلاغ والتجاوز بارزان، والسبب الآلي واسم المدرسة يلتفّان بدل التمدد، والقائمة والملاحظة في سطر واحد تحتهما اسم من حدّد السبب ووقته','إصلاح: بعد زر «🔄» في بطاقة «أسباب الاختراق المعتمدة» كان عمود السبب يُضاف مرة ثانية إلى جدول البطاقة نفسها']},
 {v:'V240',d:'2026-10-29',t:'رسم بياني لأسباب الاختراق المعتمدة',i:['بطاقة «📝 أسباب الاختراق المعتمدة» تعرض رسماً دائرياً لتوزيع البلاغات المخترقة حسب السبب المعتمد (مع «بدون سبب»)','ورسماً شريطياً لكل سبب موزعاً على مرحلة الاختراق (الإسناد / التنفيذ / الإغلاق)','الضغط على جزء من الرسم يصفّي الجدول على ذلك السبب، ويتحدث الرسم فور حفظ أي سبب؛ زر لإخفاء الرسم أو إظهاره']},
 {v:'V239',d:'2026-10-29',t:'سبب الاختراق المعتمد',i:['في «أسباب الاختراق» يختار المخوَّل لكل بلاغ مخترق سبب اختراقه من قائمة منسدلة (مع ملاحظة، وإلزامية عند «أخرى»)، ويُحفظ باسمه ووقته ويُسجَّل كل تعديل.','بطاقة «📝 أسباب الاختراق المعتمدة»: عدد البلاغات لكل سبب ونسبتها، والبلاغات بدون سبب، وبحث وتصدير Excel.','المخوَّل: مدير النظام، مديرو الإدارة والمشروع والعمليات والجودة، ومدير ومهندس المنطقة لمنطقتهم؛ والبقية يرون السبب فقط.','مدير النظام يعدّل القائمة من «الإعدادات» ← «⬆️ التصعيد والمتابعة». يتطلب تشغيل migration_v239.sql.']},
@@ -38396,6 +38397,20 @@ setInterval(run,800);
   try{const c=await db();const r=await c.from('fm_settings').upsert([{key:'breach_reasons',value:L}],{onConflict:'key'});if(r.error)throw r.error;msg.textContent='✓ حُفظت';S.loaded=false}catch(e){msg.textContent='تعذّر الحفظ: '+(e.message||e)}}});
 window.fmV239={load,save,state:S};
 })();</script>
+<script id="fm-v242-nav-close">
+/* V242: the old v2Go buttons (table / charts / staff / solution) switch the
+   content but never closed the phone sidebar, so on phones it stayed over
+   the page. Close it (and any open sub-page) for every v2Go call. */
+(function(){
+ function wrap(){const g=window.v2Go;if(typeof g!=='function'||g.__fm242)return;
+  const w=function(section,btn){try{if(section!=='solution'){window.fmV103ClosePages?.();window.fmV92CloseContractorAnalysis?.()}}catch(e){}
+   document.body.classList.remove('v2-mobile-nav');return g.apply(this,arguments)};
+  w.__fm242=true;window.v2Go=w}
+ wrap();document.addEventListener('DOMContentLoaded',wrap);window.addEventListener('load',wrap);setInterval(wrap,2000);
+ /* safety net: any sidebar page button closes the phone menu */
+ document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.v2-primary-sidebar .v2-nav-btn[id^="v2-nav-"]');if(!b)return;setTimeout(()=>document.body.classList.remove('v2-mobile-nav'),0)},true);
+})();
+</script>
 <script id="fm-v228-i18n">
 /* V228: English interface — dictionary (Arabic → English) and the translator (text nodes, placeholder / title, alert / confirm). Data stays as entered. */
 (function(){
