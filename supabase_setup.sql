@@ -6934,3 +6934,350 @@ drop trigger if exists fm_move_avg on public.wo_stock_moves;
 create trigger fm_move_avg after insert on public.wo_stock_moves for each row execute function public.fm_move_avg();
 notify pgrst, 'reload schema';
 commit;
+
+-- ---------- 44) the school confirms a finished work order, alerts before a ticket breaches its SLA, automatic reorder drafts (V223) ----------
+-- (1) When an order of a school that has an active portal link (section 22) is reported «done», work_orders.sc_status = pending and the
+--     principal sees it in school.html: fm_school_wo_confirm(token, id, ok, note, name) → confirmed / rejected (reason required).
+--     fm_settings.school_confirm {enabled (default true), required (default false), days (default 3)}: with «required» the approver
+--     cannot close an order the school rejected, nor one still pending for less than «days» days after it was reported done.
+-- (2) fm_sla_watch: the uploader's platform sends the open tickets with their SLA due time (created + the priority's hours, the same
+--     calculation as the platform) and the supervisor / engineer names; people are matched by person_names / full name.
+--     fm_sla_warn_run() (pg_cron every 15 minutes): one push «sla_due» per person for tickets due within sla_warn.hours (2), outside
+--     the quiet hours (22–06 Riyadh), and a morning summary of what breaches today. The list is as fresh as the last upload.
+-- (3) wo_purchase_requests.status «draft» + auto: fm_wh_auto_po(store?) builds one draft per store with the items below their minimum
+--     (qty = max(2 × min, 2 × 30-day use) − balance − quantity already on open purchase requests); the storekeeper reviews it and
+--     sends it for approval (fm_po_draft_act submit) or cancels it. stock_rules.auto_po {enabled, dow 0–6 (Sunday = 0)}: pg_cron
+--     runs fm_wh_auto_po_run() daily and builds the drafts on that weekday.
+begin;
+-- (1) school confirmation
+alter table public.work_orders add column if not exists sc_status text;
+alter table public.work_orders add column if not exists sc_at     timestamptz;
+alter table public.work_orders add column if not exists sc_note   text;
+alter table public.work_orders add column if not exists sc_name   text;
+do $do$ begin
+  alter table public.work_orders add constraint work_orders_sc_check check (sc_status in ('pending','confirmed','rejected'));
+exception when duplicate_object then null; end $do$;
+create or replace function public.fm_sc_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', coalesce((s->>'enabled')::boolean, true), 'required', coalesce((s->>'required')::boolean, false),
+                            'days', greatest(1, least(coalesce(nullif(s->>'days','')::int, 3), 30)))
+    from (select coalesce(public.fm_setting('school_confirm'), '{}'::jsonb) s) x $$;
+-- the active portal link of an order's school
+create or replace function public.fm_wo_school_token(p_bid text, p_school text) returns text language sql stable security definer set search_path = public as $$
+  select k.token from public.fm_school_links k
+   where k.active and nullif(btrim(coalesce(p_school,'')),'') is not null
+     and (k.bkey = public.fm_bkey(p_bid, btrim(p_school)) or k.school_name = btrim(p_school))
+   order by (k.bkey = public.fm_bkey(p_bid, btrim(p_school))) desc limit 1 $$;
+create or replace function public.fm_wo_sc_trg() returns trigger language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_sc_cfg();
+begin
+  if new.status = 'done' and old.status is distinct from 'done' then
+    if (c->>'enabled')::boolean and public.fm_wo_school_token(new.building_id, new.school) is not null then
+      new.sc_status := 'pending';
+    else
+      new.sc_status := null;
+    end if;
+    new.sc_at := null; new.sc_note := null; new.sc_name := null;
+  elsif new.status = 'closed' and old.status = 'done' and (c->>'required')::boolean then
+    if new.sc_status = 'rejected' then raise exception 'school rejected'; end if;
+    if new.sc_status = 'pending' and coalesce(old.done_at, now()) > now() - make_interval(days => (c->>'days')::int) then
+      raise exception 'school confirmation pending'; end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_wo_sc on public.work_orders;
+create trigger fm_wo_sc before update of status on public.work_orders for each row execute function public.fm_wo_sc_trg();
+-- public (anon): the principal confirms or rejects (reason required) an order waiting for him
+create or replace function public.fm_school_wo_confirm(p_token text, p_id uuid, p_ok boolean, p_note text, p_name text) returns text
+language plpgsql security definer set search_path = public as $$
+declare k public.fm_school_links; w public.work_orders; nt text := nullif(btrim(coalesce(p_note,'')),''); nm text := left(nullif(btrim(coalesce(p_name,'')),''),100); ns text;
+begin
+  select * into k from public.fm_school_links where token = p_token and length(p_token) = 64 and active;
+  if not found then raise exception 'invalid link'; end if;
+  select * into w from public.work_orders where id = p_id for update;
+  if not found or public.fm_wo_school_token(w.building_id, w.school) is distinct from p_token then raise exception 'not found'; end if;
+  if w.status <> 'done' or w.sc_status is distinct from 'pending' then raise exception 'not waiting'; end if;
+  if not coalesce(p_ok, false) and length(coalesce(nt,'')) < 3 then raise exception 'reason required'; end if;
+  ns := case when coalesce(p_ok, false) then 'confirmed' else 'rejected' end;
+  update public.work_orders set sc_status = ns, sc_at = now(), sc_note = left(nt, 500), sc_name = nm where id = w.id;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (w.id, null, 'مدير المدرسة' || coalesce(' — ' || nm, ''), case when ns = 'confirmed' then 'school_ok' else 'school_no' end, w.status,
+          case when ns = 'confirmed' then '🏫 أكّد مدير المدرسة إنجاز العمل' else '🏫 أفاد مدير المدرسة أن العمل لم يُنجز' end || coalesce(' — ' || left(nt, 500), ''));
+  return ns;
+end $$;
+-- the portal: same as section 22 + «confirm» (orders waiting for the principal) and sc on each order
+create or replace function public.fm_school_portal(p_token text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare k public.fm_school_links;
+begin
+  select * into k from public.fm_school_links where token = p_token and length(p_token) = 64 and active;
+  if not found then return jsonb_build_object('state','invalid'); end if;
+  update public.fm_school_links set last_used_at = now() where token = p_token and (last_used_at is null or last_used_at < now() - interval '10 minutes');
+  return jsonb_build_object('state','ok','school', k.school_name, 'region', k.region,
+    'requests', coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'code', r.code, 'category', r.category, 'description', r.description, 'urgency', r.urgency,
+        'status', r.status, 'response', r.response, 'wo_code', r.wo_code, 'created_at', r.created_at, 'updated_at', r.updated_at, 'rating', r.rating, 'photos', jsonb_array_length(r.photos))
+        order by r.created_at desc) from (select * from public.fm_school_requests where bkey = k.bkey order by created_at desc limit 30) r), '[]'::jsonb),
+    'tickets', coalesce((select jsonb_agg(jsonb_build_object('id', t.ticket_id, 'cat', t.sub_category, 'status', t.status, 'priority', t.priority, 'at', t.created_at) order by t.created_at desc)
+        from (select * from public.tickets t where (public.fm_bkey(t.building_id, null) = k.bkey or btrim(t.school) = k.school_name)
+                and coalesce(t.status,'') !~* '(مغلق|تم الحل|تم حل|محلول|ملغ|مكتمل|closed|resolved|cancel)' order by t.created_at desc limit 50) t), '[]'::jsonb),
+    'orders', coalesce((select jsonb_agg(jsonb_build_object('code', w.code, 'title', w.title, 'type', w.type, 'status', w.status, 'at', w.created_at, 'sc', w.sc_status) order by w.created_at desc)
+        from (select * from public.work_orders w where (public.fm_bkey(w.building_id, null) = k.bkey or btrim(w.school) = k.school_name)
+                and w.status not in ('closed','cancelled','rejected') order by w.created_at desc limit 50) w), '[]'::jsonb),
+    'confirm', coalesce((select jsonb_agg(jsonb_build_object('id', w.id, 'code', w.code, 'title', w.title, 'type', w.type, 'done_at', w.done_at, 'by', w.assignee_name,
+          'items', (select count(*) from jsonb_array_elements(case when jsonb_typeof(w.checklist) = 'array' then w.checklist else '[]' end)),
+          'items_done', (select count(*) from jsonb_array_elements(case when jsonb_typeof(w.checklist) = 'array' then w.checklist else '[]' end) e where (e->>'done')::boolean is true or e->>'res' in ('ok','fixed')),
+          'note', (select e.text from public.wo_events e where e.wo_id = w.id and e.type = 'done' order by e.at desc limit 1),
+          'sr', (select r.code from public.fm_school_requests r where r.wo_id = w.id limit 1)) order by w.done_at)
+        from (select * from public.work_orders w where w.status = 'done' and w.sc_status = 'pending'
+                and public.fm_wo_school_token(w.building_id, w.school) = p_token order by w.done_at limit 30) w), '[]'::jsonb),
+    'confirmed', coalesce((select jsonb_agg(jsonb_build_object('code', w.code, 'title', w.title, 'sc', w.sc_status, 'sc_at', w.sc_at, 'sc_note', w.sc_note) order by w.sc_at desc)
+        from (select * from public.work_orders w where w.sc_at > now() - interval '30 days' and w.sc_status in ('confirmed','rejected')
+                and public.fm_wo_school_token(w.building_id, w.school) = p_token order by w.sc_at desc limit 20) w), '[]'::jsonb));
+end $$;
+-- the push: the approver (and, on a rejection, the assignee) hear what the school said
+create or replace function public.fm_push_sc() returns trigger language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; t text;
+begin
+  if new.type not in ('school_ok','school_no') then return null; end if;
+  select * into w from public.work_orders where id = new.wo_id;
+  if not found then return null; end if;
+  t := coalesce(w.code,'') || ' — ' || coalesce(w.school,'');
+  if new.type = 'school_ok' then
+    perform public.fm_push_add(w.created_by, 'wo_done', '🏫 أكّدت المدرسة إنجاز ' || t, w.title, 'wo=' || w.id, 'wo-' || w.id, true);
+  else
+    perform public.fm_push_add(w.created_by, 'wo_done', '🏫 المدرسة تفيد أن العمل لم يُنجز: ' || t, coalesce(new.text, w.title), 'wo=' || w.id, 'wo-' || w.id, true);
+    perform public.fm_push_add(w.assignee, 'wo_return', '🏫 المدرسة تفيد أن العمل لم يُنجز: ' || t, coalesce(new.text, w.title), 'wo=' || w.id, 'wo-' || w.id, true);
+  end if;
+  return null;
+exception when others then return null;
+end $$;
+drop trigger if exists fm_push_sc on public.wo_events;
+create trigger fm_push_sc after insert on public.wo_events for each row execute function public.fm_push_sc();
+revoke all on function public.fm_sc_cfg(), public.fm_wo_school_token(text, text), public.fm_wo_sc_trg(), public.fm_push_sc() from public, anon, authenticated;
+revoke all on function public.fm_school_wo_confirm(text, uuid, boolean, text, text) from public;
+grant execute on function public.fm_school_wo_confirm(text, uuid, boolean, text, text) to anon, authenticated;
+grant execute on function public.fm_school_portal(text) to anon, authenticated;
+
+-- (2) alerts before a ticket breaches its SLA
+create table if not exists public.fm_sla_watch (
+  region      text not null,
+  ticket_id   text not null,
+  school      text,
+  building_id text,
+  priority    text,
+  category    text,
+  descr       text,
+  due_at      timestamptz not null,
+  sup         text,
+  eng         text,
+  users       uuid[] not null default '{}',
+  warned_at   timestamptz,
+  updated_at  timestamptz not null default now(),
+  primary key (region, ticket_id)
+);
+create index if not exists fm_sla_watch_due_idx on public.fm_sla_watch (due_at);
+create table if not exists public.fm_sla_watch_meta (region text primary key, synced_at timestamptz not null default now(), file_date timestamptz, n int, by_name text);
+create table if not exists public.fm_sla_morning (user_id uuid not null, day date not null, primary key (user_id, day));
+alter table public.fm_sla_watch enable row level security;
+alter table public.fm_sla_watch_meta enable row level security;
+alter table public.fm_sla_morning enable row level security;
+revoke all on public.fm_sla_watch, public.fm_sla_watch_meta, public.fm_sla_morning from anon, authenticated;
+create or replace function public.fm_sla_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', coalesce((s->>'enabled')::boolean, true), 'hours', greatest(0.5, least(coalesce(nullif(s->>'hours','')::numeric, 2), 24)),
+           'quiet_from', coalesce(nullif(s->>'quiet_from','')::int, 22), 'quiet_to', coalesce(nullif(s->>'quiet_to','')::int, 6),
+           'morning', greatest(0, least(coalesce(nullif(s->>'morning','')::int, 7), 23)), 'boss', coalesce((s->>'boss')::boolean, false))
+    from (select coalesce(public.fm_setting('sla_warn'), '{}'::jsonb) s) x $$;
+-- the accounts behind a supervisor / engineer name in the tickets
+create or replace function public.fm_sla_people(p_sup text, p_eng text) returns uuid[] language sql stable security definer set search_path = public as $$
+  select coalesce(array_agg(distinct p.id), '{}') from public.profiles p, unnest(array[nullif(btrim(coalesce(p_sup,'')),''), nullif(btrim(coalesce(p_eng,'')),'')]) n(nm)
+   where n.nm is not null and p.active and public.fm_posx(p.role, p.job_title) is not null
+     and (n.nm = any(coalesce(p.person_names,'{}')) or btrim(coalesce(p.full_name,'')) = n.nm) $$;
+-- the uploader sends a region's open tickets: p {file_date, rows:[{t, s, b, p, c, d, due (ISO or ms), sup, eng}]} (≤ 5000)
+create or replace function public.fm_sla_watch_set(p_region text, p jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare n int; rows jsonb := coalesce(p->'rows','[]');
+begin
+  if auth.uid() is null or not public.fm_can_upload(p_region) or btrim(coalesce(p_region,'')) = '' then raise exception 'not allowed'; end if;
+  if not public.fm_mod('tickets') then raise exception 'module disabled: tickets'; end if;
+  if jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) > 5000 then raise exception 'too many rows'; end if;
+  create temp table if not exists fm_sla_in (t text, s text, b text, pr text, c text, d text, due timestamptz, sup text, eng text) on commit drop;
+  delete from fm_sla_in;
+  insert into fm_sla_in
+  select distinct on (btrim(e->>'t')) left(btrim(e->>'t'),80), left(e->>'s',200), left(e->>'b',40), left(e->>'p',30), left(e->>'c',120), left(e->>'d',300),
+         case when (e->>'due') ~ '^[0-9]+$' then to_timestamp((e->>'due')::numeric / 1000) else (e->>'due')::timestamptz end,
+         left(nullif(btrim(coalesce(e->>'sup','')),''),120), left(nullif(btrim(coalesce(e->>'eng','')),''),120)
+    from jsonb_array_elements(rows) e where btrim(coalesce(e->>'t','')) <> '' and coalesce(e->>'due','') <> '';
+  delete from public.fm_sla_watch w where w.region = p_region and not exists (select 1 from fm_sla_in i where i.t = w.ticket_id);
+  insert into public.fm_sla_watch (region, ticket_id, school, building_id, priority, category, descr, due_at, sup, eng, users, updated_at)
+  select p_region, i.t, i.s, i.b, i.pr, i.c, i.d, i.due, i.sup, i.eng, public.fm_sla_people(i.sup, i.eng), now() from fm_sla_in i
+  on conflict (region, ticket_id) do update set school = excluded.school, building_id = excluded.building_id, priority = excluded.priority,
+     category = excluded.category, descr = excluded.descr, sup = excluded.sup, eng = excluded.eng, users = excluded.users, updated_at = now(),
+     warned_at = case when public.fm_sla_watch.due_at = excluded.due_at then public.fm_sla_watch.warned_at end, due_at = excluded.due_at;
+  get diagnostics n = row_count;
+  insert into public.fm_sla_watch_meta (region, synced_at, file_date, n, by_name)
+  values (p_region, now(), case when coalesce(p->>'file_date','') ~ '^[0-9]+$' then to_timestamp((p->>'file_date')::numeric / 1000) else nullif(p->>'file_date','')::timestamptz end,
+          n, public.fm_me_name())
+  on conflict (region) do update set synced_at = now(), file_date = excluded.file_date, n = excluded.n, by_name = excluded.by_name;
+  return n;
+end $$;
+-- what the caller may see: managers of the region, the people on the ticket and their managers
+create or replace function public.fm_sla_watch_list() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('cfg', public.fm_sla_cfg(),
+    'meta', coalesce((select jsonb_agg(to_jsonb(m)) from public.fm_sla_watch_meta m), '[]'::jsonb),
+    'rows', coalesce((select jsonb_agg(jsonb_build_object('region', w.region, 't', w.ticket_id, 's', w.school, 'b', w.building_id, 'p', w.priority, 'c', w.category,
+          'd', w.descr, 'due', w.due_at, 'sup', w.sup, 'eng', w.eng, 'linked', cardinality(w.users), 'warned_at', w.warned_at, 'mine', auth.uid() = any(w.users)) order by w.due_at)
+        from public.fm_sla_watch w
+       where w.due_at > now() - interval '1 day'
+         and (public.fm_scope_region(w.region) or public.fm_can_upload(w.region) or auth.uid() = any(w.users)
+              or exists (select 1 from unnest(w.users) u where public.fm_is_under(u, auth.uid())))), '[]'::jsonb))
+   where public.fm_role() not in ('pending') $$;
+-- every 15 minutes: the alert before the deadline, the morning summary
+create or replace function public.fm_sla_warn_run() returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_sla_cfg(); hr int := extract(hour from now() at time zone 'Asia/Riyadh')::int; qf int := (c->>'quiet_from')::int; qt int := (c->>'quiet_to')::int;
+  quiet boolean; u record; n int := 0; today date := (now() at time zone 'Asia/Riyadh')::date; b uuid;
+begin
+  if not (c->>'enabled')::boolean or not public.fm_mod('tickets') then return 0; end if;
+  quiet := case when qf = qt then false when qf < qt then hr >= qf and hr < qt else hr >= qf or hr < qt end;
+  if not quiet then
+    for u in select x.uid, count(*) cnt, min(w.due_at) first_due, array_agg(w.ticket_id order by w.due_at) ids,
+                    string_agg(coalesce(w.school,'') || ' (' || w.ticket_id || ')', '، ' order by w.due_at) names
+               from public.fm_sla_watch w cross join lateral unnest(w.users) x(uid)
+              where w.warned_at is null and w.due_at > now() and w.due_at <= now() + make_interval(mins => ((c->>'hours')::numeric * 60)::int)
+              group by x.uid loop
+      if public.fm_push_add(u.uid, 'sla_due',
+           case when u.cnt = 1 then '⏰ بلاغ سيتجاوز المهلة خلال ' || greatest(1, ceil(extract(epoch from u.first_due - now()) / 60))::int || ' دقيقة'
+                else '⏰ ' || u.cnt || ' بلاغات ستتجاوز المهلة خلال ' || (c->>'hours') || ' ساعة' end,
+           left(u.names, 280), 'sla', 'sla', true) then n := n + 1; end if;
+      if (c->>'boss')::boolean then
+        select reports_to into b from public.profiles where id = u.uid;
+        if b is not null then perform public.fm_push_add(b, 'sla_due', '⏰ ' || u.cnt || ' بلاغ لفريقك يقترب من تجاوز المهلة', left(u.names, 280), 'sla', 'sla-team', true); end if;
+      end if;
+    end loop;
+    update public.fm_sla_watch set warned_at = now()
+     where warned_at is null and due_at > now() and due_at <= now() + make_interval(mins => ((c->>'hours')::numeric * 60)::int);
+  end if;
+  if hr >= (c->>'morning')::int and not quiet then
+    for u in select x.uid, count(*) cnt, string_agg(coalesce(w.school,'') || ' (' || w.ticket_id || ')', '، ' order by w.due_at) names
+               from public.fm_sla_watch w cross join lateral unnest(w.users) x(uid)
+              where w.due_at > now() and (w.due_at at time zone 'Asia/Riyadh')::date = today
+                and not exists (select 1 from public.fm_sla_morning m where m.user_id = x.uid and m.day = today)
+              group by x.uid loop
+      insert into public.fm_sla_morning (user_id, day) values (u.uid, today) on conflict do nothing;
+      if public.fm_push_add(u.uid, 'sla_due', '☀️ ' || u.cnt || ' بلاغ يتجاوز المهلة اليوم إن لم يُغلق', left(u.names, 280), 'sla', 'sla-am', true) then n := n + 1; end if;
+    end loop;
+  end if;
+  delete from public.fm_sla_morning where day < today - 7;
+  return n;
+end $$;
+revoke all on function public.fm_sla_cfg(), public.fm_sla_people(text, text), public.fm_sla_warn_run() from public, anon, authenticated;
+revoke all on function public.fm_sla_watch_set(text, jsonb), public.fm_sla_watch_list() from public, anon;
+grant execute on function public.fm_sla_watch_set(text, jsonb), public.fm_sla_watch_list() to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-sla-warn'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-sla-warn'', ''*/15 * * * *'', ''select public.fm_sla_warn_run()'')';
+  exception when others then raise notice 'pg_cron is not available: the SLA alerts are not sent (the platform page still lists them)'; end;
+end $do$;
+
+-- (3) automatic reorder drafts
+alter table public.wo_purchase_requests add column if not exists auto boolean not null default false;
+alter table public.wo_purchase_requests drop constraint if exists wo_purchase_requests_status_check;
+alter table public.wo_purchase_requests add constraint wo_purchase_requests_status_check check (status in ('draft','requested','approved','rejected','cancelled','partial','received'));
+-- what a store should reorder now
+create or replace function public.fm_wh_auto_po_rows(p_store uuid) returns table(material_id uuid, qty numeric, price numeric, min_qty numeric, bal numeric, on_order numeric, use30 numeric)
+language sql stable security definer set search_path = public as $$
+  select x.material_id, ceil(greatest(2 * x.min_qty, 2 * u.use30) - greatest(x.qty, 0) - o.q) qty, coalesce(m.price, 0), x.min_qty, x.qty, o.q, u.use30
+    from public.wo_stock x join public.wo_materials m on m.id = x.material_id and m.active
+                                and (m.approved_at is not null or coalesce(m.approval,'approved') = 'approved')
+    cross join lateral (select coalesce(-sum(v.qty), 0) use30 from public.wo_stock_moves v where v.store_id = x.store_id and v.material_id = x.material_id
+                         and v.kind in ('out','issue') and v.qty < 0 and v.at > now() - interval '30 days') u
+    cross join lateral (select coalesce(sum(greatest(coalesce((l->>'qty')::numeric,0) - coalesce((l->>'recv')::numeric,0), 0)), 0) q
+                          from public.wo_purchase_requests po, jsonb_array_elements(po.lines) l
+                         where po.store_id = x.store_id and po.status in ('requested','approved','partial') and l->>'material_id' = x.material_id::text) o
+   where x.store_id = p_store and coalesce(x.min_qty, 0) > 0 and coalesce(x.qty, 0) < x.min_qty
+     and ceil(greatest(2 * x.min_qty, 2 * u.use30) - greatest(x.qty, 0) - o.q) > 0 $$;
+-- build / refresh the draft of one store (internal)
+create or replace function public.fm_wh_auto_po_store(p_store uuid) returns jsonb language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; L jsonb; t numeric; d public.wo_purchase_requests; k uuid;
+begin
+  select * into st from public.wo_stores where id = p_store and active;
+  if not found then return null; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('material_id', r.material_id, 'qty', r.qty, 'price', r.price, 'recv', 0, 'min', r.min_qty, 'bal', r.bal, 'on_order', r.on_order, 'use30', r.use30)), '[]'),
+         coalesce(sum(r.qty * r.price), 0) into L, t from public.fm_wh_auto_po_rows(p_store) r;
+  select * into d from public.wo_purchase_requests where store_id = p_store and status = 'draft' and auto order by at desc limit 1 for update;
+  if jsonb_array_length(L) = 0 then
+    if d.id is not null then update public.wo_purchase_requests set status = 'cancelled', response = 'لم يعد هناك صنف تحت الحد الأدنى' where id = d.id; end if;
+    return jsonb_build_object('store', st.name, 'lines', 0);
+  end if;
+  if d.id is null then
+    insert into public.wo_purchase_requests (store_id, lines, total, status, auto, note, requested_by, requested_by_name)
+    values (p_store, L, round(t, 2), 'draft', true, '🤖 مسودة آلية: أصناف تحت الحد الأدنى — راجعها ثم أرسلها للاعتماد', null, 'إعادة الطلب الآلية') returning * into d;
+  else
+    update public.wo_purchase_requests set lines = L, total = round(t, 2), at = now() where id = d.id returning * into d;
+  end if;
+  for k in select * from public.fm_wh_keepers_of(st.region) loop
+    begin perform public.fm_push_add(k, 'wh_low', '🤖 مسودة طلب شراء ' || d.code || ' — ' || st.name, jsonb_array_length(L) || ' صنف تحت الحد الأدنى — راجعها وأرسلها للاعتماد', 'wh=po', 'apo-' || st.id, true);
+    exception when others then null; end;
+  end loop;
+  return jsonb_build_object('store', st.name, 'lines', jsonb_array_length(L), 'code', d.code, 'id', d.id, 'total', round(t, 2));
+end $$;
+-- on demand (storekeeper / stock manager): one store, or every store the caller manages
+create or replace function public.fm_wh_auto_po(p_store uuid default null) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s public.wo_stores; R jsonb := '[]'; x jsonb;
+begin
+  if auth.uid() is null then raise exception 'not allowed'; end if;
+  if not public.fm_mod('wh') then raise exception 'module disabled: wh'; end if;
+  for s in select * from public.wo_stores where active and (p_store is null or id = p_store) loop
+    if public.fm_wh_keeper(s.id) or public.fm_stock_can(s.region) then
+      x := public.fm_wh_auto_po_store(s.id); if x is not null then R := R || x; end if;
+    elsif p_store is not null then raise exception 'not allowed'; end if;
+  end loop;
+  return R;
+end $$;
+-- pg_cron (daily): builds the drafts on the configured weekday
+create or replace function public.fm_wh_auto_po_run() returns int language plpgsql security definer set search_path = public as $$
+declare a jsonb := coalesce(public.fm_setting('stock_rules')->'auto_po', '{}'); s uuid; n int := 0;
+begin
+  if not coalesce((a->>'enabled')::boolean, false) or not public.fm_mod('wh') then return 0; end if;
+  if extract(dow from now() at time zone 'Asia/Riyadh')::int <> coalesce(nullif(a->>'dow','')::int, 0) then return 0; end if;
+  for s in select id from public.wo_stores where active loop
+    if (public.fm_wh_auto_po_store(s)->>'lines')::int > 0 then n := n + 1; end if;
+  end loop;
+  return n;
+end $$;
+-- the storekeeper / stock manager reviews a draft: submit p {lines:[{material_id, qty, price}], supplier_id, note} | cancel p {note}
+create or replace function public.fm_po_draft_act(p_id uuid, p_action text, p jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare r public.wo_purchase_requests; st public.wo_stores; s uuid := nullif(p->>'supplier_id','')::uuid; x jsonb; L jsonb := '[]'; t numeric := 0; q numeric; pr numeric; u uuid;
+begin
+  select * into r from public.wo_purchase_requests where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  select * into st from public.wo_stores where id = r.store_id;
+  if not (public.fm_wh_keeper(st.id) or public.fm_stock_can(st.region)) then raise exception 'not allowed'; end if;
+  if r.status <> 'draft' then raise exception 'invalid status'; end if;
+  if p_action = 'cancel' then
+    update public.wo_purchase_requests set status = 'cancelled', response = left(coalesce(nullif(btrim(coalesce(p->>'note','')),''), 'أُلغيت المسودة') || ' — ' || public.fm_me_name(), 500) where id = p_id;
+    return 'cancelled';
+  elsif p_action <> 'submit' then raise exception 'invalid action'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines', r.lines)) loop
+    if not exists(select 1 from public.wo_materials where id = nullif(x->>'material_id','')::uuid and active) then raise exception 'unknown material'; end if;
+    q := nullif(x->>'qty','')::numeric; if q is null or q <= 0 or q > 1000000 then raise exception 'invalid qty'; end if;
+    pr := coalesce(nullif(x->>'price','')::numeric, public.fm_wh_agreed((x->>'material_id')::uuid, s), 0);
+    if pr < 0 then raise exception 'invalid price'; end if;
+    L := L || jsonb_build_object('material_id', x->>'material_id', 'qty', q, 'price', pr, 'recv', 0); t := t + q * pr;
+  end loop;
+  if jsonb_array_length(L) = 0 then raise exception 'no lines'; end if;
+  update public.wo_purchase_requests set status = 'requested', lines = L, total = round(t, 2), supplier_id = s, supplier_name = (select name from public.wo_suppliers where id = s),
+         note = left(coalesce(nullif(btrim(coalesce(p->>'note','')),''), '🤖 من إعادة الطلب الآلية'), 500), requested_by = auth.uid(), requested_by_name = public.fm_me_name(), at = now()
+   where id = p_id;
+  for u in select * from public.fm_push_people(array['project_manager','ops_manager'], null) union select * from public.fm_push_people(array['area_manager'], st.region) loop
+    begin perform public.fm_push_add(u, 'appr', '🛒 طلب شراء بانتظار الاعتماد ' || coalesce(r.code,''), coalesce(st.name,'') || ' — ' || round(t)::text || ' ر.س', 'wh=po', 'po-' || r.id);
+    exception when others then null; end;
+  end loop;
+  return 'requested';
+end $$;
+revoke all on function public.fm_wh_auto_po_rows(uuid), public.fm_wh_auto_po_store(uuid), public.fm_wh_auto_po_run() from public, anon, authenticated;
+revoke all on function public.fm_wh_auto_po(uuid), public.fm_po_draft_act(uuid, text, jsonb) from public, anon;
+grant execute on function public.fm_wh_auto_po(uuid), public.fm_po_draft_act(uuid, text, jsonb) to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-wh-auto-po'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-wh-auto-po'', ''15 5 * * *'', ''select public.fm_wh_auto_po_run()'')';
+  exception when others then raise notice 'pg_cron is not available: the weekly reorder drafts are built only from the platform button'; end;
+end $do$;
+notify pgrst, 'reload schema';
+commit;

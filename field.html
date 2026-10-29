@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F47">
+<meta name="fm-version" content="F48">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -221,7 +221,7 @@ function ensureLib(){if(window.supabase&&window.supabase.createClient)return Pro
 async function sb(){const c=cfg();if(!c.url||!c.key)throw new Error('لم يتم إعداد الاتصال بالسحابة');if(client)return client;await ensureLib();
  client=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'fm-cloud-auth'}});return client}
 const chk=({data,error})=>{if(error)throw new Error(error.message||String(error));return data};
-const ARmsg=m=>{m=String(m||'');if(/spend approval required/i.test(m))return 'المشتريات فوق سقف الاعتماد — يعتمدها مدير أعلى';if(/reason required/i.test(m))return 'اكتب السبب';if(/Invalid login/i.test(m))return 'البريد أو كلمة المرور غير صحيحة';if(/Email not confirmed/i.test(m))return 'لم يتم تأكيد البريد بعد — افتح رسالة التأكيد في بريدك';if(/already registered/i.test(m))return 'هذا البريد مسجل مسبقاً';if(/row-level security/i.test(m))return 'ليست لديك صلاحية لهذا الإجراء';if(/Failed to fetch|NetworkError|network/i.test(m))return 'تعذر الاتصال بالخادم — تحقق من الإنترنت';if(/Password should/i.test(m))return 'كلمة المرور قصيرة — 6 أحرف على الأقل';return m};
+const ARmsg=m=>{m=String(m||'');if(/school rejected/i.test(m))return 'مدير المدرسة أفاد أن العمل لم يُنجز — أعد الأمر للتصحيح';if(/school confirmation pending/i.test(m))return 'بانتظار تأكيد مدير المدرسة للإنجاز';if(/spend approval required/i.test(m))return 'المشتريات فوق سقف الاعتماد — يعتمدها مدير أعلى';if(/reason required/i.test(m))return 'اكتب السبب';if(/Invalid login/i.test(m))return 'البريد أو كلمة المرور غير صحيحة';if(/Email not confirmed/i.test(m))return 'لم يتم تأكيد البريد بعد — افتح رسالة التأكيد في بريدك';if(/already registered/i.test(m))return 'هذا البريد مسجل مسبقاً';if(/row-level security/i.test(m))return 'ليست لديك صلاحية لهذا الإجراء';if(/Failed to fetch|NetworkError|network/i.test(m))return 'تعذر الاتصال بالخادم — تحقق من الإنترنت';if(/Password should/i.test(m))return 'كلمة المرور قصيرة — 6 أحرف على الأقل';return m};
 function b64ToBlob(d){const [h,b]=d.split(',');const mime=(h.match(/data:([^;]+)/)||[])[1]||'image/jpeg';const bin=atob(b);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:mime})}
 const uuid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16)});
 
@@ -1040,7 +1040,7 @@ window.fmfOpenWo=async id=>{if(!(D.wo||[]).some(x=>x.id===id))await woPull().cat
 
 function woCard(w){const t=WO_T[w.type]||WO_T.task,me=woMine(w);
  return `<button class="card tk wo-c" data-wo="${esc(w.id)}"><div class="r1"><span class="id">${esc(w.code||'')}</span>${woChip(w)}</div>
-  <div class="sch">${t[0]} ${esc(w.title)}</div>${w.transfer_note?`<div class="cat" style="color:#92400e;font-weight:800">${esc(w.transfer_note)}</div>`:''}<div class="cat">${esc(w.school||'')}${w.school?' • ':''}${me?'من: '+esc(w.created_by_name||''):'إلى: '+esc(w.assignee_name||'')}</div>
+  <div class="sch">${t[0]} ${esc(w.title)}${w.sc_status==='rejected'?' <span style="color:#b91c1c;font-size:12px;font-weight:900">🏫 المدرسة: لم يُنجز</span>':w.sc_status==='pending'&&w.status==='done'?' <span style="color:#92400e;font-size:12px;font-weight:900">🏫 بانتظار تأكيد المدرسة</span>':w.sc_status==='confirmed'?' <span style="color:#166534;font-size:12px;font-weight:900">🏫 أكّدت المدرسة</span>':''}</div>${w.transfer_note?`<div class="cat" style="color:#92400e;font-weight:800">${esc(w.transfer_note)}</div>`:''}<div class="cat">${esc(w.school||'')}${w.school?' • ':''}${me?'من: '+esc(w.created_by_name||''):'إلى: '+esc(w.assignee_name||'')}</div>
   <div class="chips">${woDue(w)}<span class="chip">${esc(t[1])}</span>${w.priority&&w.priority!=='متوسط'?`<span class="chip ${w.priority==='طارئ'?'c-bad':'c-warn'}">${esc(w.priority)}</span>`:''}${woNeedsMe(w)?'<span class="chip c-bad">● مطلوب منك</span>':''}</div></button>`}
 function woView(){D.curWo=null;const L=D.wo||[],mine=L.filter(woMine),sent=L.filter(w=>woSent(w)&&!woMine(w)),seg=D.woSeg==='sent'&&(sent.length||canAssign())?'sent':'mine',base=seg==='sent'?sent:mine;
  const F={active:w=>!WO_FINAL(w.status)&&w.status!=='done'&&w.status!=='rejected',approve:w=>w.status==='done',rej:w=>w.status==='rejected',closed:w=>WO_FINAL(w.status),all:()=>true};
@@ -1087,6 +1087,7 @@ async function woDetail(id,keep){
    <div style="font-weight:900;font-size:17px;margin:4px 0">${t[0]} ${esc(w.title)}</div>
    <div class="kv"><span>النوع</span><b>${esc(t[1])}</b>${w.school?`<span>المدرسة</span><b>${esc(w.school)}</b>`:''}<span>الأولوية</span><b>${esc(w.priority||'متوسط')}</b>
     <span>موعد الإنجاز</span><b>${w.due_at?dts(w.due_at):'—'} ${woDue(w)}</b><span>من</span><b>${esc(w.created_by_name||'')}</b><span>إلى</span><b>${esc(w.assignee_name||'')}</b><span>أُنشئ</span><b>${dts(w.created_at)}</b></div>
+   ${w.sc_status?`<div class="card" style="margin-top:8px;line-height:1.9;font-weight:700;${w.sc_status==='rejected'?'background:#fef2f2;border-color:#fca5a5;color:#991b1b':w.sc_status==='confirmed'?'background:#f0fdf4;border-color:#86efac;color:#166534':'background:#fffbeb;border-color:#fcd34d;color:#92400e'}">${w.sc_status==='pending'?'🏫 أُرسل لمدير المدرسة ليؤكد الإنجاز':w.sc_status==='confirmed'?'🏫 أكّد مدير المدرسة إنجاز العمل':'🏫 أفاد مدير المدرسة أن العمل لم يُنجز'}${w.sc_name?' — '+esc(w.sc_name):''}${w.sc_note?'<br>💬 '+esc(w.sc_note):''}</div>`:''}
    ${w.transfer_note?`<div class="card" style="margin-top:8px;background:#fffbeb;border-color:#f59e0b;color:#92400e;font-weight:800;line-height:1.9">${esc(w.transfer_note)}${w.status==='assigned'&&woMine(w)?'<br>اقبل الأمر لتبدأ العمل عليه.':''}</div>`:''}
    ${w.description?`<div class="muted" style="margin-top:8px;line-height:1.9;white-space:pre-wrap">${esc(w.description)}</div>`:''}
    ${lastRet&&['returned','rejected'].includes(w.status)?`<div class="note" style="margin-top:8px;border-color:#fecaca;background:#fef2f2">${esc(lastRet.text)}</div>`:''}
@@ -1905,7 +1906,7 @@ const IOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='
 const STANDALONE=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
 const KINDS=[['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
  ['wo_esc','⏫ تصعيد أمر متأخر إليّ'],['wo_stop','⛔ إيقاف عمل'],['wh_req','📦 طلب صرف جديد (أمين المستودع)'],['wh_issued','🧰 صُرفت قطع لعهدتي أو رُفض طلبي'],
- ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات'],['parts_due','⏱️ متابعة طلبات القطع (مسؤول / تصعيد / تأخير)'],['tools','🛠️ العُدد والأدوات (تسليم / موعد الإرجاع)'],['wh_idle','💤 قطع راكدة في عهدتي']];
+ ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات'],['parts_due','⏱️ متابعة طلبات القطع (مسؤول / تصعيد / تأخير)'],['tools','🛠️ العُدد والأدوات (تسليم / موعد الإرجاع)'],['wh_idle','💤 قطع راكدة في عهدتي'],['sla_due','⏰ بلاغ يقترب من تجاوز المهلة (وملخص الصباح)']];
 const b64u=buf=>{let s='';const b=new Uint8Array(buf);for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
 const unb64u=s=>{s=S(s);const t=atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4));const b=new Uint8Array(t.length);for(let i=0;i<t.length;i++)b[i]=t.charCodeAt(i);return b};
 let SET=null,SETAT=0;
@@ -1985,6 +1986,7 @@ function go(h){h=S(h).replace(/^#/,'');if(!h)return false;if(h.startsWith('wo=')
  else if(h==='cus'||h.startsWith('wh='))window.fmfCustody?.();
  else if(h==='tools')window.fmfTools?.();
  else if(h==='parts')window.fmfPartsTracking?.();
+ else if(h==='sla')document.querySelector('.bnav button[data-v="list"]')?.click();
  else return false;return true}
 navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.fmPush)go(e.data.hash)});
 function refreshHome(){const h=document.querySelector('#app .card.hello');let b=document.getElementById('f32-h');
@@ -1994,7 +1996,7 @@ function refreshHome(){const h=document.querySelector('#app .card.hello');let b=
   b.innerHTML=st.on?'<span>🔔 الإشعارات مفعّلة على هذا الجهاز</span><span>الإعدادات ←</span>':'<span>🔔 فعّل الإشعارات لتصلك الأوامر فوراً</span><span>تفعيل ←</span>'}).catch(()=>{})}
 const fcss=document.createElement('style');fcss.textContent='#f32-h{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid #99f6e4;background:#f0fdfa;color:#134e4a;border-radius:16px;padding:12px 14px;font:800 14px Cairo,Tahoma,sans-serif;margin:10px 0;text-align:right}#f32-h.ask{background:#fefce8;border-color:#fde047;color:#713f12}';document.head.appendChild(fcss);
 let n=0;const t=setInterval(async()=>{try{if(++n>120){clearInterval(t);return}if(!C.engClient)return;const d=await db();const u=d.auth&&d.auth.getSession?((await d.auth.getSession()).data||{}).session:true;if(!u)return;clearInterval(t);
- if(/^#(wo=|cus|wh=|bill)/.test(location.hash))setTimeout(()=>{go(location.hash);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}},1500);
+ if(/^#(wo=|cus|wh=|bill|sla)/.test(location.hash))setTimeout(()=>{go(location.hash);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}},1500);
  await settings().catch(()=>null);sync().catch(()=>{});refreshHome();setInterval(refreshHome,3000);}catch(e){}},1500);
 })();
 </script>
