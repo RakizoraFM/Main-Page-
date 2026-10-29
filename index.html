@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V237">
+<meta name="fm-version" content="V238">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V237',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V238',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V238',d:'2026-10-29',t:'رأس الجداول والرسوم البيانية',i:['رأس الجدول في نوافذ مثل «الأعطال المتكررة» كان يطفو فوق الصفوف عند التمرير؛ أصبح ثابتاً أعلى الجدول.','رسوم «تفاصيل وتحليلات البلاغات» (حالات البلاغات، الأولوية…) كانت تظهر فارغة أحياناً لأنها رُسمت والصفحة مخفية؛ تُعاد رسمها الآن عند فتح الصفحة.']},
 {v:'V237',d:'2026-10-29',t:'متابعة البلاغات في مجموعة واحدة',i:['«المتابعة اليومية والـ SLA» و«البلاغات» أصبحتا مجموعة واحدة «📋 متابعة البلاغات» من 7 بنود.','الصفحات التي تعرض نفس الموضوع صارت بنداً واحداً بتبويبات أعلى الصفحة: البلاغات (الجدول + الإجراءات)، التنبيهات والتصعيد (المركز + تنبيهات اليوم + المخاطر)، الالتزام بالمهلة (مركز SLA + أسباب الاختراق)، الأعطال المتكررة وجودة الإغلاق، تحليلات البلاغات (التفاصيل + تحليل المدارس).','أُلغيت «توقع الاختراق»؛ «⏰ قبل تجاوز المهلة» تعرض البلاغات القريبة من نهاية المهلة وترسل التنبيهات.','لا تغيير في الأرقام أو طريقة الحساب.']},
 {v:'V236',d:'2026-10-29',t:'التصعيد قبل الاختراق في الإعدادات',i:['«🚨 التصعيد قبل الاختراق» انتقل من القائمة الجانبية إلى «الإعدادات» ← تبويب «⬆️ التصعيد والمتابعة».','أُلغي زر «ما تم بخصوص المتأخرات» من القائمة الجانبية (التقرير ما زال داخل «متابعة المتأخرات»).']},
 {v:'V235',d:'2026-10-29',t:'ترتيب جديد للقائمة الجانبية',i:['«📺 شاشة غرفة العمليات» في أعلى القائمة.','مجموعة جديدة «🛠️ أوامر العمل» فوق «المتابعة اليومية والـ SLA»: أوامر العمل، والصيانة الوقائية، وتقويم الصيانة الوقائية.','أُلغيت صفحتا «بورتالي» و«مركز الإجراءات».','زر «النائب أثناء الإجازة» في «الكادر والمقاولون» (كان داخل بورتالي).']},
@@ -38217,6 +38218,27 @@ function tick(){labels();const id=active(),s=id&&setOf(id),old=document.getEleme
 document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('nav.v2-nav .v2-nav-btn'))setTimeout(tick,400)},true);
 tick();setInterval(tick,700);
 })();</script>
+<script id="fm-v238-chart-wake">(function(){'use strict';
+/* V238: the ticket charts are drawn while the analysis area is hidden behind the operational home (V233), so they can stay
+   blank (0 × 0) when the area is shown. Whenever the area becomes visible, every visible chart is resized and redrawn. */
+let was=false;
+function vis(e){if(!e)return false;const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden'}
+function wake(force){const C=window.Chart;if(!C||!C.instances)return;Object.values(C.instances).forEach(c=>{try{const cv=c.canvas;if(!cv||!vis(cv.parentElement))return;
+ if(force||!c.width||!c.height||cv.width<4||cv.height<4){c.resize();c.update('none')}}catch(e){}})}
+function tick(){const a=document.getElementById('fm233-ticket-analysis'),now=vis(a);if(now&&!was){setTimeout(()=>wake(true),80);setTimeout(()=>wake(true),600)}else if(now)wake(false);was=now}
+setInterval(tick,800);window.addEventListener('resize',()=>setTimeout(()=>wake(true),200));window.fmV238Wake=wake;
+/* Chart.js comes from jsdelivr; when that request failed (blocked / slow network) the charts stay empty while their HTML legends
+   show. Load the same version from cdnjs once and redraw. */
+let tried=false;function ensure(){if(window.Chart||tried)return;const a=document.getElementById('fm233-ticket-analysis');if(!vis(a))return;tried=true;
+ const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+ s.onload=()=>{try{window.renderAllCharts&&renderAllCharts()}catch(e){}setTimeout(()=>wake(true),300)};document.head.appendChild(s)}
+setInterval(ensure,1500);
+})();</script>
+<style id="fm-v238-sticky-th">
+/* V238: the old rule `.v2-table th{top:69px}` was written for a fixed page header. Inside a modal or the V196 scroll box the
+   table scrolls in its own box, so the header row must stick at 0 — with 69px it floated over the rows. */
+:is(.v2-modal,.fm196-table-scroll,.fm103-page) .v2-table th{top:0!important;z-index:2}
+</style>
 <script id="fm-v228-i18n">
 /* V228: English interface — dictionary (Arabic → English) and the translator (text nodes, placeholder / title, alert / confirm). Data stays as entered. */
 (function(){
