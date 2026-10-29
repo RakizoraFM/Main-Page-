@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F48">
+<meta name="fm-version" content="F49">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -632,7 +632,7 @@ function schoolsView(){
  qBanner();bindTop();
  const openSchool=n=>{D.f.school=n;D.f.ids=null;const r=schoolRows().find(x=>x.name===n);D.tab=r&&r.open?'open':'all';go('list')};
  document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{s.mode=b.dataset.m;schoolsView()});
- if(s.mode==='plan'){$('#pl-n').onchange=e=>{D.plan.n=+e.target.value;schoolsView()};$('#pl-me').onclick=async()=>{if(await locate())schoolsView()};document.querySelectorAll('[data-sch]').forEach(b=>b.onclick=()=>openSchool(b.dataset.sch));return}
+ if(s.mode==='plan'){$('#pl-n').onchange=e=>{D.plan.n=+e.target.value;schoolsView()};$('#pl-me').onclick=async()=>{if(await locate())schoolsView()};document.querySelectorAll('[data-sch]').forEach(b=>b.onclick=()=>openSchool(b.dataset.sch));document.querySelectorAll('[data-pv]').forEach(b=>b.onclick=()=>{planMark(b.dataset.pv,true);schoolsView()});document.querySelectorAll('[data-pu]').forEach(b=>b.onclick=()=>{planMark(b.dataset.pu,false);schoolsView()});return}
  $('#s-so').onchange=async e=>{s.sort=e.target.value;if(s.sort==='near'&&!D.myPos)await locate();schoolsView()};
  $('#s-oo')&&($('#s-oo').onchange=e=>{s.openOnly=e.target.checked;schoolsView()});
  document.querySelectorAll('[data-mf]').forEach(b=>b.onclick=()=>{s.mf=b.dataset.mf;schoolsView()});
@@ -696,6 +696,8 @@ async function schoolSheet(name){const r=schoolRows().find(x=>x.name===name);if(
  const pr={n:sc.principal,p:sc.principalPhone};draw(pr);schoolReqs(el,r,sc);
  if(!telH(pr.p)){const a=await engPrincipal(sc,name);if(a&&el.isConnected){pr.n=S(pr.n)||a.principal;pr.p=a.phone;draw(pr)}}}
 window.fmfSchoolSheet=schoolSheet;
+/* F49: shared with the later layers (attendance, meters) */
+window.fmfSchoolRows=()=>{try{return schoolRows()}catch(e){return []}};window.fmfGeo=geo;window.fmfDist=dist;window.fmfPlan=()=>{D.s.mode='plan';go('schools')};
 /* F27: the open requests of the school from the principal portal (accept / done with a reply) */
 const RQS={new:'🆕 جديد',accepted:'👍 مستلم',in_progress:'🛠️ قيد التنفيذ'};
 async function schoolReqs(el,r,sc){try{const db=await C.engClient?.();if(!db)return;const x=await db.rpc('fm_school_req_list',{p_days:30});if(x.error||!el.isConnected)return;
@@ -983,27 +985,36 @@ function reportPdf(){const p=D.p,[a,b]=range(p.k,p.from,p.to),[ca,cb]=cmpRange(a
  const w=window.open('','_blank');if(!w){toast('اسمح بفتح النوافذ المنبثقة لإنشاء التقرير','w');return}w.document.open();w.document.write(html);w.document.close()}
 
 /* today's visit plan: the most urgent schools, ordered as a route from my position (nearest next) */
-function planData(){const rows=schoolRows().filter(r=>r.open);const its=items();
+/* F49 (V224): the day's route also counts my open work orders (late / due today), skips the schools visited today
+   (ticked here or a «visit» in the attendance card) and estimates the driving time */
+const planDay=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+function planDone(){let a=[];try{a=JSON.parse(localStorage.getItem('fmf_plan_done:'+planDay())||'[]')}catch(e){}return new Set([...a,...(window.__fmfVisits||[])])}
+function planMark(n,on){let a=[];try{a=JSON.parse(localStorage.getItem('fmf_plan_done:'+planDay())||'[]')}catch(e){}a=a.filter(x=>x!==n);if(on)a.push(n);try{localStorage.setItem('fmf_plan_done:'+planDay(),JSON.stringify(a))}catch(e){}}
+function planData(){const its=items(),done=planDone(),now=Date.now(),eod=new Date(new Date().setHours(23,59,59,999)).getTime();
+ const rows=schoolRows().map(r=>{r.wm=r.wos.filter(w=>woMine(w)&&w.status!=='done');return r}).filter(r=>r.open||r.wm.length);
  rows.forEach(r=>{const L=its.filter(x=>isOpenX(x)&&(S(x.t.school)||'—')===r.name);r.h3=L.filter(isH3).length;r.emg=L.filter(x=>x.t.priority==='طارئ').length;
-  r.u=r.h3*100+Math.min(r.late,10)*10+r.soon*20+r.emg*5+r.open});
- const pick=rows.filter(r=>r.xy).sort((a,b)=>b.u-a.u).slice(0,D.plan.n),noXY=rows.filter(r=>!r.xy).sort((a,b)=>b.u-a.u).slice(0,5);
+  r.woLate=r.wm.filter(w=>w.due_at&&new Date(w.due_at).getTime()<now).length;r.woToday=r.wm.filter(w=>w.due_at&&new Date(w.due_at).getTime()>=now&&new Date(w.due_at).getTime()<=eod).length;
+  r.u=r.h3*100+Math.min(r.late,10)*10+r.soon*20+r.emg*5+r.open+r.woLate*15+r.woToday*12+r.wm.length*3;r.visited=done.has(r.name)});
+ const visited=rows.filter(r=>r.visited);const todo=rows.filter(r=>!r.visited);
+ const pick=todo.filter(r=>r.xy).sort((a,b)=>b.u-a.u).slice(0,D.plan.n),noXY=todo.filter(r=>!r.xy).sort((a,b)=>b.u-a.u).slice(0,5);
  const route=[];let cur=D.myPos,left=pick.slice();
  if(!cur&&left.length){left.sort((a,b)=>b.u-a.u);cur=left[0].xy}
  while(left.length){left.sort((a,b)=>dist(cur,a.xy)-dist(cur,b.xy)||b.u-a.u);
   /* a school with tickets about to breach jumps the queue if it is less than 15 km further */
   const urgent=left.find(r=>r.h3&&dist(cur,r.xy)-dist(cur,left[0].xy)<15000);const nx=urgent||left[0];
   route.push(Object.assign(nx,{leg:D.myPos||route.length?dist(cur,nx.xy):null}));cur=nx.xy;left=left.filter(r=>r!==nx)}
- return {route,noXY}}
-function planHtml(){const {route,noXY}=planData();const km=route.reduce((s,r)=>s+(r.leg||0),0);
+ return {route,noXY,visited}}
+function planHtml(){const {route,noXY,visited}=planData();const km=route.reduce((s,r)=>s+(r.leg||0),0);const mins=Math.round(km*1.3/1000/40*60+route.length*30);
  const gmaps=route.length?'https://www.google.com/maps/dir/?api=1'+(D.myPos?`&origin=${D.myPos.lat},${D.myPos.lng}`:'')+`&destination=${route[route.length-1].xy.lat},${route[route.length-1].xy.lng}`+(route.length>1?'&waypoints='+encodeURIComponent(route.slice(0,-1).slice(0,9).map(r=>r.xy.lat+','+r.xy.lng).join('|')):'')+'&travelmode=driving':'';
- return `<div class="card"><h3>🗓️ خطة زيارات اليوم</h3><div class="muted">أكثر المدارس إلحاحاً (القريب من الاختراق أولاً، ثم المتأخر والطارئ) مرتبة كمسار${D.myPos?' يبدأ من موقعك':' — حدّد موقعك 📍 ليبدأ المسار منك'}.</div>
+ return `<div class="card"><h3>🗓️ خطة زيارات اليوم</h3><div class="muted">أكثر المدارس إلحاحاً (القريب من الاختراق أولاً، ثم المتأخر والطارئ، ثم أوامر العمل المتأخرة والمستحقة اليوم) مرتبة كمسار${D.myPos?' يبدأ من موقعك':' — حدّد موقعك 📍 ليبدأ المسار منك'}.</div>
   <div class="fgrid" style="margin-top:8px"><label>عدد المدارس<select class="in" id="pl-n">${[3,5,8,10].map(n=>`<option ${D.plan.n===n?'selected':''}>${n}</option>`).join('')}</select></label>
    <label>&nbsp;<button class="big ${D.myPos?'':'p'}" id="pl-me" style="padding:9px">📍 ${D.myPos?'تحديث موقعي':'حدّد موقعي'}</button></label></div>
   ${route.length?`<ol class="plan">${route.map((r,i)=>`<li><div class="r1"><b>${fmt(i+1)}. ${esc(r.name)}</b>${r.leg!=null?`<span class="chip">🚗 ${distTxt(r.leg)}</span>`:''}</div>
-   <div class="chips">${r.h3?`<span class="chip c-bad">🔥 ${fmt(r.h3)} خلال 3 س</span>`:''}${r.late?`<span class="chip c-bad">⛔ ${fmt(r.late)} متأخر</span>`:''}${r.soon?`<span class="chip c-warn">⏰ ${fmt(r.soon)} خلال 24 س</span>`:''}<span class="chip c-pri">📂 ${fmt(r.open)} مفتوح</span></div>
-   <div class="btns" style="margin-top:8px"><button class="big" data-sch="${esc(r.name)}">📋 البلاغات</button><a class="big" href="${navUrl(r)}" target="_blank" rel="noopener">🗺️ الاتجاهات</a></div></li>`).join('')}</ol>
-   <div class="muted" style="margin:4px 2px 8px">${D.myPos?`المسافة التقريبية (خط مستقيم): ${distTxt(km)}`:''}</div>
-   <a class="big p" href="${gmaps}" target="_blank" rel="noopener" style="display:block">🧭 افتح المسار كاملاً في خرائط Google</a>`:'<div class="empty">لا توجد مدارس بها بلاغات مفتوحة وإحداثيات</div>'}
+   <div class="chips">${r.h3?`<span class="chip c-bad">🔥 ${fmt(r.h3)} خلال 3 س</span>`:''}${r.late?`<span class="chip c-bad">⛔ ${fmt(r.late)} متأخر</span>`:''}${r.soon?`<span class="chip c-warn">⏰ ${fmt(r.soon)} خلال 24 س</span>`:''}${r.open?`<span class="chip c-pri">📂 ${fmt(r.open)} مفتوح</span>`:''}${r.woLate?`<span class="chip c-bad">🛠️ ${fmt(r.woLate)} أمر متأخر</span>`:''}${r.woToday?`<span class="chip c-warn">🛠️ ${fmt(r.woToday)} أمر مستحق اليوم</span>`:''}${r.wm.length-r.woLate-r.woToday>0?`<span class="chip">🛠️ ${fmt(r.wm.length-r.woLate-r.woToday)} أمر</span>`:''}</div>
+   <div class="btns" style="margin-top:8px">${r.open?`<button class="big" data-sch="${esc(r.name)}">📋 البلاغات</button>`:''}<a class="big" href="${navUrl(r)}" target="_blank" rel="noopener">🗺️ الاتجاهات</a><button class="big" data-pv="${esc(r.name)}">✅ زرتها</button></div></li>`).join('')}</ol>
+   <div class="muted" style="margin:4px 2px 8px">${D.myPos?`المسافة التقريبية: ${distTxt(km)} • الوقت المتوقع نحو ${mins>=60?fmt(Math.floor(mins/60))+' س '+fmt(mins%60)+' د':fmt(mins)+' دقيقة'} (قيادة + 30 دقيقة لكل مدرسة)`:''}</div>
+   <a class="big p" href="${gmaps}" target="_blank" rel="noopener" style="display:block">🧭 افتح المسار كاملاً في خرائط Google</a>`:'<div class="empty">لا توجد مدارس بها بلاغات أو أوامر مفتوحة وإحداثيات</div>'}
+  ${visited.length?`<div class="muted" style="margin-top:10px">✅ زرتها اليوم: ${visited.map(r=>`${esc(r.name)} <button class="chip" data-pu="${esc(r.name)}">↩️</button>`).join(' • ')}</div>`:''}
   ${noXY.length?`<div class="muted" style="margin-top:10px">مدارس عاجلة بدون إحداثيات: ${noXY.map(r=>esc(r.name)+' ('+fmt(r.open)+')').join('، ')}</div>`:''}</div>`}
 /* ---------- F8: work orders (assigned down the hierarchy, done by the assignee, approved by the assigner) ---------- */
 const WO_T={repair:['🔧','إصلاح'],preventive:['🛡️','صيانة وقائية'],inspection:['🔍','معاينة'],handover:['🔑','استلام موقع'],visit:['🏫','زيارة'],data:['📋','تجميع معلومات'],task:['📌','مهمة']};
@@ -1906,7 +1917,7 @@ const IOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='
 const STANDALONE=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
 const KINDS=[['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
  ['wo_esc','⏫ تصعيد أمر متأخر إليّ'],['wo_stop','⛔ إيقاف عمل'],['wh_req','📦 طلب صرف جديد (أمين المستودع)'],['wh_issued','🧰 صُرفت قطع لعهدتي أو رُفض طلبي'],
- ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات'],['parts_due','⏱️ متابعة طلبات القطع (مسؤول / تصعيد / تأخير)'],['tools','🛠️ العُدد والأدوات (تسليم / موعد الإرجاع)'],['wh_idle','💤 قطع راكدة في عهدتي'],['sla_due','⏰ بلاغ يقترب من تجاوز المهلة (وملخص الصباح)']];
+ ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات'],['parts_due','⏱️ متابعة طلبات القطع (مسؤول / تصعيد / تأخير)'],['tools','🛠️ العُدد والأدوات (تسليم / موعد الإرجاع)'],['wh_idle','💤 قطع راكدة في عهدتي'],['sla_due','⏰ بلاغ يقترب من تجاوز المهلة (وملخص الصباح)'],['docs','📄 وثائق وأوراق سيارات تقترب من الانتهاء']];
 const b64u=buf=>{let s='';const b=new Uint8Array(buf);for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
 const unb64u=s=>{s=S(s);const t=atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((s.length+3)%4));const b=new Uint8Array(t.length);for(let i=0;i<t.length;i++)b[i]=t.charCodeAt(i);return b};
 let SET=null,SETAT=0;
@@ -1987,6 +1998,7 @@ function go(h){h=S(h).replace(/^#/,'');if(!h)return false;if(h.startsWith('wo=')
  else if(h==='tools')window.fmfTools?.();
  else if(h==='parts')window.fmfPartsTracking?.();
  else if(h==='sla')document.querySelector('.bnav button[data-v="list"]')?.click();
+ else if(h==='docs')window.fmfVehicle?.();
  else return false;return true}
 navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.fmPush)go(e.data.hash)});
 function refreshHome(){const h=document.querySelector('#app .card.hello');let b=document.getElementById('f32-h');
@@ -1996,7 +2008,7 @@ function refreshHome(){const h=document.querySelector('#app .card.hello');let b=
   b.innerHTML=st.on?'<span>🔔 الإشعارات مفعّلة على هذا الجهاز</span><span>الإعدادات ←</span>':'<span>🔔 فعّل الإشعارات لتصلك الأوامر فوراً</span><span>تفعيل ←</span>'}).catch(()=>{})}
 const fcss=document.createElement('style');fcss.textContent='#f32-h{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid #99f6e4;background:#f0fdfa;color:#134e4a;border-radius:16px;padding:12px 14px;font:800 14px Cairo,Tahoma,sans-serif;margin:10px 0;text-align:right}#f32-h.ask{background:#fefce8;border-color:#fde047;color:#713f12}';document.head.appendChild(fcss);
 let n=0;const t=setInterval(async()=>{try{if(++n>120){clearInterval(t);return}if(!C.engClient)return;const d=await db();const u=d.auth&&d.auth.getSession?((await d.auth.getSession()).data||{}).session:true;if(!u)return;clearInterval(t);
- if(/^#(wo=|cus|wh=|bill|sla)/.test(location.hash))setTimeout(()=>{go(location.hash);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}},1500);
+ if(/^#(wo=|cus|wh=|bill|sla|docs)/.test(location.hash))setTimeout(()=>{go(location.hash);try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}},1500);
  await settings().catch(()=>null);sync().catch(()=>{});refreshHome();setInterval(refreshHome,3000);}catch(e){}},1500);
 })();
 </script>
@@ -2425,6 +2437,195 @@ window.fmfWhOut={list:get,flush,
 window.addEventListener('online',()=>setTimeout(flush,1500));
 setInterval(()=>{if(navigator.onLine&&get().some(o=>!o.err))flush()},60000);
 setTimeout(flush,8000);
+})();</script>
+
+<style id="fmf-49-css">
+#f49{z-index:46}#f49 .hd{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;padding:12px 14px;background:var(--ink,#0f172a);color:#fff}
+#f49 .hd button{border:0;background:rgba(255,255,255,.15);color:#fff;border-radius:10px;padding:6px 12px;font:800 14px Cairo,Tahoma,sans-serif}#f49 .hd h2{margin:0;font-size:17px;flex:1}
+#f49 .bd{padding:12px;display:grid;gap:10px;max-width:760px;margin:0 auto}
+#f49 .cd{background:#fff;border:1px solid var(--line,#e2e8f0);border-radius:16px;padding:12px}#f49 .cd h3{margin:0 0 8px;font-size:15px}
+#f49 .bg{display:block;width:100%;border:0;border-radius:14px;padding:14px;font:900 16px Cairo,Tahoma,sans-serif;color:#fff;background:#0f766e;margin:6px 0}
+#f49 .bg.o{background:#b91c1c}#f49 .bg.b{background:#1d4ed8}#f49 .bg:disabled{opacity:.55}
+#f49 .ln{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px dashed #e2e8f0;font-size:13.5px}#f49 .ln:last-child{border:0}
+#f49 .ln small{color:#64748b;font-weight:700}
+#f49 .al{border-radius:14px;padding:10px 12px;font-weight:800;font-size:13.5px;line-height:1.8;background:#fee2e2;color:#991b1b}
+#f49 .ok{border-radius:14px;padding:10px 12px;font-weight:800;font-size:13.5px;background:#dcfce7;color:#166534}
+#f49 .wa{border-radius:14px;padding:10px 12px;font-weight:800;font-size:13.5px;background:#fef3c7;color:#92400e}
+#f49 label{display:block;font-weight:800;font-size:13px;color:#334155;margin:8px 0 4px}
+#f49 input,#f49 select,#f49 textarea{width:100%;border:1px solid #cbd5e1;border-radius:12px;padding:10px;font:600 15px Cairo,Tahoma,sans-serif;background:#fff;box-sizing:border-box}
+#f49 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#f49 .st{border-radius:999px;padding:2px 10px;font-size:11.5px;font-weight:800;background:#e0e7ff;color:#3730a3;white-space:nowrap}
+#f49 .st.paid,#f49 .st.approved{background:#dcfce7;color:#166534}#f49 .st.returned{background:#fee2e2;color:#991b1b}
+.f49-h{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid #bae6fd;background:#f0f9ff;color:#0c4a6e;border-radius:16px;padding:12px 14px;font:800 14px Cairo,Tahoma,sans-serif;margin:10px 0;text-align:right}
+.f49-h.warn{background:#fef3c7;border-color:#fcd34d;color:#78350f}.f49-h.bad{background:#fee2e2;border-color:#fca5a5;color:#991b1b}
+@media (prefers-color-scheme:dark){html:not([data-theme=light]) #f49 .cd{background:#0f172a;border-color:#334155;color:#e2e8f0}}
+</style>
+<script id="fmf-49">(function(){
+'use strict';
+/* F49 (V224, section 45): home cards and sheets for
+   (5) «🕒 الحضور» — start / end of the day and «📍 وصلت مدرسة» with the location (distance to the school from the school DB
+       coordinates); queued without a connection (localStorage fmf_att_out:<user>, client_id once) and sent in order;
+       today's school visits are shared with the day's route (window.__fmfVisits).
+   (6) «🚗 سيارتي» — the driver's vehicle: papers expiry, fuel / km / maintenance log with the odometer and a receipt photo.
+   (7) «🧾 مستخلصاتي» — the contractor's bills (RLS: his own), status, totals, lines and history.
+   (11) «⚡ العدادات» — monthly electricity / water readings of my schools with a photo. */
+if(window.__f49)return;window.__f49=1;
+const C=window.FMCloud;if(!C)return;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=(v,d)=>(Math.round((+v||0)*100)/100).toLocaleString('en-US',{maximumFractionDigits:d??2});
+const GREG='ar-SA-u-ca-gregory',dd=v=>v?new Date(String(v).length===10?v+'T12:00:00':v).toLocaleDateString(GREG,{day:'numeric',month:'short',year:'numeric'}):'—';
+const tm=v=>v?new Date(v).toLocaleTimeString(GREG,{hour:'2-digit',minute:'2-digit'}):'—';
+const day=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const month=()=>day().slice(0,7);
+const toast=m=>{const t=document.getElementById('toast');if(!t){try{alert(m)}catch(e){}return}t.textContent=m;t.className='toast';t.style.display='block';t.style.zIndex='90';setTimeout(()=>t.style.display='none',3500)};
+const net=e=>/Failed to fetch|NetworkError|network|Load failed|ERR_INTERNET/i.test(String(e&&e.message||e))||!navigator.onLine;
+const missing=e=>/does not exist|schema cache|Could not find/i.test(String(e&&e.message||e));
+const ERR=[[/odometer lower/,'قراءة العداد أقل من آخر قراءة'],[/amount required/,'اكتب المبلغ'],[/odometer required/,'اكتب قراءة العداد'],[/reading lower: ([\d.]+)/,'القراءة أقل من الشهر السابق ($1) — إن استُبدل العداد فعّل «عداد جديد / تصفير»'],[/invalid month/,'شهر غير صحيح'],[/not allowed/,'ليست لديك صلاحية'],[/school required/,'اختر المدرسة'],[/too many/,'عدد كبير من التسجيلات اليوم']];
+const emsg=e=>{const m=String(e&&e.message||e);if(missing(e))return 'تحتاج تشغيل القسم 45 من supabase_setup.sql';for(const [r,t] of ERR)if(r.test(m))return m.replace(new RegExp('.*'+r.source+'.*'),t);return C.msg?C.msg(m):m};
+let ME=null;async function db(){return C.engClient()}
+async function rpc(fn,a){const d=await db();const r=await d.rpc(fn,a);if(r.error)throw Error(r.error.message);return r.data}
+const uid=()=>ME&&ME.id;
+const ls=(k,v)=>{try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'null');localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
+function shrink(file){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=()=>no(Error('تعذر قراءة الصورة'));r.onload=()=>{const im=new Image();im.onerror=()=>no(Error('صورة غير صالحة'));im.onload=()=>{const k=Math.min(1,1100/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);let q=.8,u=c.toDataURL('image/jpeg',q);while(u.length>400000&&q>.3){q-=.1;u=c.toDataURL('image/jpeg',q)}u.length>400000?no(Error('الصورة كبيرة جداً')):ok(u)};im.src=r.result};r.readAsDataURL(file)})}
+const bkey=(id,name)=>{const b=S(id).toUpperCase().replace(/^S[\s-]*/,'').replace(/[^A-Z0-9]/g,'');return b||'N:'+S(name).replace(/\s+/g,'').toLowerCase()};
+function sheet(title,html){let s=document.getElementById('f49');if(!s){s=document.createElement('div');s.id='f49';s.className='sheet';s.dir='rtl';document.body.appendChild(s)}s.classList.add('open');
+ s.innerHTML=`<div class="hd"><button type="button" data-x>→</button><h2>${title}</h2></div><div class="bd">${html}</div>`;s.querySelector('[data-x]').onclick=close;return s}
+function close(){const s=document.getElementById('f49');if(s){s.classList.remove('open');s.innerHTML=''}home()}
+
+/* ---------- (5) attendance ---------- */
+const KN={in:'▶️ بدء الدوام',out:'⏹️ نهاية الدوام',visit:'📍 وصول مدرسة'};
+let ATT=null;   // today's server rows (mine)
+const outKey=()=>'fmf_att_out:'+uid(),todKey=()=>'fmf_att_today:'+uid()+':'+day();
+const outbox=()=>ls(outKey())||[];
+function todayRows(){const L=(ATT||ls(todKey())||[]).slice();for(const o of outbox())if(o.p.at&&o.p.at.slice(0,10)===new Date().toISOString().slice(0,10)&&!L.some(r=>r.client_id===o.p.client_id))L.push(Object.assign({queued:true,err:o.err},o.p));return L.sort((a,b)=>new Date(a.at)-new Date(b.at))}
+function visitsShare(){window.__fmfVisits=todayRows().filter(r=>r.kind==='visit'&&r.school).map(r=>r.school)}
+async function attLoad(){if(!navigator.onLine)return;try{const L=await rpc('fm_att_list',{p_from:day(),p_to:day()});ATT=(L||[]).filter(r=>r.user_id===uid()).map(r=>Object.assign(r,{client_id:r.client_id}));ls(todKey(),ATT)}catch(e){if(missing(e))ATT=null}visitsShare()}
+let FL=false;
+async function flush(){if(FL||!navigator.onLine||!uid())return;const L=outbox();if(!L.length)return;FL=true;
+ try{for(const o of L.slice()){try{await rpc('fm_att_add',{p:o.p});ls(outKey(),outbox().filter(x=>x.p.client_id!==o.p.client_id))}catch(e){if(net(e))break;ls(outKey(),outbox().map(x=>x.p.client_id===o.p.client_id?Object.assign(x,{err:emsg(e)}):x));}}}
+ finally{FL=false}await attLoad();home()}
+async function attAdd(kind,extra){const p=Object.assign({kind,client_id:'a'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),at:new Date().toISOString()},extra||{});
+ try{const g=await window.fmfGeo();Object.assign(p,{lat:g.lat,lng:g.lng,acc:g.acc})}catch(e){if(!confirm((e.message||'تعذر تحديد الموقع')+' — التسجيل بدون موقع؟'))return false;p.note=S((p.note||'')+' (بدون موقع)')}
+ if(kind==='visit'&&p.lat!=null&&p.xy){p.dist_m=Math.round(window.fmfDist({lat:p.lat,lng:p.lng},p.xy))}delete p.xy;
+ ls(outKey(),outbox().concat([{p}]));const t=ls(todKey())||[];t.push(Object.assign({queued:true},p));ls(todKey(),t);visitsShare();
+ if(navigator.onLine)await flush();toast(navigator.onLine?'تم التسجيل':'حُفظ على الجوال — يُرسل عند عودة الاتصال');return true}
+async function visitDlg(){let g=null;try{g=await window.fmfGeo()}catch(e){}const rows=(window.fmfSchoolRows?window.fmfSchoolRows():[]).filter(r=>r.sc||r.xy);
+ rows.forEach(r=>{r._d=g&&r.xy?window.fmfDist(g,r.xy):null});rows.sort((a,b)=>(a._d??1e12)-(b._d??1e12)||a.name.localeCompare(b.name,'ar'));
+ const s=sheet('📍 وصلت مدرسة',`<div class="cd"><h3>اختر المدرسة</h3>${g?'':'<div class="wa">تعذر تحديد موقعك — المسافة لن تُحسب</div>'}
+  <input data-q placeholder="🔎 ابحث باسم المدرسة"><div data-l style="margin-top:8px"></div></div>`);
+ const draw=()=>{const q=S(s.querySelector('[data-q]').value);const L=(q?rows.filter(r=>r.name.includes(q)):rows).slice(0,12);
+  s.querySelector('[data-l]').innerHTML=L.map((r,i)=>`<div class="ln"><span><b>${esc(r.name)}</b>${r._d!=null?`<small> • ${r._d<1000?num(r._d,0)+' م':num(r._d/1000,1)+' كم'}${r._d>500?' ⚠️':''}</small>`:''}</span><button type="button" class="st" data-i="${rows.indexOf(r)}">تسجيل الوصول</button></div>`).join('')||'<div class="muted">لا توجد مدارس</div>';
+  s.querySelectorAll('[data-i]').forEach(b=>b.onclick=async()=>{const r=rows[+b.dataset.i];if(r._d!=null&&r._d>500&&!confirm(`أنت على بعد ${num(r._d/1000,1)} كم من ${r.name}. تسجيل الوصول مع ذلك؟`))return;b.disabled=true;
+   const sc=r.sc||{};if(await attAdd('visit',{school:r.name,bkey:bkey(sc.buildingId,r.name),xy:r.xy}))openAtt();else b.disabled=false})};
+ s.querySelector('[data-q]').oninput=draw;draw()}
+function hrs(L){const ins=L.filter(r=>r.kind==='in'),outs=L.filter(r=>r.kind==='out');if(!ins.length)return null;const a=new Date(ins[0].at).getTime(),lo=outs.filter(o=>new Date(o.at).getTime()>a).pop();return {from:ins[0].at,to:lo?lo.at:null,h:((lo?new Date(lo.at).getTime():Date.now())-a)/36e5}}
+function openAtt(){const L=todayRows(),h=hrs(L),last=L.filter(r=>r.kind!=='visit').pop(),inDay=last&&last.kind==='in',Q=outbox();
+ const s=sheet('🕒 الحضور',`${ATT===null&&!ls(todKey())?'':''}
+  <div class="cd"><h3>اليوم ${dd(new Date().toISOString())}</h3>${h?`<div class="${h.to?'ok':'wa'}">${h.to?`انتهى الدوام: ${tm(h.from)} – ${tm(h.to)} • ${num(h.h,1)} ساعة`:`بدأت ${tm(h.from)} • ${num(h.h,1)} ساعة حتى الآن`}</div>`:'<div class="wa">لم تسجّل بدء الدوام اليوم</div>'}
+   ${inDay?'<button class="bg o" data-out>⏹️ إنهاء الدوام</button>':'<button class="bg" data-in>▶️ بدء الدوام</button>'}<button class="bg b" data-v>📍 وصلت مدرسة</button>
+   <div class="muted" style="font-size:12px">يُسجَّل موقعك الحالي مع كل ضغطة. يعمل بدون اتصال ويُرسل لاحقاً.</div></div>
+  ${Q.length?`<div class="cd"><h3>📤 محفوظ على الجوال (${Q.length})</h3>${Q.map(o=>`<div class="ln"><span>${KN[o.p.kind]} ${tm(o.p.at)}${o.p.school?' — '+esc(o.p.school):''}</span><small>${o.err?'⚠️ '+esc(o.err):'بانتظار الاتصال'}</small></div>`).join('')}<button class="bg b" data-f>🔄 إرسال الآن</button></div>`:''}
+  <div class="cd"><h3>سجل اليوم</h3>${L.length?L.map(r=>`<div class="ln"><span>${KN[r.kind]||r.kind}${r.school?' — <b>'+esc(r.school)+'</b>':''}${r.dist_m!=null?` <small>(${r.dist_m<1000?r.dist_m+' م':num(r.dist_m/1000,1)+' كم'}${r.dist_m>500?' ⚠️':''})</small>`:''}</span><small>${tm(r.at)}${r.queued?' • 📤':''}</small></div>`).join(''):'<div class="muted">لا توجد تسجيلات</div>'}</div>`);
+ const b=(k,f)=>{const x=s.querySelector(k);if(x)x.onclick=f};
+ b('[data-in]',async e=>{e.currentTarget.disabled=true;await attAdd('in');openAtt()});
+ b('[data-out]',async e=>{if(!confirm('إنهاء الدوام الآن؟'))return;e.currentTarget.disabled=true;await attAdd('out');openAtt()});
+ b('[data-v]',visitDlg);b('[data-f]',async()=>{await flush();openAtt()})}
+window.fmfAttendance=openAtt;
+
+/* ---------- (6) my vehicle ---------- */
+let VH=null,VL={};
+async function vhLoad(){if(!navigator.onLine)return;try{const d=await db();const r=await d.from('fm_vehicles').select('*').eq('driver',uid()).eq('active',true);VH=r.error?null:(r.data||[])}catch(e){VH=null}}
+const expTxt=(d,t)=>{if(!d)return '';const n=Math.round((new Date(d+'T12:00:00')-new Date(day()+'T12:00:00'))/864e5);return n<0?`<div class="al">⛔ ${t} منتهية منذ ${-n} يوم</div>`:n<=30?`<div class="wa">⏰ ${t} تنتهي خلال ${n} يوم (${dd(d)})</div>`:''};
+const VK={fuel:'⛽ وقود',km:'📏 قراءة عداد',maint:'🔧 صيانة',other:'📌 أخرى'};
+async function openVh(id){const v=(VH||[]).find(x=>x.id===id)||(VH||[])[0];if(!v)return;
+ try{const d=await db();const r=await d.from('fm_vehicle_logs').select('id,at,kind,odometer,liters,amount,station,note,cancelled').eq('vehicle_id',v.id).order('at',{ascending:false}).limit(15);VL[v.id]=r.error?[]:(r.data||[])}catch(e){}
+ let ph=null;
+ const s=sheet('🚗 سيارتي',`${(VH||[]).length>1?`<select data-sv>${VH.map(x=>`<option value="${esc(x.id)}" ${x.id===v.id?'selected':''}>${esc(x.plate)} — ${esc(x.code)}</option>`).join('')}</select>`:''}
+  <div class="cd"><h3>${esc(v.plate)} <small>${esc(v.code)} • ${esc([v.make,v.model,v.year].filter(Boolean).join(' '))}</small></h3><div class="ln"><span>آخر قراءة للعداد</span><b>${v.odometer!=null?num(v.odometer,0)+' كم':'—'}</b></div>
+   ${expTxt(v.ins_exp,'التأمين')}${expTxt(v.reg_exp,'الاستمارة')}${expTxt(v.check_exp,'الفحص الدوري')}</div>
+  <div class="cd"><h3>➕ تسجيل</h3><div class="two"><div><label>النوع</label><select data-k="kind">${Object.entries(VK).map(([k,t])=>`<option value="${k}">${t}</option>`).join('')}</select></div><div><label>العداد (كم)</label><input data-k="od" inputmode="decimal" placeholder="${v.odometer!=null?num(v.odometer,0):''}"></div></div>
+   <div class="two"><div><label>المبلغ (ر.س)</label><input data-k="am" inputmode="decimal"></div><div><label>اللترات</label><input data-k="li" inputmode="decimal"></div></div>
+   <label>المحطة / الورشة</label><input data-k="st" maxlength="100"><label>ملاحظة</label><input data-k="nt" maxlength="300">
+   <label>📷 صورة الإيصال (اختياري)</label><input type="file" accept="image/*" capture="environment" data-ph>
+   <button class="bg" data-save>💾 حفظ</button></div>
+  <div class="cd"><h3>آخر السجلات</h3>${(VL[v.id]||[]).map(l=>`<div class="ln" style="${l.cancelled?'opacity:.5;text-decoration:line-through':''}"><span>${VK[l.kind]||l.kind}${l.amount!=null?' • '+num(l.amount)+' ر.س':''}${l.liters!=null?' • '+num(l.liters)+' لتر':''}${l.odometer!=null?' • '+num(l.odometer,0)+' كم':''}</span><small>${dd(l.at)}</small></div>`).join('')||'<div class="muted">لا توجد سجلات</div>'}</div>`);
+ const q=k=>s.querySelector(`[data-k=${k}]`);const sv=s.querySelector('[data-sv]');if(sv)sv.onchange=()=>openVh(sv.value);
+ s.querySelector('[data-ph]').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{ph=await shrink(f)}catch(er){toast(er.message,'e')}};
+ s.querySelector('[data-save]').onclick=async e=>{const p={vehicle_id:v.id,kind:q('kind').value,odometer:S(q('od').value)||null,amount:S(q('am').value)||null,liters:S(q('li').value)||null,station:S(q('st').value),note:S(q('nt').value),photo:ph};
+  if(!navigator.onLine){toast('تحتاج اتصالاً بالإنترنت','w');return}const bt=e.currentTarget;bt.disabled=true;
+  try{await rpc('fm_vehicle_log',{p});toast('تم الحفظ');await vhLoad();openVh(v.id)}catch(er){toast(emsg(er),'e');bt.disabled=false}}}
+window.fmfVehicle=openVh;
+
+/* ---------- (7) my bills (contractor) ---------- */
+let BL=null;
+const BS={submitted:'مُرسل للمراجعة',reviewed:'تمت المراجعة',approved:'معتمد',paid:'مدفوع',returned:'مُعاد للتعديل'};
+const LK={fixed:'المبلغ الثابت',wo:'أوامر العمل',mat:'المواد',add:'إضافات',ded:'خصومات',pen:'غرامات'};
+async function blLoad(){if(!navigator.onLine)return;try{const d=await db();const r=await d.from('fm_bills').select('*').in('status',['submitted','reviewed','approved','paid','returned']).order('month',{ascending:false}).limit(36);BL=r.error?null:(r.data||[])}catch(e){BL=null}}
+function openBills(sel){const L=BL||[];const b=L.find(x=>x.id===sel);
+ if(b){const g={};for(const l of b.lines||[]){const k=l.k||'add';g[k]=(g[k]||0)+(+l.a||0)}
+  const s=sheet('🧾 '+esc(b.code),`<div class="cd"><h3>شهر ${esc(b.month)} <span class="st ${esc(b.status)}">${esc(BS[b.status]||b.status)}</span></h3>
+   ${Object.entries(g).map(([k,a])=>`<div class="ln"><span>${LK[k]||k}</span><b>${num(a)}</b></div>`).join('')}
+   <div class="ln"><span>الإجمالي</span><b>${num(b.gross)}</b></div><div class="ln"><span>الخصومات والغرامات</span><b>${num(b.deductions)}</b></div><div class="ln"><span>الصافي</span><b>${num(b.net)}</b></div>
+   <div class="ln"><span>الضريبة</span><b>${num(b.vat)}</b></div><div class="ln"><span>المحتجز (ضمان)</span><b>${num(b.retention)}</b></div><div class="ln"><span>المستحق</span><b style="font-size:17px">${num(b.total)} ر.س</b></div>
+   ${b.status==='paid'?`<div class="ok">💵 دُفع ${b.paid_at?dd(b.paid_at):''}${b.pay_ref?' — مرجع '+esc(b.pay_ref):''}</div>`:''}${b.note?`<div class="wa">${esc(b.note)}</div>`:''}</div>
+   <div class="cd"><h3>البنود (${(b.lines||[]).length})</h3>${(b.lines||[]).slice(0,200).map(l=>`<div class="ln"><span>${esc(l.t||LK[l.k]||'')}${l.q?` <small>× ${num(l.q)}</small>`:''}${l.school?` <small>— ${esc(l.school)}</small>`:''}</span><b>${num(l.a)}</b></div>`).join('')}</div>
+   <div class="cd"><h3>المراحل</h3>${(b.history||[]).map(h=>`<div class="ln"><span>${esc(h.a||h.action||h.status||'')}${h.note?' — '+esc(h.note):''}</span><small>${esc(h.by||h.by_name||'')} ${h.at?dd(h.at):''}</small></div>`).join('')||'<div class="muted">—</div>'}<button class="bg b" data-back>→ كل المستخلصات</button></div>`);
+  s.querySelector('[data-back]').onclick=()=>openBills();return}
+ const paid=L.filter(x=>x.status==='paid').reduce((t,x)=>t+(+x.total||0),0),due=L.filter(x=>x.status!=='paid').reduce((t,x)=>t+(+x.total||0),0);
+ const s=sheet('🧾 مستخلصاتي',`${BL==null?'<div class="al">تعذر تحميل المستخلصات</div>':''}<div class="cd"><div class="two"><div class="ok">💵 مدفوع<br><b>${num(paid)} ر.س</b></div><div class="wa">⏳ قيد الإجراء<br><b>${num(due)} ر.س</b></div></div></div>
+  <div class="cd">${L.map(x=>`<div class="ln" data-b="${esc(x.id)}" style="cursor:pointer"><span><b>${esc(x.month)}</b> <small>${esc(x.code)}</small></span><span><b>${num(x.total)}</b> <span class="st ${esc(x.status)}">${esc(BS[x.status]||x.status)}</span></span></div>`).join('')||'<div class="muted">لا توجد مستخلصات مُرسلة بعد</div>'}</div>`);
+ s.querySelectorAll('[data-b]').forEach(e=>e.onclick=()=>openBills(e.dataset.b))}
+window.fmfBills=openBills;
+
+/* ---------- (11) meters ---------- */
+let MT=null;
+async function mtLoad(){if(!navigator.onLine)return;try{MT=await rpc('fm_meters_list',{p_months:4})}catch(e){MT=null}}
+function openMeters(){const M=(MT&&MT.meters)||[],R=(MT&&MT.reads)||[],mo=month();const last=id=>R.filter(r=>r.meter_id===id).sort((a,b)=>a.month<b.month?1:-1);
+ const miss=M.filter(m=>!last(m.id).some(r=>r.month===mo)).length;
+ const s=sheet('⚡ العدادات',`${MT==null?'<div class="al">تعذر تحميل العدادات</div>':''}${M.length?`<div class="${miss?'wa':'ok'}">${miss?`${miss} عداد بلا قراءة لشهر ${mo}`:'✅ قراءات هذا الشهر مكتملة'}</div>`:''}
+  <div class="cd">${M.map(m=>{const L=last(m.id),cur=L.find(r=>r.month===mo),pv=L.find(r=>r.month<mo);return `<div class="ln"><span>${m.kind==='elec'?'⚡':'💧'} <b>${esc(m.school_name)}</b> <small>${esc(m.number||'')}</small><br><small>${cur?`هذا الشهر ${num(cur.reading,0)}${pv&&!cur.reset?' • استهلاك '+num(cur.reading-pv.reading,0):''}`:pv?`آخر قراءة ${num(pv.reading,0)} (${esc(pv.month)})`:'لا قراءات'}</small></span><button type="button" class="st" data-r="${esc(m.id)}">${cur?'✏️ تعديل':'➕ قراءة'}</button></div>`}).join('')||'<div class="muted">لا توجد عدادات لمدارسك بعد</div>'}</div>
+  ${MT&&MT.edit?'<button class="bg b" data-new>➕ إضافة عداد لمدرسة</button>':''}`);
+ s.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>readDlg(M.find(m=>m.id===b.dataset.r),last(b.dataset.r)));
+ const nb=s.querySelector('[data-new]');if(nb)nb.onclick=newMeter}
+function readDlg(m,L){const mo=month(),cur=L.find(r=>r.month===mo),pv=L.find(r=>r.month<mo);let ph=null;
+ const s=sheet((m.kind==='elec'?'⚡ ':'💧 ')+esc(m.school_name),`<div class="cd"><div class="ln"><span>رقم العداد</span><b>${esc(m.number||'—')}</b></div>${pv?`<div class="ln"><span>قراءة ${esc(pv.month)}</span><b>${num(pv.reading,0)}</b></div>`:''}
+  <div class="two"><div><label>الشهر</label><input type="month" data-k="mo" value="${mo}" max="${mo}"></div><div><label>القراءة</label><input data-k="rd" inputmode="decimal" value="${cur?esc(cur.reading):''}"></div></div>
+  <label>مبلغ الفاتورة (اختياري)</label><input data-k="am" inputmode="decimal" value="${cur&&cur.amount!=null?esc(cur.amount):''}">
+  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-k="rs" style="width:auto"> عداد جديد / تم تصفيره</label>
+  <label>📷 صورة العداد</label><input type="file" accept="image/*" capture="environment" data-ph><div data-u class="muted"></div>
+  <button class="bg" data-save>💾 حفظ القراءة</button><button class="bg b" data-back>→ رجوع</button></div>`);
+ const q=k=>s.querySelector(`[data-k=${k}]`);
+ q('rd').oninput=()=>{const v=+q('rd').value;s.querySelector('[data-u]').textContent=pv&&v>=+pv.reading?'الاستهلاك: '+num(v-pv.reading,0):''};
+ s.querySelector('[data-ph]').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{ph=await shrink(f)}catch(er){toast(er.message,'e')}};
+ s.querySelector('[data-back]').onclick=openMeters;
+ s.querySelector('[data-save]').onclick=async e=>{const rd=S(q('rd').value);if(rd===''||isNaN(+rd)){toast('اكتب القراءة','w');return}if(!navigator.onLine){toast('تحتاج اتصالاً بالإنترنت','w');return}const bt=e.currentTarget;bt.disabled=true;
+  try{await rpc('fm_meter_read',{p:{meter_id:m.id,month:q('mo').value,reading:+rd,amount:S(q('am').value)||null,reset:q('rs').checked,photo:ph}});toast('تم الحفظ');await mtLoad();openMeters()}catch(er){toast(emsg(er),'e');bt.disabled=false}}}
+function newMeter(){const rows=(window.fmfSchoolRows?window.fmfSchoolRows():[]).filter(r=>r.sc);rows.sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+ const s=sheet('➕ عداد جديد',`<div class="cd"><label>المدرسة</label><select data-k="sc">${rows.map((r,i)=>`<option value="${i}">${esc(r.name)}</option>`).join('')}</select>
+  <div class="two"><div><label>النوع</label><select data-k="kd"><option value="elec">⚡ كهرباء</option><option value="water">💧 مياه</option></select></div><div><label>رقم العداد</label><input data-k="no" maxlength="60"></div></div>
+  <label>رقم الحساب</label><input data-k="ac" maxlength="60"><button class="bg" data-save>💾 حفظ</button><button class="bg b" data-back>→ رجوع</button></div>`);
+ const q=k=>s.querySelector(`[data-k=${k}]`);s.querySelector('[data-back]').onclick=openMeters;
+ s.querySelector('[data-save]').onclick=async e=>{const r=rows[+q('sc').value];if(!r){toast('اختر المدرسة','w');return}const bt=e.currentTarget;bt.disabled=true;
+  try{await rpc('fm_meter_save',{p:{bkey:bkey(r.sc.buildingId,r.name),school_name:r.name,region:r.sc.region||r.region||null,kind:q('kd').value,number:S(q('no').value),account_no:S(q('ac').value)}});toast('أُضيف العداد');await mtLoad();openMeters()}catch(er){toast(emsg(er),'e');bt.disabled=false}}}
+window.fmfMeters=openMeters;
+
+/* ---------- home cards ---------- */
+function card(id,cls,html,fn,after){const h=document.querySelector('#app .card.hello');let b=document.getElementById(id);if(!h){return}
+ if(!html){b?.remove();return}if(!b||!b.isConnected){b=document.createElement('button');b.id=id;b.type='button';const a=after.map(x=>document.getElementById(x)).find(x=>x&&x.isConnected);(a||h).after(b)}
+ b.onclick=fn;b.className='f49-h '+cls;if(b.innerHTML!==html)b.innerHTML=html}
+function home(){if(!ME)return;const L=todayRows(),h=hrs(L),last=L.filter(r=>r.kind!=='visit').pop(),v=L.filter(r=>r.kind==='visit').length,Q=outbox().length;
+ card('f49-att',h?(h.to?'':''):'warn',`<span>🕒 ${h?(h.to?`انتهى الدوام • ${num(h.h,1)} س`:`بدأ الدوام ${tm(h.from)}`):'لم تبدأ الدوام اليوم'}${v?` • 📍 ${v} زيارة`:''}${Q?` • 📤 ${Q}`:''}</span><span>${last&&last.kind==='in'?'تسجيل ←':'بدء ←'}</span>`,openAtt,['f32-h','f29-h']);
+ const V=VH||[],x=V.find(v=>[v.ins_exp,v.reg_exp,v.check_exp].some(d=>d&&d<=new Date(Date.now()+30*864e5).toISOString().slice(0,10)));
+ card('f49-vh',x?'warn':'',V.length?`<span>🚗 سيارتي: ${esc(V[0].plate)}${x?' • ⏰ أوراق تنتهي قريباً':''}</span><span>وقود / عداد ←</span>`:'',()=>openVh(),['f49-att']);
+ const B=BL||[],pend=B.filter(b=>b.status!=='paid').length;
+ card('f49-bl',B.some(b=>b.status==='returned')?'bad':'',(ME.role==='contractor'||B.length)&&BL?`<span>🧾 مستخلصاتي${pend?` • ${pend} قيد الإجراء`:''}${B.some(b=>b.status==='returned')?' • مُعاد للتعديل':''}</span><span>فتح ←</span>`:'',()=>openBills(),['f49-vh','f49-att']);
+ const M=(MT&&MT.meters)||[],mo=month(),miss=M.filter(m=>!((MT.reads||[]).some(r=>r.meter_id===m.id&&r.month===mo))).length;
+ card('f49-mt',miss?'warn':'',M.length?`<span>⚡ العدادات${miss?` • ${miss} بلا قراءة هذا الشهر`:' • مكتملة ✅'}</span><span>فتح ←</span>`:'',openMeters,['f49-bl','f49-vh','f49-att'])}
+let n=0,LD=0;
+setInterval(async()=>{try{if(!ME){if(++n>200)return;if(!C.engClient||!C.api||!C.api.me)return;const p=await C.api.me();if(!p||p.role==='pending')return;ME=p}
+ if(Date.now()-LD>5*60e3&&navigator.onLine){LD=Date.now();await Promise.all([attLoad(),vhLoad(),ME.role==='contractor'||ME.role==='admin'?blLoad():Promise.resolve(),mtLoad()]);await flush()}
+ visitsShare();home()}catch(e){}},1500);
+window.addEventListener('online',()=>{flush().catch(()=>{})});setInterval(()=>{flush().catch(()=>{})},60000);
 })();</script>
 
 </body>
