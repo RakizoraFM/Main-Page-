@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V228">
+<meta name="fm-version" content="V229">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25631,10 +25631,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V228',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V229',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V229',d:'2026-10-29',t:'زر الرجوع لا يُخرج من المنصة',i:['زر «رجوع» في الجوال أو المتصفح يغلق النافذة المفتوحة أولاً، ثم الصفحة الفرعية ويعود للرئيسية، بدل الخروج إلى صفحة البدء.','في الرئيسية: أول ضغطة تُظهر «اضغط رجوع مرة أخرى للخروج»، والثانية خلال ثانيتين تخرج.','نفس السلوك في تطبيق الميدان: يغلق النافذة ثم يعود إلى «الرئيسية».']},
 {v:'V228',d:'2026-10-29',t:'واجهة إنجليزية',i:['زر «🌐 English» تحت شعار القائمة الجانبية يحوّل المنصة إلى الإنجليزية، و«🌐 العربية» يعيدها؛ الاختيار محفوظ على الجهاز ويسري على تطبيق الميدان أيضاً (بطاقة «🌐 اللغة» في حسابي ← الإعدادات).','تُترجم القوائم والأزرار والعناوين وأسماء الأعمدة والحالات والأرقام مع وحداتها (≈1400 عبارة)، والتواريخ والأرقام تظهر بالإنجليزية.','البيانات تبقى كما أُدخلت (أسماء المدارس والأشخاص ونصوص البلاغات)، وبعض الشروح الطويلة والتقارير المطبوعة ما زالت بالعربية.','الأرقام والمؤشرات لا تتغير بتغيير اللغة.']},
 {v:'V227',d:'2026-10-29',t:'جداول أوضح على الجوال',i:['الجداول في الصفحات والنوافذ لم تعد تكسر الكلمات حرفاً حرفاً على الجوال (مثل «حسب المستودع» في مؤشرات المستودع): العناوين في سطر واحد والكلمات كاملة، والجدول العريض يتحرك أفقياً بالسحب']},
 {v:'V226',d:'2026-10-29',t:'المساعد الذكي ورسائل واتساب التلقائية',i:['«🤖 المساعد الذكي»: تصنيف البلاغ وأولويته من نصه، كتابة الملخص التنفيذي وخطة الشهر القادم للتقرير الشهري من أرقامه (ويُوضع في التقرير بضغطة)، وتحليل السبب الجذري للأعطال المتكررة في مدرسة مع الإجراءات المقترحة — عبر دالة fm-ai بمفتاح محفوظ في أسرارها وحد يومي لكل شخص','«💬 واتساب التلقائي»: رسالة لمقدّم طلب بوابة المدرسة عند تغيّر حالة طلبه، ولمدير المدرسة لتأكيد إنجاز العمل، عبر WhatsApp Business ودالة fm-wa بقوالب معتمدة من Meta','تتطلب تشغيل القسم 46 من supabase_setup.sql ونشر الدالتين']},
@@ -31923,6 +31924,7 @@ const MANUAL=[
  {id:'v2-nav-fm122-risk',t:'توقع الاختراق',where:'الـ SLA والمتابعة ← «توقع الاختراق»',what:'البلاغات المفتوحة التي ستتجاوز الـ SLA خلال 24 ساعة (≤3، 3–12، 12–24 ساعة).',how:['ابدأ بفئة «≤3 ساعات».','«📤 تنبيه» يرسل للمشرف والمهندس والمقاول بواتساب أو البريد.'],who:'المديرون والمهندس',v:'V125'},
  {id:'v2-nav-fm223-sla',t:'قبل تجاوز المهلة',where:'المتابعة اليومية والـ SLA ← «⏰ قبل تجاوز المهلة»',what:'البلاغات المفتوحة التي تنتهي مهلتها قريباً، مرتبة بالوقت المتبقي: خلال ساعتين، 6 ساعات، 24 ساعة، 3 أيام. نهاية المهلة = تاريخ البلاغ + ساعات أولويته (نفس حساب المنصة). المشرف والمهندس المسجلان على البلاغ يصلهما إشعار قبل نهاية المهلة (ساعتان افتراضياً) وملخص صباحي بما ينتهي اليوم.',how:['اضغط بطاقة الفترة (ساعتين / 6 ساعات / …) لعرض بلاغاتها، وابحث بالبلاغ أو المدرسة أو المشرف.','من يرفع البلاغات: تُرسل القائمة للسحابة تلقائياً عند فتح المنصة وكلما تغيرت البيانات (أو «☁️ إرسال القائمة للتنبيهات») — منها تُرسل الإشعارات.','«⚠️ لا حساب مرتبط بالاسم» = اسم المشرف في البلاغ لا يطابق أي حساب؛ أضفه في «الأسماء في البلاغات» للمستخدم ليصله التنبيه.','مدير النظام: «الإعدادات» ← السحابة ← «⏰ التنبيه قبل تجاوز مهلة البلاغ» (عدد الساعات، ساعة الملخص الصباحي، ساعات بلا إشعارات، إشعار المدير المباشر).'],who:'الجميع (كل شخص يرى بلاغاته وبلاغات فريقه)',tips:['القائمة صحيحة بقدر حداثة آخر رفع للبلاغات: ما أُغلق في نظام العميل بعد الرفع قد يظهر هنا حتى الرفع التالي.','الإشعارات تحتاج تفعيلها في الإعدادات وعلى جهاز الشخص.'],v:'V223'},
  {id:'v2-nav-fm225-ops',t:'شاشة غرفة العمليات',where:'المتابعة اليومية والـ SLA ← «📺 شاشة غرفة العمليات»',what:'لوحة داكنة بخط كبير للعرض على شاشة في المكتب، تتحدث وحدها: الساعة، البلاغات المفتوحة والمتجاوزة وما ينتهي خلال ساعتين، الالتزام هذا الشهر، أوامر العمل المفتوحة والمتأخرة وبانتظار الاعتماد والمصعّدة، وطلبات المدارس الجديدة، مع القوائم التفصيلية.',how:['اختر «تحديث كل … دقيقة» ثم «⛶ ملء الشاشة».','لشاشة ثابتة: افتح الرابط index.html#ops بحساب مخصص للعرض (مثل «مشاهد») فتفتح اللوحة مباشرة.'],who:'الجميع (كل حساب يرى ما تسمح به صلاحياته)',tips:['البلاغات من آخر بيانات محمّلة للمنطقة الحالية؛ الحساب الذي لا يرفع البلاغات يعيد سحبها من السحابة كل 10 دقائق.'],v:'V225'},
+ {id:'fm229-back',t:'زر الرجوع',where:'زر «رجوع» في الجوال أو سهم الرجوع في المتصفح — المنصة وتطبيق الميدان',what:'الرجوع يتنقل داخل المنصة ولا يخرج منها: يغلق النافذة المفتوحة، ثم الصفحة الفرعية ويعود للرئيسية.',how:['في نافذة (مثل أمر عمل جديد): «رجوع» يغلقها وتبقى في الصفحة.','في صفحة فرعية: «رجوع» يعيدك إلى الرئيسية.','في الرئيسية: اضغط «رجوع» مرتين خلال ثانيتين للخروج.'],who:'الجميع',tips:['ما كتبته في نافذة ولم تحفظه يضيع عند إغلاقها بالرجوع، كما لو ضغطت ✕.'],v:'V229'},
  {id:'fm228-lang',t:'اللغة الإنجليزية',where:'تحت شعار القائمة الجانبية «🌐 English» · تطبيق الميدان: حسابي ← الإعدادات ← «🌐 اللغة»',what:'تحويل واجهة المنصة وتطبيق الميدان إلى الإنجليزية لمن لا يقرأ العربية: القوائم والأزرار والعناوين وأسماء الأعمدة والحالات، والتواريخ والأرقام بالإنجليزية.',how:['اضغط «🌐 English» تحت الشعار — تُعاد الصفحة بالإنجليزية.','للرجوع اضغط «🌐 العربية» في المكان نفسه.','الاختيار محفوظ على هذا الجهاز ويسري على المنصة وتطبيق الميدان معاً.'],who:'الجميع',tips:['البيانات لا تُترجم: أسماء المدارس والأشخاص ونصوص البلاغات تبقى كما أُدخلت.','بعض الشروح الطويلة والتقارير المطبوعة وصفحة الدخول ما زالت بالعربية.','الترتيب العام للصفحة يبقى من اليمين، والنص الإنجليزي يُكتب من اليسار.'],v:'V228'},
  {id:'v2-nav-fm226-ai',t:'المساعد الذكي',where:'التحليل والمقارنات ← «🤖 المساعد الذكي»',what:'مساعد بالذكاء الاصطناعي (Claude) لثلاث مهام: «🏷️ تصنيف بلاغ» (التصنيف والأولوية وهل فيه خطر على السلامة من نص البلاغ)، «📑 ملخص التقرير الشهري» (ملخص تنفيذي وإنجازات ومخاطر وخطة الشهر القادم من أرقام التقرير الشهري)، و«🔁 سبب العطل المتكرر» (السبب الجذري الأرجح لأعطال مدرسة والإجراءات وهل يلزم الإحلال).',how:['اختر المهمة، أدخل نص البلاغ أو الشهر والمنطقة أو المدرسة، ثم «🤖 اسأل المساعد».','في الملخص: «📥 ضعه في التقرير الشهري» يملأ الملخص والخطة في «📑 التقرير الشهري للعميل» لتراجعهما قبل الطباعة.','مدير النظام يفعّله من «الإعدادات» ← السحابة ← «🤖 المساعد الذكي» بعد نشر دالة fm-ai ووضع مفتاح Anthropic واسم النموذج في أسرارها.'],who:'كل من يدخل المنصة (عند تفعيله)، بحد يومي لكل شخص',tips:['ما يكتبه المساعد اقتراح قد يخطئ — راجعه دائماً.','يُرسل للمساعد نص البلاغات وأرقام التقرير فقط، ولا تُرسل كلمات المرور أو بيانات الحسابات.'],v:'V226'},
  {id:'v2-nav-sla',t:'مركز SLA',where:'الـ SLA والمتابعة ← «مركز SLA»',what:'الالتزام بالمهلة حسب الأولوية والمقاول والمشرف، والمتجاوز.',how:['استخدم الفلاتر لتحديد الفترة والجهة.','ساعات المهلة لكل أولوية تُضبط من الإعدادات ← الأهداف.'],who:'المديرون والمهندس',v:'V122'},
@@ -38204,6 +38206,59 @@ const TPL={req_update:['fm_request_update','📬 تحديث على طلب مدر
   '.v2-sidebar.collapsed #fm228-lang,body.v2-collapsed #fm228-lang{font-size:0}body.v2-collapsed #fm228-lang::before{content:"🌐";font-size:15px}';
  document.head.appendChild(st);
 })();
+</script>
+<script id="fm-v229-back">
+/* V229: the Back button no longer leaves the platform — it closes the top window, then the open page (fmV203Home). */
+window.__fmBackHooks={
+ skip:function(e){return e.matches('nav,.v2-sidebar,aside,#fm167-bar,.fm103-page,#fm-v92-contractor-page,#eng-page,#fm157-portal,#fm158-qa,#fm229-toast,#fm228-lang,.v2-main,.main-content,main,#fm144-gate,.fm136-login')||!!e.querySelector('nav.v2-nav')},
+ page:function(){var V=function(x){if(!x||x.hidden)return false;var cs=getComputedStyle(x);if(cs.display==='none'||cs.visibility==='hidden')return false;var r=x.getBoundingClientRect();return r.width>0&&r.height>0};
+  var open=[].slice.call(document.querySelectorAll('.fm103-page,#fm-v92-contractor-page,#eng-page,#fm157-portal,#fm158-qa')).find(V);
+  if(!open)return false;if(window.fmV203Home)window.fmV203Home();else if(window.fmV103ClosePages)fmV103ClosePages();return true}};
+(function(){'use strict';
+/* Back button (browser / Android): closes the top window, then the open page, then goes home; only a second Back on the
+   home screen within 2.5 s leaves the app. One guard history entry {fmBack:'top'} above {fmBack:'base'}; a popstate that
+   lands on 'base' is handled here and the guard is pushed again. Hash routes (#wo=…) keep their own entries. */
+var H=window.__fmBackHooks||{};
+var CLOSE_TXT=/^(✕|×|✖|❌|x|X|إغلاق|✕ إغلاق|× إغلاق|إغلاق ✕|Close|✕ Close|رجوع|→ رجوع|← رجوع|إلغاء|Cancel)$/;
+function vis(e){if(!e||!e.isConnected)return false;var cs=getComputedStyle(e);if(cs.display==='none'||cs.visibility==='hidden'||+cs.opacity===0)return false;var r=e.getBoundingClientRect();return r.width>0&&r.height>0}
+function closeBtn(root){var c=root.querySelectorAll('[data-close],[data-x],.close,.x,.fm-close,[aria-label="إغلاق"],[aria-label="Close"],[title="إغلاق"],[title="Close"],button,a[role=button]');
+ for(var i=0;i<c.length;i++){var b=c[i];if(!vis(b))continue;var t=(b.textContent||'').replace(/\s+/g,' ').trim();
+  if(b.matches('[data-close],[data-x],.close,.x,.fm-close,[aria-label="إغلاق"],[aria-label="Close"],[title="إغلاق"],[title="Close"]')||CLOSE_TXT.test(t))return b}return null}
+function z(e){var v=0;for(var x=e;x&&x.nodeType===1;x=x.parentElement){var n=parseInt(getComputedStyle(x).zIndex,10);if(n>v)v=n}return v}
+function overlays(){var W=innerWidth,Hh=innerHeight,out=[];
+ document.querySelectorAll('dialog[open]').forEach(function(d){out.push({el:d,z:1e9+out.length,dlg:1})});
+ var all=document.body.querySelectorAll('body > *, body > * > *');
+ for(var i=0;i<all.length;i++){var e=all[i];if(e.tagName==='SCRIPT'||e.tagName==='STYLE'||e.tagName==='DIALOG')continue;if(H.skip&&H.skip(e))continue;
+  var cs=getComputedStyle(e);if(cs.position!=='fixed'||cs.display==='none'||cs.visibility==='hidden')continue;var r=e.getBoundingClientRect();
+  if(r.width<W*0.5||r.height<Hh*0.5)continue;if(e.closest('dialog'))continue;out.push({el:e,z:z(e)})}
+ out.sort(function(a,b){return b.z-a.z});return out}
+function closeTop(){var o=overlays();if(!o.length)return false;var t=o[0],e=t.el;
+ var b=closeBtn(e);if(b){b.click();if(!vis(e)||(t.dlg&&!e.open))return true}
+ if(t.dlg){try{e.close()}catch(x){e.removeAttribute('open')}return true}
+ e.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+ if(!vis(e))return true;
+ if(H.closeEl&&H.closeEl(e))return true;
+ if(e.classList.contains('open')){e.classList.remove('open');if(!vis(e))return true}
+ if(!e.id){e.remove();return true}
+ e.style.display='none';return true}
+var armed=0,leaving=false;
+function toast(msg){var d=document.getElementById('fm229-toast');if(!d){d=document.createElement('div');d.id='fm229-toast';document.body.appendChild(d)}
+ d.textContent=msg;d.className='on';clearTimeout(d._t);d._t=setTimeout(function(){d.className=''},2400)}
+function push(){try{history.pushState({fmBack:'top'},'',location.href)}catch(e){}}
+function onPop(ev){if(leaving)return;var s=ev.state;if(!s||s.fmBack!=='base')return;
+ var did=false;try{did=closeTop()}catch(e){}
+ if(!did&&H.page){try{did=H.page()}catch(e){}}
+ if(did){armed=0;push();return}
+ if(armed&&Date.now()-armed<2500){leaving=true;history.back();return}
+ armed=Date.now();toast(document.documentElement.lang==='en'?'Press Back again to leave':'اضغط «رجوع» مرة أخرى للخروج');push()}
+function init(){try{var st=history.state;if(!(st&&st.fmBack==='top')){history.replaceState(Object.assign({},st||{},{fmBack:'base'}),'',location.href);push()}}catch(e){}
+ window.addEventListener('popstate',onPop)}
+var css=document.createElement('style');css.id='fm229-css';css.textContent='#fm229-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:#0f172a;color:#fff;padding:10px 18px;border-radius:999px;font:700 14px Cairo,Tahoma,sans-serif;z-index:2147483646;opacity:0;pointer-events:none;transition:.2s}#fm229-toast.on{opacity:1;transform:translateX(-50%) translateY(0)}';
+(document.head||document.documentElement).appendChild(css);
+window.fmBack={closeTop:closeTop,overlays:overlays};
+if(document.readyState==='complete')init();else window.addEventListener('load',init);
+})();
+
 </script>
 </body>
 </html>

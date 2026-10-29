@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F50">
+<meta name="fm-version" content="F51">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -2723,6 +2723,58 @@ window.addEventListener('online',()=>{flush().catch(()=>{})});setInterval(()=>{f
   var b=document.createElement('button');b.dataset.sx='fmLang';b.setAttribute('data-noi18n','');b.innerHTML='<i>🌐</i>'+(en?'العربية':'English');b.onclick=function(){fmLang.toggle()};x.appendChild(b)}
  setInterval(sb,1500);
 })();
+</script>
+<script id="fmf-51-back">
+/* F51: the Back button closes the open sheet / window, then returns to «الرئيسية»; a second Back there leaves the app. */
+window.__fmBackHooks={
+ skip:function(e){return e.matches('nav,.bnav,.top,#fm167-bar,#fm229-toast,#app')},
+ closeEl:function(e){if(e.classList.contains('sheet')&&e.classList.contains('open')){e.classList.remove('open');return getComputedStyle(e).display==='none'}if(e.id==='fmf-ss'||e.id==='fmf-ssbg'){document.getElementById('fmf-ss')?.remove();document.getElementById('fmf-ssbg')?.remove();return true}return false},
+ page:function(){var on=document.querySelector('.bnav button[data-v].on');if(on&&on.dataset.v!=='home'){var h=document.querySelector('.bnav button[data-v="home"]');if(h){h.click();return true}}return false}};
+(function(){'use strict';
+/* Back button (browser / Android): closes the top window, then the open page, then goes home; only a second Back on the
+   home screen within 2.5 s leaves the app. One guard history entry {fmBack:'top'} above {fmBack:'base'}; a popstate that
+   lands on 'base' is handled here and the guard is pushed again. Hash routes (#wo=…) keep their own entries. */
+var H=window.__fmBackHooks||{};
+var CLOSE_TXT=/^(✕|×|✖|❌|x|X|إغلاق|✕ إغلاق|× إغلاق|إغلاق ✕|Close|✕ Close|رجوع|→ رجوع|← رجوع|إلغاء|Cancel)$/;
+function vis(e){if(!e||!e.isConnected)return false;var cs=getComputedStyle(e);if(cs.display==='none'||cs.visibility==='hidden'||+cs.opacity===0)return false;var r=e.getBoundingClientRect();return r.width>0&&r.height>0}
+function closeBtn(root){var c=root.querySelectorAll('[data-close],[data-x],.close,.x,.fm-close,[aria-label="إغلاق"],[aria-label="Close"],[title="إغلاق"],[title="Close"],button,a[role=button]');
+ for(var i=0;i<c.length;i++){var b=c[i];if(!vis(b))continue;var t=(b.textContent||'').replace(/\s+/g,' ').trim();
+  if(b.matches('[data-close],[data-x],.close,.x,.fm-close,[aria-label="إغلاق"],[aria-label="Close"],[title="إغلاق"],[title="Close"]')||CLOSE_TXT.test(t))return b}return null}
+function z(e){var v=0;for(var x=e;x&&x.nodeType===1;x=x.parentElement){var n=parseInt(getComputedStyle(x).zIndex,10);if(n>v)v=n}return v}
+function overlays(){var W=innerWidth,Hh=innerHeight,out=[];
+ document.querySelectorAll('dialog[open]').forEach(function(d){out.push({el:d,z:1e9+out.length,dlg:1})});
+ var all=document.body.querySelectorAll('body > *, body > * > *');
+ for(var i=0;i<all.length;i++){var e=all[i];if(e.tagName==='SCRIPT'||e.tagName==='STYLE'||e.tagName==='DIALOG')continue;if(H.skip&&H.skip(e))continue;
+  var cs=getComputedStyle(e);if(cs.position!=='fixed'||cs.display==='none'||cs.visibility==='hidden')continue;var r=e.getBoundingClientRect();
+  if(r.width<W*0.5||r.height<Hh*0.5)continue;if(e.closest('dialog'))continue;out.push({el:e,z:z(e)})}
+ out.sort(function(a,b){return b.z-a.z});return out}
+function closeTop(){var o=overlays();if(!o.length)return false;var t=o[0],e=t.el;
+ var b=closeBtn(e);if(b){b.click();if(!vis(e)||(t.dlg&&!e.open))return true}
+ if(t.dlg){try{e.close()}catch(x){e.removeAttribute('open')}return true}
+ e.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+ if(!vis(e))return true;
+ if(H.closeEl&&H.closeEl(e))return true;
+ if(e.classList.contains('open')){e.classList.remove('open');if(!vis(e))return true}
+ if(!e.id){e.remove();return true}
+ e.style.display='none';return true}
+var armed=0,leaving=false;
+function toast(msg){var d=document.getElementById('fm229-toast');if(!d){d=document.createElement('div');d.id='fm229-toast';document.body.appendChild(d)}
+ d.textContent=msg;d.className='on';clearTimeout(d._t);d._t=setTimeout(function(){d.className=''},2400)}
+function push(){try{history.pushState({fmBack:'top'},'',location.href)}catch(e){}}
+function onPop(ev){if(leaving)return;var s=ev.state;if(!s||s.fmBack!=='base')return;
+ var did=false;try{did=closeTop()}catch(e){}
+ if(!did&&H.page){try{did=H.page()}catch(e){}}
+ if(did){armed=0;push();return}
+ if(armed&&Date.now()-armed<2500){leaving=true;history.back();return}
+ armed=Date.now();toast(document.documentElement.lang==='en'?'Press Back again to leave':'اضغط «رجوع» مرة أخرى للخروج');push()}
+function init(){try{var st=history.state;if(!(st&&st.fmBack==='top')){history.replaceState(Object.assign({},st||{},{fmBack:'base'}),'',location.href);push()}}catch(e){}
+ window.addEventListener('popstate',onPop)}
+var css=document.createElement('style');css.id='fm229-css';css.textContent='#fm229-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:#0f172a;color:#fff;padding:10px 18px;border-radius:999px;font:700 14px Cairo,Tahoma,sans-serif;z-index:2147483646;opacity:0;pointer-events:none;transition:.2s}#fm229-toast.on{opacity:1;transform:translateX(-50%) translateY(0)}';
+(document.head||document.documentElement).appendChild(css);
+window.fmBack={closeTop:closeTop,overlays:overlays};
+if(document.readyState==='complete')init();else window.addEventListener('load',init);
+})();
+
 </script>
 </body>
 </html>
