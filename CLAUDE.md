@@ -351,3 +351,7 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V242 — «البلاغات» closes the phone menu
 - `fm-v242-nav-close` (before `fm-v228-i18n`): wraps `window.v2Go` (re-checked every 2 s because V233 replaces it) so every call removes `body.v2-mobile-nav` and, except for `solution`, closes open sub-pages / the contractor page first. A capture click listener on `.v2-primary-sidebar .v2-nav-btn[id^="v2-nav-"]` also removes `v2-mobile-nav` after the click. Before, the phone sidebar stayed over the page after «البلاغات» (`v2Go('table')`), so it looked like nothing opened.
+
+## V243 / field F57 — charts and wide tables on phones
+- `fm-v243-mobile-css`: ≤ 650 px the status doughnut box (`#card-chart-status .chart-container-box`, fixed 380 px) is `height:auto`, so the stacked doughnut + breakdown no longer spills up over the card title.
+- `fm-v243-mobile` (+ css): ≤ 760 px `#staff-matrix-table`, `#detailed-tickets-table` and every `table.fm195-t` (V195 alerts / PPM / reports) get `.fm243-c`: thead hidden, each row a card, each cell `data-l` = its header (first header row, colspan-aware; full-width cells unlabelled), cells with buttons / selects `.fm243-act` (buttons full width). A `.fm243-tg` button before the table wrapper toggles «📋 عرض كجدول / 🗂️ عرض كبطاقات» per kind (`localStorage fm243_tbl` {staff, tickets, ops}); hidden on desktop. Re-applied by a body MutationObserver (only for those tables), on resize and every 2 s; `window.fmV243`. Field F57 = dictionary entries only.
