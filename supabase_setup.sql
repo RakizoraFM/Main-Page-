@@ -7739,3 +7739,237 @@ do $do$ begin
 end $do$;
 notify pgrst, 'reload schema';
 commit;
+
+-- ---------- 46) AI assistant usage and automatic WhatsApp messages (V226) ----------
+-- (1) The Edge Function fm-ai calls the Claude API (its key and model id are function secrets, never here or in the browser).
+--     fm_ai_begin(kind) runs with the caller's token: active non-pending account, fm_settings.ai.enabled, at most
+--     ai.daily_limit (30) calls per person a day (Riyadh); it records the call in fm_ai_usage; fm_ai_end stores the tokens.
+--     fm_ai_stats() (system admin): use per day and per person over 30 days.
+-- (2) fm_wa_queue holds template messages for the WhatsApp Business Cloud API, sent by the Edge Function fm-wa (pg_net kick on
+--     insert, pg_cron fm-wa-flush every minute). fm_settings.wa {enabled, lang, base_url, tenant, templates {req_update,
+--     confirm}}: when a school-portal request changes status the person who raised it gets req_update [code, school, status,
+--     reply, link]; when a work order of a school with a portal link waits for the principal (V223) the principal (school DB
+--     «جوال مدير المدرسة») gets confirm [school, work, link]. fm_wa_config (function URL + hook secret), fm_wa_test(phone)
+--     (Meta's hello_world template), fm_wa_status() — system admin only. Phone numbers are normalised to 9665XXXXXXXX.
+begin;
+-- (1) AI
+create table if not exists public.fm_ai_usage (
+  id         bigserial primary key,
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  at         timestamptz not null default now(),
+  day        date not null default ((now() at time zone 'Asia/Riyadh')::date),
+  kind       text not null,
+  tokens_in  int,
+  tokens_out int,
+  ok         boolean,
+  err        text
+);
+create index if not exists fm_ai_usage_day on public.fm_ai_usage (user_id, day);
+alter table public.fm_ai_usage enable row level security;
+revoke all on public.fm_ai_usage from anon, authenticated;
+create or replace function public.fm_ai_begin(p_kind text) returns bigint language plpgsql security definer set search_path = public as $$
+declare s jsonb := coalesce(public.fm_setting('ai'), '{}'); lim int := greatest(1, least(coalesce(nullif(s->>'daily_limit','')::int, 30), 1000)); id_ bigint;
+begin
+  if auth.uid() is null or public.fm_role() in ('pending') or public.fm_role() is null then raise exception 'not allowed'; end if;
+  if not coalesce((s->>'enabled')::boolean, false) then raise exception 'ai disabled'; end if;
+  if p_kind not in ('classify','summary','recurring') then raise exception 'invalid kind'; end if;
+  if (select count(*) from public.fm_ai_usage where user_id = auth.uid() and day = (now() at time zone 'Asia/Riyadh')::date) >= lim then raise exception 'daily limit reached'; end if;
+  insert into public.fm_ai_usage (user_id, kind) values (auth.uid(), p_kind) returning id into id_;
+  return id_;
+end $$;
+create or replace function public.fm_ai_end(p_id bigint, p_in int, p_out int, p_ok boolean, p_err text) returns void language sql security definer set search_path = public as $$
+  update public.fm_ai_usage set tokens_in = p_in, tokens_out = p_out, ok = p_ok, err = left(p_err, 300) where id = p_id and user_id = auth.uid() $$;
+create or replace function public.fm_ai_me() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', coalesce((public.fm_setting('ai')->>'enabled')::boolean, false),
+    'limit', coalesce(nullif(public.fm_setting('ai')->>'daily_limit','')::int, 30),
+    'used', (select count(*) from public.fm_ai_usage where user_id = auth.uid() and day = (now() at time zone 'Asia/Riyadh')::date)) $$;
+create or replace function public.fm_ai_stats() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if public.fm_role() is distinct from 'admin' and public.fm_my_pos() is distinct from 'sysadmin' then raise exception 'not allowed'; end if;
+  return jsonb_build_object(
+    'days', coalesce((select jsonb_agg(jsonb_build_object('day', day, 'n', n, 'tin', tin, 'tout', tout, 'fail', fail) order by day desc)
+       from (select day, count(*) n, sum(coalesce(tokens_in,0)) tin, sum(coalesce(tokens_out,0)) tout, count(*) filter (where ok is false) fail
+               from public.fm_ai_usage where day > (now() at time zone 'Asia/Riyadh')::date - 30 group by day) x), '[]'::jsonb),
+    'people', coalesce((select jsonb_agg(jsonb_build_object('name', coalesce(p.full_name, p.email), 'n', x.n) order by x.n desc)
+       from (select user_id, count(*) n from public.fm_ai_usage where day > (now() at time zone 'Asia/Riyadh')::date - 30 group by user_id) x
+       join public.profiles p on p.id = x.user_id), '[]'::jsonb),
+    'last_err', (select err from public.fm_ai_usage where ok is false order by id desc limit 1));
+end $$;
+revoke all on function public.fm_ai_begin(text), public.fm_ai_end(bigint, int, int, boolean, text), public.fm_ai_me(), public.fm_ai_stats() from public, anon;
+grant execute on function public.fm_ai_begin(text), public.fm_ai_end(bigint, int, int, boolean, text), public.fm_ai_me(), public.fm_ai_stats() to authenticated;
+
+-- (2) WhatsApp
+create table if not exists public.fm_wa_queue (
+  id         bigserial primary key,
+  created_at timestamptz not null default now(),
+  phone      text not null,
+  template   text not null,
+  lang       text not null default 'ar',
+  params     jsonb not null default '[]',
+  kind       text,
+  ref        text,
+  status     text not null default 'queued' check (status in ('queued','sent','failed')),
+  tries      int not null default 0,
+  claimed_at timestamptz,
+  sent_at    timestamptz,
+  wa_id      text,
+  err        text
+);
+create index if not exists fm_wa_queue_wait on public.fm_wa_queue (status, id);
+create table if not exists public.fm_wa_cfg (id int primary key default 1 check (id = 1), fn_url text, hook_secret text, anon_key text, kicked_at timestamptz);
+alter table public.fm_wa_queue enable row level security;
+alter table public.fm_wa_cfg enable row level security;
+revoke all on public.fm_wa_queue, public.fm_wa_cfg from anon, authenticated;
+create or replace function public.fm_wa_norm(p text) returns text language sql immutable as $$
+  select case when d ~ '^05[0-9]{8}$' then '966' || substr(d, 2) when d ~ '^5[0-9]{8}$' then '966' || d
+              when d ~ '^9665[0-9]{8}$' then d when d ~ '^009665[0-9]{8}$' then substr(d, 3) end
+    from (select regexp_replace(translate(coalesce(p,''), '٠١٢٣٤٥٦٧٨٩', '0123456789'), '[^0-9]', '', 'g') d) x $$;
+create or replace function public.fm_wa_add(p_phone text, p_tkey text, p_params text[], p_kind text, p_ref text) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare s jsonb := coalesce(public.fm_setting('wa'), '{}'); ph text := public.fm_wa_norm(p_phone); tpl text := nullif(btrim(coalesce(s->'templates'->>p_tkey, '')), '');
+begin
+  if not coalesce((s->>'enabled')::boolean, false) or ph is null or tpl is null then return false; end if;
+  -- the same message for the same thing once in 10 minutes
+  if exists (select 1 from public.fm_wa_queue where phone = ph and kind = p_kind and ref is not distinct from p_ref and created_at > now() - interval '10 minutes') then return false; end if;
+  insert into public.fm_wa_queue (phone, template, lang, params, kind, ref)
+  values (ph, tpl, coalesce(nullif(s->>'lang',''), 'ar'), to_jsonb(coalesce(p_params, '{}'::text[])), p_kind, left(p_ref, 80));
+  return true;
+end $$;
+create or replace function public.fm_wa_kick() returns void language plpgsql security definer set search_path = public as $$
+declare c public.fm_wa_cfg;
+begin
+  update public.fm_wa_cfg set kicked_at = now() where id = 1 and fn_url is not null and coalesce(kicked_at, 'epoch') < now() - interval '3 seconds' returning * into c;
+  if not found then return; end if;
+  begin
+    execute 'select net.http_post(url := $1, body := ''{}''::jsonb, headers := $2, timeout_milliseconds := 20000)'
+      using c.fn_url, jsonb_build_object('Content-Type','application/json','x-fm-hook', c.hook_secret)
+                     || case when c.anon_key is not null then jsonb_build_object('Authorization','Bearer ' || c.anon_key, 'apikey', c.anon_key) else '{}'::jsonb end;
+  exception when others then null; end;
+end $$;
+create or replace function public.fm_wa_flush() returns void language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from public.fm_wa_queue where status = 'queued' and tries < 5) then
+    update public.fm_wa_cfg set kicked_at = null where id = 1; perform public.fm_wa_kick();
+  end if;
+end $$;
+create or replace function public.fm_wa_q_kick() returns trigger language plpgsql security definer set search_path = public as $$
+begin perform public.fm_wa_kick(); return null; end $$;
+drop trigger if exists fm_wa_q_kick on public.fm_wa_queue;
+create trigger fm_wa_q_kick after insert on public.fm_wa_queue for each statement execute function public.fm_wa_q_kick();
+-- the Edge Function (service role)
+create or replace function public.fm_wa_claim(n int) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r jsonb;
+begin
+  with c as (
+    update public.fm_wa_queue q set claimed_at = now(), tries = q.tries + 1
+     where q.id in (select id from public.fm_wa_queue where status = 'queued' and tries < 5 and created_at > now() - interval '2 days'
+                      and (claimed_at is null or claimed_at < now() - interval '2 minutes') order by id limit greatest(1, least(coalesce(n,50), 200)) for update skip locked)
+    returning q.*)
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'phone', c.phone, 'template', c.template, 'lang', c.lang, 'params', c.params)), '[]'::jsonb) into r from c;
+  return r;
+end $$;
+create or replace function public.fm_wa_result(p jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare x jsonb; n int := 0;
+begin
+  for x in select * from jsonb_array_elements(coalesce(p,'[]')) loop
+    update public.fm_wa_queue set
+      status = case when (x->>'ok')::boolean then 'sent' when coalesce((x->>'final')::boolean, false) or tries >= 5 then 'failed' else 'queued' end,
+      sent_at = case when (x->>'ok')::boolean then now() end, wa_id = left(x->>'wa_id', 100), err = left(nullif(x->>'err',''), 300), claimed_at = null
+     where id = (x->>'id')::bigint;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+-- the principal's mobile from the school DB (key or name)
+create or replace function public.fm_wa_principal(p_bkey text, p_name text) returns text language plpgsql stable security definer set search_path = public as $$
+declare v jsonb; ph text;
+begin
+  select value into v from public.app_kv where key = 'fm_school_master_db_v1';
+  if jsonb_typeof(v) = 'string' then v := (v #>> '{}')::jsonb; end if;
+  if v is null or jsonb_typeof(v) <> 'array' then return null; end if;
+  select e->>'principalPhone' into ph from jsonb_array_elements(v) e
+   where jsonb_typeof(e) = 'object' and (public.fm_bkey(e->>'buildingId', e->>'school') = p_bkey or btrim(coalesce(e->>'school','')) = btrim(coalesce(p_name,'')))
+     and nullif(btrim(coalesce(e->>'principalPhone','')),'') is not null
+   order by (public.fm_bkey(e->>'buildingId', e->>'school') = p_bkey) desc limit 1;
+  return ph;
+end $$;
+create or replace function public.fm_wa_link(p_token text) returns text language sql stable security definer set search_path = public as $$
+  select case when nullif(s->>'base_url','') is null or p_token is null then '—'
+              else rtrim(s->>'base_url', '/') || '/school.html?k=' || p_token || coalesce('&c=' || nullif(s->>'tenant',''), '') end
+    from (select coalesce(public.fm_setting('wa'), '{}') s) x $$;
+-- events
+create or replace function public.fm_wa_req_trg() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.status is distinct from old.status and new.status in ('accepted','in_progress','done','rejected') and nullif(new.contact_phone,'') is not null then
+    perform public.fm_wa_add(new.contact_phone, 'req_update',
+      array[coalesce(new.code,''), new.school_name,
+            case new.status when 'accepted' then 'تم استلام الطلب' when 'in_progress' then 'قيد التنفيذ' when 'done' then 'تم الإنجاز' else 'لم يُقبل الطلب' end,
+            coalesce(nullif(left(new.response, 300),''), '—'), public.fm_wa_link(new.token)],
+      'req_' || new.status, new.id::text);
+  end if;
+  return null;
+exception when others then return null;
+end $$;
+drop trigger if exists fm_wa_req on public.fm_school_requests;
+create trigger fm_wa_req after update of status on public.fm_school_requests for each row execute function public.fm_wa_req_trg();
+create or replace function public.fm_wa_sc_trg() returns trigger language plpgsql security definer set search_path = public as $$
+declare tk text;
+begin
+  -- runs after update of status: sc_status is set by the before trigger fm_wo_sc, so a trigger «of sc_status» would not fire
+  if new.sc_status = 'pending' and new.status = 'done' and old.status is distinct from 'done' then
+    tk := public.fm_wo_school_token(new.building_id, new.school);
+    perform public.fm_wa_add(public.fm_wa_principal(public.fm_bkey(new.building_id, new.school), new.school), 'confirm',
+      array[coalesce(new.school,''), left(new.title, 200), public.fm_wa_link(tk)], 'confirm', new.id::text);
+  end if;
+  return null;
+exception when others then return null;
+end $$;
+do $do$ begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'work_orders' and column_name = 'sc_status') then
+    execute 'drop trigger if exists fm_wa_sc on public.work_orders';
+    execute 'create trigger fm_wa_sc after update of status on public.work_orders for each row execute function public.fm_wa_sc_trg()';
+  end if;
+end $do$;
+-- system admin
+create or replace function public.fm_wa_config(p jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed'; end if;
+  if nullif(p->>'fn_url','') is not null and p->>'fn_url' !~ '^https://[^ ]+$' then raise exception 'invalid url'; end if;
+  if nullif(p->>'hook_secret','') is not null and length(p->>'hook_secret') < 24 then raise exception 'secret too short'; end if;
+  insert into public.fm_wa_cfg(id) values (1) on conflict do nothing;
+  update public.fm_wa_cfg set fn_url = case when p ? 'fn_url' then nullif(btrim(p->>'fn_url'),'') else fn_url end,
+    hook_secret = case when nullif(p->>'hook_secret','') is not null then p->>'hook_secret' else hook_secret end,
+    anon_key = case when p ? 'anon_key' then nullif(btrim(p->>'anon_key'),'') else anon_key end, kicked_at = null where id = 1;
+  return true;
+end $$;
+create or replace function public.fm_wa_test(p_phone text) returns boolean language plpgsql security definer set search_path = public as $$
+declare ph text := public.fm_wa_norm(p_phone);
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed'; end if;
+  if ph is null then raise exception 'invalid phone'; end if;
+  insert into public.fm_wa_queue (phone, template, lang, params, kind, ref) values (ph, 'hello_world', 'en_US', '[]', 'test', null);
+  return true;
+end $$;
+create or replace function public.fm_wa_status() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed'; end if;
+  return jsonb_build_object(
+    'fn', (select fn_url from public.fm_wa_cfg where id = 1), 'hook', (select hook_secret is not null from public.fm_wa_cfg where id = 1),
+    'counts', (select jsonb_object_agg(status, n) from (select status, count(*) n from public.fm_wa_queue where created_at > now() - interval '30 days' group by status) x),
+    'last', coalesce((select jsonb_agg(jsonb_build_object('at', q.created_at, 'phone', '…' || right(q.phone, 4), 'template', q.template, 'kind', q.kind, 'status', q.status, 'err', q.err) order by q.id desc)
+       from (select * from public.fm_wa_queue order by id desc limit 20) q), '[]'::jsonb));
+end $$;
+revoke all on function public.fm_wa_add(text, text, text[], text, text), public.fm_wa_kick(), public.fm_wa_flush(), public.fm_wa_q_kick(), public.fm_wa_claim(int),
+  public.fm_wa_result(jsonb), public.fm_wa_principal(text, text), public.fm_wa_link(text), public.fm_wa_req_trg(), public.fm_wa_sc_trg() from public, anon, authenticated;
+revoke all on function public.fm_wa_config(jsonb), public.fm_wa_test(text), public.fm_wa_status() from public, anon;
+grant execute on function public.fm_wa_config(jsonb), public.fm_wa_test(text), public.fm_wa_status() to authenticated;
+do $do$ begin
+  execute 'grant execute on function public.fm_wa_claim(int), public.fm_wa_result(jsonb) to service_role';
+exception when undefined_object then null; end $do$;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-wa-flush'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-wa-flush'', ''* * * * *'', ''select public.fm_wa_flush()'')';
+  exception when others then raise notice 'pg_cron is not available: WhatsApp messages go out when the queue is kicked'; end;
+end $do$;
+notify pgrst, 'reload schema';
+commit;
