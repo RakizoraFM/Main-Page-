@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V233">
+<meta name="fm-version" content="V234">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V233',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V234',date:'2026-10-29',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V234',d:'2026-10-29',t:'رسالة الملف الناقص صحيحة',i:['في لوحة القيادة التشغيلية: عندما ينقص مصدر لأن ملف SQL لم يُشغَّل، تذكر الرسالة الملف الصحيح (مثلاً «إشعارات حسابي» → migration_v231.sql) بدل migration_v233.sql دائماً.']},
  {v:'V233',d:'2026-10-29',t:'الرئيسية التشغيلية',i:['رئيسية للمؤشرات والتنبيهات وأوامر اليوم والمخزون','نقل لوحة البلاغات الحالية إلى المتابعة اليومية وSLA','سجل أعداد القوى العاملة وتوزيعها وتخصيص أقسام الرئيسية']},
  {v:'V232',d:'2026-10-29',t:'استيراد تراكمي يحفظ العمل الميداني',i:['إضافة وتحديث برقم البلاغ دون حذف الغائب من الملف','حفظ حالات الفنيين وعرض تعارضات المصدر','رفض الأرقام المكررة قبل تغيير البيانات وملخص للاستيراد']},
 {v:'V231',d:'2026-10-29',t:'التصعيد قبل اختراق مهلة البلاغ',i:['مراحل تصعيد بمدد مختلفة ولمستلم واحد أو عدة أشخاص','تنبيه محفوظ داخل الحساب مع واتساب وPush وحالة إرسال كل قناة ومنع التكرار','جدولة خادمية كل دقيقة وفحص إغلاق البلاغ وحداثة البيانات؛ يتطلب migration_v231.sql وقالب واتساب معتمد']},
@@ -38422,7 +38423,8 @@ async function refresh(){const startScope=identity();if(loading&&lastScope===sta
  }else for(const k of ['orders','stock','requests','workforce','inbox'])data[k]={error:'يتطلب اتصالاً بالسحابة وحساباً مخوّلاً'};
  await Promise.allSettled(tasks);if(t!==token||identity()!==startScope)return;loading=false;version++;render();}
 function get(){const now=Date.now(),t=data.tickets?.value,w=data.workforce?.value,s=data.stock?.value,o=data.orders?.value;return {tickets:t?root.FM233Model.tickets(t.rows,t.work,t.hours,F,now):null,workforce:w?root.FM233Model.workforce(w,F):null,stock:s?root.FM233Model.stock(s.rows,s.stores,s.mats,F):null,orders:o?root.FM233Model.orders(o,F,profile()?.id,now):null}}
-const error=k=>data[k]?.error?`<p class="fm233-unavailable">غير متاح: ${E(data[k].error)}${/fm_workforce233|fm233_read|schema cache/.test(data[k].error)?' — ثبّت migration_v233.sql':''}</p>`:loading?'<p class="fm233-muted">جارٍ قراءة المصدر…</p>':'<p class="fm233-muted">لم تُقرأ البيانات بعد</p>';
+window.fmV234Sql=window.fmV234Sql||(m=>{m=String(m||'');if(!/schema cache|does not exist|Could not find/i.test(m))return '';return /fm_sla231|fm231|fm_sla_rules231/.test(m)?'migration_v231.sql':/import232|fm_ticket_imports232/.test(m)?'migration_v232.sql':/fm_workforce233|fm233/.test(m)?'migration_v233.sql':/230/.test(m)?'migration_v230.sql':'supabase_setup.sql المحدَّث'});
+const error=k=>data[k]?.error?`<p class="fm233-unavailable">غير متاح: ${E(data[k].error)}${(f=>f?' — ثبّت '+f:'')(window.fmV234Sql(data[k].error))}</p>`:loading?'<p class="fm233-muted">جارٍ قراءة المصدر…</p>':'<p class="fm233-muted">لم تُقرأ البيانات بعد</p>';
 const fresh=k=>{const v=data[k]?.value,rows=Array.isArray(v)?v:v?.rows||[],dates=rows.map(x=>x.uploaded_at||x.updated_at).filter(Boolean).map(x=>+new Date(x)).filter(Number.isFinite),latest=dates.length?Math.max(...dates):null;return `<small class="fm233-muted">${sourceNames[k]} · ${data[k]?.at?'وقت القراءة '+at(data[k].at):'لم تنجح القراءة'}${latest?' · آخر تعديل بالمصدر '+at(latest):''}</small>`};
 const btn=(label,action,cls='')=>`<button type="button" class="fm233-btn ${cls}" data-action="${E(action)}">${E(label)}</button>`;
 function card(label,value,action,tone,sub=''){return `<button type="button" class="fm233-kpi ${tone||''}" data-action="${action}"><span>${E(label)}</span><strong>${value==null?'—':num(value)}</strong><small>${E(sub)}</small></button>`}
