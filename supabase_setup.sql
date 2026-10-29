@@ -7281,3 +7281,461 @@ do $do$ begin
 end $do$;
 notify pgrst, 'reload schema';
 commit;
+
+-- ---------- 45) attendance, vehicles, documents and certificates, electricity / water meters (V224) ----------
+-- (1) fm_att: start / end of the working day and school visits with the phone's location (the distance to the school is
+--     measured on the phone from the school DB coordinates); fm_att_add(p) (offline-safe: client_id once per person, «at» from
+--     the phone accepted up to 48 hours back), fm_att_list(from, to) — own rows, the team below (fm_is_under), the area
+--     manager's regions, every row for fm_scope_all / admin.
+-- (2) fm_vehicles (VH-###) + fm_vehicle_logs (fuel / km / maint / other, odometer, liters, amount, receipt photo): managers
+--     (fm_vh_can: admin, sysadmin, project / ops manager, accountant, area manager of the region) save vehicles; the driver or a
+--     manager logs; an amount on a vehicle with a cost center (part «cc») becomes an fm_cc_entries cost (fuel → fuel, else
+--     vehicles) and is cancelled with the log. The odometer may not go back.
+-- (3) fm_docs (DOC-YYYY-####) + fm_doc_files: certificates / contracts / warranties / licences per building, the company or a
+--     vehicle, with an expiry date; all through RPCs (fm_docs_list, fm_doc_save, fm_doc_file_set / _get, fm_doc_archive).
+-- (4) fm_meters + fm_meter_reads: monthly electricity / water readings per school (reading ≥ the previous one unless «reset»,
+--     amount, photo); fm_meters_list(months), fm_meter_save, fm_meter_read, fm_meter_photo.
+-- fm_v224_daily() (pg_cron fm-v224-daily 05:50 UTC): push «docs» for documents and vehicle insurance / registration / periodic
+-- inspection expiring in remind_days (30), 7 or 0 days, and every 7 days after expiry.
+begin;
+-- (1) attendance
+create table if not exists public.fm_att (
+  id        uuid primary key default gen_random_uuid(),
+  user_id   uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  name      text,
+  at        timestamptz not null default now(),
+  day       date not null default ((now() at time zone 'Asia/Riyadh')::date),
+  kind      text not null check (kind in ('in','out','visit')),
+  lat       numeric(9,6),
+  lng       numeric(9,6),
+  acc       int,
+  school    text,
+  bkey      text,
+  dist_m    int,
+  note      text,
+  client_id text,
+  synced_at timestamptz not null default now()
+);
+create unique index if not exists fm_att_client on public.fm_att (user_id, client_id) where client_id is not null;
+create index if not exists fm_att_day_idx on public.fm_att (day, user_id);
+alter table public.fm_att enable row level security;
+revoke all on public.fm_att from anon, authenticated;
+create or replace function public.fm_att_add(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare me public.profiles; at_ timestamptz := now(); r public.fm_att; k text := p->>'kind';
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not me.active or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  if k not in ('in','out','visit') then raise exception 'invalid kind'; end if;
+  if nullif(p->>'client_id','') is not null then
+    select * into r from public.fm_att where user_id = me.id and client_id = p->>'client_id';
+    if found then return jsonb_build_object('id', r.id, 'dup', true); end if;
+  end if;
+  if nullif(p->>'at','') is not null then
+    at_ := (p->>'at')::timestamptz;
+    if at_ > now() + interval '5 minutes' or at_ < now() - interval '48 hours' then at_ := now(); end if;
+  end if;
+  if (select count(*) from public.fm_att where user_id = me.id and day = (at_ at time zone 'Asia/Riyadh')::date) >= 60 then raise exception 'too many'; end if;
+  if k = 'visit' and btrim(coalesce(p->>'school','')) = '' then raise exception 'school required'; end if;
+  insert into public.fm_att (user_id, name, at, day, kind, lat, lng, acc, school, bkey, dist_m, note, client_id)
+  values (me.id, coalesce(me.full_name, me.email), at_, (at_ at time zone 'Asia/Riyadh')::date, k,
+          nullif(p->>'lat','')::numeric, nullif(p->>'lng','')::numeric, nullif(p->>'acc','')::numeric::int,
+          left(nullif(btrim(coalesce(p->>'school','')),''),200), left(nullif(p->>'bkey',''),80), nullif(p->>'dist_m','')::numeric::int,
+          left(nullif(btrim(coalesce(p->>'note','')),''),300), left(nullif(p->>'client_id',''),80))
+  returning * into r;
+  return jsonb_build_object('id', r.id, 'at', r.at, 'day', r.day);
+end $$;
+create or replace function public.fm_att_list(p_from date, p_to date) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', a.id, 'user_id', a.user_id, 'name', coalesce(pr.full_name, a.name), 'title', public.fm_posx(pr.role, pr.job_title),
+      'regions', pr.regions, 'at', a.at, 'day', a.day, 'kind', a.kind, 'lat', a.lat, 'lng', a.lng, 'acc', a.acc, 'school', a.school, 'dist_m', a.dist_m, 'note', a.note,
+      'late_sync', a.synced_at - a.at > interval '10 minutes') order by a.at), '[]'::jsonb)
+    from public.fm_att a join public.profiles pr on pr.id = a.user_id
+   where a.day between p_from and least(p_to, p_from + 92)
+     and public.fm_role() <> 'pending'
+     and (a.user_id = auth.uid() or public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_is_under(a.user_id, auth.uid())
+          or (public.fm_my_pos() = 'area_manager' and (cardinality(public.fm_regions()) = 0 or pr.regions && public.fm_regions()))) $$;
+revoke all on function public.fm_att_add(jsonb), public.fm_att_list(date, date) from public, anon;
+grant execute on function public.fm_att_add(jsonb), public.fm_att_list(date, date) to authenticated;
+
+-- (2) vehicles
+create sequence if not exists public.fm_vehicle_seq;
+create table if not exists public.fm_vehicles (
+  id          uuid primary key default gen_random_uuid(),
+  code        text unique not null default ('VH-' || lpad(nextval('public.fm_vehicle_seq')::text, 3, '0')),
+  plate       text not null,
+  make        text,
+  model       text,
+  year        int,
+  region      text,
+  driver      uuid references public.profiles(id) on delete set null,
+  driver_name text,
+  status      text not null default 'active' check (status in ('active','maint','out')),
+  odometer    numeric(12,1),
+  cc_id       uuid,
+  ins_exp     date,
+  reg_exp     date,
+  check_exp   date,
+  notes       text,
+  active      boolean not null default true,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create unique index if not exists fm_vehicles_plate on public.fm_vehicles (upper(regexp_replace(plate, '\s', '', 'g'))) where active;
+create table if not exists public.fm_vehicle_logs (
+  id            uuid primary key default gen_random_uuid(),
+  vehicle_id    uuid not null references public.fm_vehicles(id) on delete cascade,
+  at            timestamptz not null default now(),
+  day           date not null default ((now() at time zone 'Asia/Riyadh')::date),
+  kind          text not null check (kind in ('fuel','km','maint','other')),
+  odometer      numeric(12,1),
+  liters        numeric(10,2),
+  amount        numeric(12,2),
+  station       text,
+  note          text,
+  photo         text check (photo is null or length(photo) <= 420000),
+  by_id         uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name       text,
+  cc_entry      uuid,
+  cancelled     boolean not null default false,
+  cancel_reason text
+);
+create index if not exists fm_vehicle_logs_idx on public.fm_vehicle_logs (vehicle_id, at desc);
+create or replace function public.fm_vh_can(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select public.fm_role() = 'admin' or coalesce(public.fm_my_pos() in ('sysadmin','project_manager','ops_manager','accountant'), false)
+      or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,''))) $$;
+create or replace function public.fm_vh_sees(v public.fm_vehicles) returns boolean language sql stable security definer set search_path = public as $$
+  select public.fm_vh_can(v.region) or v.driver = auth.uid() or coalesce(public.fm_my_pos() in ('dept_manager','hse_manager','qa_manager'), false)
+      or (v.driver is not null and public.fm_is_under(v.driver, auth.uid())) $$;
+alter table public.fm_vehicles enable row level security;
+alter table public.fm_vehicle_logs enable row level security;
+drop policy if exists p_vh_read on public.fm_vehicles;
+create policy p_vh_read on public.fm_vehicles for select using (public.fm_vh_sees(fm_vehicles));
+drop policy if exists p_vhl_read on public.fm_vehicle_logs;
+create policy p_vhl_read on public.fm_vehicle_logs for select using (exists (select 1 from public.fm_vehicles v where v.id = vehicle_id and public.fm_vh_sees(v)));
+revoke insert, update, delete on public.fm_vehicles, public.fm_vehicle_logs from anon, authenticated;
+grant select on public.fm_vehicles, public.fm_vehicle_logs to authenticated;
+-- p {id?, plate, make, model, year, region, driver, status, odometer, cc_id, ins_exp, reg_exp, check_exp, notes, active}
+create or replace function public.fm_vehicle_save(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v public.fm_vehicles; d public.profiles; rg text := nullif(btrim(coalesce(p->>'region','')),'');
+begin
+  if auth.uid() is null or not public.fm_vh_can(rg) then raise exception 'not allowed'; end if;
+  if btrim(coalesce(p->>'plate','')) = '' then raise exception 'plate required'; end if;
+  if nullif(p->>'driver','') is not null then select * into d from public.profiles where id = (p->>'driver')::uuid and active; if d.id is null then raise exception 'driver not found'; end if; end if;
+  if nullif(p->>'id','') is not null then
+    select * into v from public.fm_vehicles where id = (p->>'id')::uuid for update;
+    if not found or not public.fm_vh_can(v.region) then raise exception 'not allowed'; end if;
+    update public.fm_vehicles set plate = left(btrim(p->>'plate'),20), make = left(nullif(p->>'make',''),60), model = left(nullif(p->>'model',''),60),
+      year = nullif(p->>'year','')::int, region = rg, driver = d.id, driver_name = coalesce(d.full_name, d.email),
+      status = coalesce(nullif(p->>'status',''), status), odometer = greatest(coalesce(nullif(p->>'odometer','')::numeric, odometer), coalesce(odometer, 0)),
+      cc_id = nullif(p->>'cc_id','')::uuid, ins_exp = nullif(p->>'ins_exp','')::date, reg_exp = nullif(p->>'reg_exp','')::date, check_exp = nullif(p->>'check_exp','')::date,
+      notes = left(nullif(p->>'notes',''),500), active = coalesce((p->>'active')::boolean, active), updated_at = now()
+    where id = v.id returning * into v;
+  else
+    insert into public.fm_vehicles (plate, make, model, year, region, driver, driver_name, status, odometer, cc_id, ins_exp, reg_exp, check_exp, notes)
+    values (left(btrim(p->>'plate'),20), left(nullif(p->>'make',''),60), left(nullif(p->>'model',''),60), nullif(p->>'year','')::int, rg, d.id, coalesce(d.full_name, d.email),
+            coalesce(nullif(p->>'status',''),'active'), nullif(p->>'odometer','')::numeric, nullif(p->>'cc_id','')::uuid,
+            nullif(p->>'ins_exp','')::date, nullif(p->>'reg_exp','')::date, nullif(p->>'check_exp','')::date, left(nullif(p->>'notes',''),500))
+    returning * into v;
+  end if;
+  return jsonb_build_object('id', v.id, 'code', v.code);
+end $$;
+-- p {vehicle_id, kind, odometer, liters, amount, station, note, photo, at}
+create or replace function public.fm_vehicle_log(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v public.fm_vehicles; l public.fm_vehicle_logs; od numeric := nullif(p->>'odometer','')::numeric; am numeric := nullif(p->>'amount','')::numeric;
+  at_ timestamptz := coalesce(nullif(p->>'at','')::timestamptz, now()); ce uuid; k text := p->>'kind';
+begin
+  select * into v from public.fm_vehicles where id = nullif(p->>'vehicle_id','')::uuid for update;
+  if auth.uid() is null or not found or not (v.driver = auth.uid() or public.fm_vh_can(v.region)) then raise exception 'not allowed'; end if;
+  if not v.active then raise exception 'vehicle inactive'; end if;
+  if k not in ('fuel','km','maint','other') then raise exception 'invalid kind'; end if;
+  if at_ > now() + interval '5 minutes' or at_ < now() - interval '60 days' then raise exception 'invalid date'; end if;
+  if od is not null and (od < 0 or od < coalesce(v.odometer, 0) and at_ >= coalesce((select max(at) from public.fm_vehicle_logs where vehicle_id = v.id and not cancelled and odometer is not null), 'epoch')) then
+    raise exception 'odometer lower'; end if;
+  if k = 'km' and od is null then raise exception 'odometer required'; end if;
+  if k = 'fuel' and (am is null or am <= 0) then raise exception 'amount required'; end if;
+  if am is not null and (am < 0 or am > 1000000) then raise exception 'invalid amount'; end if;
+  if nullif(p->>'liters','') is not null and ((p->>'liters')::numeric <= 0 or (p->>'liters')::numeric > 2000) then raise exception 'invalid liters'; end if;
+  if p->>'photo' is not null and (p->>'photo') !~ '^data:image/(jpeg|png|webp);base64,' then raise exception 'invalid photo'; end if;
+  if am > 0 and v.cc_id is not null and public.fm_mod('cc') and exists (select 1 from public.fm_cc_centers where id = v.cc_id) then
+    insert into public.fm_cc_entries (center_id, month, kind, cat, amount, ref, note, created_by_name)
+    values (v.cc_id, to_char(at_ at time zone 'Asia/Riyadh', 'YYYY-MM'), 'cost', case when k = 'fuel' then 'fuel' else 'vehicles' end, am, v.code,
+            left(v.plate || ' — ' || case k when 'fuel' then 'وقود' when 'maint' then 'صيانة' when 'km' then 'كيلومترات' else 'أخرى' end || coalesce(' — ' || nullif(p->>'note',''), ''), 300), public.fm_me_name())
+    returning id into ce;
+  end if;
+  insert into public.fm_vehicle_logs (vehicle_id, at, day, kind, odometer, liters, amount, station, note, photo, by_name, cc_entry)
+  values (v.id, at_, (at_ at time zone 'Asia/Riyadh')::date, k, od, nullif(p->>'liters','')::numeric, am, left(nullif(p->>'station',''),100),
+          left(nullif(btrim(coalesce(p->>'note','')),''),300), p->>'photo', public.fm_me_name(), ce)
+  returning * into l;
+  if od is not null and od > coalesce(v.odometer, 0) then update public.fm_vehicles set odometer = od, updated_at = now() where id = v.id; end if;
+  if k = 'maint' and p->>'status' in ('active','maint') then update public.fm_vehicles set status = p->>'status' where id = v.id; end if;
+  return jsonb_build_object('id', l.id, 'cc', ce is not null);
+end $$;
+create or replace function public.fm_vehicle_log_cancel(p_id uuid, p_reason text) returns void language plpgsql security definer set search_path = public as $$
+declare l public.fm_vehicle_logs; v public.fm_vehicles;
+begin
+  select * into l from public.fm_vehicle_logs where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  select * into v from public.fm_vehicles where id = l.vehicle_id;
+  if auth.uid() is null or not public.fm_vh_can(v.region) then raise exception 'not allowed'; end if;
+  if l.cancelled then raise exception 'invalid status'; end if;
+  if btrim(coalesce(p_reason,'')) = '' then raise exception 'reason required'; end if;
+  update public.fm_vehicle_logs set cancelled = true, cancel_reason = left(p_reason,300) where id = p_id;
+  if l.cc_entry is not null then update public.fm_cc_entries set cancelled = true, cancel_reason = 'إلغاء سجل السيارة ' || v.code || ': ' || left(p_reason,200) where id = l.cc_entry; end if;
+end $$;
+-- the people a vehicle manager may choose as driver
+create or replace function public.fm_vh_people() returns table(id uuid, name text, title text, regions text[]) language sql stable security definer set search_path = public as $$
+  select p.id, coalesce(p.full_name, p.email), public.fm_posx(p.role, p.job_title), p.regions from public.profiles p
+   where p.active and public.fm_role() <> 'pending' and public.fm_posx(p.role, p.job_title) is not null
+     and (public.fm_vh_can(null) or public.fm_my_pos() = 'area_manager' and (cardinality(public.fm_regions()) = 0 or p.regions && public.fm_regions()))
+   order by p.full_name $$;
+revoke all on function public.fm_vh_people() from public, anon;
+grant execute on function public.fm_vh_people() to authenticated;
+revoke all on function public.fm_vh_can(text), public.fm_vh_sees(public.fm_vehicles) from public, anon;
+grant execute on function public.fm_vh_can(text), public.fm_vh_sees(public.fm_vehicles) to authenticated;
+revoke all on function public.fm_vehicle_save(jsonb), public.fm_vehicle_log(jsonb), public.fm_vehicle_log_cancel(uuid, text) from public, anon;
+grant execute on function public.fm_vehicle_save(jsonb), public.fm_vehicle_log(jsonb), public.fm_vehicle_log_cancel(uuid, text) to authenticated;
+
+-- (3) documents and certificates
+create sequence if not exists public.fm_doc_seq;
+create table if not exists public.fm_docs (
+  id              uuid primary key default gen_random_uuid(),
+  code            text unique not null default ('DOC-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_doc_seq')::text, 4, '0')),
+  scope           text not null check (scope in ('building','company','vehicle')),
+  bkey            text,
+  school_name     text,
+  region          text,
+  vehicle_id      uuid references public.fm_vehicles(id) on delete cascade,
+  kind            text not null,
+  title           text not null,
+  number          text,
+  issuer          text,
+  issue_date      date,
+  expiry_date     date,
+  remind_days     int not null default 30 check (remind_days between 1 and 365),
+  notes           text,
+  file_name       text,
+  has_file        boolean not null default false,
+  active          boolean not null default true,
+  created_by      uuid default auth.uid() references public.profiles(id) on delete set null,
+  created_by_name text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists fm_docs_exp_idx on public.fm_docs (expiry_date) where active;
+create table if not exists public.fm_doc_files (
+  doc_id uuid primary key references public.fm_docs(id) on delete cascade,
+  data   text not null check (length(data) <= 2800000 and data ~ '^data:(image/(jpeg|png|webp)|application/pdf);base64,'),
+  at     timestamptz not null default now()
+);
+alter table public.fm_docs enable row level security;
+alter table public.fm_doc_files enable row level security;
+revoke all on public.fm_docs, public.fm_doc_files from anon, authenticated;
+-- may the caller see / edit this document?
+create or replace function public.fm_doc_ok(d public.fm_docs, p_edit boolean) returns boolean language plpgsql stable security definer set search_path = public as $$
+declare v public.fm_vehicles; r text := public.fm_role(); pos text := public.fm_my_pos();
+begin
+  if auth.uid() is null or r = 'pending' then return false; end if;
+  if d.scope = 'company' then
+    return r = 'admin' or coalesce(pos in ('sysadmin','dept_manager','project_manager','ops_manager'), false) or (not p_edit and r in ('manager','staff','viewer'));
+  elsif d.scope = 'vehicle' then
+    select * into v from public.fm_vehicles where id = d.vehicle_id;
+    return v.id is not null and (public.fm_vh_can(v.region) or (not p_edit and public.fm_vh_sees(v)));
+  end if;
+  if p_edit and r not in ('admin','manager','engineer') then return false; end if;
+  if not p_edit and r not in ('admin','manager','staff','viewer','engineer','supervisor') then return false; end if;
+  return r = 'admin' or public.fm_scope_all() or exists (select 1 from public.fm_my_schools() m where m.bkey = d.bkey);
+end $$;
+create or replace function public.fm_docs_list() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare keys text[]; r text := public.fm_role();
+begin
+  if auth.uid() is null or r = 'pending' then return '[]'::jsonb; end if;
+  if not (r = 'admin' or public.fm_scope_all()) then select coalesce(array_agg(bkey), '{}') into keys from public.fm_my_schools(); end if;
+  return coalesce((select jsonb_agg(to_jsonb(d) order by d.expiry_date nulls last) from public.fm_docs d
+     where d.active and (case when d.scope = 'building' then r in ('admin','manager','staff','viewer','engineer','supervisor') and (keys is null or d.bkey = any(keys))
+                              else public.fm_doc_ok(d, false) end)), '[]'::jsonb);
+end $$;
+-- p {id?, scope, bkey, school_name, region, vehicle_id, kind, title, number, issuer, issue_date, expiry_date, remind_days, notes}
+create or replace function public.fm_doc_save(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare d public.fm_docs; n public.fm_docs; v public.fm_vehicles;
+begin
+  if nullif(p->>'id','') is not null then
+    select * into d from public.fm_docs where id = (p->>'id')::uuid for update;
+    if not found or not public.fm_doc_ok(d, true) then raise exception 'not allowed'; end if;
+  end if;
+  n.scope := coalesce(nullif(p->>'scope',''), d.scope);
+  if n.scope not in ('building','company','vehicle') then raise exception 'invalid scope'; end if;
+  n.bkey := case when n.scope = 'building' then nullif(p->>'bkey','') end;
+  n.vehicle_id := case when n.scope = 'vehicle' then nullif(p->>'vehicle_id','')::uuid end;
+  if n.scope = 'building' and n.bkey is null then raise exception 'school required'; end if;
+  if n.scope = 'vehicle' then select * into v from public.fm_vehicles where id = n.vehicle_id; if v.id is null then raise exception 'vehicle required'; end if; end if;
+  if btrim(coalesce(p->>'title','')) = '' or btrim(coalesce(p->>'kind','')) = '' then raise exception 'title required'; end if;
+  if not public.fm_doc_ok(n, true) then raise exception 'not allowed'; end if;
+  if d.id is null then
+    insert into public.fm_docs (scope, bkey, school_name, region, vehicle_id, kind, title, number, issuer, issue_date, expiry_date, remind_days, notes, created_by_name)
+    values (n.scope, n.bkey, left(nullif(p->>'school_name',''),200), coalesce(nullif(p->>'region',''), v.region), n.vehicle_id, left(p->>'kind',40), left(btrim(p->>'title'),200),
+            left(nullif(p->>'number',''),80), left(nullif(p->>'issuer',''),120), nullif(p->>'issue_date','')::date, nullif(p->>'expiry_date','')::date,
+            coalesce(nullif(p->>'remind_days','')::int, 30), left(nullif(p->>'notes',''),1000), public.fm_me_name())
+    returning * into d;
+  else
+    update public.fm_docs set scope = n.scope, bkey = n.bkey, school_name = left(nullif(p->>'school_name',''),200), region = coalesce(nullif(p->>'region',''), v.region),
+      vehicle_id = n.vehicle_id, kind = left(p->>'kind',40), title = left(btrim(p->>'title'),200), number = left(nullif(p->>'number',''),80), issuer = left(nullif(p->>'issuer',''),120),
+      issue_date = nullif(p->>'issue_date','')::date, expiry_date = nullif(p->>'expiry_date','')::date, remind_days = coalesce(nullif(p->>'remind_days','')::int, 30),
+      notes = left(nullif(p->>'notes',''),1000), updated_at = now()
+    where id = d.id returning * into d;
+  end if;
+  return jsonb_build_object('id', d.id, 'code', d.code);
+end $$;
+create or replace function public.fm_doc_file_set(p_id uuid, p_data text, p_name text) returns void language plpgsql security definer set search_path = public as $$
+declare d public.fm_docs;
+begin
+  select * into d from public.fm_docs where id = p_id;
+  if not found or not public.fm_doc_ok(d, true) then raise exception 'not allowed'; end if;
+  if p_data is null then delete from public.fm_doc_files where doc_id = p_id; update public.fm_docs set has_file = false, file_name = null where id = p_id; return; end if;
+  if length(p_data) > 2800000 or p_data !~ '^data:(image/(jpeg|png|webp)|application/pdf);base64,' then raise exception 'invalid file'; end if;
+  insert into public.fm_doc_files (doc_id, data) values (p_id, p_data) on conflict (doc_id) do update set data = excluded.data, at = now();
+  update public.fm_docs set has_file = true, file_name = left(nullif(p_name,''),120), updated_at = now() where id = p_id;
+end $$;
+create or replace function public.fm_doc_file_get(p_id uuid) returns text language plpgsql stable security definer set search_path = public as $$
+declare d public.fm_docs;
+begin
+  select * into d from public.fm_docs where id = p_id;
+  if not found or not public.fm_doc_ok(d, false) then raise exception 'not allowed'; end if;
+  return (select data from public.fm_doc_files where doc_id = p_id);
+end $$;
+create or replace function public.fm_doc_archive(p_id uuid) returns void language plpgsql security definer set search_path = public as $$
+declare d public.fm_docs;
+begin
+  select * into d from public.fm_docs where id = p_id for update;
+  if not found or not public.fm_doc_ok(d, true) then raise exception 'not allowed'; end if;
+  update public.fm_docs set active = false, updated_at = now() where id = p_id;
+end $$;
+revoke all on function public.fm_doc_ok(public.fm_docs, boolean) from public, anon, authenticated;
+revoke all on function public.fm_docs_list(), public.fm_doc_save(jsonb), public.fm_doc_file_set(uuid, text, text), public.fm_doc_file_get(uuid), public.fm_doc_archive(uuid) from public, anon;
+grant execute on function public.fm_docs_list(), public.fm_doc_save(jsonb), public.fm_doc_file_set(uuid, text, text), public.fm_doc_file_get(uuid), public.fm_doc_archive(uuid) to authenticated;
+
+-- (4) electricity / water meters
+create table if not exists public.fm_meters (
+  id          uuid primary key default gen_random_uuid(),
+  bkey        text not null,
+  school_name text not null,
+  region      text,
+  kind        text not null check (kind in ('elec','water')),
+  number      text,
+  account_no  text,
+  notes       text,
+  active      boolean not null default true,
+  created_at  timestamptz not null default now()
+);
+create index if not exists fm_meters_bkey on public.fm_meters (bkey);
+create table if not exists public.fm_meter_reads (
+  id        uuid primary key default gen_random_uuid(),
+  meter_id  uuid not null references public.fm_meters(id) on delete cascade,
+  month     text not null check (month ~ '^\d{4}-\d{2}$'),
+  read_at   date,
+  reading   numeric(14,2) not null check (reading >= 0),
+  reset     boolean not null default false,
+  amount    numeric(12,2),
+  photo     text check (photo is null or length(photo) <= 420000),
+  by_id     uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name   text,
+  at        timestamptz not null default now(),
+  unique (meter_id, month)
+);
+alter table public.fm_meters enable row level security;
+alter table public.fm_meter_reads enable row level security;
+revoke all on public.fm_meters, public.fm_meter_reads from anon, authenticated;
+create or replace function public.fm_meter_keys(p_edit boolean) returns text[] language plpgsql stable security definer set search_path = public as $$
+declare r text := public.fm_role();
+begin
+  if auth.uid() is null then return '{}'; end if;
+  if p_edit and r not in ('admin','manager','engineer','supervisor','contractor') then return '{}'; end if;
+  if not p_edit and r not in ('admin','manager','staff','viewer','engineer','supervisor','contractor') then return '{}'; end if;
+  if r = 'admin' or public.fm_scope_all() then return null; end if;      -- null = every school
+  return coalesce((select array_agg(bkey) from public.fm_my_schools()), '{}');
+end $$;
+-- p {id?, bkey, school_name, region, kind, number, account_no, notes, active}
+create or replace function public.fm_meter_save(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare k text[] := public.fm_meter_keys(true); m public.fm_meters; b text := coalesce(nullif(p->>'bkey',''), '');
+begin
+  if public.fm_role() not in ('admin','manager','engineer','supervisor') then raise exception 'not allowed'; end if;
+  if nullif(p->>'id','') is not null then select * into m from public.fm_meters where id = (p->>'id')::uuid for update; if not found then raise exception 'not found'; end if; b := m.bkey; end if;
+  if b = '' or (k is not null and not b = any(k)) then raise exception 'not allowed'; end if;
+  if m.id is null then
+    if p->>'kind' not in ('elec','water') or btrim(coalesce(p->>'school_name','')) = '' then raise exception 'invalid meter'; end if;
+    insert into public.fm_meters (bkey, school_name, region, kind, number, account_no, notes)
+    values (b, left(btrim(p->>'school_name'),200), nullif(p->>'region',''), p->>'kind', left(nullif(p->>'number',''),60), left(nullif(p->>'account_no',''),60), left(nullif(p->>'notes',''),300))
+    returning * into m;
+  else
+    update public.fm_meters set number = left(nullif(p->>'number',''),60), account_no = left(nullif(p->>'account_no',''),60), notes = left(nullif(p->>'notes',''),300),
+      active = coalesce((p->>'active')::boolean, active) where id = m.id returning * into m;
+  end if;
+  return jsonb_build_object('id', m.id);
+end $$;
+-- p {meter_id, month 'YYYY-MM', reading, amount, photo, read_at, reset}
+create or replace function public.fm_meter_read(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare k text[] := public.fm_meter_keys(true); m public.fm_meters; prev numeric; rd numeric := nullif(p->>'reading','')::numeric; mo text := p->>'month'; r public.fm_meter_reads;
+begin
+  select * into m from public.fm_meters where id = nullif(p->>'meter_id','')::uuid and active;
+  if not found or (k is not null and not m.bkey = any(k)) then raise exception 'not allowed'; end if;
+  if mo !~ '^\d{4}-\d{2}$' or mo > to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM') then raise exception 'invalid month'; end if;
+  if rd is null or rd < 0 then raise exception 'invalid reading'; end if;
+  if p->>'photo' is not null and (p->>'photo') !~ '^data:image/(jpeg|png|webp);base64,' then raise exception 'invalid photo'; end if;
+  select reading into prev from public.fm_meter_reads where meter_id = m.id and month < mo order by month desc limit 1;
+  if prev is not null and rd < prev and not coalesce((p->>'reset')::boolean, false) then raise exception 'reading lower: %', prev; end if;
+  insert into public.fm_meter_reads (meter_id, month, read_at, reading, reset, amount, photo, by_name)
+  values (m.id, mo, coalesce(nullif(p->>'read_at','')::date, (now() at time zone 'Asia/Riyadh')::date), rd, coalesce((p->>'reset')::boolean, false),
+          nullif(p->>'amount','')::numeric, p->>'photo', public.fm_me_name())
+  on conflict (meter_id, month) do update set read_at = excluded.read_at, reading = excluded.reading, reset = excluded.reset, amount = excluded.amount,
+     photo = coalesce(excluded.photo, public.fm_meter_reads.photo), by_id = auth.uid(), by_name = excluded.by_name, at = now()
+  returning * into r;
+  return jsonb_build_object('id', r.id, 'use', case when prev is not null and not r.reset then rd - prev end);
+end $$;
+create or replace function public.fm_meters_list(p_months int default 13) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare k text[] := public.fm_meter_keys(false); since text := to_char((now() at time zone 'Asia/Riyadh') - make_interval(months => greatest(2, least(coalesce(p_months,13), 37))), 'YYYY-MM');
+begin
+  if public.fm_role() in ('pending') or (k is not null and cardinality(k) = 0) then return jsonb_build_object('meters','[]'::jsonb,'reads','[]'::jsonb,'edit',false); end if;
+  return jsonb_build_object('edit', public.fm_role() in ('admin','manager','engineer','supervisor','contractor'),
+    'meters', coalesce((select jsonb_agg(to_jsonb(m) order by m.school_name, m.kind) from public.fm_meters m where m.active and (k is null or m.bkey = any(k))), '[]'::jsonb),
+    'reads', coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'meter_id', r.meter_id, 'month', r.month, 'read_at', r.read_at, 'reading', r.reading, 'reset', r.reset,
+               'amount', r.amount, 'photo', r.photo is not null, 'by_name', r.by_name) order by r.month)
+             from public.fm_meter_reads r join public.fm_meters m on m.id = r.meter_id where m.active and (k is null or m.bkey = any(k)) and r.month >= since), '[]'::jsonb));
+end $$;
+create or replace function public.fm_meter_photo(p_id uuid) returns text language plpgsql stable security definer set search_path = public as $$
+declare k text[] := public.fm_meter_keys(false); b text;
+begin
+  select m.bkey into b from public.fm_meter_reads r join public.fm_meters m on m.id = r.meter_id where r.id = p_id;
+  if b is null or (k is not null and not b = any(k)) then raise exception 'not allowed'; end if;
+  return (select photo from public.fm_meter_reads where id = p_id);
+end $$;
+revoke all on function public.fm_meter_keys(boolean) from public, anon, authenticated;
+revoke all on function public.fm_meter_save(jsonb), public.fm_meter_read(jsonb), public.fm_meters_list(int), public.fm_meter_photo(uuid) from public, anon;
+grant execute on function public.fm_meter_save(jsonb), public.fm_meter_read(jsonb), public.fm_meters_list(int), public.fm_meter_photo(uuid) to authenticated;
+
+-- daily: documents and vehicle papers about to expire
+create or replace function public.fm_v224_daily() returns int language plpgsql security definer set search_path = public as $$
+declare d record; u uuid; n int := 0; today date := (now() at time zone 'Asia/Riyadh')::date; left_ int; t text;
+begin
+  for d in select x.*, v.driver, v.plate from public.fm_docs x left join public.fm_vehicles v on v.id = x.vehicle_id where x.active and x.expiry_date is not null
+           union all
+           select null::uuid, 'VH', 'vehicle', null::text, null::text, v.region, v.id, e.k, e.t || ' — ' || v.plate, null::text, null::text, null::date, e.d, 30, null::text, null::text, false, true, null::uuid, null::text, now(), now(), v.driver, v.plate
+             from public.fm_vehicles v cross join lateral (values ('ins','تأمين السيارة',v.ins_exp),('reg','استمارة السيارة',v.reg_exp),('check','الفحص الدوري للسيارة',v.check_exp)) e(k,t,d)
+            where v.active and e.d is not null loop
+    left_ := d.expiry_date - today;
+    if not (left_ in (d.remind_days, 7, 0) or (left_ < 0 and (-left_) % 7 = 0)) then continue; end if;
+    t := case when left_ < 0 then '⛔ انتهت: ' when left_ = 0 then '⛔ تنتهي اليوم: ' else '📄 تنتهي خلال ' || left_ || ' يوم: ' end || d.title;
+    for u in select x from (select d.created_by x union select d.driver
+               union select y from public.fm_push_people(array['area_manager'], d.region) y
+               union select y from public.fm_push_people(case when d.scope = 'company' then array['sysadmin','project_manager'] else array[]::text[] end, null) y) z where x is not null loop
+      begin if public.fm_push_add(u, 'docs', t, coalesce(d.school_name, d.plate, '') || coalesce(' — ' || d.number, ''), 'docs', 'doc-' || coalesce(d.id::text, d.vehicle_id::text || d.kind), true) then n := n + 1; end if;
+      exception when others then null; end;
+    end loop;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_v224_daily() from public, anon, authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v224-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v224-daily'', ''50 5 * * *'', ''select public.fm_v224_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: expiry reminders are not sent (the platform page still shows them)'; end;
+end $do$;
+notify pgrst, 'reload schema';
+commit;
