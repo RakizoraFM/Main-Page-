@@ -11292,3 +11292,72 @@ end $$;
 revoke all on function public.fm_my_school_db() from public, anon;
 grant execute on function public.fm_my_school_db() to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 68) per-person permissions on top of the job title (V268, start S12, field F77) ----------
+-- profiles.perms = {add:[keys], deny:[keys], route: index | field | choose | ''}. The job title still gives the defaults
+-- (fm_settings.cost_perms / cc_perms, the upload rule); add grants a key to this person, deny removes it. The system
+-- admin (role admin / title sysadmin) always keeps everything. Written only by the system admin (profiles admin policy);
+-- the person cannot change it (p_profiles_self). route overrides fm_settings.routes for this person.
+alter table public.profiles add column if not exists perms jsonb not null default '{}'::jsonb;
+create or replace function public.fm_perm_keys() returns text[] language sql immutable as $$
+  select array['upload','cost_view','cost_entry','cost_budget','cc_view','cc_entry','cc_budget','cc_salaries','cc_revenue'] $$;
+create or replace function public.fm_perms_ok(p jsonb) returns boolean language sql immutable as $$
+  select jsonb_typeof(coalesce(p,'{}'::jsonb)) = 'object'
+    and (p->'add' is null or (jsonb_typeof(p->'add') = 'array'
+         and not exists (select 1 from jsonb_array_elements_text(p->'add') k where k <> all(public.fm_perm_keys()))))
+    and (p->'deny' is null or (jsonb_typeof(p->'deny') = 'array'
+         and not exists (select 1 from jsonb_array_elements_text(p->'deny') k where k <> all(public.fm_perm_keys()))))
+    and coalesce(p->>'route','') in ('','index','field','choose') $$;
+do $do$ begin
+  alter table public.profiles add constraint profiles_perms_ok check (public.fm_perms_ok(perms));
+exception when duplicate_object then null; end $do$;
+drop policy if exists p_profiles_self on public.profiles;
+create policy p_profiles_self on public.profiles for update using (id = auth.uid())
+  with check (id = auth.uid() and role = (select role from public.profiles where id = auth.uid())
+              and job_title is not distinct from (select job_title from public.profiles where id = auth.uid())
+              and person_names = (select person_names from public.profiles where id = auth.uid())
+              and regions = (select regions from public.profiles where id = auth.uid())
+              and active = (select active from public.profiles where id = auth.uid())
+              and reports_to is not distinct from (select reports_to from public.profiles where id = auth.uid())
+              and full_name is not distinct from (select full_name from public.profiles where id = auth.uid())
+              and emp_no is not distinct from (select emp_no from public.profiles where id = auth.uid())
+              and personal = (select personal from public.profiles where id = auth.uid())
+              and perms = (select perms from public.profiles where id = auth.uid()));
+-- true = added, false = denied, null = follow the job title (inactive / expired plan: no override)
+create or replace function public.fm_perm_x(k text) returns boolean language sql stable security definer set search_path = public as $$
+  select case when public.fm_my_pos() is null then null
+              when p.perms->'deny' ? k then false when p.perms->'add' ? k then true end
+    from public.profiles p where p.id = auth.uid() $$;
+-- any added cost / cc key implies seeing that area unless view is denied
+create or replace function public.fm_perm_any(pfx text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_my_pos() is not null and exists (select 1 from public.profiles p, jsonb_array_elements_text(coalesce(p.perms->'add','[]')) k
+    where p.id = auth.uid() and k like pfx || '%'), false) $$;
+
+create or replace function public.fm_can_upload(r text) returns boolean language sql stable security definer set search_path = public as $$
+  select public.fm_role() = 'admin' or coalesce(
+    case public.fm_perm_x('upload') when false then false when true then public.fm_region_ok(coalesce(r,'')) end,
+    coalesce(public.fm_my_pos() in ('project_manager','ops_manager'), false)
+      or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(r,'')))) $$;
+
+create or replace function public.fm_cost_can(p_what text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin'
+    or coalesce(public.fm_perm_x('cost_' || p_what),
+         case when p_what = 'view' and public.fm_perm_any('cost_') then true end,
+         public.fm_my_pos() in (select jsonb_array_elements_text(case when p_what = 'view'
+           then coalesce(s.value->'view','[]') || coalesce(s.value->'entry','[]') || coalesce(s.value->'budget','[]')
+           else coalesce(s.value->p_what,'[]') end)
+         from public.fm_settings s where s.key = 'cost_perms')), false)
+    and (p_what = 'view' or public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin' or public.fm_perm_x('cost_view') is distinct from false) $$;
+
+create or replace function public.fm_cc_title(k text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_my_pos() = any(array(select jsonb_array_elements_text(coalesce(public.fm_setting('cc_perms')->k, '[]')))), false) $$;
+create or replace function public.fm_cc_eff(k text) returns boolean language sql stable security definer set search_path = public as $$
+  select case when k = 'view' then coalesce(public.fm_perm_x('cc_view'), case when public.fm_perm_any('cc_') then true end, public.fm_cc_title('view'))
+              else coalesce(public.fm_perm_x('cc_' || k), public.fm_cc_title(k)) end $$;
+create or replace function public.fm_cc_can(k text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin'
+    or (public.fm_cc_eff(k) and public.fm_cc_eff('view')), false) $$;
+
+revoke all on function public.fm_perm_x(text), public.fm_perm_any(text), public.fm_cc_title(text), public.fm_cc_eff(text) from public, anon;
+grant execute on function public.fm_perm_x(text), public.fm_perm_any(text), public.fm_cc_title(text), public.fm_cc_eff(text), public.fm_perm_keys(), public.fm_perms_ok(jsonb) to authenticated;
+notify pgrst, 'reload schema';
