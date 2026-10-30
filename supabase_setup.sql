@@ -10020,3 +10020,179 @@ revoke all on function public.fm_gov_add(text,text,text,numeric,text), public.fm
 revoke all on function public.fm_po_gov(), public.fm_po_limit(text), public.fm_po_owner_ok(), public.fm_po_act(uuid,text,jsonb), public.fm_po_checks(), public.fm_gov_report(int) from public, anon;
 grant execute on function public.fm_po_gov(), public.fm_po_limit(text), public.fm_po_owner_ok(), public.fm_po_act(uuid,text,jsonb), public.fm_po_checks(), public.fm_gov_report(int) to authenticated;
 notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Section 57 (V252): governance red flags «🚩 إنذارات الحوكمة»
+-- One server function gathers the warning signs of a period: purchases (self-approved, split, price above the
+-- agreed price, one supplier taking most of the money, system-admin exceptions), warehouse (negative balances,
+-- count adjustments decided by their author, the same item to the same school again, one person consuming far
+-- more than the others), tickets closed without a photo or a solution, work orders returned again and again,
+-- field visits far from the school. Each flag has a stable key; a reviewer marks it «ok» or «action» with a note.
+-- Thresholds in fm_settings.red_flags. Idempotent.
+-- =====================================================================
+create table if not exists public.fm_flag_reviews (
+  k       text primary key,
+  status  text not null check (status in ('ok','action')),
+  note    text not null default '' check (length(note) <= 1000),
+  by_id   uuid references public.profiles(id) on delete set null,
+  by_name text,
+  at      timestamptz not null default now()
+);
+alter table public.fm_flag_reviews enable row level security;
+revoke all on public.fm_flag_reviews from public, anon, authenticated;
+
+create or replace function public.fm_flag_can() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','qa_manager','owner_rep','accountant'), false) $$;
+
+-- thresholds: {price_pct 10, share_pct 60, far_m 500, far_n 3, repeat_days 30, returns 2, outlier 3}
+create or replace function public.fm_flag_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('price_pct', coalesce((s->>'price_pct')::numeric, 10), 'share_pct', coalesce((s->>'share_pct')::numeric, 60),
+    'far_m', coalesce((s->>'far_m')::numeric, 500), 'far_n', coalesce((s->>'far_n')::int, 3), 'repeat_days', coalesce((s->>'repeat_days')::int, 30),
+    'returns', coalesce((s->>'returns')::int, 2), 'outlier', coalesce((s->>'outlier')::numeric, 3))
+  from (select coalesce(public.fm_setting('red_flags'), '{}') s) x $$;
+
+create or replace function public.fm_red_flags(p_days int default 90) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare d int := least(greatest(coalesce(p_days, 90), 7), 400); c jsonb := public.fm_flag_cfg(); f jsonb := '[]'::jsonb; part jsonb; skipped text[] := '{}';
+  since timestamptz; med numeric;
+begin
+  if auth.uid() is null or not public.fm_flag_can() then raise exception 'not allowed'; end if;
+  since := now() - make_interval(days => d);
+  -- 1) purchase requests approved by their requester
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object('k', 'po_self:' || code, 'sev', 'high', 'area', 'po', 't', 'طلب شراء اعتمده مقدّمه',
+      'd', concat_ws(' — ', code, nullif(approved_by_name,''), round(total) || ' ر.س'), 'ref', code, 'n', total, 'at', approved_at, 'go', 'wh=po')), '[]') into part
+      from public.wo_purchase_requests where approved_at > since and approved_by is not null and approved_by = requested_by and status in ('approved','partial','received');
+    f := f || part;
+  exception when others then skipped := skipped || 'po_self'; end;
+  -- 2) split requests: approved together (log) and still open with related requests
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object('k', 'po_split:' || ref, 'sev', 'med', 'area', 'po', 't', 'طلبات شراء مرتبطة (تجزئة محتملة)',
+      'd', ref || ' ' || note || ' — المجموع ' || round(amount) || ' ر.س — اعتمده ' || coalesce(by_name,''), 'ref', ref, 'n', amount, 'at', at, 'go', 'wh=po')), '[]') into part
+      from public.fm_gov_log where kind = 'split' and at > since;
+    f := f || part;
+    select coalesce(jsonb_agg(x), '[]') into part from (
+      select jsonb_build_object('k', 'po_open_split:' || p.code, 'sev', 'med', 'area', 'po', 't', 'طلب مفتوح له طلبات مرتبطة',
+        'd', p.code || ' — ' || round(p.total) || ' ر.س، مع ' || array_to_string(array(select jsonb_array_elements_text(r->'codes')), '، ') || ' = ' || round(p.total + (r->>'sum')::numeric) || ' ر.س',
+        'ref', p.code, 'n', p.total + (r->>'sum')::numeric, 'at', p.at, 'go', 'wh=po') x
+        from public.wo_purchase_requests p, lateral (select public.fm_po_related(p.id) r) z
+       where p.status = 'requested' and coalesce((r->>'sum')::numeric, 0) > 0) y;
+    f := f || part;
+  exception when others then skipped := skipped || 'po_split'; end;
+  -- 3) received above the agreed price
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object('k', 'po_price:' || p.code || ':' || (l->>'material_id'), 'sev', case when (l->>'variance')::numeric > 2 * (c->>'price_pct')::numeric then 'high' else 'med' end,
+      'area', 'po', 't', 'سعر الفاتورة أعلى من المتفق عليه',
+      'd', p.code || ' — ' || coalesce(m.name,'') || ' — +' || round((l->>'variance')::numeric, 1) || '% (' || coalesce(l->>'paid','') || ' بدل ' || coalesce(l->>'price','') || ') — ' || coalesce(p.supplier_name,''),
+      'ref', p.code, 'n', (l->>'variance')::numeric, 'at', p.received_at, 'go', 'wh=po')), '[]') into part
+      from public.wo_purchase_requests p cross join lateral jsonb_array_elements(p.lines) l left join public.wo_materials m on m.id::text = l->>'material_id'
+     where p.received_at > since and (l->>'variance') is not null and (l->>'variance')::numeric > (c->>'price_pct')::numeric;
+    f := f || part;
+  exception when others then skipped := skipped || 'po_price'; end;
+  -- 4) one supplier takes most of the approved money
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object('k', 'po_share:' || x.supplier || ':' || d, 'sev', 'med', 'area', 'po', 't', 'تركّز المشتريات عند مورد واحد',
+      'd', x.supplier || ' — ' || x.share || '% من المشتريات المعتمدة (' || round(x.total) || ' ر.س في ' || x.n || ' طلب)', 'ref', x.supplier, 'n', x.share, 'go', 'wh=po')), '[]') into part
+      from (select coalesce(supplier_name,'—') supplier, sum(total) total, count(*) n, round(100 * sum(total) / nullif(sum(sum(total)) over (), 0), 1) share, count(*) over () ns
+              from public.wo_purchase_requests where at > since and status in ('approved','partial','received') group by 1) x
+     where x.ns > 1 and x.share > (c->>'share_pct')::numeric;
+    f := f || part;
+  exception when others then skipped := skipped || 'po_share'; end;
+  -- 5) system-admin exceptions to the segregation of duties
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object('k', 'gov:' || id, 'sev', 'low', 'area', 'po', 't', case kind when 'sod_approve' then 'مدير النظام قرّر في طلبه' else 'مدير النظام استلم ما اعتمده' end,
+      'd', coalesce(ref,'') || ' — ' || coalesce(by_name,'') || coalesce(' — ' || round(amount) || ' ر.س', ''), 'ref', ref, 'n', amount, 'at', at, 'go', 'wh=po')), '[]') into part
+      from public.fm_gov_log where kind in ('sod_approve','sod_receive') and at > since;
+    f := f || part;
+  exception when others then skipped := skipped || 'gov'; end;
+  -- 6) negative balances
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object('k', 'wh_neg:' || k.store_id || ':' || k.material_id, 'sev', 'high', 'area', 'wh', 't', 'رصيد سالب في المستودع',
+      'd', coalesce(s.name,'') || ' — ' || coalesce(m.name,'') || ' — ' || (k.qty)::float8, 'ref', m.name, 'n', k.qty, 'go', 'wh=neg')), '[]') into part
+      from public.wo_stock k join public.wo_stores s on s.id = k.store_id join public.wo_materials m on m.id = k.material_id where k.qty < 0 and s.active;
+    f := f || part;
+  exception when others then skipped := skipped || 'wh_neg'; end;
+  -- 7) count adjustments decided by their author
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object('k', 'wh_adj_self:' || code, 'sev', 'high', 'area', 'wh', 't', 'فرق جرد اعتمده من سجّله',
+      'd', code || ' — ' || coalesce(decided_name,'') || ' — ' || round(value) || ' ر.س', 'ref', code, 'n', value, 'at', decided_at, 'go', 'wh=adj')), '[]') into part
+      from public.wo_stock_adj where decided_at > since and status = 'approved' and decided_by is not null and decided_by = by_id;
+    f := f || part;
+  exception when others then skipped := skipped || 'wh_adj'; end;
+  -- 8) the same item to the same school again within repeat_days
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object('k', 'wh_rep:' || x.material_id || ':' || x.school || ':' || x.last::date, 'sev', case when x.n >= 3 then 'high' else 'med' end, 'area', 'wh',
+      't', 'نفس القطعة لنفس المدرسة أكثر من مرة', 'd', x.mname || ' — ' || x.school || ' — ' || x.n || ' مرات (' || (x.q)::float8 || ' ' || coalesce(x.unit,'') || ') خلال ' || (c->>'repeat_days') || ' يوماً',
+      'ref', x.school, 'n', x.n, 'at', x.last, 'go', 'wh=moves')), '[]') into part
+      from (select mv.material_id, mv.school, max(m.name) mname, max(m.unit) unit, count(*) n, sum(abs(mv.qty)) q, max(mv.at) last
+              from public.wo_stock_moves mv join public.wo_materials m on m.id = mv.material_id
+             where mv.at > greatest(since, now() - make_interval(days => (c->>'repeat_days')::int)) and mv.kind in ('out','issue') and coalesce(btrim(mv.school),'') <> ''
+             group by mv.material_id, mv.school having count(*) >= 2) x;
+    f := f || part;
+  exception when others then skipped := skipped || 'wh_rep'; end;
+  -- 9) one person consuming far more than the others (custody use value)
+  begin
+    select percentile_cont(0.5) within group (order by v) into med from (
+      select sum(abs(cm.qty) * coalesce(cm.unit_price, m.price, 0)) v from public.wo_custody_moves cm join public.wo_materials m on m.id = cm.material_id
+       where cm.at > since and cm.kind = 'use' group by cm.holder) y;
+    if med > 0 then
+      select coalesce(jsonb_agg(jsonb_build_object('k', 'wh_out:' || x.holder || ':' || d, 'sev', 'med', 'area', 'wh', 't', 'استهلاك أعلى بكثير من الزملاء',
+        'd', x.name || ' — ' || round(x.v) || ' ر.س (' || round(x.v / med, 1) || ' ضعف المتوسط)', 'ref', x.name, 'n', x.v, 'go', 'cus')), '[]') into part
+        from (select cm.holder, max(cm.holder_name) name, sum(abs(cm.qty) * coalesce(cm.unit_price, m.price, 0)) v from public.wo_custody_moves cm join public.wo_materials m on m.id = cm.material_id
+               where cm.at > since and cm.kind = 'use' group by cm.holder) x
+       where x.v > med * (c->>'outlier')::numeric;
+      f := f || part;
+    end if;
+  exception when others then skipped := skipped || 'wh_out'; end;
+  -- 10) tickets closed in the platform without an after photo and without a solution text
+  begin
+    select coalesce(jsonb_agg(x), '[]') into part from (
+      select jsonb_build_object('k', 'tk_doc:' || w.region || ':' || w.ticket_id, 'sev', 'med', 'area', 'tk', 't', 'بلاغ أُغلق بلا صورة ولا وصف حل',
+        'd', concat_ws(' — ', w.ticket_id, nullif(t.school,''), nullif(w.updated_by_name,'')), 'ref', w.ticket_id, 'region', w.region, 'at', coalesce(w.resolved_at, w.updated_at), 'go', 'tk=' || w.region || ':' || w.ticket_id) x
+        from public.ticket_work w left join public.tickets t on t.region = w.region and t.ticket_id = w.ticket_id
+       where w.stage in ('resolved','closed') and coalesce(w.resolved_at, w.updated_at) > since
+         and coalesce(btrim(w.rec->'resolution'->>'desc'),'') = ''
+         and not exists (select 1 from public.ticket_photos ph where ph.region = w.region and ph.ticket_id = w.ticket_id and ph.kind = 'after')
+       order by coalesce(w.resolved_at, w.updated_at) desc limit 300) y;
+    f := f || part;
+  exception when others then skipped := skipped || 'tk_doc'; end;
+  -- 11) work orders returned again and again
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object('k', 'wo_ret:' || w.id, 'sev', case when x.n >= 3 then 'high' else 'med' end, 'area', 'wo', 't', 'أمر عمل أُعيد للتصحيح أكثر من مرة',
+      'd', concat_ws(' — ', nullif(w.code,''), nullif(w.school,''), nullif(w.assignee_name,''), x.n || ' مرات'), 'ref', w.code, 'n', x.n, 'at', x.last, 'go', 'wo=' || w.id)), '[]') into part
+      from (select wo_id, count(*) n, max(at) last from public.wo_events where type = 'return' and at > since group by wo_id having count(*) >= (c->>'returns')::int) x
+      join public.work_orders w on w.id = x.wo_id;
+    f := f || part;
+  exception when others then skipped := skipped || 'wo_ret'; end;
+  -- 12) field visits recorded far from the school
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object('k', 'att_far:' || x.user_id || ':' || d, 'sev', case when x.n >= 2 * (c->>'far_n')::int then 'high' else 'med' end, 'area', 'att',
+      't', 'زيارات مسجّلة بعيداً عن المدرسة', 'd', x.name || ' — ' || x.n || ' زيارة على بعد أكثر من ' || (c->>'far_m') || ' م (أبعدها ' || round(x.mx) || ' م)', 'ref', x.name, 'n', x.n, 'at', x.last, 'go', 'att')), '[]') into part
+      from (select a.user_id, max(coalesce(a.name, p.full_name)) name, count(*) n, max(a.dist_m) mx, max(a.at) last from public.fm_att a left join public.profiles p on p.id = a.user_id
+             where a.at > since and a.kind = 'visit' and a.dist_m > (c->>'far_m')::numeric group by a.user_id having count(*) >= (c->>'far_n')::int) x;
+    f := f || part;
+  exception when others then skipped := skipped || 'att_far'; end;
+  -- reviews
+  select coalesce(jsonb_agg(e || coalesce((select jsonb_build_object('rv', jsonb_build_object('status', r.status, 'note', r.note, 'by', r.by_name, 'at', r.at))
+                                             from public.fm_flag_reviews r where r.k = e->>'k'), '{}'::jsonb)), '[]') into f
+    from jsonb_array_elements(f) e;
+  return jsonb_build_object('days', d, 'cfg', c, 'flags', f, 'skipped', to_jsonb(skipped),
+    'can_set', coalesce(public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin', false));
+end $$;
+
+create or replace function public.fm_flag_review(p_k text, p_status text, p_note text) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_flag_can() then raise exception 'not allowed'; end if;
+  if coalesce(btrim(p_k),'') = '' or length(p_k) > 300 then raise exception 'invalid key'; end if;
+  if p_status is null then delete from public.fm_flag_reviews where k = p_k; return true; end if;
+  if p_status not in ('ok','action') then raise exception 'invalid status'; end if;
+  if length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  insert into public.fm_flag_reviews(k, status, note, by_id, by_name) values (p_k, p_status, left(btrim(p_note),1000), auth.uid(), public.fm_me_name())
+  on conflict (k) do update set status = excluded.status, note = excluded.note, by_id = excluded.by_id, by_name = excluded.by_name, at = now();
+  return true;
+end $$;
+
+revoke all on function public.fm_flag_can(), public.fm_flag_cfg(), public.fm_red_flags(int), public.fm_flag_review(text,text,text) from public, anon;
+grant execute on function public.fm_flag_can(), public.fm_flag_cfg(), public.fm_red_flags(int), public.fm_flag_review(text,text,text) to authenticated;
+notify pgrst, 'reload schema';
