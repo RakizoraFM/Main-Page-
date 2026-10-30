@@ -10601,3 +10601,123 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: abnormal consumption alerts are not pushed (the page still shows them)'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 62 (V259): monthly three-way reconciliation of custody parts
+-- Per person × item × month: opening balance, issued to him (issue), used on work orders (use: from custody / total),
+-- returned (return), written off, closing; scrap owed by the month's uses vs scrap returned; the month's count (V180
+-- wo_custody_counts) against the closing balance. The engineer above him (or a manager) signs «مطابق» or records
+-- the differences (wo_custody_recon, one per person and month, with the snapshot).
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.wo_custody_recon (
+  id         uuid primary key default gen_random_uuid(),
+  holder     uuid not null references public.profiles(id) on delete cascade,
+  holder_name text,
+  month      text not null,
+  status     text not null check (status in ('ok','diff')),
+  note       text,
+  lines      jsonb not null default '[]',
+  totals     jsonb not null default '{}',
+  by_id      uuid references public.profiles(id) on delete set null,
+  by_name    text,
+  at         timestamptz not null default now(),
+  unique (holder, month)
+);
+alter table public.wo_custody_recon enable row level security;
+revoke all on public.wo_custody_recon from public, anon, authenticated;
+
+create or replace function public.fm_recon_can_sign(h uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and h is distinct from auth.uid() and (public.fm_role() = 'admin' or public.fm_wh_admin()
+    or (public.fm_my_pos() in ('area_engineer','area_manager','ops_manager','project_manager','sysadmin') and public.fm_wh_sees_holder(h))) $$;
+
+-- internal: one person's lines for a month ('YYYY-MM', Riyadh time)
+create or replace function public.fm_recon_lines(h uuid, p_month text) returns jsonb language sql stable security definer set search_path = public as $$
+  with b as (select (p_month || '-01')::timestamp at time zone 'Asia/Riyadh' a, ((p_month || '-01')::date + interval '1 month')::timestamp at time zone 'Asia/Riyadh' z),
+  mv as (select cm.* from public.wo_custody_moves cm, b where cm.holder = h and cm.at < b.z),
+  agg as (select mv.material_id,
+      sum(case when mv.at < b.a then mv.qty else 0 end) open_q,
+      sum(case when mv.at >= b.a and mv.kind = 'issue' then mv.qty else 0 end) issued,
+      -sum(case when mv.at >= b.a and mv.kind = 'use' then mv.qty else 0 end) used_cus,
+      sum(case when mv.at >= b.a and mv.kind = 'use' then coalesce(mv.used,0) else 0 end) used_all,
+      count(distinct case when mv.at >= b.a and mv.kind = 'use' then mv.wo_code end) wos,
+      -sum(case when mv.at >= b.a and mv.kind = 'return' then mv.qty else 0 end) returned,
+      -sum(case when mv.at >= b.a and mv.kind = 'writeoff' then mv.qty else 0 end) writeoff,
+      sum(mv.qty) close_q,
+      sum(case when mv.at >= b.a and mv.scrap > 0 then mv.scrap else 0 end) scrap_new,
+      -sum(case when mv.at >= b.a and mv.scrap < 0 then mv.scrap else 0 end) scrap_back,
+      sum(mv.scrap) scrap_end,
+      max(mv.unit_price) price
+    from mv, b group by mv.material_id),
+  cnt as (select (l->>'material_id')::uuid mid, (l->>'counted')::numeric counted, c.status cst
+            from public.wo_custody_counts c cross join lateral jsonb_array_elements(c.lines) l, b
+           where c.holder = h and c.month = p_month and coalesce(l->>'material_id','') ~ '^[0-9a-fA-F-]{36}$' and l ? 'counted')
+  select coalesce(jsonb_agg(jsonb_build_object('material_id', a.material_id, 'name', m.name, 'code', m.code, 'unit', m.unit,
+      'open', a.open_q, 'issued', a.issued, 'used_cus', a.used_cus, 'used_all', a.used_all, 'wos', a.wos, 'returned', a.returned, 'writeoff', a.writeoff,
+      'close', a.close_q, 'scrap_new', a.scrap_new, 'scrap_back', a.scrap_back, 'scrap_end', a.scrap_end,
+      'price', coalesce(a.price, m.price, 0), 'counted', k.counted, 'count_st', k.cst,
+      'cdiff', case when k.counted is not null then k.counted - a.close_q end,
+      'now', case when p_month = to_char(now() at time zone 'Asia/Riyadh','YYYY-MM') then (select qty from public.wo_custody w where w.holder = h and w.material_id = a.material_id) end)
+      order by m.name), '[]'::jsonb)
+    from agg a join public.wo_materials m on m.id = a.material_id left join cnt k on k.mid = a.material_id
+   where a.open_q <> 0 or a.issued <> 0 or a.used_cus <> 0 or a.used_all <> 0 or a.returned <> 0 or a.writeoff <> 0 or a.scrap_new <> 0 or a.scrap_back <> 0 or a.scrap_end <> 0 or k.counted is not null $$;
+revoke all on function public.fm_recon_lines(uuid,text) from public, anon, authenticated;
+
+-- people with custody activity in the month (or a balance), with totals and the sign status
+create or replace function public.fm_custody_recon_list(p_month text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r record; L jsonb; out jsonb := '[]'::jsonb; t jsonb; rc public.wo_custody_recon;
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  if not public.fm_mod('wh') then raise exception 'module disabled'; end if;
+  for r in select p.id, p.full_name, public.fm_posx(p.role, p.job_title) title, p.regions from public.profiles p
+            where (exists (select 1 from public.wo_custody_moves cm where cm.holder = p.id and cm.at < ((p_month || '-01')::date + interval '1 month')::timestamp at time zone 'Asia/Riyadh'))
+              and public.fm_wh_sees_holder(p.id) order by p.full_name loop
+    L := public.fm_recon_lines(r.id, p_month);
+    if jsonb_array_length(L) = 0 then continue; end if;
+    select jsonb_build_object('lines', jsonb_array_length(L),
+      'issued_v', round(coalesce(sum((x->>'issued')::numeric * (x->>'price')::numeric),0),2),
+      'used_v', round(coalesce(sum((x->>'used_cus')::numeric * (x->>'price')::numeric),0),2),
+      'returned_v', round(coalesce(sum((x->>'returned')::numeric * (x->>'price')::numeric),0),2),
+      'close_v', round(coalesce(sum((x->>'close')::numeric * (x->>'price')::numeric),0),2),
+      'scrap_open', coalesce(sum((x->>'scrap_end')::numeric),0),
+      'cdiff_n', count(*) filter (where x->>'cdiff' is not null and (x->>'cdiff')::numeric <> 0),
+      'now_diff', count(*) filter (where x->>'now' is not null and (x->>'now')::numeric <> (x->>'close')::numeric),
+      'counted', bool_or(x->>'counted' is not null)) into t from jsonb_array_elements(L) x;
+    select * into rc from public.wo_custody_recon where holder = r.id and month = p_month;
+    out := out || jsonb_build_object('holder', r.id, 'name', r.full_name, 'title', r.title, 'regions', to_jsonb(r.regions), 't', t, 'can_sign', public.fm_recon_can_sign(r.id),
+      'recon', case when rc.id is null then null else jsonb_build_object('status', rc.status, 'note', rc.note, 'by', rc.by_name, 'at', rc.at) end);
+  end loop;
+  return out;
+end $$;
+
+create or replace function public.fm_custody_recon_get(p_holder uuid, p_month text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare rc public.wo_custody_recon;
+begin
+  if auth.uid() is null or not public.fm_wh_sees_holder(p_holder) then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  select * into rc from public.wo_custody_recon where holder = p_holder and month = p_month;
+  return jsonb_build_object('name', (select full_name from public.profiles where id = p_holder), 'lines', public.fm_recon_lines(p_holder, p_month),
+    'can_sign', public.fm_recon_can_sign(p_holder),
+    'recon', case when rc.id is null then null else jsonb_build_object('status', rc.status, 'note', rc.note, 'by', rc.by_name, 'at', rc.at, 'lines', rc.lines) end);
+end $$;
+
+create or replace function public.fm_custody_recon_sign(p_holder uuid, p_month text, p_ok boolean, p_note text default '') returns text
+language plpgsql security definer set search_path = public as $$
+declare L jsonb; nm text := public.fm_me_name(); t jsonb;
+begin
+  if not public.fm_recon_can_sign(p_holder) then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' or p_month > to_char(now() at time zone 'Asia/Riyadh','YYYY-MM') then raise exception 'invalid month'; end if;
+  if not coalesce(p_ok,false) and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  L := public.fm_recon_lines(p_holder, p_month);
+  select jsonb_build_object('issued', sum((x->>'issued')::numeric), 'used', sum((x->>'used_cus')::numeric), 'returned', sum((x->>'returned')::numeric), 'close', sum((x->>'close')::numeric)) into t from jsonb_array_elements(L) x;
+  insert into public.wo_custody_recon(holder, holder_name, month, status, note, lines, totals, by_id, by_name)
+  values (p_holder, (select full_name from public.profiles where id = p_holder), p_month, case when p_ok then 'ok' else 'diff' end, left(nullif(btrim(coalesce(p_note,'')),''),1000), L, coalesce(t,'{}'), auth.uid(), nm)
+  on conflict (holder, month) do update set status = excluded.status, note = excluded.note, lines = excluded.lines, totals = excluded.totals, by_id = excluded.by_id, by_name = excluded.by_name, at = now();
+  begin perform public.fm_push_add(p_holder, 'wh_issued', case when p_ok then '✅ اعتُمدت مطابقة عهدتك لشهر ' else '⚠️ فروقات في مطابقة عهدتك لشهر ' end || p_month,
+    concat_ws(' — ', nm, nullif(btrim(coalesce(p_note,'')),'')), 'cus', 'recon-' || p_month, false); exception when others then null; end;
+  return case when p_ok then 'ok' else 'diff' end;
+end $$;
+
+revoke all on function public.fm_recon_can_sign(uuid), public.fm_custody_recon_list(text), public.fm_custody_recon_get(uuid,text), public.fm_custody_recon_sign(uuid,text,boolean,text) from public, anon;
+grant execute on function public.fm_recon_can_sign(uuid), public.fm_custody_recon_list(text), public.fm_custody_recon_get(uuid,text), public.fm_custody_recon_sign(uuid,text,boolean,text) to authenticated;
+notify pgrst, 'reload schema';
