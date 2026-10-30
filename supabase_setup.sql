@@ -10517,3 +10517,87 @@ revoke all on function public.fm_tka_can(text), public.fm_tka_sees(text), public
 grant execute on function public.fm_tka_can(text), public.fm_tka_sees(text), public.fm_tk_audit_sample(text,text,jsonb,numeric), public.fm_tk_audit_list(text,text),
   public.fm_tk_audit_photo(uuid), public.fm_tk_audit_review(uuid,text,text,boolean,text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 61 (V258): abnormal parts consumption
+-- fm_wh_abnormal(days): (1) the same item used for the same school again within repeat_days (fm_settings.red_flags,
+-- V252) — store «out» moves with a school and custody «use» moves; (2) a person whose use value is above outlier × the
+-- median of the people with the same job title (≥ 3 people with use). fm_v258_daily() (pg_cron fm-v258-daily 05:45 UTC)
+-- sends push wh_abn once per repeat case to the keepers and area engineers / managers of the store's region.
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.fm_wh_abn_sent (k text primary key, at timestamptz not null default now());
+alter table public.fm_wh_abn_sent enable row level security;
+revoke all on public.fm_wh_abn_sent from public, anon, authenticated;
+
+create or replace function public.fm_wh_abn_can() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_flag_can() or public.fm_wh_edit() or public.fm_scope_all(), false) $$;
+
+-- internal: uses in the period (all regions)
+create or replace function public.fm_wh_uses(p_since timestamptz) returns table(at timestamptz, material_id uuid, school text, qty numeric, value numeric, wo_code text,
+  who uuid, who_name text, region text, src text) language sql stable security definer set search_path = public as $$
+  select mv.at, mv.material_id, btrim(mv.school), abs(mv.qty), abs(mv.qty) * coalesce(mv.unit_price, m.price, 0), mv.wo_code, mv.by_id, mv.by_name, s.region, 'store'
+    from public.wo_stock_moves mv join public.wo_materials m on m.id = mv.material_id left join public.wo_stores s on s.id = mv.store_id
+   where mv.at > p_since and mv.kind = 'out' and coalesce(btrim(mv.school),'') <> ''
+  union all
+  select cm.at, cm.material_id, btrim(cm.school), coalesce(nullif(cm.used,0), abs(cm.qty)), coalesce(nullif(cm.used,0), abs(cm.qty)) * coalesce(cm.unit_price, m.price, 0), cm.wo_code,
+         cm.holder, cm.holder_name, coalesce(s.region, (select p.regions[1] from public.profiles p where p.id = cm.holder)), 'custody'
+    from public.wo_custody_moves cm join public.wo_materials m on m.id = cm.material_id left join public.wo_stores s on s.id = cm.store_id
+   where cm.at > p_since and cm.kind = 'use' $$;
+revoke all on function public.fm_wh_uses(timestamptz) from public, anon, authenticated;
+
+-- internal: repeat cases (consecutive uses of an item at a school with a gap ≤ repeat_days)
+create or replace function public.fm_wh_rep_rows(p_since timestamptz) returns table(k text, material_id uuid, mname text, unit text, school text, region text, n int, q numeric, v numeric, first timestamptz, last timestamptz, uses jsonb)
+language sql stable security definer set search_path = public as $$
+  with c as (select coalesce((public.fm_flag_cfg()->>'repeat_days')::int, 30) d),
+  u as (select x.*, lag(x.at) over (partition by x.material_id, x.school order by x.at) prev from public.fm_wh_uses(p_since) x where coalesce(x.school,'') <> ''),
+  g as (select u.*, sum(case when u.prev is null or u.at - u.prev > make_interval(days => (select d from c)) then 1 else 0 end) over (partition by u.material_id, u.school order by u.at) grp from u)
+  select g.material_id::text || ':' || g.school || ':' || min(g.at)::date, g.material_id, max(m.name), max(m.unit), g.school, max(g.region), count(*)::int, sum(g.qty), sum(g.value), min(g.at), max(g.at),
+         jsonb_agg(jsonb_build_object('at', g.at, 'q', g.qty, 'wo', g.wo_code, 'by', g.who_name, 'src', g.src) order by g.at)
+    from g join public.wo_materials m on m.id = g.material_id
+   group by g.material_id, g.school, g.grp having count(*) >= 2 $$;
+revoke all on function public.fm_wh_rep_rows(timestamptz) from public, anon, authenticated;
+
+create or replace function public.fm_wh_abnormal(p_days int default 90) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare d int := least(greatest(coalesce(p_days,90),7),365); since timestamptz := now() - make_interval(days => d); c jsonb := public.fm_flag_cfg();
+  allr boolean := public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_my_pos() in ('accountant','owner_rep'); rep jsonb; peer jsonb; o numeric := coalesce((c->>'outlier')::numeric, 3);
+begin
+  if auth.uid() is null or not public.fm_wh_abn_can() then raise exception 'not allowed'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('k', r.k, 'material', r.mname, 'unit', r.unit, 'school', r.school, 'region', r.region, 'n', r.n, 'q', r.q, 'v', round(r.v,2),
+      'first', r.first, 'last', r.last, 'uses', r.uses) order by r.n desc, r.last desc), '[]'::jsonb) into rep
+    from public.fm_wh_rep_rows(since) r where allr or public.fm_region_ok(coalesce(r.region,''));
+  with u as (select x.who, max(x.who_name) nm, max(x.region) region, sum(x.value) v, sum(x.qty) q, count(*) n from public.fm_wh_uses(since) x where x.who is not null group by x.who),
+  t as (select u.*, public.fm_posx(p.role, p.job_title) title from u join public.profiles p on p.id = u.who),
+  m as (select title, percentile_cont(0.5) within group (order by v) med, count(*) cnt from t where v > 0 group by title)
+  select coalesce(jsonb_agg(jsonb_build_object('who', t.who, 'name', t.nm, 'title', t.title, 'region', t.region, 'v', round(t.v,2), 'n', t.n, 'med', round(m.med::numeric,2), 'peers', m.cnt,
+      'ratio', round((t.v / m.med)::numeric, 1),
+      'top', (select jsonb_agg(z) from (select jsonb_build_object('material', mm.name, 'q', sum(x.qty), 'v', round(sum(x.value),2)) z from public.fm_wh_uses(since) x join public.wo_materials mm on mm.id = x.material_id
+               where x.who = t.who group by mm.name order by sum(x.value) desc limit 5) zz)) order by t.v / m.med desc), '[]'::jsonb) into peer
+    from t join m on m.title = t.title
+   where m.cnt >= 3 and m.med > 0 and t.v > m.med * o and (allr or public.fm_region_ok(coalesce(t.region,'')));
+  return jsonb_build_object('days', d, 'repeat_days', coalesce((c->>'repeat_days')::int,30), 'outlier', o, 'rep', rep, 'peer', peer);
+end $$;
+
+create or replace function public.fm_v258_daily() returns int language plpgsql security definer set search_path = public as $$
+declare r record; u uuid; n int := 0;
+begin
+  for r in select * from public.fm_wh_rep_rows(now() - interval '120 days') x where x.last > now() - interval '2 days'
+             and not exists (select 1 from public.fm_wh_abn_sent s where s.k = x.k || ':' || x.n) loop
+    insert into public.fm_wh_abn_sent(k) values (r.k || ':' || r.n) on conflict do nothing;
+    for u in select * from public.fm_wh_keepers_of(r.region) union select * from public.fm_push_people(array['area_engineer','area_manager'], r.region) loop
+      begin perform public.fm_push_add(u, 'wh_abn', '🚨 صرف متكرر لنفس القطعة ' || coalesce(r.mname,''), concat_ws(' — ', r.school, r.n || ' مرات', (r.q)::float8 || ' ' || coalesce(r.unit,'')), 'wh=abn', 'abn-' || left(md5(r.k),12), false);
+      exception when others then null; end;
+    end loop;
+    n := n + 1;
+  end loop;
+  delete from public.fm_wh_abn_sent where at < now() - interval '400 days';
+  return n;
+end $$;
+revoke all on function public.fm_v258_daily() from public, anon, authenticated;
+revoke all on function public.fm_wh_abn_can(), public.fm_wh_abnormal(int) from public, anon;
+grant execute on function public.fm_wh_abn_can(), public.fm_wh_abnormal(int) to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v258-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v258-daily'', ''45 5 * * *'', ''select public.fm_v258_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: abnormal consumption alerts are not pushed (the page still shows them)'; end;
+end $do$;
+notify pgrst, 'reload schema';
