@@ -92,7 +92,11 @@ const no=(r,re)=>!r.ok&&(!re||re.test(msg(r)));
   if(q1){r=await rpc('admin','fm_issue_req_act',{p_id:q1,p_action:'issue',p:{}});check('العهد','الصرف لأمين المستودع فقط',no(r,/storekeeper only/),msg(r));
    r=await rpc('sk','fm_issue_req_act',{p_id:q1,p_action:'issue',p:{}});check('العهد','أمين المستودع يصرف للعهدة',r.j==='issued',msg(r));
    r=await rpc('engineer','fm_issue_req_act',{p_id:q1,p_action:'receive',p:{}});check('العهد','لا يؤكد الاستلام إلا صاحب العهدة',no(r),msg(r));
-   r=await rpc('supervisor','fm_issue_req_act',{p_id:q1,p_action:'receive',p:{}});check('العهد','المشرف يؤكد الاستلام',r.j==='received',msg(r))}
+   /* V230: receipt = signature bound to the issued snapshot (fm_issue_req_sign_once) */
+   {const g=await req(T.supervisor,'GET','/rest/v1/wo_issue_requests?select=issued_at,lines&id=eq.'+q1);const row=(g.j||[])[0]||{};
+    const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    r=await rpc('supervisor','fm_issue_req_sign_once',{p:{op_id:'test-'+Date.now(),id:q1,expected_issued_at:row.issued_at,expected_lines:row.lines,sign:PNG,inperson:false}});
+    check('العهد','المشرف يؤكد الاستلام بالتوقيع',r.ok,msg(r))}}
   const cus=k=>get(k,`wo_custody?select=qty&holder=eq.${ID.supervisor}&material_id=eq.${mat}`);
   r=await cus('supervisor');check('العهد','العهدة لدى المشرف = 2',r.ok&&r.j[0]&&+r.j[0].qty===2,r.ok?JSON.stringify(r.j):msg(r));
   r=await cus('engineer');check('العهد','المهندس يرى عهدة مشرفه',r.ok&&r.j.length===1);
