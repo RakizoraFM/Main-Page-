@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V269">
+<meta name="fm-version" content="V270">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V269',date:'2026-10-30',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V270',date:'2026-10-30',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V270',d:'2026-10-30',t:'📱 جدول المستخدمين على الجوال',i:['على الجوال يظهر كل مستخدم في بطاقة: الاسم، المسمى، يتبع لـ، اسمه في البلاغات، المناطق، مفعّل، ثم الأزرار','أزرار «حفظ» و«كلمة مرور» و«الملف» و«الصلاحيات» بعرض كامل ونص مقروء بدل حرف في كل سطر','شريط البحث والفلتر يأخذان عرض الشاشة']},
 {v:'V269',d:'2026-10-30',t:'👥 صفحة المستخدمين في القائمة الجانبية',i:['زر «👥 المستخدمون والصلاحيات» أول مجموعة «النظام» في القائمة الجانبية (لمدير النظام)','يفتح نفس الشاشة: إضافة مستخدم، رفع دفعة من Excel، القالب، التصدير، و«🔐 الصلاحيات» لكل شخص','الشاشة باقية أيضاً في الإعدادات ← السحابة']},
 {v:'V268',d:'2026-10-30',t:'👥 رفع المستخدمين من Excel مع المسمى والصلاحيات',i:['قالب استيراد جديد بورقتين: «المستخدمون» و«القيم المسموحة» (المسميات، المناطق، الصلاحيات، مكان الدخول)','أعمدة جديدة في الاستيراد: الجوال، الرقم الوظيفي، صلاحيات إضافية، صلاحيات ممنوعة، مكان الدخول، وكلمة مرور اختيارية للحساب الجديد','صلاحيات لكل شخص فوق صلاحيات مسماه: رفع ملف البلاغات، تكاليف المباني (عرض / إدخال / ميزانيات)، مركز التكلفة (عرض / قيود / موازنة / رواتب / إيرادات) — يتحقق منها الخادم','زر «🔐 الصلاحيات» في صف كل مستخدم: ما يعطيه المسمى، وما تمنحه أو تمنعه له، ومكان دخوله (المنصة / الميدان / يختار)','التصدير يشمل الرقم الوظيفي والصلاحيات ومكان الدخول، فيمكن تعديل الملف ورفعه مرة أخرى','يحتاج القسم 68 من supabase_setup.sql']},
 {v:'V267',d:'2026-10-30',t:'🩺 إصلاح بعد فحص المنصة بكل المسميات',i:['فحص حي على السيرفر الحقيقي بحساب اختبار لكل مسمى (13 حساباً): الصلاحيات، وكل صفحات المنصة والميدان.','إصلاح: قائمة مدارس المهندس والمشرف والمقاول من السحابة كانت تتوقف (انتهاء مهلة السيرفر مع 2277 مدرسة)، فلا تظهر لهم المدارس. يحتاج القسم 67 من supabase_setup.sql.']},
@@ -40440,6 +40441,49 @@ const go=h=>{if(String(h||'').replace(/^#+/,'')!=='users')return;let k=0;const t
 window.addEventListener('hashchange',()=>go(location.hash));go(location.hash);
 })();
 </script>
+<style id="fm-v270-users-mobile">
+/* V270: the V141 users table (settings and the V269 page) as one card per user on phones. Before, the seven columns were
+   squeezed into the phone width, so the action buttons broke into one letter per line. */
+@media (max-width:760px){
+ :is(.fm196-surface,body) table.fm141-t,:is(.fm196-surface,body) table.fm141-t>tbody,:is(.fm196-surface,body) table.fm141-t>tbody>tr,:is(.fm196-surface,body) table.fm141-t>tbody>tr>td{display:block;width:auto!important;min-width:0!important;max-width:100%}
+ :is(.fm196-surface,body) table.fm141-t{border:0;background:none}
+ :is(.fm196-surface,body) table.fm141-t>thead{display:none}
+ :is(.fm196-surface,body) .fm122-tw:has(>table.fm141-t),:is(.fm196-surface,body) .fm196-table-scroll:has(table.fm141-t){overflow:visible!important;max-height:none!important;border:0!important;box-shadow:none!important}
+ :is(.fm196-surface,body) table.fm141-t>tbody>tr{border:1px solid #e2e8f0;border-radius:14px;padding:12px 12px 10px;margin:0 0 12px;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+ :is(.fm196-surface,body) table.fm141-t>tbody>tr>td{border:0!important;padding:7px 0!important;white-space:normal!important;overflow-wrap:normal;word-break:normal;text-align:right}
+ :is(.fm196-surface,body) table.fm141-t>tbody>tr>td+td{border-top:1px dashed #e2e8f0!important}
+ :is(.fm196-surface,body) table.fm141-t>tbody>tr>td:nth-child(n+2):not([colspan])::before{display:block;font:800 11.5px Cairo,Tahoma,sans-serif;color:#64748b;margin-bottom:4px}
+ table.fm141-t>tbody>tr>td:nth-child(2)::before{content:'المسمى الوظيفي'}
+ table.fm141-t>tbody>tr>td:nth-child(3)::before{content:'يتبع لـ'}
+ table.fm141-t>tbody>tr>td:nth-child(4)::before{content:'اسمه في البلاغات'}
+ table.fm141-t>tbody>tr>td:nth-child(5)::before{content:'المناطق'}
+ table.fm141-t>tbody>tr>td:nth-child(6)::before{content:'مفعّل'}
+ table.fm141-t>tbody>tr>td:nth-child(7)::before{content:none!important}
+ html.fm228-en table.fm141-t>tbody>tr>td:nth-child(2)::before{content:'Job title'}
+ html.fm228-en table.fm141-t>tbody>tr>td:nth-child(3)::before{content:'Reports to'}
+ html.fm228-en table.fm141-t>tbody>tr>td:nth-child(4)::before{content:'Name in tickets'}
+ html.fm228-en table.fm141-t>tbody>tr>td:nth-child(5)::before{content:'Regions'}
+ html.fm228-en table.fm141-t>tbody>tr>td:nth-child(6)::before{content:'Active'}
+ table.fm141-t select,table.fm141-t input.nm{width:100%!important;min-width:0!important;box-sizing:border-box;padding:8px 10px;font-size:14px}
+ table.fm141-t .fm141-tags{min-width:0}
+ table.fm141-t .fm141-add input{min-width:0}
+ table.fm141-t .fm141-add button{min-width:40px;font-size:16px}
+ /* regions: the two boxes side by side, the hint under them */
+ table.fm141-t>tbody>tr>td:nth-child(5){display:flex!important;flex-wrap:wrap;align-items:center;gap:6px 18px}
+ table.fm141-t>tbody>tr>td:nth-child(5)::before{flex-basis:100%;margin-bottom:0}
+ table.fm141-t>tbody>tr>td:nth-child(5) .fm125-src{flex-basis:100%}
+ table.fm141-t input[type=checkbox]{width:20px!important;height:20px;flex:none}
+ /* active: label and the box on one line */
+ table.fm141-t>tbody>tr>td:nth-child(6){display:flex!important;align-items:center;justify-content:space-between}
+ table.fm141-t>tbody>tr>td:nth-child(6)::before{margin:0}
+ /* actions: full-width row of buttons */
+ table.fm141-t .fm141-acts{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;flex-direction:initial}
+ table.fm141-t .fm141-acts>button{white-space:nowrap!important;writing-mode:horizontal-tb;width:auto!important;min-width:0!important;padding:9px 8px!important;font-size:13px!important;text-align:center;line-height:1.3}
+ table.fm141-t .fm141-acts>[data-save]{grid-column:1/-1;font-weight:900}
+ .fm141-bar>input[type=search]{flex-basis:100%;min-width:0}
+ .fm141-bar>select{flex:1;min-width:0}
+}
+</style>
 <script id="fm-v228-i18n">
 /* V228: English interface — dictionary (Arabic → English) and the translator (text nodes, placeholder / title, alert / confirm). Data stays as entered. */
 (function(){
