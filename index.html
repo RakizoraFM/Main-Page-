@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V254">
+<meta name="fm-version" content="V255">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V254',date:'2026-10-30',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V255',date:'2026-10-30',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V255',d:'2026-10-30',t:'🔁 عودة العطل تُحتسب على المنفّذ',i:['في «🗂️ سجل البلاغات»: البلاغ الذي يعود لنفس المدرسة بوصف مشابه خلال 7 أيام من حل بلاغ سابق يظهر عليه «🔁 عودة عطل بعد n يوم من البلاغ الأول — نفّذه فلان»','زر «👷 لنفس المنفّذ» يسند البلاغ العائد لمن نفّذ الأول بضغطة','«🔁 عودة الأعطال» أعلى الجدول: لكل منفّذ عدد البلاغات المغلقة وما عاد منها ونسبة العودة والحالات، مع Excel','مؤشر للمتابعة فقط — لا يغيّر تقييم الأداء الحالي']},
 {v:'V254',d:'2026-10-30',t:'✅ شروط إغلاق البلاغ ومراجعة الطارئ',i:['في «شروط الإغلاق» (الإعدادات) خيار جديد: إغلاق البلاغ الطارئ يحتاج اعتماد مهندس المنطقة — يعمل لما يُغلق من المنصة أو من تطبيق الميدان (حتى المرسَل بعد انقطاع الشبكة)','يصل لمهندس المنطقة ومدير المنطقة إشعار، وفي «🗂️ سجل البلاغات» زر «✅ مراجعة إغلاق الطارئ (n)»: اعتماد أو «↩️ إعادة للتنفيذ» مع السبب','الإعادة ترجع البلاغ لمرحلة «قيد التنفيذ» مع حدث في سجله ويُبلَّغ من أغلقه؛ ولا يعتمد أحد إغلاقاً قام به','تحت حالة البلاغ في السجل: «🟡 إغلاق طارئ بانتظار اعتماد المهندس» أو «↩️ أُعيد من المراجعة»','باقي الشروط كما هي ومشتركة بين المنصة والميدان: وصف الحل، سبب العطل، صورة بعد الحل']},
 {v:'V253',d:'2026-10-30',t:'⏸️ إيقاف مهلة البلاغ باعتماد',i:['في «🗂️ سجل البلاغات» زر «⏸️» لكل بلاغ: طلب إيقاف عداد المهلة لسبب مقبول (انتظار قطعة، المدرسة مغلقة، عطلة رسمية، تعذّر الدخول، بطلب العميل، سبب آخر) مع التفاصيل والفترة','يصل الطلب لمدير المنطقة فيعتمده أو يرفضه مع السبب (أو مدير العمليات / المشروع / النظام)، و«▶️ إنهاء» يعيد تشغيل العداد؛ ولا يعتمد مقدّم الطلب طلبه','المهلة الأصلية لا تتغير؛ يظهر تحتها «⏸️ n س — المعدّلة: ملتزم / غير ملتزم»، وعمود «المهلة المعدّلة» في Excel السجل','في تطبيق الميدان بطاقة «⏸️ طلب إيقاف مهلة بلاغ» للمشرف والمهندس مع حالة طلباته، وإشعار بالقرار']},
 {v:'V252',d:'2026-10-30',t:'🚩 إنذارات الحوكمة',i:['صفحة «🚩 إنذارات الحوكمة» في «التقارير»: كل علامات الخطر في مكان واحد لفترة 30 / 90 / 180 / 365 يوماً','المشتريات: طلب اعتمده مقدّمه، طلبات مرتبطة (تجزئة محتملة)، سعر فاتورة أعلى من المتفق بأكثر من 10%، مورد يأخذ أكثر من 60% من المشتريات، استثناءات مدير النظام','المستودع: أرصدة سالبة، فروقات جرد اعتمدها من سجّلها، نفس القطعة لنفس المدرسة أكثر من مرة خلال 30 يوماً، شخص يستهلك أكثر من 3 أضعاف متوسط زملائه','البلاغات: بلاغ أُغلق في المنصة بلا صورة بعد التنفيذ ولا وصف حل؛ أوامر العمل: أمر أُعيد للتصحيح مرتين أو أكثر؛ الزيارات: 3 زيارات أو أكثر سُجّلت على بعد أكثر من 500 م من المدرسة','لكل إنذار «🔎 افتح» لشاشته، و«✅ سليم» أو «⚠️ يحتاج إجراء» مع ملاحظة، وتصدير Excel؛ ومدير النظام يغيّر الحدود من «⚙️ الحدود»']},
@@ -32013,6 +32014,7 @@ const MANUAL=[
  {id:'v2-nav-recurring',t:'الأعطال المتكررة',where:'متابعة البلاغات ← «🔁 الأعطال المتكررة وجودة الإغلاق» ← تبويب «الأعطال المتكررة»',what:'البلاغات المتكررة في نفس المدرسة بنفس الوصف أو وصف مشابه.',how:['راجع المجموعات المتكررة، وحوّل المتكرر إلى أمر إصلاح جذري.'],who:'المديرون والمهندس',v:'V237'},
  {id:'v2-nav-fm131-cost',t:'الأعلى تكلفة تشغيلية',where:'المدارس والأعطال ← «الأعلى تكلفة تشغيلية»',what:'مؤشر عبء لكل مدرسة وترشيح الصيانة الوقائية أو دراسة الإحلال، مع تكلفة تقديرية اختيارية.',how:['راجع المدارس الأعلى عبئاً وخطط لها صيانة وقائية.'],who:'المديرون',v:'V131'},
  {id:'v2-nav-fm244-reg',t:'سجل البلاغات',where:'متابعة البلاغات ← «🗂️ سجل البلاغات»',what:'كل بلاغات المنطقة الحالية في صفحة واحدة، ومنها تُسند البلاغ لمنفّذ أو تعدّل مرحلته وبياناته.',how:['ابحث برقم البلاغ أو المدرسة أو المنفّذ، أو صفِّ بالحالة والمرحلة والأولوية والمهلة والمنفّذ والمشرف والتاريخ؛ العدّادات أعلى الصفحة تصفّي بضغطة («مفتوحة بلا منفّذ» مثلاً).','«👷 إسناد»: اكتب أو اختر اسم الفني / المقاول مع ملاحظة؛ البلاغ الذي لم يبدأ ينتقل إلى «مُسند للتنفيذ».','«🛠️ إدارة»: نافذة البلاغ الكاملة (المراحل، الأولوية، التصنيف، الوصف، المنفّذ، قطع الغيار، الصور، الملاحظات، تقرير الإغلاق).','حدد عدة بلاغات بمربع الاختيار ثم «👷 إسناد المحدد» أو «🔄 تحديث المرحلة»؛ «⬇️ Excel» يصدّر النتيجة المصفّاة.'],who:'كل من يدير البلاغات (المشاهد يرى فقط)',tips:['التعديل يُحفظ مع اسمك ويُرسل للسحابة مثل «🛠️ إدارة» في جدول البلاغات، فتتغير المؤشرات تبعاً للمرحلة الجديدة.'],v:'V250'},
+ {id:'fm255-repeat',t:'عودة العطل على المنفّذ',where:'متابعة البلاغات ← «🗂️ سجل البلاغات» ← «🔁 عودة الأعطال»',what:'يربط البلاغ العائد (نفس المدرسة، وصف مشابه، خلال 7 أيام من حل السابق) بالبلاغ الأول ومن نفّذه، ويحسب نسبة العودة لكل منفّذ.',how:['في السجل يظهر على البلاغ العائد «🔁 عودة عطل … — نفّذه فلان».','«👷 لنفس المنفّذ» يسنده لمن نفّذ الأول ليصلحه.','«🔁 عودة الأعطال (n)»: جدول المنفّذين بعدد المغلق والعائد ونسبة العودة، وExcel بالحالات.'],who:'من يرى سجل البلاغات؛ الإسناد لمن يملك تعديل البلاغات',tips:['المنفّذ هو المسجّل في المنصة للبلاغ الأول، وإلا مشرف البلاغ.','المؤشر للمتابعة ولا يدخل في درجة الأداء.'],v:'V255'},
  {id:'fm254-close',t:'شروط إغلاق البلاغ ومراجعة الطارئ',where:'الإعدادات ← «شروط إغلاق البلاغ»، وفي «🗂️ سجل البلاغات» زر «✅ مراجعة إغلاق الطارئ»',what:'شروط موحّدة للمنصة وتطبيق الميدان قبل «تم الحل»: وصف الحل، سبب العطل، صورة بعد الحل، واعتماد مهندس المنطقة لإغلاق البلاغ الطارئ.',how:['مدير النظام: فعّل الشروط المطلوبة واحفظ؛ تصل للجميع مع مزامنة الإعدادات.','عند إغلاق بلاغ طارئ يصل لمهندس المنطقة إشعار، ويظهر في السجل «🟡 بانتظار اعتماد المهندس».','المهندس يفتح «✅ مراجعة إغلاق الطارئ» ويعتمد أو يعيد البلاغ للتنفيذ مع السبب.'],who:'الإعداد لمدير النظام؛ المراجعة لمهندس ومدير المنطقة لمنطقتهما ومدير العمليات والمشروع والنظام',tips:['الإغلاق لا يُمنع أثناء الانتظار؛ الإعادة ترجع البلاغ لـ«قيد التنفيذ» وتُسجَّل في سجله.','لا يعتمد أحد إغلاقاً قام به بنفسه.'],v:'V254'},
  {id:'fm253-pause',t:'إيقاف مهلة البلاغ باعتماد',where:'متابعة البلاغات ← «🗂️ سجل البلاغات» ← «⏸️» على البلاغ، و«⏸️ إيقاف المهلة» أعلى الجدول؛ وفي تطبيق الميدان «⏸️ طلب إيقاف مهلة بلاغ»',what:'يُوقف عداد مهلة بلاغ لسبب مقبول بعد اعتماد مدير المنطقة، دون تغيير حساب المهلة الأصلي: تظهر «المهلة المعدّلة» بجانبه.',how:['اضغط «⏸️» على البلاغ، اختر السبب واكتب التفاصيل، وحدد البداية (الآن افتراضياً) والنهاية إن كانت معروفة.','مدير المنطقة يفتح «⏸️ إيقاف المهلة (n بانتظار)» ويعتمد أو يرفض مع السبب؛ «▶️ إنهاء» يعيد تشغيل العداد عند زوال السبب.','تحت المهلة في السجل: «⏸️ ساعات الإيقاف — المعدّلة: ملتزم / غير ملتزم»، وفي Excel عمود «المهلة المعدّلة».'],who:'الطلب: المشرف والمهندس ومديرو المنطقة؛ الاعتماد: مدير المنطقة لمنطقته، ومدير العمليات والمشروع والنظام',tips:['لا يمكن طلب إيقاف جديد والبلاغ عليه طلب معلق أو إيقاف قائم.','المؤشرات الرسمية (SLA) لم تتغير؛ المعدّلة للعرض والتفاوض مع العميل.'],v:'V253'},
  {id:'v2-nav-fm252-flags',t:'إنذارات الحوكمة',where:'التقارير والإرسال ← «🚩 إنذارات الحوكمة»',what:'علامات تستحق المراجعة في المشتريات والمستودع والبلاغات وأوامر العمل والزيارات في صفحة واحدة، مرتبة حسب الأهمية، مع تسجيل نتيجة المراجعة.',how:['اختر الفترة (30 / 90 / 180 / 365 يوماً)؛ البطاقات أعلى الصفحة تعرض عدد الإنذارات المفتوحة لكل مجال (اضغطها للتصفية).','لكل إنذار: «🔎 افتح» لفتح الشاشة المعنية (طلبات الشراء، الجرد، العهد، البلاغ، أمر العمل، الحضور).','بعد المراجعة: «✅ سليم» مع السبب، أو «⚠️ يحتاج إجراء» مع الإجراء المطلوب؛ يختفي الإنذار المراجَع ويظهر عند «إظهار ما تمت مراجعته».','«⬇️ Excel» لكل الإنذارات ونتائج مراجعتها، و«⚙️ الحدود» (مدير النظام) لتغيير النسب والأيام.'],who:'مدير النظام والإدارة والمشروع والعمليات، ومدير الجودة، والمحاسب، وممثل الجهة المالكة',tips:['الحدود الافتراضية: فرق سعر 10%، حصة مورد 60%، تكرار القطعة خلال 30 يوماً، استهلاك 3 أضعاف المتوسط، إعادة الأمر مرتين، 3 زيارات على بعد أكثر من 500 م.','الإنذار علامة للمراجعة وليس حكماً؛ سجّل السبب عند «سليم» ليبقى أثر المراجعة.'],v:'V252'},
@@ -38604,7 +38606,7 @@ function render(keepFocus){const p=page(),b=p.querySelector('.body');const A=row
  b.querySelectorAll('[data-a]').forEach(x=>x.onclick=()=>assignDlg([x.dataset.a],A));
  b.querySelectorAll('[data-s]').forEach(x=>x.onchange=()=>{x.checked?SEL.add(x.dataset.s):SEL.delete(x.dataset.s);bar(b)});
  const all=b.querySelector('[data-all]');if(all){all.checked=V.length&&V.every(x=>SEL.has(x.id));all.onchange=()=>{V.forEach(x=>all.checked?SEL.add(x.id):SEL.delete(x.id));b.querySelectorAll('[data-s]').forEach(c=>c.checked=all.checked);bar(b)}}
- const ba=b.querySelector('[data-ba]');if(ba){ba.onclick=()=>assignDlg([...SEL],A);b.querySelector('[data-bs]').onclick=()=>{if(window.fmV135Bulk){window.fmV135Bulk([...SEL]);watch()}};b.querySelector('[data-bc]').onclick=()=>{SEL.clear();render()}}try{window.fmV250Decorate?.(b)}catch(e){}try{window.fmV253Decorate?.(b)}catch(e){}try{window.fmV254Decorate?.(b)}catch(e){}}
+ const ba=b.querySelector('[data-ba]');if(ba){ba.onclick=()=>assignDlg([...SEL],A);b.querySelector('[data-bs]').onclick=()=>{if(window.fmV135Bulk){window.fmV135Bulk([...SEL]);watch()}};b.querySelector('[data-bc]').onclick=()=>{SEL.clear();render()}}try{window.fmV250Decorate?.(b)}catch(e){}try{window.fmV253Decorate?.(b)}catch(e){}try{window.fmV254Decorate?.(b)}catch(e){}try{window.fmV255Decorate?.(b)}catch(e){}}
 function bar(b){const s=b.querySelector('.fm244-sel');s.classList.toggle('on',SEL.size>0);s.querySelector('span').textContent='المحدد: '+SEL.size}
 /* re-render once the V135 dialog / bulk dialog closes */
 function watch(){const t0=Date.now();const iv=setInterval(()=>{const open=document.querySelector('.fm135-wrap,.fm122-dlg-wrap');if(!open&&Date.now()-t0>300){clearInterval(iv);if(document.getElementById('fm244-page')?.classList.contains('open')){SEL.clear();render()}}},400)}
@@ -39457,6 +39459,53 @@ window.fmV254List=listDlg;
 const go=h=>{if(String(h||'').replace(/^#+/,'')!=='tkrev')return;let k=0;const t=setInterval(()=>{if(++k>30||(on()&&window.fmV244Register)){clearInterval(t);if(window.fmV244Register){window.fmV244Register();setTimeout(listDlg,800)}}},1000)};
 window.addEventListener('hashchange',()=>go(location.hash));go(location.hash);
 navigator.serviceWorker?.addEventListener?.('message',e=>{if(e.data&&e.data.fmPush)go(e.data.hash)});
+})();
+</script>
+<script id="fm-v255-repeat">
+/* V255: a ticket that returns (same school, similar description, opened ≤ 7 days after the earlier one was resolved —
+   the V194 FM194Model.quality rule) is linked to the earlier one in «🗂️ سجل البلاغات»: chip «🔁 عودة عطل» with who fixed
+   the first one, «👷 لنفس المنفّذ» (fmV135Assign), and «🔁 عودة الأعطال حسب المنفّذ» (count and rate per executor, Excel).
+   No SQL and no change to any existing score. */
+(function(){
+if(window.__fm255)return;window.__fm255=1;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const reg=()=>(window.FM41&&FM41.active)||'';
+const st=()=>typeof state!=='undefined'?state:null;
+let K='',CASES=new Map(),EXE=new Map();
+function exec(r){const m=st().columnsMap||{};const id=S(r[m.ticketId]);let a='';try{a=S((JSON.parse(localStorage.getItem('fm_ticket_work_v135')||'{}')||{})[reg()+':'+id]?.assignee)}catch(e){}
+ if(a)return a;try{return S(getTicketStaff(r)?.supervisor)}catch(e){return ''}}
+function build(){const s=st();if(!s||!window.FM194Model)return;const R=s.rawTickets||[],m=s.columnsMap||{};const k=reg()+':'+R.length+':'+(s.detectedMaxDate||'');if(k===K)return;K=k;CASES=new Map();EXE=new Map();
+ const H={id:r=>r[m.ticketId],created:r=>parseDateTime(r[m.date]),resolved:r=>{const d=m.resolvedDate?parseDateTime(r[m.resolvedDate]):null;if(d)return d;const v=window.fmV135Record?.(r[m.ticketId],reg())?.resolvedAt;const x=v?new Date(v):null;return x&&!isNaN(x.getTime())?x:null},
+  closed:r=>['مغلق','تم حله'].includes(normalizeStatus(r[m.status])),cancelled:r=>['ملغى','خارج النطاق'].includes(normalizeStatus(r[m.status])),
+  school:r=>{const c=window.fmGetTicketBuildingCode?.(r)||window.fmAuthoritativeSchoolRecord?.(r)?.buildingId;return c&&window.fmCanonicalSchoolCode?'code:'+window.fmCanonicalSchoolCode(c):'name:'+FM194Model.text(r[m.school])},
+  description:r=>r[m.description],day:d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+ let Q;try{Q=FM194Model.quality(R,H,{})}catch(e){return}
+ for(const c of Q.cases||[]){const nid=S(c.new.id||H.id(c.new.r||c.new)),oid=S(c.old.id||H.id(c.old.r||c.old));const orow=c.old.r||R.find(x=>S(x[m.ticketId])===oid);
+  const ex=orow?exec(orow):'';const prev=CASES.get(nid);if(!prev||c.score>prev.score)CASES.set(nid,{old:oid,ex,days:Math.max(0,Math.round(c.hours/24*10)/10),score:c.score})}
+ // per executor: closed tickets and returns
+ for(const r of R){if(!H.closed(r))continue;const e=exec(r)||'غير محدد';const o=EXE.get(e)||{name:e,closed:0,ret:0,list:[]};o.closed++;EXE.set(e,o)}
+ for(const [nid,c] of CASES){const e=c.ex||'غير محدد';const o=EXE.get(e)||{name:e,closed:0,ret:0,list:[]};o.ret++;o.list.push(c.old+' ← '+nid);EXE.set(e,o)}}
+window.fmV255Cases=()=>{build();return CASES};
+window.fmV255Decorate=function(b){const t=b.querySelector('#fm244-t');if(!t)return;build();if(!CASES.size)return;
+ const hs=[...t.querySelectorAll('thead th')].map(th=>S(th.textContent));const ci=hs.indexOf('المدرسة / التصنيف');const ed=!!t.querySelector('[data-a]');
+ t.querySelectorAll('tbody tr[data-id]').forEach(tr=>{const c=CASES.get(tr.dataset.id);if(!c)return;const cell=ci>=0?tr.children[ci]:null;if(!cell||cell.querySelector('.fm255-b'))return;
+  cell.insertAdjacentHTML('beforeend',`<span class="fm253-b br fm255-b">🔁 عودة عطل بعد ${c.days} يوم من ${esc(c.old)}${c.ex?' — نفّذه '+esc(c.ex):''}</span>`);
+  const ac=tr.querySelector('.fm244-acts'),asgCell=tr.children[hs.indexOf('المنفّذ')];
+  if(ed&&ac&&c.ex&&c.ex!=='غير محدد'&&asgCell&&/بدون/.test(asgCell.textContent)&&!ac.querySelector('[data-f255]')){const bt=document.createElement('button');bt.className='fm244-btn';bt.dataset.f255=tr.dataset.id;bt.textContent='👷 لنفس المنفّذ';bt.title='إسناد البلاغ لمن نفّذ البلاغ الأول: '+c.ex;
+   bt.onclick=async()=>{const n=await window.fmV135Assign?.([tr.dataset.id],c.ex,'🔁 عودة عطل من '+c.old);if(n){toast('أُسند إلى '+c.ex);window.fmV244Render?.()}};ac.appendChild(bt)}});
+ const bar=b.querySelector('.fm244-bar');if(bar&&!bar.querySelector('[data-f255l]')){const bt=document.createElement('button');bt.className='fm244-btn';bt.dataset.f255l='1';bt.textContent='🔁 عودة الأعطال ('+CASES.size+')';bt.onclick=report;bar.insertBefore(bt,bar.querySelector('[data-clr]'))}};
+function report(){build();const L=[...EXE.values()].filter(o=>o.ret).sort((a,b)=>b.ret-a.ret||(b.ret/(b.closed||1))-(a.ret/(a.closed||1)));
+ const x=document.createElement('div');x.className='fm122-dlg-wrap';
+ x.innerHTML=`<div class="fm122-dlg fm253-dlg" style="width:min(820px,96vw)"><h3>🔁 عودة الأعطال حسب المنفّذ — ${esc(reg())}</h3><div class="meta">بلاغ جديد لنفس المدرسة بوصف مشابه خلال 7 أيام من حل بلاغ سابق يُحتسب «عودة» على من نفّذ البلاغ الأول (المنفّذ في المنصة، وإلا المشرف). مؤشر للمتابعة فقط ولا يغيّر تقييم الأداء.</div>
+  ${L.length?`<div class="fm103-tw" style="max-height:60vh"><table><thead><tr><th>المنفّذ</th><th>بلاغات مغلقة</th><th>عادت</th><th>نسبة العودة</th><th>الحالات</th></tr></thead><tbody>${L.map(o=>`<tr><td><b>${esc(o.name)}</b></td><td>${o.closed}</td><td>${o.ret}</td><td>${o.closed?Math.round(o.ret*1000/o.closed)/10+'%':'—'}</td><td style="font-size:11.5px">${o.list.slice(0,8).map(esc).join('<br>')}${o.list.length>8?'<br>…':''}</td></tr>`).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد أعطال عادت 👌</div>'}
+  <div class="row"><button data-xl>⬇️ Excel</button><button data-x>إغلاق</button></div></div>`;
+ document.body.appendChild(x);x.onclick=e=>{if(e.target===x)x.remove()};x.querySelector('[data-x]').onclick=()=>x.remove();
+ x.querySelector('[data-xl]').onclick=()=>{if(!window.XLSX)return;const wb=XLSX.utils.book_new();
+  const a=XLSX.utils.json_to_sheet(L.map(o=>({'المنفّذ':o.name,'بلاغات مغلقة':o.closed,'عادت':o.ret,'نسبة العودة %':o.closed?Math.round(o.ret*1000/o.closed)/10:''})));a['!views']=[{RTL:true}];XLSX.utils.book_append_sheet(wb,a,'حسب المنفّذ');
+  const b=XLSX.utils.json_to_sheet([...CASES].map(([n,c])=>({'البلاغ الجديد':n,'البلاغ الأول':c.old,'بعد (يوم)':c.days,'نفّذ الأول':c.ex,'التشابه':Math.round(c.score*100)+'%'})));b['!views']=[{RTL:true}];XLSX.utils.book_append_sheet(wb,b,'الحالات');
+  XLSX.writeFile(wb,'عودة_الأعطال_'+reg()+'.xlsx')}}
+window.fmV255Report=report;
 })();
 </script>
 <script id="fm-v228-i18n">
