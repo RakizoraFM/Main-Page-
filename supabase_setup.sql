@@ -11083,3 +11083,47 @@ grant execute on function public.fm_sup_staff(), public.fm_supplier_link_make(uu
   public.fm_supplier_inv_list(int), public.fm_supplier_inv_photo(uuid), public.fm_supplier_inv_act(uuid,text,text,text), public.fm_rfq_invite(uuid,uuid[]) to authenticated;
 grant execute on function public.fm_supplier_portal(text), public.fm_supplier_quote(text,uuid,jsonb), public.fm_supplier_invoice(text,jsonb) to anon, authenticated;
 notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 65 (V263): approved alternative items
+-- wo_material_alts: pairs (material, alt) kept in both directions; set by the warehouse (fm_wh_edit) per item with
+-- fm_mat_alt_set(material, alts[], note) (replaces that item's list; both items must be active). Read by every signed-in
+-- non-pending account (fm_mat_alts()). The apps suggest an alternative that has balance when the item runs out.
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.wo_material_alts (
+  material_id uuid not null references public.wo_materials(id) on delete cascade,
+  alt_id      uuid not null references public.wo_materials(id) on delete cascade,
+  note        text,
+  by_name     text,
+  at          timestamptz not null default now(),
+  primary key (material_id, alt_id),
+  check (material_id <> alt_id)
+);
+alter table public.wo_material_alts enable row level security;
+revoke all on public.wo_material_alts from public, anon, authenticated;
+
+create or replace function public.fm_mat_alt_set(p_material uuid, p_alts uuid[], p_note text default '') returns int language plpgsql security definer set search_path = public as $$
+declare a uuid; n int := 0; nm text := public.fm_me_name();
+begin
+  if auth.uid() is null or not public.fm_wh_edit() then raise exception 'not allowed'; end if;
+  if not exists (select 1 from public.wo_materials where id = p_material and active) then raise exception 'unknown material'; end if;
+  if coalesce(cardinality(p_alts),0) > 20 then raise exception 'too many'; end if;
+  delete from public.wo_material_alts where (material_id = p_material and not (alt_id = any(coalesce(p_alts,'{}')))) or (alt_id = p_material and not (material_id = any(coalesce(p_alts,'{}'))));
+  foreach a in array coalesce(p_alts,'{}') loop
+    if a = p_material then continue; end if;
+    if not exists (select 1 from public.wo_materials where id = a and active) then raise exception 'unknown material'; end if;
+    insert into public.wo_material_alts(material_id, alt_id, note, by_name) values (p_material, a, left(nullif(btrim(coalesce(p_note,'')),''),200), nm)
+      on conflict (material_id, alt_id) do update set note = excluded.note, by_name = excluded.by_name, at = now();
+    insert into public.wo_material_alts(material_id, alt_id, note, by_name) values (a, p_material, left(nullif(btrim(coalesce(p_note,'')),''),200), nm)
+      on conflict (material_id, alt_id) do update set note = excluded.note, by_name = excluded.by_name, at = now();
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+create or replace function public.fm_mat_alts() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('m', a.material_id, 'a', a.alt_id, 'note', a.note)), '[]'::jsonb)
+    from public.wo_material_alts a join public.wo_materials x on x.id = a.alt_id and x.active
+   where auth.uid() is not null and public.fm_role() <> 'pending' $$;
+revoke all on function public.fm_mat_alt_set(uuid,uuid[],text), public.fm_mat_alts() from public, anon;
+grant execute on function public.fm_mat_alt_set(uuid,uuid[],text), public.fm_mat_alts() to authenticated;
+notify pgrst, 'reload schema';
