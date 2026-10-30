@@ -55,13 +55,13 @@ const W=[
  for(const [fn,body,who,why] of W)for(const t of who){const k=T[t][0];if(!TOK[k])continue;const r=await rpc(k,fn,body);
   check('الصلاحيات',fn+' مرفوض لـ '+t,!r.ok,(r.ok?'⚠️ قُبل! ':'')+msg(r).slice(0,60)+' — '+why)}
  /* 3) every page with every account */
- const BLOCK=[];const RPC_OK=/\/rest\/v1\/rpc\/(fm_touch|fm_role|fm_my_pos|fm233_read|fm233_manage|fm195_orders|fm195_schedules|fm195_inbox|fm_bld_costs|fm_deputy_principals|fm_custody_overdue|fm_[a-z0-9_]*(list|get|me|people|info|data|feed|cfg|can|sees|checks|report|mods_on|names|regions|scores|assignable|candidates|status|waiting|reserved|stagnant|remaining|plan|counts|parts|alts|abnormal|flags|closed|kinds|lead|leaves|my|inbox|watch_list|usage|my_schools|my_school_db|db)[a-z0-9_]*)$/;
+ const BLOCK=[];const RPC_OK=/\/rest\/v1\/rpc\/(fm_touch|fm_role|fm_my_pos|fm233_read|fm233_manage|fm195_orders|fm195_schedules|fm195_inbox|fm_bld_costs|fm_deputy_principals|fm_custody_overdue|fm_custody_idle|fm_[a-z0-9_]*(list|get|me|people|info|data|feed|cfg|can|sees|checks|report|mods_on|names|regions|scores|assignable|candidates|status|waiting|reserved|stagnant|remaining|plan|counts|parts|alts|abnormal|flags|closed|kinds|lead|leaves|my|inbox|watch_list|usage|my_schools|my_school_db|db)[a-z0-9_]*)$/;
  async function route(rt,who){const q=rt.request(),u=q.url(),m=q.method();
   if(/supabase\.co/.test(u)&&!['GET','HEAD','OPTIONS'].includes(m)&&!RPC_OK.test(u.split('?')[0])&&!/\/auth\/v1\/(token|logout|user)/.test(u)){BLOCK.push(who+': '+m+' '+u.replace(/^https:\/\/[^/]+/,'').split('?')[0]);return rt.fulfill({status:403,contentType:'application/json',body:'{"message":"blocked by test guard"}'})}
   try{const h=Object.assign({},q.headers());delete h.host;const r=await fetch(u,{method:m,headers:h,body:['GET','HEAD'].includes(m)?undefined:q.postDataBuffer()});
    const hd={};r.headers.forEach((v,k)=>{if(!/content-encoding|content-length|transfer-encoding/.test(k))hd[k]=v});await rt.fulfill({status:r.status,headers:hd,body:Buffer.from(await r.arrayBuffer())})}catch(e){await rt.abort().catch(()=>{})}}
  const b=await chromium.launch();const SUM={};
- for(const [t,[k]] of Object.entries(T)){if(!TOK[k]){skip('الصفحات',t,'لا حساب');continue}
+ for(const [t,[k]] of Object.entries(T)){if(process.env.FM_ROLES_ONLY&&!process.env.FM_ROLES_ONLY.split(',').includes(t))continue;if(!TOK[k]){skip('الصفحات',t,'لا حساب');continue}
   const ERR=[];const ctx=await b.newContext({viewport:{width:1400,height:950},acceptDownloads:true});await ctx.route(/^https:\/\//,rt=>route(rt,t));
   const p=await ctx.newPage();p.on('pageerror',e=>ERR.push(e.message.slice(0,140)));p.on('dialog',d=>d.dismiss().catch(()=>{}));
   await p.goto('file://'+path.join(ROOT,'start.html'));await p.waitForTimeout(2500);await p.fill('#l-e',C[k].email);await p.fill('#l-p',C[k].password);await p.click('#l-go');
@@ -83,8 +83,9 @@ const W=[
    for(const v of tabs){const e0=ERR.length;await p.evaluate(x=>document.querySelector(`.bnav button[data-v="${x}"]`)?.click(),v);await p.waitForTimeout(1800);S.pages++;if(ERR.length>e0)S.fail.push('tab '+v+' ⇒ '+ERR.slice(e0).join(' | '))}
    await p.evaluate(()=>document.querySelector('.bnav button[data-v=home]')?.click());await p.waitForTimeout(1500);
    const cards=await p.evaluate(()=>[...document.querySelectorAll('#app .card.hello ~ button[id], #app button[id$="-h"]')].map(x=>x.id).filter((x,i,a)=>a.indexOf(x)===i));
-   for(const id of cards){const e0=ERR.length;await p.evaluate(i=>document.getElementById(i)?.click(),id);await p.waitForTimeout(1500);S.pages++;
-    const sh=await p.evaluate(()=>!!document.querySelector('.sheet.open,dialog[open],[id^=f][class*=sheet].open'));if(!sh)S.fail.push('لم تفتح بطاقة: '+id);if(ERR.length>e0)S.fail.push(id+' ⇒ '+ERR.slice(e0).join(' | '));
+   for(const id of cards){const e0=ERR.length;const h0=await p.evaluate(()=>document.getElementById('app')?.innerHTML.length+':'+(document.querySelector('.bnav button.on,.bnav button.active')?.dataset.v||''));await p.evaluate(i=>document.getElementById(i)?.click(),id);await p.waitForTimeout(1500);S.pages++;
+    const sh=await p.evaluate(h0=>!!document.querySelector('.sheet.open,dialog[open],[id^=f][class*=sheet].open')||(document.getElementById('app')?.innerHTML.length+':'+(document.querySelector('.bnav button.on,.bnav button.active')?.dataset.v||''))!==h0,h0);
+    await p.evaluate(()=>document.querySelector('.bnav button[data-v=home]')?.click());await p.waitForTimeout(600);if(!sh)S.fail.push('لم تفتح بطاقة: '+id);if(ERR.length>e0)S.fail.push(id+' ⇒ '+ERR.slice(e0).join(' | '));
     await p.evaluate(()=>{document.querySelectorAll('.sheet.open [data-x],.sheet.open .hd button').forEach(b=>b.click());document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open'));document.querySelectorAll('dialog[open]').forEach(d=>d.close())});await p.waitForTimeout(300)}
    await p.screenshot({path:path.join(OUT,'roles_'+t+'.png')})}
   S.errs=ERR.length;SUM[t]=S;
