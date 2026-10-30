@@ -10721,3 +10721,165 @@ end $$;
 revoke all on function public.fm_recon_can_sign(uuid), public.fm_custody_recon_list(text), public.fm_custody_recon_get(uuid,text), public.fm_custody_recon_sign(uuid,text,boolean,text) from public, anon;
 grant execute on function public.fm_recon_can_sign(uuid), public.fm_custody_recon_list(text), public.fm_custody_recon_get(uuid,text), public.fm_custody_recon_sign(uuid,text,boolean,text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 63 (V260): framework agreements with suppliers
+-- An agreement fixes prices for a period with an optional value cap and per-item quantity caps. A purchase request
+-- raised from it (fm_fa_order → fm_po_save with the agreement prices, no quotations) carries framework_id and still goes
+-- through the normal approval (fm_po_act). Used = requests approved / partial / received (and requested, as reserved).
+-- fm_v260_daily() (pg_cron fm-v260-daily 05:55 UTC): push wh_fa to the managers at 30 / 7 / 0 days before the end and
+-- once when 80 % of the cap is used.
+-- ═══════════════════════════════════════════════════════════════════════════
+create sequence if not exists public.wo_fa_seq;
+create table if not exists public.wo_frameworks (
+  id          uuid primary key default gen_random_uuid(),
+  code        text unique not null default ('FA-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_fa_seq')::text, 3, '0')),
+  supplier_id uuid not null references public.wo_suppliers(id) on delete restrict,
+  title       text not null,
+  ref         text,
+  regions     text[] not null default '{}',
+  start_date  date not null,
+  end_date    date not null,
+  cap_value   numeric(14,2) not null default 0,
+  lines       jsonb not null default '[]',   -- [{material_id, price, cap_qty}]
+  status      text not null default 'active' check (status in ('active','ended','cancelled')),
+  note        text,
+  alerts      jsonb not null default '{}',
+  by_id       uuid references public.profiles(id) on delete set null,
+  by_name     text,
+  at          timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+alter table public.wo_frameworks enable row level security;
+revoke all on public.wo_frameworks from public, anon, authenticated;
+alter table public.wo_purchase_requests add column if not exists framework_id uuid references public.wo_frameworks(id) on delete set null;
+
+create or replace function public.fm_fa_can_edit() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_wh_admin() or public.fm_my_pos() in ('dept_manager','accountant'), false) $$;
+
+-- internal: usage of an agreement
+create or replace function public.fm_fa_used(f uuid) returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'value', coalesce(sum(r.total) filter (where r.status in ('approved','partial','received')), 0),
+    'pending', coalesce(sum(r.total) filter (where r.status = 'requested'), 0),
+    'n', count(*) filter (where r.status not in ('rejected','cancelled')),
+    'qty', coalesce((select jsonb_object_agg(k, q) from (select l->>'material_id' k, sum((l->>'qty')::numeric) q
+        from public.wo_purchase_requests r2 cross join lateral jsonb_array_elements(r2.lines) l
+       where r2.framework_id = f and r2.status not in ('rejected','cancelled') group by 1) z), '{}'::jsonb))
+    from public.wo_purchase_requests r where r.framework_id = f and r.status not in ('rejected','cancelled') $$;
+revoke all on function public.fm_fa_used(uuid) from public, anon, authenticated;
+
+create or replace function public.fm_fa_save(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare id_ uuid := nullif(p->>'id','')::uuid; x jsonb; L jsonb := '[]'; s uuid := nullif(p->>'supplier_id','')::uuid; d1 date; d2 date; r public.wo_frameworks; pr numeric; cq numeric; seen text[] := '{}';
+begin
+  if auth.uid() is null or not public.fm_fa_can_edit() then raise exception 'not allowed'; end if;
+  if not public.fm_mod('wh') then raise exception 'module disabled'; end if;
+  if not exists (select 1 from public.wo_suppliers where id = s) then raise exception 'unknown supplier'; end if;
+  if length(btrim(coalesce(p->>'title',''))) < 3 then raise exception 'title required'; end if;
+  d1 := (p->>'start_date')::date; d2 := (p->>'end_date')::date;
+  if d1 is null or d2 is null or d2 < d1 then raise exception 'invalid dates'; end if;
+  if coalesce(nullif(p->>'cap_value','')::numeric,0) < 0 then raise exception 'invalid cap'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    if not exists (select 1 from public.wo_materials where id = nullif(x->>'material_id','')::uuid and active) then raise exception 'unknown material'; end if;
+    if (x->>'material_id') = any(seen) then raise exception 'duplicate material'; end if; seen := seen || (x->>'material_id');
+    pr := nullif(x->>'price','')::numeric; if pr is null or pr <= 0 then raise exception 'invalid price'; end if;
+    cq := coalesce(nullif(x->>'cap_qty','')::numeric,0); if cq < 0 then raise exception 'invalid qty'; end if;
+    L := L || jsonb_build_object('material_id', x->>'material_id', 'price', round(pr,2), 'cap_qty', cq);
+  end loop;
+  if jsonb_array_length(L) = 0 or jsonb_array_length(L) > 500 then raise exception 'no lines'; end if;
+  if id_ is null then
+    insert into public.wo_frameworks(supplier_id, title, ref, regions, start_date, end_date, cap_value, lines, note, by_id, by_name)
+    values (s, left(btrim(p->>'title'),200), left(nullif(btrim(coalesce(p->>'ref','')),''),100),
+      coalesce((select array_agg(v) from jsonb_array_elements_text(case when jsonb_typeof(p->'regions') = 'array' then p->'regions' else '[]' end) v), '{}'),
+      d1, d2, coalesce(nullif(p->>'cap_value','')::numeric,0), L, left(nullif(btrim(coalesce(p->>'note','')),''),1000), auth.uid(), public.fm_me_name()) returning * into r;
+  else
+    update public.wo_frameworks set supplier_id = s, title = left(btrim(p->>'title'),200), ref = left(nullif(btrim(coalesce(p->>'ref','')),''),100),
+      regions = coalesce((select array_agg(v) from jsonb_array_elements_text(case when jsonb_typeof(p->'regions') = 'array' then p->'regions' else '[]' end) v), '{}'),
+      start_date = d1, end_date = d2, cap_value = coalesce(nullif(p->>'cap_value','')::numeric,0), lines = L, note = left(nullif(btrim(coalesce(p->>'note','')),''),1000), updated_at = now()
+     where id = id_ and status = 'active' returning * into r;
+    if not found then raise exception 'invalid status'; end if;
+  end if;
+  return jsonb_build_object('id', r.id, 'code', r.code);
+end $$;
+
+create or replace function public.fm_fa_end(p_id uuid, p_cancel boolean default false, p_note text default '') returns text language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_fa_can_edit() then raise exception 'not allowed'; end if;
+  update public.wo_frameworks set status = case when p_cancel then 'cancelled' else 'ended' end, note = concat_ws(' — ', note, nullif(btrim(coalesce(p_note,'')),'')), updated_at = now()
+   where id = p_id and status = 'active';
+  if not found then raise exception 'invalid status'; end if;
+  return 'ok';
+end $$;
+
+create or replace function public.fm_fa_list() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare today date := (now() at time zone 'Asia/Riyadh')::date;
+begin
+  if auth.uid() is null or public.fm_role() in ('pending') or public.fm_my_pos() in ('supervisor','contractor') then raise exception 'not allowed'; end if;
+  return jsonb_build_object('can_edit', public.fm_fa_can_edit(), 'rows', coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'code', f.code, 'title', f.title, 'ref', f.ref,
+      'supplier_id', f.supplier_id, 'supplier', s.name, 'regions', to_jsonb(f.regions), 'start', f.start_date, 'end', f.end_date, 'cap', f.cap_value, 'lines', f.lines,
+      'status', case when f.status = 'active' and f.end_date < today then 'expired' else f.status end, 'note', f.note, 'by', f.by_name, 'at', f.at,
+      'days_left', f.end_date - today, 'used', public.fm_fa_used(f.id)) order by (f.status = 'active') desc, f.end_date)
+    from public.wo_frameworks f left join public.wo_suppliers s on s.id = f.supplier_id
+   where cardinality(f.regions) = 0 or public.fm_role() = 'admin' or public.fm_scope_all() or f.regions && public.fm_regions() or public.fm_my_pos() in ('accountant','owner_rep')), '[]'::jsonb));
+end $$;
+
+-- p {fa_id, store_id, lines:[{material_id, qty}], note}
+create or replace function public.fm_fa_order(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare f public.wo_frameworks; st public.wo_stores; x jsonb; ln jsonb; L jsonb := '[]'; u jsonb; t numeric := 0; q numeric; res jsonb; today date := (now() at time zone 'Asia/Riyadh')::date;
+begin
+  select * into f from public.wo_frameworks where id = nullif(p->>'fa_id','')::uuid for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if f.status <> 'active' or today < f.start_date or today > f.end_date then raise exception 'agreement not active'; end if;
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if not found then raise exception 'not allowed'; end if;
+  if cardinality(f.regions) > 0 and not (st.region = any(f.regions)) then raise exception 'region not covered'; end if;
+  u := public.fm_fa_used(f.id);
+  if jsonb_typeof(p->'lines') <> 'array' or jsonb_array_length(p->'lines') = 0 then raise exception 'no lines'; end if;
+  for x in select * from jsonb_array_elements(p->'lines') loop
+    ln := null;
+    select fl.e into ln from jsonb_array_elements(f.lines) fl(e) where fl.e->>'material_id' = x->>'material_id';
+    if ln is null then raise exception 'item not in agreement'; end if;
+    q := nullif(x->>'qty','')::numeric; if q is null or q <= 0 then raise exception 'invalid qty'; end if;
+    if coalesce((ln->>'cap_qty')::numeric,0) > 0 and coalesce((u->'qty'->>(x->>'material_id'))::numeric,0) + q > (ln->>'cap_qty')::numeric then
+      raise exception 'quantity cap exceeded %', x->>'material_id'; end if;
+    L := L || jsonb_build_object('material_id', x->>'material_id', 'qty', q, 'price', (ln->>'price')::numeric); t := t + q * (ln->>'price')::numeric;
+  end loop;
+  if f.cap_value > 0 and (u->>'value')::numeric + (u->>'pending')::numeric + t > f.cap_value then raise exception 'value cap exceeded'; end if;
+  res := public.fm_po_save(jsonb_build_object('store_id', st.id, 'supplier_id', f.supplier_id, 'lines', L,
+    'note', concat_ws(' — ', f.code || ' — اتفاقية إطارية: ' || f.title, nullif(btrim(coalesce(p->>'note','')),''))));
+  update public.wo_purchase_requests set framework_id = f.id where id = (res->>'id')::uuid;
+  return res || jsonb_build_object('total', round(t,2));
+end $$;
+
+create or replace function public.fm_v260_daily() returns int language plpgsql security definer set search_path = public as $$
+declare f record; u uuid; n int := 0; today date := (now() at time zone 'Asia/Riyadh')::date; k text; used numeric; msg text; ev jsonb;
+begin
+  for f in select * from public.wo_frameworks where status = 'active' loop
+    ev := '[]'::jsonb;
+    if f.end_date - today in (30, 7, 0) and not (f.alerts ? ('end' || (f.end_date - today) || ':' || f.end_date)) then
+      ev := ev || jsonb_build_object('k', 'end' || (f.end_date - today) || ':' || f.end_date, 'm', case when f.end_date = today then 'تنتهي اليوم' else 'تنتهي خلال ' || (f.end_date - today) || ' يوم' end);
+    end if;
+    if f.cap_value > 0 and not (f.alerts ? 'cap80') then
+      used := (public.fm_fa_used(f.id)->>'value')::numeric;
+      if used >= f.cap_value * 0.8 then ev := ev || jsonb_build_object('k', 'cap80', 'm', 'استُهلك ' || round(used / f.cap_value * 100) || '% من سقفها'); end if;
+    end if;
+    for k, msg in select e->>'k', e->>'m' from jsonb_array_elements(ev) e loop
+      update public.wo_frameworks set alerts = alerts || jsonb_build_object(k, now()) where id = f.id;
+      for u in select p.id from public.profiles p where p.active and public.fm_posx(p.role, p.job_title) in ('sysadmin','project_manager','ops_manager','accountant') loop
+        begin perform public.fm_push_add(u, 'wh_fa', '📑 اتفاقية إطارية ' || f.code || ': ' || msg, f.title, 'wh=fa', 'fa-' || f.code || '-' || k, false); exception when others then null; end;
+      end loop;
+      n := n + 1;
+    end loop;
+  end loop;
+  update public.wo_frameworks set status = 'ended', updated_at = now() where status = 'active' and end_date < today - 30;
+  return n;
+end $$;
+revoke all on function public.fm_v260_daily() from public, anon, authenticated;
+revoke all on function public.fm_fa_can_edit(), public.fm_fa_save(jsonb), public.fm_fa_end(uuid,boolean,text), public.fm_fa_list(), public.fm_fa_order(jsonb) from public, anon;
+grant execute on function public.fm_fa_can_edit(), public.fm_fa_save(jsonb), public.fm_fa_end(uuid,boolean,text), public.fm_fa_list(), public.fm_fa_order(jsonb) to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v260-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v260-daily'', ''55 5 * * *'', ''select public.fm_v260_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: framework agreement reminders are not pushed'; end;
+end $do$;
+notify pgrst, 'reload schema';
