@@ -8847,6 +8847,23 @@ begin
   exception when others then null; end;
 end $$;
 
+-- one news item for the whole project naming this run's winners (badges inserted in this transaction)
+create or replace function public.fm_badge_month_news(p_month text) returns void language plpgsql security definer set search_path = public as $$
+declare k jsonb := public.fm_badge_kinds(); mn text; head text; body text;
+  ar text[] := array['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+begin
+  mn := ar[substr(p_month,6,2)::int] || ' ' || substr(p_month,1,4);
+  select string_agg((k->b.kind->>'i') || ' ' || b.user_name, '، ' order by b.kind, b.user_name) into head
+    from public.fm_badges b where b.period = p_month and b.auto and not b.revoked and b.at = now();
+  if head is null then return; end if;
+  select string_agg((k->x.kind->>'i') || ' ' || (k->x.kind->>'t') || ': ' || x.names, E'\n' order by x.kind) into body
+    from (select b.kind, string_agg(b.user_name || coalesce(' (' || nullif(b.reason,'') || ')',''), '، ' order by b.user_name) names
+            from public.fm_badges b where b.period = p_month and b.auto and not b.revoked and b.at = now() group by b.kind) x;
+  head := '🏅 متميزو ' || mn || ': ' || head;
+  if length(head) > 300 then head := left(head, 290) || ' …'; end if;
+  perform public.fm_badge_news(head, coalesce(body,'') || E'\n\nالتفاصيل في «🏅 لوحة الشرف».');
+end $$;
+
 -- manual badge
 create or replace function public.fm_badge_award(p_user uuid, p_kind text, p_reason text) returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -8948,7 +8965,7 @@ begin
   end loop;
   insert into public.fm_badge_runs(period, src, region, by_name, n) values (m, 'server', '', coalesce(nm,'تلقائي'), n)
   on conflict (period, src, region) do update set at = now(), by_name = excluded.by_name, n = public.fm_badge_runs.n + excluded.n;
-  if n > 0 then perform public.fm_badge_news('🏅 شارات شهر ' || m || ': ' || n || ' شارة جديدة', 'افتح «🏅 لوحة الشرف» لمعرفة المتميزين.'); end if;
+  if n > 0 then perform public.fm_badge_month_news(m); end if;
   return n;
 end $$;
 
@@ -8974,11 +8991,11 @@ begin
   end loop;
   insert into public.fm_badge_runs(period, src, region, by_name, n) values (p_month, 'tickets', coalesce(p_region,''), nm, n)
   on conflict (period, src, region) do update set at = now(), by_name = excluded.by_name, n = public.fm_badge_runs.n + excluded.n;
-  if n > 0 then perform public.fm_badge_news('🏅 شارات البلاغات لشهر ' || p_month || ': ' || n || ' شارة', 'افتح «🏅 لوحة الشرف» لمعرفة المتميزين.'); end if;
+  if n > 0 then perform public.fm_badge_month_news(p_month); end if;
   return n;
 end $$;
 
-revoke all on function public.fm_badge_put(uuid,text,text,boolean,numeric,text,uuid,text), public.fm_badge_news(text,text) from public, anon, authenticated;
+revoke all on function public.fm_badge_put(uuid,text,text,boolean,numeric,text,uuid,text), public.fm_badge_news(text,text), public.fm_badge_month_news(text) from public, anon, authenticated;
 revoke all on function public.fm_badge_kinds(), public.fm_badge_titles(), public.fm_badge_can_award(uuid), public.fm_badge_people(), public.fm_badge_award(uuid,text,text),
   public.fm_badge_revoke(uuid,text), public.fm_badge_list(int), public.fm_badge_run(text), public.fm_badge_submit(text,text,jsonb) from public, anon;
 grant execute on function public.fm_badge_kinds(), public.fm_badge_titles(), public.fm_badge_can_award(uuid), public.fm_badge_people(), public.fm_badge_award(uuid,text,text),
