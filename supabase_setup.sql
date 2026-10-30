@@ -10399,3 +10399,121 @@ revoke all on function public.fm_tk_close_trg() from public, anon, authenticated
 revoke all on function public.fm_tkrev_can(text), public.fm_tk_close_list(text), public.fm_tk_close_act(uuid,text,text) from public, anon;
 grant execute on function public.fm_tkrev_can(text), public.fm_tk_close_list(text), public.fm_tk_close_act(uuid,text,text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 60 (V256): random audit sample of closed tickets (QA manager)
+-- The platform sends the tickets closed in a month; the server picks a random share (fm_settings.qa.sample_pct, V158),
+-- the QA manager visits and rules pass / fail. A fail may send the ticket back to work (ticket_work stage progress).
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.fm_tk_audits (
+  id         uuid primary key default gen_random_uuid(),
+  code       text unique,
+  region     text not null,
+  ticket_id  text not null,
+  month      text not null,
+  school     text,
+  priority   text,
+  category   text,
+  closed_at  timestamptz,
+  executor   text,
+  sol        text,
+  status     text not null default 'pending' check (status in ('pending','pass','fail')),
+  note       text,
+  photo      text,
+  reopened   boolean not null default false,
+  sampled_by uuid references public.profiles(id) on delete set null,
+  sampled_at timestamptz not null default now(),
+  dec_by     uuid references public.profiles(id) on delete set null,
+  dec_name   text,
+  dec_at     timestamptz
+);
+create unique index if not exists fm_tk_audits_one on public.fm_tk_audits (region, ticket_id);
+create index if not exists fm_tk_audits_month on public.fm_tk_audits (region, month);
+alter table public.fm_tk_audits enable row level security;
+revoke all on public.fm_tk_audits from public, anon, authenticated;
+
+create or replace function public.fm_tka_can(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','qa_manager'), false) $$;
+create or replace function public.fm_tka_sees(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_tka_can(p_region) or public.fm_scope_all()
+    or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(coalesce(p_region,''))), false) $$;
+
+-- p_rows: [{id, school, priority, cat, closed, exec, sol}] = the tickets closed in the month (≤ 5000)
+create or replace function public.fm_tk_audit_sample(p_region text, p_month text, p_rows jsonb, p_pct numeric default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare pct numeric := coalesce(p_pct, (public.fm_setting('qa')->>'sample_pct')::numeric, 5); tot int; want int; have int; n int := 0; r jsonb; y text := left(p_month,4); seq int;
+begin
+  if auth.uid() is null or not public.fm_tka_can(p_region) then raise exception 'not allowed'; end if;
+  if not public.fm_mod('tickets') then raise exception 'module disabled'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 5000 then raise exception 'invalid rows'; end if;
+  if pct is null or pct <= 0 or pct > 100 then raise exception 'invalid pct'; end if;
+  tot := jsonb_array_length(p_rows);
+  if tot = 0 then return jsonb_build_object('total', 0, 'added', 0, 'have', 0); end if;
+  want := greatest(1, ceil(tot * pct / 100.0)::int);
+  perform pg_advisory_xact_lock(hashtext('fm_tka:' || p_region || ':' || p_month));
+  select count(*) into have from public.fm_tk_audits where region = p_region and month = p_month;
+  for r in select x from jsonb_array_elements(p_rows) x
+            where nullif(btrim(x->>'id'),'') is not null
+              and not exists (select 1 from public.fm_tk_audits a where a.region = p_region and a.ticket_id = btrim(x->>'id'))
+            order by random() limit greatest(0, want - have) loop
+    select coalesce(max(substring(code from '\d+$')::int), 0) + 1 into seq from public.fm_tk_audits where code like 'TA-' || y || '-%';
+    insert into public.fm_tk_audits(code, region, ticket_id, month, school, priority, category, closed_at, executor, sol, sampled_by)
+    values ('TA-' || y || '-' || lpad(seq::text, 4, '0'), p_region, btrim(r->>'id'), p_month, left(r->>'school',200), left(r->>'priority',40), left(r->>'cat',120),
+      case when (r->>'closed') ~ '^\d{4}-\d{2}-\d{2}' then (r->>'closed')::timestamptz end, left(r->>'exec',120), left(r->>'sol',1000), auth.uid())
+    on conflict do nothing;
+    n := n + 1;
+  end loop;
+  return jsonb_build_object('total', tot, 'want', want, 'added', n, 'have', have + n, 'pct', pct);
+end $$;
+
+create or replace function public.fm_tk_audit_list(p_region text, p_month text default null) returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('can', public.fm_tka_can(p_region), 'sees', public.fm_tka_sees(p_region),
+    'pct', coalesce((public.fm_setting('qa')->>'sample_pct')::numeric, 5),
+    'rows', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'code', code, 'ticket', ticket_id, 'month', month, 'school', school, 'priority', priority,
+        'cat', category, 'closed', closed_at, 'exec', executor, 'sol', sol, 'status', status, 'note', note, 'photo', photo is not null, 'reopened', reopened,
+        'dec', dec_name, 'dec_at', dec_at) order by (status = 'pending') desc, sampled_at desc)
+      from public.fm_tk_audits where region = p_region and (p_month is null or month = p_month) and public.fm_tka_sees(p_region)), '[]'::jsonb))
+  where auth.uid() is not null $$;
+
+create or replace function public.fm_tk_audit_photo(p_id uuid) returns text language sql stable security definer set search_path = public as $$
+  select photo from public.fm_tk_audits where id = p_id and auth.uid() is not null and public.fm_tka_sees(region) $$;
+
+create or replace function public.fm_tk_audit_review(p_id uuid, p_result text, p_note text default '', p_reopen boolean default false, p_photo text default null) returns text
+language plpgsql security definer set search_path = public as $$
+declare a public.fm_tk_audits; nm text := public.fm_me_name(); u uuid;
+begin
+  select * into a from public.fm_tk_audits where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if not public.fm_tka_can(a.region) then raise exception 'not allowed'; end if;
+  if p_result not in ('pass','fail') then raise exception 'invalid action'; end if;
+  if a.status <> 'pending' then raise exception 'invalid status'; end if;
+  if p_result = 'fail' and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  if p_photo is not null and (length(p_photo) > 420000 or p_photo !~ '^data:image/(jpeg|png|webp);base64,') then raise exception 'invalid photo'; end if;
+  update public.fm_tk_audits set status = p_result, note = left(nullif(btrim(coalesce(p_note,'')),''),1000), photo = coalesce(p_photo, photo),
+    reopened = (p_result = 'fail' and coalesce(p_reopen,false)), dec_by = auth.uid(), dec_name = nm, dec_at = now() where id = p_id;
+  if p_result = 'fail' and coalesce(p_reopen,false) then
+    insert into public.ticket_work(region, ticket_id, stage, rec, resolved_at, updated_by, updated_by_name)
+    values (a.region, a.ticket_id, 'progress', jsonb_build_object('stage','progress','reopened',1,'returnNote', left(btrim(p_note),500), 'updated', (extract(epoch from now()) * 1000)::bigint), null, auth.uid(), nm)
+    on conflict (region, ticket_id) do update set stage = 'progress', resolved_at = null, updated_at = now(), updated_by = auth.uid(), updated_by_name = nm,
+      rec = public.ticket_work.rec || jsonb_build_object('stage','progress','reopened', coalesce((public.ticket_work.rec->>'reopened')::int,0) + 1, 'returnNote', left(btrim(p_note),500), 'updated', (extract(epoch from now()) * 1000)::bigint);
+  end if;
+  insert into public.ticket_events(region, ticket_id, by_name, type, stage, text) values (a.region, a.ticket_id, nm,
+    case when p_result = 'fail' and coalesce(p_reopen,false) then 'stage' else 'note' end, case when p_result = 'fail' and coalesce(p_reopen,false) then 'progress' end,
+    case when p_result = 'pass' then '✅ تدقيق الجودة ' || a.code || ': مطابق' else '❌ تدقيق الجودة ' || a.code || ': غير مطابق — ' || left(btrim(p_note),400)
+      || case when coalesce(p_reopen,false) then ' (أُعيد للتنفيذ)' else '' end end || case when p_result = 'pass' and nullif(btrim(coalesce(p_note,'')),'') is not null then ' — ' || left(btrim(p_note),300) else '' end);
+  if p_result = 'fail' then
+    begin
+      for u in select * from public.fm_push_people(array['area_engineer','area_manager'], a.region) loop
+        perform public.fm_push_add(u, 'tk_audit', '❌ بلاغ غير مطابق في تدقيق الجودة ' || a.ticket_id, concat_ws(' — ', a.school, a.executor, left(btrim(p_note),120)), 'tkaudit', 'tka-' || a.ticket_id, false);
+      end loop;
+    exception when others then null; end;
+  end if;
+  return p_result;
+end $$;
+
+revoke all on function public.fm_tka_can(text), public.fm_tka_sees(text), public.fm_tk_audit_sample(text,text,jsonb,numeric), public.fm_tk_audit_list(text,text),
+  public.fm_tk_audit_photo(uuid), public.fm_tk_audit_review(uuid,text,text,boolean,text) from public, anon;
+grant execute on function public.fm_tka_can(text), public.fm_tka_sees(text), public.fm_tk_audit_sample(text,text,jsonb,numeric), public.fm_tk_audit_list(text,text),
+  public.fm_tk_audit_photo(uuid), public.fm_tk_audit_review(uuid,text,text,boolean,text) to authenticated;
+notify pgrst, 'reload schema';
