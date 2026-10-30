@@ -4768,7 +4768,7 @@ grant execute on function public.fm_issue_req_edit(uuid, jsonb) to authenticated
 -- done. Next: in the platform → الإعدادات → «السحابة والمستخدمين», paste the Project URL and the anon key.
 
 
--- V192: shared team readiness (also shipped as migration_v192.sql).
+-- V192: shared team readiness.
 -- V192: shared team readiness, region-scoped permissions and optimistic concurrency.
 begin;
 create table if not exists public.fm_team_readiness (
@@ -4823,7 +4823,7 @@ commit;
 
 -- V193 parts follow-up; full initial setup includes this migration.
 -- V193: follow up existing issue requests, without changing stock or SLA.
--- Prerequisites: current supabase_setup.sql through V192 (or migration_v192.sql).
+-- Prerequisites: current supabase_setup.sql through V192.
 begin;
 create table if not exists public.fm_parts_followup (
  request_id uuid primary key references public.wo_issue_requests(id) on delete cascade,
@@ -8659,7 +8659,7 @@ grant execute on function public.fm233_manage(text),public.fm233_read(text),publ
 commit;
 
 -- =====================================================================
--- Section 51 (V239): approved SLA breach causes (same as migration_v239.sql)
+-- Section 51 (V239): approved SLA breach causes
 -- =====================================================================
 -- V239: the approved cause of an SLA breach, chosen per ticket from a drop-list by an authorised person (section 51).
 -- Needs the earlier sections (fm_role, fm_my_pos, fm_region_ok, fm_mod, fm_settings). Idempotent.
@@ -8730,12 +8730,12 @@ grant execute on function public.fm_breach_reason_list(),public.fm_breach_can(te
 notify pgrst,'reload schema';
 
 -- =====================================================================
--- Section 52 (V246): badges «🏅 لوحة الشرف» (same as migration_v246.sql)
+-- Section 52 (V246): badges «🏅 لوحة الشرف»
 -- Monthly automatic badges (work orders, school ratings, warehouse) computed on the server, ticket badges
 -- (zero SLA breaches, star of the month) computed by the platform from the uploaded tickets and sent by an
 -- uploader, and manual appreciation badges given by managers with a reason. Everyone signed in sees the
 -- honour board; a new badge sends a push notification and a news-ticker item.
--- Same content as section 52 of supabase_setup.sql. Idempotent.
+-- Idempotent.
 -- =====================================================================
 
 create table if not exists public.fm_badges (
@@ -9014,7 +9014,7 @@ notify pgrst, 'reload schema';
 -- Every Sunday morning each manager gets one push notification (and optionally one WhatsApp message) with
 -- last week's numbers for his regions: tickets (sent by the platform from the uploaded file, so the SLA
 -- logic is the platform's own), work orders, stock under the minimum and school requests.
--- Same content as section 53 of supabase_setup.sql. Idempotent.
+-- Idempotent.
 -- =====================================================================
 
 -- ticket numbers per week (Sunday, Riyadh) and region, sent by an uploader; ops = snapshot taken when the summary is sent

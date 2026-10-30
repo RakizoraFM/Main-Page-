@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F60">
+<meta name="fm-version" content="F61">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -1850,7 +1850,7 @@ async function form(box){const formScope=window.fmPartsIdentity230?.().scope;let
   const qid='q'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),bt=ev.currentTarget;
   if(!navigator.onLine&&window.fmfWhOut){try{window.fmfWhOut.add({t:'new',qid,p,scope:formScope})}catch(err){toast('لم يُحفظ الطلب: '+err.message,'e');bt.disabled=false;return}toast('📴 حُفظ الطلب على الجوال ويُرسل تلقائياً عند عودة الاتصال','w');draw();return}
   if(!navigator.onLine){toast('الطلب يحتاج اتصالاً بالإنترنت','w');return}bt.disabled=true;
-  try{const db=await C.engClient();if(window.fmPartsIdentity230?.().scope!==formScope)throw Error('تغير الحساب');let r=await db.rpc('fm_issue_req_new_once',{p:Object.assign({client_id:qid},p)});if(r.error&&/does not exist|schema cache|Could not find/i.test(r.error.message))throw Error('يلزم تشغيل migration_v230.sql قبل إرسال طلب القطع');if(r.error)throw Error(r.error.message);toast('تم إرسال الطلب '+(r.data&&r.data.code||''));await load();draw()}
+  try{const db=await C.engClient();if(window.fmPartsIdentity230?.().scope!==formScope)throw Error('تغير الحساب');let r=await db.rpc('fm_issue_req_new_once',{p:Object.assign({client_id:qid},p)});if(r.error&&/does not exist|schema cache|Could not find/i.test(r.error.message))throw Error('يلزم تشغيل supabase_setup.sql قبل إرسال طلب القطع');if(r.error)throw Error(r.error.message);toast('تم إرسال الطلب '+(r.data&&r.data.code||''));await load();draw()}
   catch(e){if(window.fmfWhOut&&netE(e)){try{window.fmfWhOut.add({t:'new',qid,p,scope:formScope})}catch(err){toast('لم يُحفظ الطلب: '+err.message,'e');bt.disabled=false;return}toast('📴 تعذر الإرسال — حُفظ الطلب ويُرسل عند عودة الاتصال','w');draw();return}toast(ERR(e),'e');bt.disabled=false}}}
 /* F40: a part that is not in the catalog — photo + description to the storekeeper */
 function shrinkPh(file){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=()=>no(Error('تعذر قراءة الصورة'));r.onload=()=>{const im=new Image();im.onerror=()=>no(Error('صورة غير صالحة'));im.onload=()=>{let w=im.width,h=im.height;const k=Math.min(1,1100/Math.max(w,h));w=Math.round(w*k);h=Math.round(h*k);
@@ -2347,7 +2347,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.c
  const queue=()=>{window.fmfWhOut.add({t:'sign',id:b.dataset.rc,code:code?code[0]:'',sign:sg,qid:opid,scope:snapshot.scope,expected_issued_at:snapshot.issued_at,expected_lines:snapshot.lines});toast('📴 حُفظ التوقيع وتأكيد الاستلام على الجوال ويُرسلان عند عودة الاتصال');document.querySelector('#f29 [data-rf]')?.click()};
  if(!navigator.onLine&&window.fmfWhOut){try{queue()}catch(err){toast('لم يُحفظ التوقيع: '+err.message)}finally{b.disabled=false}return}
  try{const db=await C.engClient();if(window.fmPartsIdentity230?.().scope!==snapshot.scope)throw Error('تغير الحساب؛ أعد مراجعة الطلب');let r=await db.rpc('fm_issue_req_sign_once',{p:{id:b.dataset.rc,op_id:opid,sign:sg,inperson:false,expected_issued_at:snapshot.issued_at,expected_lines:snapshot.lines}});
-  if(r.error&&missing(r.error))throw Error('يلزم تشغيل migration_v230.sql قبل تأكيد الاستلام');
+  if(r.error&&missing(r.error))throw Error('يلزم تشغيل supabase_setup.sql قبل تأكيد الاستلام');
   if(r.error)throw Error(r.error.message);toast('تم التوقيع وتأكيد الاستلام ✅');document.querySelector('#f29 [data-rf]')?.click()}
  catch(er){if(window.fmfWhOut&&/Failed to fetch|NetworkError|network|Load failed/i.test(String(er.message||er))){try{queue()}catch(err){toast('لم يُحفظ التوقيع: '+err.message)}finally{b.disabled=false}return}b.disabled=false;const m=String(er.message||er);toast(/already signed/.test(m)?'السند موقّع بالفعل':/not allowed/.test(m)?'غير مسموح':/Failed to fetch|NetworkError/i.test(m)?'لا يوجد اتصال — أعد المحاولة':m)}},true);
 })();</script>
@@ -2825,7 +2825,7 @@ if(document.readyState==='complete')init();else window.addEventListener('load',i
 <script id="fm231-common">(function(){'use strict';const C=window.FMCloud;if(!C)return;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const identity=()=>{const field=window.fmPartsIdentity230?.();if(field)return field.scope;const p=C.state?.profile;return p?.id?(C.cfg?.().url||'')+':'+p.id:''};
-async function call(fn,args={}){const scope=identity();if(!scope)throw Error('سجّل الدخول أولًا');const d=await C.engClient();if(identity()!==scope)throw Error('تغير الحساب');const r=await d.rpc(fn,args);if(identity()!==scope)throw Error('تغير الحساب');if(r.error){let m=r.error.message;if(/schema cache|does not exist|Could not find/i.test(m))m='يلزم تشغيل migration_v231.sql';else if(/duplicate stage recipient/.test(m))m='المستلم موجود في مرحلة مفعلة بنفس المدة؛ عدّل المرحلة الحالية';else if(/version conflict/.test(m))m='عُدّلت المرحلة من حساب آخر؛ أعد تحميلها';else if(/recipient inactive or outside region/.test(m))m='أحد المستلمين غير نشط أو خارج نطاق المنطقة';else if(/not allowed/.test(m))m='ليست لديك صلاحية لهذه العملية';throw Error(m)}return r.data}
+async function call(fn,args={}){const scope=identity();if(!scope)throw Error('سجّل الدخول أولًا');const d=await C.engClient();if(identity()!==scope)throw Error('تغير الحساب');const r=await d.rpc(fn,args);if(identity()!==scope)throw Error('تغير الحساب');if(r.error){let m=r.error.message;if(/schema cache|does not exist|Could not find/i.test(m))m='يلزم تشغيل supabase_setup.sql';else if(/duplicate stage recipient/.test(m))m='المستلم موجود في مرحلة مفعلة بنفس المدة؛ عدّل المرحلة الحالية';else if(/version conflict/.test(m))m='عُدّلت المرحلة من حساب آخر؛ أعد تحميلها';else if(/recipient inactive or outside region/.test(m))m='أحد المستلمين غير نشط أو خارج نطاق المنطقة';else if(/not allowed/.test(m))m='ليست لديك صلاحية لهذه العملية';throw Error(m)}return r.data}
 const date=v=>v?new Date(v).toLocaleString('ar-SA-u-ca-gregory',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
 const reason={'SLA event no longer current':'أُلغي لتغير حالة البلاغ أو انتهاء المهلة',whatsapp_disabled:'واتساب غير مفعل',invalid_profile_phone:'رقم جوال الحساب غير صالح',template_missing:'قالب التصعيد غير مضبوط',sender_not_configured:'مرسل واتساب غير جاهز',queue_error:'تعذر وضع الرسالة في الانتظار',queue_rejected:'لم يقبل الطابور الرسالة'};
 const state={pending:'بانتظار التجهيز',blocked:'متعذر',not_requested:'غير مطلوب',queued:'في طابور الإرسال',sent:'أُرسل عبر المزود',failed:'فشل / أُلغي',unavailable:'غير متاح على الجهاز'};
