@@ -10196,3 +10196,115 @@ end $$;
 revoke all on function public.fm_flag_can(), public.fm_flag_cfg(), public.fm_red_flags(int), public.fm_flag_review(text,text,text) from public, anon;
 grant execute on function public.fm_flag_can(), public.fm_flag_cfg(), public.fm_red_flags(int), public.fm_flag_review(text,text,text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Section 58 (V253): approved pause of a ticket's SLA clock «⏸️ إيقاف المهلة»
+-- A supervisor / engineer asks to pause a ticket's clock for an accepted reason (waiting for a part, the
+-- school closed, an official holiday, no access, the client's request, other); the area manager of the region
+-- (or ops / project manager, system admin) approves or rejects; an approved pause runs from `from_at` until
+-- `to_at` or until it is ended. The platform shows the adjusted SLA next to the original — the original
+-- SLA calculation is never changed. Idempotent.
+-- =====================================================================
+create table if not exists public.fm_sla_pauses (
+  id          uuid primary key default gen_random_uuid(),
+  code        text unique,
+  region      text not null,
+  ticket_id   text not null,
+  school      text,
+  reason      text not null check (reason in ('parts','school_closed','holiday','access','client','other')),
+  note        text not null default '' check (length(note) <= 1000),
+  from_at     timestamptz not null,
+  to_at       timestamptz,
+  status      text not null default 'pending' check (status in ('pending','approved','rejected','ended','cancelled')),
+  req_by      uuid references public.profiles(id) on delete set null,
+  req_name    text,
+  dec_by      uuid references public.profiles(id) on delete set null,
+  dec_name    text,
+  dec_at      timestamptz,
+  dec_note    text,
+  ended_at    timestamptz,
+  created_at  timestamptz not null default now()
+);
+create index if not exists fm_sla_pauses_t on public.fm_sla_pauses (region, ticket_id);
+create index if not exists fm_sla_pauses_st on public.fm_sla_pauses (status, created_at desc);
+alter table public.fm_sla_pauses enable row level security;
+revoke all on public.fm_sla_pauses from public, anon, authenticated;
+
+create or replace function public.fm_slap_can_req(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() not in ('pending','viewer') and (public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_region_ok(coalesce(p_region,''))), false) $$;
+create or replace function public.fm_slap_can_dec(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,''))), false) $$;
+
+create or replace function public.fm_sla_pause_request(p_region text, p_ticket text, p_reason text, p_note text, p_from timestamptz default null, p_to timestamptz default null, p_school text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.fm_sla_pauses; u uuid; f timestamptz := coalesce(p_from, now());
+begin
+  if auth.uid() is null or not public.fm_slap_can_req(p_region) then raise exception 'not allowed'; end if;
+  if not public.fm_mod('tickets') then raise exception 'module disabled'; end if;
+  if coalesce(btrim(p_ticket),'') = '' or length(p_ticket) > 80 then raise exception 'invalid ticket'; end if;
+  if coalesce(p_reason,'') not in ('parts','school_closed','holiday','access','client','other') then raise exception 'invalid reason'; end if;
+  if length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  if f > now() + interval '30 days' or f < now() - interval '30 days' then raise exception 'invalid date'; end if;
+  if p_to is not null and p_to <= f then raise exception 'invalid date'; end if;
+  if exists (select 1 from public.fm_sla_pauses where region = p_region and ticket_id = btrim(p_ticket) and status = 'pending') then raise exception 'already pending'; end if;
+  if exists (select 1 from public.fm_sla_pauses where region = p_region and ticket_id = btrim(p_ticket) and status = 'approved' and (to_at is null or to_at > now()) and ended_at is null) then raise exception 'already paused'; end if;
+  if (select count(*) from public.fm_sla_pauses where req_by = auth.uid() and created_at > now() - interval '1 day') >= 50 then raise exception 'too many today'; end if;
+  insert into public.fm_sla_pauses(code, region, ticket_id, school, reason, note, from_at, to_at, req_by, req_name)
+  values ('SP-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad((select count(*) + 1 from public.fm_sla_pauses where code like 'SP-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-%')::text, 4, '0'),
+          p_region, btrim(p_ticket), left(nullif(btrim(coalesce(p_school,'')),''),200), p_reason, left(btrim(p_note),1000), f, p_to, auth.uid(), public.fm_me_name())
+  returning * into r;
+  begin
+    for u in select distinct x from (select public.fm_push_people(array['area_manager'], p_region) x
+               union select p.reports_to from public.profiles p where p.id = auth.uid()) y where x is not null and x <> auth.uid() loop
+      perform public.fm_push_add(u, 'sla_pause', '⏸️ طلب إيقاف مهلة البلاغ ' || r.ticket_id, concat_ws(' — ', r.school, public.fm_me_name(), left(r.note, 120)), 'slap', 'slap-' || r.id, false);
+    end loop;
+  exception when others then null; end;
+  return jsonb_build_object('id', r.id, 'code', r.code);
+end $$;
+
+-- approve | reject (note) | end (stop an approved pause now) | cancel (the requester, while pending)
+create or replace function public.fm_sla_pause_act(p_id uuid, p_action text, p_note text default '') returns text
+language plpgsql security definer set search_path = public as $$
+declare r public.fm_sla_pauses;
+begin
+  select * into r from public.fm_sla_pauses where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if p_action = 'cancel' then
+    if r.req_by is distinct from auth.uid() or r.status <> 'pending' then raise exception 'not allowed'; end if;
+    update public.fm_sla_pauses set status = 'cancelled' where id = p_id; return 'cancelled';
+  end if;
+  if p_action = 'end' then
+    if r.status <> 'approved' or not (public.fm_slap_can_dec(r.region) or r.req_by = auth.uid()) then raise exception 'not allowed'; end if;
+    update public.fm_sla_pauses set status = 'ended', ended_at = greatest(now(), from_at), to_at = least(coalesce(to_at, now()), greatest(now(), from_at)) where id = p_id; return 'ended';
+  end if;
+  if p_action not in ('approve','reject') then raise exception 'invalid action'; end if;
+  if r.status <> 'pending' then raise exception 'invalid status'; end if;
+  if not public.fm_slap_can_dec(r.region) then raise exception 'not allowed'; end if;
+  if r.req_by = auth.uid() and not (public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin') then raise exception 'self approval'; end if;
+  if p_action = 'reject' and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  update public.fm_sla_pauses set status = case when p_action = 'approve' then 'approved' else 'rejected' end, dec_by = auth.uid(), dec_name = public.fm_me_name(), dec_at = now(),
+    dec_note = left(nullif(btrim(coalesce(p_note,'')),''),500) where id = p_id;
+  begin perform public.fm_push_add(r.req_by, 'sla_pause', case when p_action = 'approve' then '✅ اعتُمد إيقاف مهلة البلاغ ' else '❌ رُفض إيقاف مهلة البلاغ ' end || r.ticket_id,
+    concat_ws(' — ', r.school, public.fm_me_name(), nullif(btrim(p_note),'')), 'slap', 'slap-' || r.id, false); exception when others then null; end;
+  return p_action;
+end $$;
+
+-- pauses of a region (or all the caller may see): pending first
+create or replace function public.fm_sla_pauses_list(p_region text default null, p_days int default 365) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('can_dec', public.fm_slap_can_dec(p_region), 'can_req', public.fm_slap_can_req(p_region), 'rows', coalesce(jsonb_agg(jsonb_build_object(
+      'id', id, 'code', code, 'region', region, 'ticket', ticket_id, 'school', school, 'reason', reason, 'note', note, 'from', from_at, 'to', to_at,
+      'status', status, 'req', req_name, 'mine', req_by = auth.uid(), 'dec', dec_name, 'dec_at', dec_at, 'dec_note', dec_note, 'ended_at', ended_at, 'at', created_at,
+      'can_dec', public.fm_slap_can_dec(region) and (req_by is distinct from auth.uid() or public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin'))
+      order by (status = 'pending') desc, created_at desc), '[]'::jsonb))
+    from public.fm_sla_pauses
+   where auth.uid() is not null and public.fm_role() <> 'pending' and (p_region is null or region = p_region)
+     and created_at > now() - make_interval(days => least(greatest(coalesce(p_days,365),7),800))
+     and (public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_region_ok(region) or req_by = auth.uid()) $$;
+
+revoke all on function public.fm_slap_can_req(text), public.fm_slap_can_dec(text), public.fm_sla_pause_request(text,text,text,text,timestamptz,timestamptz,text),
+  public.fm_sla_pause_act(uuid,text,text), public.fm_sla_pauses_list(text,int) from public, anon;
+grant execute on function public.fm_slap_can_req(text), public.fm_slap_can_dec(text), public.fm_sla_pause_request(text,text,text,text,timestamptz,timestamptz,text),
+  public.fm_sla_pause_act(uuid,text,text), public.fm_sla_pauses_list(text,int) to authenticated;
+notify pgrst, 'reload schema';
