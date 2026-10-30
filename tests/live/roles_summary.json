@@ -1,0 +1,191 @@
+{
+ "SUM": {
+  "sysadmin": {
+   "app": "platform",
+   "pages": 85,
+   "fail": [
+    "لم تفتح: v2-nav-solution"
+   ],
+   "errs": 0
+  },
+  "area_engineer": {
+   "app": "platform",
+   "pages": 77,
+   "fail": [
+    "لم تفتح: v2-nav-solution",
+    "لم تفتح: v2-nav-table"
+   ],
+   "errs": 0
+  },
+  "supervisor": {
+   "app": "field",
+   "pages": 0,
+   "fail": [],
+   "errs": 0
+  },
+  "contractor": {
+   "app": "field",
+   "pages": 0,
+   "fail": [],
+   "errs": 0
+  },
+  "viewer": {
+   "app": "platform",
+   "pages": 72,
+   "fail": [
+    "لم تفتح: v2-nav-solution"
+   ],
+   "errs": 0
+  },
+  "dept_manager": {
+   "app": "platform",
+   "pages": 77,
+   "fail": [
+    "لم تفتح: v2-nav-solution"
+   ],
+   "errs": 0
+  },
+  "project_manager": {
+   "app": "platform",
+   "pages": 83,
+   "fail": [
+    "لم تفتح: v2-nav-solution"
+   ],
+   "errs": 0
+  },
+  "ops_manager": {
+   "app": "platform",
+   "pages": 81,
+   "fail": [
+    "لم تفتح: v2-nav-solution"
+   ],
+   "errs": 0
+  },
+  "area_manager": {
+   "app": "platform",
+   "pages": 79,
+   "fail": [
+    "لم تفتح: v2-nav-solution",
+    "لم تفتح: v2-nav-table"
+   ],
+   "errs": 0
+  },
+  "hse_manager": {
+   "app": "platform",
+   "pages": 77,
+   "fail": [
+    "لم تفتح: v2-nav-solution"
+   ],
+   "errs": 0
+  },
+  "qa_manager": {
+   "app": "platform",
+   "pages": 78,
+   "fail": [
+    "لم تفتح: v2-nav-solution"
+   ],
+   "errs": 0
+  },
+  "accountant": {
+   "app": "platform",
+   "pages": 73,
+   "fail": [
+    "لم تفتح: v2-nav-solution",
+    "لم تفتح: v2-nav-table"
+   ],
+   "errs": 0
+  },
+  "storekeeper": {
+   "app": "platform",
+   "pages": 72,
+   "fail": [
+    "لم تفتح: v2-nav-solution",
+    "لم تفتح: v2-nav-table"
+   ],
+   "errs": 0
+  }
+ },
+ "BLOCK": [
+  "sysadmin: POST /rest/v1/rpc/fm233_read",
+  "sysadmin: POST /rest/v1/rpc/fm_wo_run_due",
+  "sysadmin: POST /rest/v1/rpc/fm195_orders",
+  "sysadmin: POST /rest/v1/rpc/fm195_schedules",
+  "sysadmin: POST /rest/v1/rpc/fm195_inbox",
+  "sysadmin: POST /rest/v1/rpc/fm_bld_costs",
+  "sysadmin: POST /rest/v1/rpc/fm_sla_watch_set",
+  "sysadmin: POST /rest/v1/rpc/fm_weekly_submit",
+  "sysadmin: POST /rest/v1/rpc/fm233_manage",
+  "sysadmin: POST /rest/v1/rpc/fm_deputy_principals",
+  "sysadmin: POST /rest/v1/rpc/fm_custody_overdue",
+  "area_engineer: POST /rest/v1/rpc/fm233_read",
+  "area_engineer: POST /rest/v1/rpc/fm_wo_run_due",
+  "area_engineer: POST /rest/v1/rpc/fm195_orders",
+  "area_engineer: POST /rest/v1/rpc/fm195_schedules",
+  "area_engineer: POST /rest/v1/rpc/fm195_inbox",
+  "area_engineer: POST /rest/v1/rpc/fm233_manage",
+  "area_engineer: POST /rest/v1/rpc/fm_deputy_principals",
+  "area_engineer: POST /rest/v1/rpc/fm_custody_overdue",
+  "viewer: POST /rest/v1/rpc/fm233_read",
+  "viewer: POST /rest/v1/rpc/fm233_manage",
+  "viewer: POST /rest/v1/rpc/fm_custody_overdue",
+  "dept_manager: POST /rest/v1/rpc/fm233_read",
+  "dept_manager: POST /rest/v1/rpc/fm_bld_costs",
+  "dept_manager: POST /rest/v1/rpc/fm195_orders",
+  "dept_manager: POST /rest/v1/rpc/fm195_schedules",
+  "dept_manager: POST /rest/v1/rpc/fm195_inbox",
+  "dept_manager: POST /rest/v1/rpc/fm233_manage",
+  "dept_manager: POST /rest/v1/rpc/fm_custody_overdue",
+  "project_manager: POST /rest/v1/rpc/fm233_read",
+  "project_manager: POST /rest/v1/rpc/fm_wo_run_due",
+  "project_manager: POST /rest/v1/rpc/fm195_orders",
+  "project_manager: POST /rest/v1/rpc/fm195_schedules",
+  "project_manager: POST /rest/v1/rpc/fm195_inbox",
+  "project_manager: POST /rest/v1/rpc/fm_bld_costs",
+  "project_manager: POST /rest/v1/rpc/fm_sla_watch_set",
+  "project_manager: POST /rest/v1/rpc/fm_weekly_submit",
+  "project_manager: POST /rest/v1/rpc/fm233_manage",
+  "project_manager: POST /rest/v1/rpc/fm_deputy_principals",
+  "project_manager: POST /rest/v1/rpc/fm_custody_overdue",
+  "ops_manager: POST /rest/v1/rpc/fm233_read",
+  "ops_manager: POST /rest/v1/rpc/fm_wo_run_due",
+  "ops_manager: POST /rest/v1/rpc/fm195_orders",
+  "ops_manager: POST /rest/v1/rpc/fm195_schedules",
+  "ops_manager: POST /rest/v1/rpc/fm195_inbox",
+  "ops_manager: POST /rest/v1/rpc/fm_bld_costs",
+  "ops_manager: POST /rest/v1/rpc/fm_sla_watch_set",
+  "ops_manager: POST /rest/v1/rpc/fm_weekly_submit",
+  "ops_manager: POST /rest/v1/rpc/fm233_manage",
+  "ops_manager: POST /rest/v1/rpc/fm_deputy_principals",
+  "ops_manager: POST /rest/v1/rpc/fm_custody_overdue",
+  "area_manager: POST /rest/v1/rpc/fm_wo_run_due",
+  "area_manager: POST /rest/v1/rpc/fm195_orders",
+  "area_manager: POST /rest/v1/rpc/fm195_schedules",
+  "area_manager: POST /rest/v1/rpc/fm195_inbox",
+  "area_manager: POST /rest/v1/rpc/fm_bld_costs",
+  "area_manager: POST /rest/v1/rpc/fm_deputy_principals",
+  "area_manager: POST /rest/v1/rpc/fm_custody_overdue",
+  "hse_manager: POST /rest/v1/rpc/fm233_read",
+  "hse_manager: POST /rest/v1/rpc/fm_wo_run_due",
+  "hse_manager: POST /rest/v1/rpc/fm195_orders",
+  "hse_manager: POST /rest/v1/rpc/fm195_schedules",
+  "hse_manager: POST /rest/v1/rpc/fm195_inbox",
+  "hse_manager: POST /rest/v1/rpc/fm233_manage",
+  "hse_manager: POST /rest/v1/rpc/fm_deputy_principals",
+  "hse_manager: POST /rest/v1/rpc/fm_custody_overdue",
+  "qa_manager: POST /rest/v1/rpc/fm233_read",
+  "qa_manager: POST /rest/v1/rpc/fm_wo_run_due",
+  "qa_manager: POST /rest/v1/rpc/fm195_orders",
+  "qa_manager: POST /rest/v1/rpc/fm195_schedules",
+  "qa_manager: POST /rest/v1/rpc/fm195_inbox",
+  "qa_manager: POST /rest/v1/rpc/fm233_manage",
+  "qa_manager: POST /rest/v1/rpc/fm_deputy_principals",
+  "qa_manager: POST /rest/v1/rpc/fm_custody_overdue",
+  "accountant: POST /rest/v1/rpc/fm_wo_run_due",
+  "accountant: POST /rest/v1/rpc/fm_bld_costs",
+  "accountant: POST /rest/v1/rpc/fm_deputy_principals",
+  "accountant: POST /rest/v1/rpc/fm_custody_overdue",
+  "storekeeper: POST /rest/v1/rpc/fm_wo_run_due",
+  "storekeeper: POST /rest/v1/rpc/fm_deputy_principals",
+  "storekeeper: POST /rest/v1/rpc/fm_custody_overdue"
+ ]
+}
