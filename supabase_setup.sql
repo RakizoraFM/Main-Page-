@@ -11262,3 +11262,33 @@ revoke all on function public.fm_ot_dec_can(uuid,text), public.fm_ot_sees(uuid,t
 grant execute on function public.fm_ot_dec_can(uuid,text), public.fm_ot_sees(uuid,text), public.fm_ot_start(jsonb), public.fm_ot_end(uuid,jsonb), public.fm_ot_add(jsonb),
   public.fm_ot_cancel(uuid), public.fm_ot_act(uuid,text,numeric,text), public.fm_ot_list(text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 67 (V267): fm_my_school_db without a statement timeout
+-- The section-17 version re-ran the «people under me» lookup (fm_is_under over every profile) for each of the ~2 300
+-- school rows, so engineers / supervisors / contractors hit «canceling statement due to statement timeout» on the real
+-- project and got no schools. The names and school codes are now computed once, then matched with = any(array).
+-- Same rows as before.
+-- ═══════════════════════════════════════════════════════════════════════════
+create or replace function public.fm_my_school_db() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v jsonb; me uuid := auth.uid(); nm text[]; sc text[];
+begin
+  if me is null or public.fm_role() not in ('admin','manager','staff','viewer','engineer','supervisor','contractor') then return '[]'::jsonb; end if;
+  select value into v from public.app_kv where key = 'fm_school_master_db_v1';
+  if v is null then return '[]'::jsonb; end if;
+  if jsonb_typeof(v) = 'string' then v := (v #>> '{}')::jsonb; end if;
+  if jsonb_typeof(v) <> 'array' then return '[]'::jsonb; end if;
+  if public.fm_role() in ('admin','manager','staff','viewer') then return v; end if;
+  select coalesce(array_agg(distinct lower(btrim(n))), '{}') into nm
+    from public.profiles p, unnest(coalesce(p.person_names,'{}') || coalesce(p.full_name,'')) n
+   where (p.id = me or public.fm_is_under(p.id, me)) and btrim(n) <> '';
+  select coalesce(array_agg(distinct a.school_code), '{}') into sc
+    from public.fm_eng_assignments a where a.active and (a.user_id = me or public.fm_is_under(a.user_id, me));
+  return coalesce((select jsonb_agg(r) from jsonb_array_elements(v) r
+     where lower(btrim(r->>'supervisor')) = any(nm) or lower(btrim(r->>'engineer')) = any(nm) or lower(btrim(r->>'lightSupervisor')) = any(nm)
+        or lower(btrim(r->>'lightEngineer')) = any(nm) or lower(btrim(r->>'contractor')) = any(nm)
+        or regexp_replace(regexp_replace(upper(coalesce(r->>'buildingId','')), '^S[[:space:]-]*', ''), '[^A-Z0-9]', '', 'g') = any(sc)), '[]'::jsonb);
+end $$;
+revoke all on function public.fm_my_school_db() from public, anon;
+grant execute on function public.fm_my_school_db() to authenticated;
+notify pgrst, 'reload schema';
