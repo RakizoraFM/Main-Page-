@@ -11127,3 +11127,138 @@ create or replace function public.fm_mat_alts() returns jsonb language sql stabl
 revoke all on function public.fm_mat_alt_set(uuid,uuid[],text), public.fm_mat_alts() from public, anon;
 grant execute on function public.fm_mat_alt_set(uuid,uuid[],text), public.fm_mat_alts() to authenticated;
 notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 66 (V264): overtime and night emergencies
+-- fm_overtime: one row per piece of work outside the shift. The field app starts it (fm_ot_start, location) and ends it
+-- (fm_ot_end, location → hours), or the person records it afterwards within 7 days (fm_ot_add, flagged manual).
+-- The managers above the person (fm_is_under), project / ops managers, the area manager of his region and the system
+-- admin approve, reject or adjust the hours (fm_ot_act); never their own. fm_ot_list(month) → own rows + rows they may see
+-- (+ accountant / scope_all); the platform sums approved hours per person and kind for payroll.
+-- ═══════════════════════════════════════════════════════════════════════════
+create sequence if not exists public.fm_ot_seq;
+create table if not exists public.fm_overtime (
+  id          uuid primary key default gen_random_uuid(),
+  code        text unique not null default ('OT-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_ot_seq')::text, 5, '0')),
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  user_name   text,
+  region      text,
+  kind        text not null default 'after_hours' check (kind in ('after_hours','emergency','weekend','holiday')),
+  reason      text not null,
+  ticket_ref  text,
+  wo_code     text,
+  school      text,
+  start_at    timestamptz not null,
+  end_at      timestamptz,
+  hours       numeric(6,2),
+  month       text,
+  manual      boolean not null default false,
+  lat1 double precision, lng1 double precision, lat2 double precision, lng2 double precision,
+  status      text not null default 'open' check (status in ('open','pending','approved','rejected')),
+  appr_hours  numeric(6,2),
+  dec_by      uuid references public.profiles(id) on delete set null,
+  dec_name    text,
+  dec_at      timestamptz,
+  dec_note    text,
+  at          timestamptz not null default now()
+);
+create unique index if not exists fm_overtime_open on public.fm_overtime (user_id) where status = 'open';
+create index if not exists fm_overtime_m on public.fm_overtime (month, user_id);
+alter table public.fm_overtime enable row level security;
+revoke all on public.fm_overtime from public, anon, authenticated;
+
+create or replace function public.fm_ot_dec_can(u uuid, reg text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and u is distinct from auth.uid() and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or public.fm_is_under(u, auth.uid()) or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(reg,'')))) $$;
+create or replace function public.fm_ot_sees(u uuid, reg text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (u = auth.uid() or public.fm_ot_dec_can(u, reg) or public.fm_scope_all() or public.fm_my_pos() = 'accountant') $$;
+
+-- internal: close a row with its hours and notify the line manager
+create or replace function public.fm_ot_close(p_id uuid, p_end timestamptz, p_lat double precision, p_lng double precision) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.fm_overtime; h numeric; boss uuid;
+begin
+  select * into r from public.fm_overtime where id = p_id for update;
+  if p_end <= r.start_at then raise exception 'invalid time'; end if;
+  h := round(extract(epoch from (p_end - r.start_at)) / 3600.0, 2);
+  if h > 16 then raise exception 'too long'; end if;
+  update public.fm_overtime set end_at = p_end, hours = h, status = 'pending', lat2 = p_lat, lng2 = p_lng,
+    month = to_char(r.start_at at time zone 'Asia/Riyadh','YYYY-MM') where id = p_id returning * into r;
+  select reports_to into boss from public.profiles where id = r.user_id;
+  begin
+    if boss is not null then perform public.fm_push_add(boss, 'ot', '⏱️ عمل إضافي بانتظار اعتمادك ' || r.code, concat_ws(' — ', r.user_name, h || ' ساعة', r.reason), 'ot', 'ot-' || r.code, false); end if;
+  exception when others then null; end;
+  return jsonb_build_object('id', r.id, 'code', r.code, 'hours', h);
+end $$;
+revoke all on function public.fm_ot_close(uuid,timestamptz,double precision,double precision) from public, anon, authenticated;
+
+-- p {kind, reason, ticket_ref, wo_code, school, lat, lng}
+create or replace function public.fm_ot_start(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare me public.profiles; r public.fm_overtime;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if auth.uid() is null or me.id is null or not coalesce(me.active,true) or public.fm_role() in ('pending','viewer') then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p->>'reason',''))) < 3 then raise exception 'reason required'; end if;
+  if exists (select 1 from public.fm_overtime where user_id = auth.uid() and status = 'open') then raise exception 'already open'; end if;
+  insert into public.fm_overtime(user_id, user_name, region, kind, reason, ticket_ref, wo_code, school, start_at, lat1, lng1, month)
+  values (auth.uid(), me.full_name, (me.regions)[1], coalesce(nullif(p->>'kind',''),'after_hours'), left(btrim(p->>'reason'),300), left(nullif(btrim(coalesce(p->>'ticket_ref','')),''),60),
+    left(nullif(btrim(coalesce(p->>'wo_code','')),''),60), left(nullif(btrim(coalesce(p->>'school','')),''),200), now(), nullif(p->>'lat','')::float8, nullif(p->>'lng','')::float8,
+    to_char(now() at time zone 'Asia/Riyadh','YYYY-MM')) returning * into r;
+  return jsonb_build_object('id', r.id, 'code', r.code, 'start', r.start_at);
+end $$;
+create or replace function public.fm_ot_end(p_id uuid, p jsonb default '{}') returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not exists (select 1 from public.fm_overtime where id = p_id and user_id = auth.uid() and status = 'open') then raise exception 'not found'; end if;
+  if nullif(btrim(coalesce(p->>'note','')),'') is not null then update public.fm_overtime set reason = left(reason || ' — ' || btrim(p->>'note'),600) where id = p_id; end if;
+  return public.fm_ot_close(p_id, now(), nullif(p->>'lat','')::float8, nullif(p->>'lng','')::float8);
+end $$;
+-- p {from, to, kind, reason, ticket_ref, wo_code, school}
+create or replace function public.fm_ot_add(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare me public.profiles; r public.fm_overtime; a timestamptz := (p->>'from')::timestamptz; b timestamptz := (p->>'to')::timestamptz;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if auth.uid() is null or me.id is null or public.fm_role() in ('pending','viewer') then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p->>'reason',''))) < 3 then raise exception 'reason required'; end if;
+  if a is null or b is null or b <= a or b > now() + interval '10 minutes' or a < now() - interval '7 days' then raise exception 'invalid time'; end if;
+  if exists (select 1 from public.fm_overtime where user_id = auth.uid() and status in ('pending','approved') and end_at > start_at and tstzrange(start_at, end_at) && tstzrange(a, b)) then raise exception 'overlap'; end if;
+  insert into public.fm_overtime(user_id, user_name, region, kind, reason, ticket_ref, wo_code, school, start_at, manual, status, month)
+  values (auth.uid(), me.full_name, (me.regions)[1], coalesce(nullif(p->>'kind',''),'after_hours'), left(btrim(p->>'reason'),300), left(nullif(btrim(coalesce(p->>'ticket_ref','')),''),60),
+    left(nullif(btrim(coalesce(p->>'wo_code','')),''),60), left(nullif(btrim(coalesce(p->>'school','')),''),200), a, true, 'pending', to_char(a at time zone 'Asia/Riyadh','YYYY-MM')) returning * into r;
+  return public.fm_ot_close(r.id, b, null, null);
+end $$;
+create or replace function public.fm_ot_cancel(p_id uuid) returns text language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.fm_overtime where id = p_id and user_id = auth.uid() and status in ('open','pending');
+  if not found then raise exception 'not found'; end if;
+  return 'ok';
+end $$;
+create or replace function public.fm_ot_act(p_id uuid, p_action text, p_hours numeric default null, p_note text default '') returns text language plpgsql security definer set search_path = public as $$
+declare r public.fm_overtime; h numeric;
+begin
+  select * into r from public.fm_overtime where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if not public.fm_ot_dec_can(r.user_id, r.region) then raise exception 'not allowed'; end if;
+  if r.status not in ('pending','approved','rejected') then raise exception 'invalid status'; end if;
+  if p_action = 'reject' and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  h := case when p_action = 'approve' then coalesce(p_hours, r.hours) end;
+  if p_action = 'approve' and (h < 0 or h > r.hours) then raise exception 'invalid hours'; end if;
+  if p_action = 'approve' and h < r.hours and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  if p_action not in ('approve','reject') then raise exception 'invalid action'; end if;
+  update public.fm_overtime set status = case when p_action = 'approve' then 'approved' else 'rejected' end, appr_hours = h, dec_by = auth.uid(), dec_name = public.fm_me_name(), dec_at = now(),
+    dec_note = left(nullif(btrim(coalesce(p_note,'')),''),300) where id = p_id;
+  begin perform public.fm_push_add(r.user_id, 'ot', case when p_action = 'approve' then '✅ اعتُمد عملك الإضافي ' || r.code || ' (' || h || ' ساعة)' else '❌ لم يُعتمد عملك الإضافي ' || r.code end,
+    concat_ws(' — ', public.fm_me_name(), nullif(btrim(coalesce(p_note,'')),'')), 'ot', 'ot-' || r.code, false); exception when others then null; end;
+  return p_action;
+end $$;
+create or replace function public.fm_ot_list(p_month text) returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('me', auth.uid(), 'open', (select jsonb_build_object('id', id, 'code', code, 'start', start_at, 'kind', kind, 'reason', reason) from public.fm_overtime where user_id = auth.uid() and status = 'open'),
+    'rows', coalesce((select jsonb_agg(jsonb_build_object('id', o.id, 'code', o.code, 'user', o.user_id, 'name', o.user_name, 'region', o.region, 'kind', o.kind, 'reason', o.reason,
+        'ticket', o.ticket_ref, 'wo', o.wo_code, 'school', o.school, 'start', o.start_at, 'end', o.end_at, 'hours', o.hours, 'manual', o.manual, 'geo', o.lat1 is not null and o.lat2 is not null,
+        'status', o.status, 'appr', o.appr_hours, 'dec', o.dec_name, 'dec_at', o.dec_at, 'note', o.dec_note, 'can', public.fm_ot_dec_can(o.user_id, o.region), 'mine', o.user_id = auth.uid())
+        order by (o.status = 'pending') desc, o.start_at desc)
+      from public.fm_overtime o where o.month = p_month and o.status <> 'open' and public.fm_ot_sees(o.user_id, o.region)), '[]'::jsonb))
+   where auth.uid() is not null $$;
+revoke all on function public.fm_ot_dec_can(uuid,text), public.fm_ot_sees(uuid,text), public.fm_ot_start(jsonb), public.fm_ot_end(uuid,jsonb), public.fm_ot_add(jsonb),
+  public.fm_ot_cancel(uuid), public.fm_ot_act(uuid,text,numeric,text), public.fm_ot_list(text) from public, anon;
+grant execute on function public.fm_ot_dec_can(uuid,text), public.fm_ot_sees(uuid,text), public.fm_ot_start(jsonb), public.fm_ot_end(uuid,jsonb), public.fm_ot_add(jsonb),
+  public.fm_ot_cancel(uuid), public.fm_ot_act(uuid,text,numeric,text), public.fm_ot_list(text) to authenticated;
+notify pgrst, 'reload schema';
