@@ -9794,3 +9794,229 @@ grant execute on function public.fm_tk_can(text), public.fm_tk_target_ok(text,uu
   public.fm_tk_unassign(text,text[],text), public.fm_tk_list(text), public.fm_tk_my(), public.fm_tk_act(text,text,text,text), public.fm_tk_link_wo(text,text,uuid),
   public.fm_tk_history(text,text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Section 56 (V251): procurement governance — approval matrix, segregation of duties, split requests
+-- fm_settings.po_gov {enabled (false), levels [{t: title, max: SAR, 0 = no limit}], owner_above (SAR, 0 = off),
+-- split_days (7, 0 = off), sod (true)}. Disabled = the V158 spend_limits as levels (same behaviour as before),
+-- while the split check and segregation of duties still apply. Exceptions (system admin acting on his own
+-- request, a split approved at the higher level, owner co-approval) go to fm_gov_log. Idempotent.
+-- =====================================================================
+alter table public.wo_purchase_requests add column if not exists approved_by uuid references public.profiles(id) on delete set null;
+alter table public.wo_purchase_requests add column if not exists eff_total numeric(14,2);
+alter table public.wo_purchase_requests add column if not exists related text[];
+alter table public.wo_purchase_requests add column if not exists need_owner boolean not null default false;
+alter table public.wo_purchase_requests add column if not exists appr1_by uuid references public.profiles(id) on delete set null;
+alter table public.wo_purchase_requests add column if not exists appr1_name text;
+alter table public.wo_purchase_requests add column if not exists appr1_at timestamptz;
+
+create table if not exists public.fm_gov_log (
+  id      uuid primary key default gen_random_uuid(),
+  kind    text not null check (kind in ('sod_approve','sod_receive','split','owner','owner_skip')),
+  ref     text,
+  region  text,
+  amount  numeric(14,2),
+  note    text not null default '',
+  by_id   uuid references public.profiles(id) on delete set null,
+  by_name text,
+  at      timestamptz not null default now()
+);
+create index if not exists fm_gov_log_at on public.fm_gov_log (at desc);
+alter table public.fm_gov_log enable row level security;
+revoke all on public.fm_gov_log from public, anon, authenticated;
+
+-- the rules in force
+create or replace function public.fm_po_gov() returns jsonb language sql stable security definer set search_path = public as $$
+  select case when coalesce((g->>'enabled')::boolean, false) and jsonb_typeof(g->'levels') = 'array' and jsonb_array_length(g->'levels') > 0 then
+      jsonb_build_object('enabled', true, 'levels', g->'levels', 'owner_above', coalesce((g->>'owner_above')::numeric, 0),
+        'split_days', coalesce((g->>'split_days')::int, 7), 'sod', coalesce((g->>'sod')::boolean, true))
+    else jsonb_build_object('enabled', false,
+      'levels', jsonb_build_array(jsonb_build_object('t','area_manager','max', coalesce(nullif(l->>'area_manager','')::numeric, 0)),
+                                  jsonb_build_object('t','ops_manager','max', coalesce(nullif(l->>'ops_manager','')::numeric, 0)),
+                                  jsonb_build_object('t','project_manager','max', 0), jsonb_build_object('t','dept_manager','max', 0)),
+      'owner_above', 0, 'split_days', coalesce((g->>'split_days')::int, 7), 'sod', coalesce((g->>'sod')::boolean, true)) end
+  from (select coalesce(public.fm_setting('po_gov'), '{}') g, coalesce(public.fm_setting('spend_limits'), '{}') l) x $$;
+
+-- the caller's limit for a store region: -1 = no limit, 0 = may not approve, > 0 = up to this amount
+create or replace function public.fm_po_limit(p_region text) returns numeric language plpgsql stable security definer set search_path = public as $$
+declare pos text := public.fm_my_pos(); lv jsonb; m numeric;
+begin
+  if public.fm_role() = 'admin' or pos = 'sysadmin' then return -1; end if;
+  for lv in select * from jsonb_array_elements(public.fm_po_gov()->'levels') loop
+    if lv->>'t' = pos then
+      if pos in ('area_manager','area_engineer') and not public.fm_region_ok(coalesce(p_region,'')) then return 0; end if;
+      m := coalesce((lv->>'max')::numeric, 0);
+      return case when m <= 0 then -1 else m end;
+    end if;
+  end loop;
+  return 0;
+end $$;
+
+-- other live requests of the same store within split_days that share the supplier or an item
+create or replace function public.fm_po_related(p_id uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r public.wo_purchase_requests; d int := coalesce((public.fm_po_gov()->>'split_days')::int, 7); s numeric; c text[];
+begin
+  select * into r from public.wo_purchase_requests where id = p_id;
+  if not found or d <= 0 then return jsonb_build_object('sum', 0, 'codes', '[]'::jsonb); end if;
+  select coalesce(sum(o.total), 0), coalesce(array_agg(o.code order by o.at), '{}') into s, c
+    from public.wo_purchase_requests o
+   where o.id <> r.id and o.store_id = r.store_id and o.status in ('requested','approved','partial','received')
+     and o.at between r.at - make_interval(days => d) and r.at + make_interval(days => d)
+     and ((r.supplier_id is not null and o.supplier_id = r.supplier_id)
+          or exists (select 1 from jsonb_array_elements(o.lines) a, jsonb_array_elements(r.lines) b where a->>'material_id' = b->>'material_id'));
+  return jsonb_build_object('sum', s, 'codes', to_jsonb(c));
+end $$;
+
+create or replace function public.fm_gov_add(p_kind text, p_ref text, p_region text, p_amount numeric, p_note text) returns void
+language sql security definer set search_path = public as $$
+  insert into public.fm_gov_log(kind, ref, region, amount, note, by_id, by_name) values (p_kind, p_ref, p_region, p_amount, left(coalesce(p_note,''),500), auth.uid(), public.fm_me_name()) $$;
+
+create or replace function public.fm_po_owner_ok() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_my_pos() = 'owner_rep', false) $$;
+
+create or replace function public.fm_po_act(p_id uuid, p_action text, p jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare r public.wo_purchase_requests; st public.wo_stores; g jsonb := public.fm_po_gov(); lim numeric; rel jsonb; eff numeric; sup boolean;
+  x jsonb; gl jsonb; L jsonb := '[]'; q numeric; pr numeric; v numeric; all_done boolean := true; n int := 0; sr text; wm int; at_ timestamptz; u uuid; ownr boolean;
+begin
+  select * into r from public.wo_purchase_requests where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  select * into st from public.wo_stores where id = r.store_id;
+  sup := public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin';
+  if p_action in ('approve','reject') then
+    if r.status <> 'requested' then raise exception 'invalid status'; end if;
+    -- owner stage: a manager already approved, the owner's representative decides
+    if r.need_owner and r.appr1_at is not null then
+      if not (public.fm_po_owner_ok() or sup) then raise exception 'owner approval pending'; end if;
+      if p_action = 'reject' and btrim(coalesce(p->>'note','')) = '' then raise exception 'note required'; end if;
+      update public.wo_purchase_requests set status = case when p_action = 'approve' then 'approved' else 'rejected' end, approved_by = auth.uid(),
+        approved_by_name = coalesce(appr1_name || ' + ', '') || public.fm_me_name(), approved_at = now(),
+        response = left(nullif(btrim(coalesce(p->>'note','')),''),500) where id = p_id;
+      if p_action = 'approve' then perform public.fm_gov_add('owner', r.code, st.region, r.eff_total, 'اعتماد الجهة المالكة'); end if;
+      return p_action;
+    end if;
+    lim := public.fm_po_limit(st.region);
+    if lim = 0 then raise exception 'not allowed'; end if;
+    -- segregation of duties: the requester does not decide his own request (system admin: allowed and logged)
+    if coalesce((g->>'sod')::boolean, true) and r.requested_by = auth.uid() then
+      if not sup then raise exception 'self approval'; end if;
+      perform public.fm_gov_add('sod_approve', r.code, st.region, r.total, p_action);
+    end if;
+    if p_action = 'reject' then
+      if btrim(coalesce(p->>'note','')) = '' then raise exception 'note required'; end if;
+      update public.wo_purchase_requests set status = 'rejected', approved_by = auth.uid(), approved_by_name = public.fm_me_name(), approved_at = now(),
+        response = left(btrim(p->>'note'),500) where id = p_id;
+      return 'reject';
+    end if;
+    rel := public.fm_po_related(p_id); eff := r.total + coalesce((rel->>'sum')::numeric, 0);
+    if lim > 0 and eff > lim then
+      raise exception 'spend approval required: %', case when eff > r.total then 'split ' || round(eff) || ' ' || array_to_string(array(select jsonb_array_elements_text(rel->'codes')), ',') else round(eff)::text end;
+    end if;
+    if eff > r.total then perform public.fm_gov_add('split', r.code, st.region, eff, 'مع ' || array_to_string(array(select jsonb_array_elements_text(rel->'codes')), '، ')); end if;
+    ownr := coalesce((g->>'owner_above')::numeric, 0) > 0 and eff > (g->>'owner_above')::numeric;
+    if ownr and not exists (select 1 from public.profiles where active and public.fm_posx(role, job_title) = 'owner_rep' and id <> coalesce(r.requested_by, '00000000-0000-0000-0000-000000000000'::uuid)) then
+      ownr := false; perform public.fm_gov_add('owner_skip', r.code, st.region, eff, 'لا يوجد ممثل جهة مالكة نشط');
+    end if;
+    if ownr then
+      update public.wo_purchase_requests set need_owner = true, appr1_by = auth.uid(), appr1_name = public.fm_me_name(), appr1_at = now(), eff_total = eff,
+        related = array(select jsonb_array_elements_text(rel->'codes')), response = left(nullif(btrim(coalesce(p->>'note','')),''),500) where id = p_id;
+      begin
+        for u in select * from public.fm_push_people(array['owner_rep'], null) loop
+          perform public.fm_push_add(u, 'appr', '🛒 طلب شراء بانتظار اعتماد الجهة المالكة ' || r.code, coalesce(st.name,'') || ' — ' || round(eff) || ' ر.س — اعتمده ' || public.fm_me_name(), 'wh=po', 'po-' || r.id);
+        end loop;
+      exception when others then null; end;
+      return 'owner';
+    end if;
+    update public.wo_purchase_requests set status = 'approved', approved_by = auth.uid(), approved_by_name = public.fm_me_name(), approved_at = now(), eff_total = eff,
+      related = array(select jsonb_array_elements_text(rel->'codes')), response = left(nullif(btrim(coalesce(p->>'note','')),''),500) where id = p_id;
+    return 'approve';
+  elsif p_action = 'cancel' then
+    if r.requested_by <> auth.uid() or r.status not in ('requested','approved') then raise exception 'not allowed'; end if;
+    update public.wo_purchase_requests set status = 'cancelled' where id = p_id; return 'cancelled';
+  elsif p_action = 'receive' then
+    perform public.fm_lines230(p);
+    if not (public.fm_wh_keeper(st.id) or public.fm_stock_can(st.region)) then raise exception 'not allowed'; end if;
+    if r.status not in ('approved','partial') then raise exception 'invalid status'; end if;
+    -- segregation of duties: whoever approved does not receive (system admin: allowed and logged)
+    if coalesce((g->>'sod')::boolean, true) and (r.approved_by = auth.uid() or r.appr1_by = auth.uid()) then
+      if not sup then raise exception 'self receive'; end if;
+      perform public.fm_gov_add('sod_receive', r.code, st.region, r.total, 'استلم ما اعتمده');
+    end if;
+    at_ := least(now(), coalesce(nullif(p->>'at','')::date + time '12:00', now()));
+    for x in select * from jsonb_array_elements(r.lines) loop
+      gl := (select e from jsonb_array_elements(coalesce(p->'lines','[]')) t(e) where e->>'material_id' = x->>'material_id' limit 1);
+      q := coalesce(nullif(gl->>'qty','')::numeric, 0);
+      if q < 0 then raise exception 'invalid qty'; end if;
+      if q > 0 then
+        pr := coalesce(nullif(gl->>'price','')::numeric, (x->>'price')::numeric);
+        if pr<0 or pr::text in ('NaN','Infinity','-Infinity') then raise exception 'invalid price';end if;
+        v := public.fm_wh_receive_line(st.id, (x->>'material_id')::uuid, q, pr, r.supplier_id, r.supplier_name, p->>'invoice_no', at_, r.code, null);
+        x := x || jsonb_build_object('recv', coalesce((x->>'recv')::numeric,0) + q, 'paid', pr, 'variance', v);
+        select warranty_months into wm from public.wo_materials where id = (x->>'material_id')::uuid;
+        for sr in select btrim(e #>> '{}') from jsonb_array_elements(case when jsonb_typeof(gl->'serials') = 'array' then gl->'serials' else '[]' end) t(e) loop
+          if sr <> '' then
+            insert into public.wo_serials(material_id, serial, supplier_id, supplier_name, po_code, invoice_no, received_at, warranty_until)
+            values ((x->>'material_id')::uuid, left(sr,80), r.supplier_id, r.supplier_name, r.code, left(nullif(btrim(coalesce(p->>'invoice_no','')),''),80), at_::date,
+                    case when wm > 0 then (at_::date + make_interval(months => wm))::date end)
+            on conflict (material_id, serial) do nothing;
+          end if;
+        end loop;
+        n := n + 1;
+      end if;
+      if coalesce((x->>'recv')::numeric,0) < (x->>'qty')::numeric then all_done := false; end if;
+      L := L || x;
+    end loop;
+    if n = 0 then raise exception 'nothing received'; end if;
+    update public.wo_purchase_requests set lines = L, status = case when all_done then 'received' else 'partial' end, received_at = now() where id = p_id;
+    return case when all_done then 'received' else 'partial' end;
+  end if;
+  raise exception 'invalid action';
+end $$;
+
+-- what the platform shows on each open request: amount with related requests, who may decide, the level needed
+create or replace function public.fm_po_checks() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare g jsonb := public.fm_po_gov(); r record; rel jsonb; eff numeric; lim numeric; out jsonb := '[]'::jsonb; lvl text; lv jsonb; sup boolean;
+begin
+  if auth.uid() is null or public.fm_role() not in ('admin','manager','staff','engineer','viewer') then raise exception 'not allowed'; end if;
+  sup := public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin';
+  for r in select p.*, s.region from public.wo_purchase_requests p join public.wo_stores s on s.id = p.store_id where p.status = 'requested' loop
+    rel := public.fm_po_related(r.id); eff := r.total + coalesce((rel->>'sum')::numeric, 0); lim := public.fm_po_limit(r.region); lvl := null;
+    for lv in select * from jsonb_array_elements(g->'levels') e order by case when coalesce((e->>'max')::numeric,0) <= 0 then 1e15 else (e->>'max')::numeric end loop
+      if coalesce((lv->>'max')::numeric,0) <= 0 or (lv->>'max')::numeric >= eff then lvl := lv->>'t'; exit; end if;
+    end loop;
+    out := out || jsonb_build_array(jsonb_build_object('id', r.id, 'eff', eff, 'related', rel->'codes', 'level', lvl,
+      'stage', case when r.need_owner and r.appr1_at is not null then 'owner' else 'manager' end, 'appr1', r.appr1_name,
+      'owner', coalesce((g->>'owner_above')::numeric,0) > 0 and eff > (g->>'owner_above')::numeric,
+      'self', r.requested_by = auth.uid(),
+      'can', case when r.need_owner and r.appr1_at is not null then public.fm_po_owner_ok() or sup
+                  else lim <> 0 and (lim < 0 or eff <= lim) and (r.requested_by is distinct from auth.uid() or sup or not coalesce((g->>'sod')::boolean, true)) end,
+      'can_reject', case when r.need_owner and r.appr1_at is not null then public.fm_po_owner_ok() or sup
+                  else lim <> 0 and (r.requested_by is distinct from auth.uid() or sup or not coalesce((g->>'sod')::boolean, true)) end));
+  end loop;
+  return jsonb_build_object('gov', g, 'rows', out, 'my_limit', public.fm_po_limit(null));
+end $$;
+
+-- the exceptions report and a segregation-of-duties scan of the last days
+create or replace function public.fm_gov_report(p_days int default 90) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare d int := least(greatest(coalesce(p_days, 90), 7), 400);
+begin
+  if auth.uid() is null or not (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','qa_manager','owner_rep','accountant')) then
+    raise exception 'not allowed'; end if;
+  return jsonb_build_object(
+    'log', coalesce((select jsonb_agg(jsonb_build_object('kind', kind, 'ref', ref, 'region', region, 'amount', amount, 'note', note, 'by', by_name, 'at', at) order by at desc)
+                       from public.fm_gov_log where at > now() - make_interval(days => d)), '[]'::jsonb),
+    -- requests approved by their requester, received by their approver (also from before V251)
+    'self_approved', coalesce((select jsonb_agg(jsonb_build_object('code', code, 'total', total, 'by', approved_by_name, 'at', approved_at))
+                       from public.wo_purchase_requests where approved_at > now() - make_interval(days => d) and status in ('approved','partial','received')
+                        and approved_by is not null and approved_by = requested_by), '[]'::jsonb),
+    'adj_self', coalesce((select jsonb_agg(jsonb_build_object('code', code, 'value', value, 'by', decided_name, 'at', decided_at))
+                       from public.wo_stock_adj a where a.at > now() - make_interval(days => d) and a.status = 'approved' and a.decided_by is not null and a.decided_by = a.by_id), '[]'::jsonb),
+    'supplier_share', coalesce((select jsonb_agg(x order by x.share desc) from (
+        select coalesce(supplier_name,'—') supplier, round(sum(total),2) total, round(100 * sum(total) / nullif(sum(sum(total)) over (), 0), 1) share, count(*) n
+          from public.wo_purchase_requests where at > now() - make_interval(days => d) and status in ('approved','partial','received') group by 1) x), '[]'::jsonb),
+    'days', d);
+end $$;
+
+revoke all on function public.fm_gov_add(text,text,text,numeric,text), public.fm_po_related(uuid) from public, anon, authenticated;
+revoke all on function public.fm_po_gov(), public.fm_po_limit(text), public.fm_po_owner_ok(), public.fm_po_act(uuid,text,jsonb), public.fm_po_checks(), public.fm_gov_report(int) from public, anon;
+grant execute on function public.fm_po_gov(), public.fm_po_limit(text), public.fm_po_owner_ok(), public.fm_po_act(uuid,text,jsonb), public.fm_po_checks(), public.fm_gov_report(int) to authenticated;
+notify pgrst, 'reload schema';
