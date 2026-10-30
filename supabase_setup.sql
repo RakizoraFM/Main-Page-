@@ -10399,3 +10399,866 @@ revoke all on function public.fm_tk_close_trg() from public, anon, authenticated
 revoke all on function public.fm_tkrev_can(text), public.fm_tk_close_list(text), public.fm_tk_close_act(uuid,text,text) from public, anon;
 grant execute on function public.fm_tkrev_can(text), public.fm_tk_close_list(text), public.fm_tk_close_act(uuid,text,text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 60 (V256): random audit sample of closed tickets (QA manager)
+-- The platform sends the tickets closed in a month; the server picks a random share (fm_settings.qa.sample_pct, V158),
+-- the QA manager visits and rules pass / fail. A fail may send the ticket back to work (ticket_work stage progress).
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.fm_tk_audits (
+  id         uuid primary key default gen_random_uuid(),
+  code       text unique,
+  region     text not null,
+  ticket_id  text not null,
+  month      text not null,
+  school     text,
+  priority   text,
+  category   text,
+  closed_at  timestamptz,
+  executor   text,
+  sol        text,
+  status     text not null default 'pending' check (status in ('pending','pass','fail')),
+  note       text,
+  photo      text,
+  reopened   boolean not null default false,
+  sampled_by uuid references public.profiles(id) on delete set null,
+  sampled_at timestamptz not null default now(),
+  dec_by     uuid references public.profiles(id) on delete set null,
+  dec_name   text,
+  dec_at     timestamptz
+);
+create unique index if not exists fm_tk_audits_one on public.fm_tk_audits (region, ticket_id);
+create index if not exists fm_tk_audits_month on public.fm_tk_audits (region, month);
+alter table public.fm_tk_audits enable row level security;
+revoke all on public.fm_tk_audits from public, anon, authenticated;
+
+create or replace function public.fm_tka_can(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','qa_manager'), false) $$;
+create or replace function public.fm_tka_sees(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_tka_can(p_region) or public.fm_scope_all()
+    or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(coalesce(p_region,''))), false) $$;
+
+-- p_rows: [{id, school, priority, cat, closed, exec, sol}] = the tickets closed in the month (≤ 5000)
+create or replace function public.fm_tk_audit_sample(p_region text, p_month text, p_rows jsonb, p_pct numeric default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare pct numeric := coalesce(p_pct, (public.fm_setting('qa')->>'sample_pct')::numeric, 5); tot int; want int; have int; n int := 0; r jsonb; y text := left(p_month,4); seq int;
+begin
+  if auth.uid() is null or not public.fm_tka_can(p_region) then raise exception 'not allowed'; end if;
+  if not public.fm_mod('tickets') then raise exception 'module disabled'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 5000 then raise exception 'invalid rows'; end if;
+  if pct is null or pct <= 0 or pct > 100 then raise exception 'invalid pct'; end if;
+  tot := jsonb_array_length(p_rows);
+  if tot = 0 then return jsonb_build_object('total', 0, 'added', 0, 'have', 0); end if;
+  want := greatest(1, ceil(tot * pct / 100.0)::int);
+  perform pg_advisory_xact_lock(hashtext('fm_tka:' || p_region || ':' || p_month));
+  select count(*) into have from public.fm_tk_audits where region = p_region and month = p_month;
+  for r in select x from jsonb_array_elements(p_rows) x
+            where nullif(btrim(x->>'id'),'') is not null
+              and not exists (select 1 from public.fm_tk_audits a where a.region = p_region and a.ticket_id = btrim(x->>'id'))
+            order by random() limit greatest(0, want - have) loop
+    select coalesce(max(substring(code from '\d+$')::int), 0) + 1 into seq from public.fm_tk_audits where code like 'TA-' || y || '-%';
+    insert into public.fm_tk_audits(code, region, ticket_id, month, school, priority, category, closed_at, executor, sol, sampled_by)
+    values ('TA-' || y || '-' || lpad(seq::text, 4, '0'), p_region, btrim(r->>'id'), p_month, left(r->>'school',200), left(r->>'priority',40), left(r->>'cat',120),
+      case when (r->>'closed') ~ '^\d{4}-\d{2}-\d{2}' then (r->>'closed')::timestamptz end, left(r->>'exec',120), left(r->>'sol',1000), auth.uid())
+    on conflict do nothing;
+    n := n + 1;
+  end loop;
+  return jsonb_build_object('total', tot, 'want', want, 'added', n, 'have', have + n, 'pct', pct);
+end $$;
+
+create or replace function public.fm_tk_audit_list(p_region text, p_month text default null) returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('can', public.fm_tka_can(p_region), 'sees', public.fm_tka_sees(p_region),
+    'pct', coalesce((public.fm_setting('qa')->>'sample_pct')::numeric, 5),
+    'rows', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'code', code, 'ticket', ticket_id, 'month', month, 'school', school, 'priority', priority,
+        'cat', category, 'closed', closed_at, 'exec', executor, 'sol', sol, 'status', status, 'note', note, 'photo', photo is not null, 'reopened', reopened,
+        'dec', dec_name, 'dec_at', dec_at) order by (status = 'pending') desc, sampled_at desc)
+      from public.fm_tk_audits where region = p_region and (p_month is null or month = p_month) and public.fm_tka_sees(p_region)), '[]'::jsonb))
+  where auth.uid() is not null $$;
+
+create or replace function public.fm_tk_audit_photo(p_id uuid) returns text language sql stable security definer set search_path = public as $$
+  select photo from public.fm_tk_audits where id = p_id and auth.uid() is not null and public.fm_tka_sees(region) $$;
+
+create or replace function public.fm_tk_audit_review(p_id uuid, p_result text, p_note text default '', p_reopen boolean default false, p_photo text default null) returns text
+language plpgsql security definer set search_path = public as $$
+declare a public.fm_tk_audits; nm text := public.fm_me_name(); u uuid;
+begin
+  select * into a from public.fm_tk_audits where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if not public.fm_tka_can(a.region) then raise exception 'not allowed'; end if;
+  if p_result not in ('pass','fail') then raise exception 'invalid action'; end if;
+  if a.status <> 'pending' then raise exception 'invalid status'; end if;
+  if p_result = 'fail' and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  if p_photo is not null and (length(p_photo) > 420000 or p_photo !~ '^data:image/(jpeg|png|webp);base64,') then raise exception 'invalid photo'; end if;
+  update public.fm_tk_audits set status = p_result, note = left(nullif(btrim(coalesce(p_note,'')),''),1000), photo = coalesce(p_photo, photo),
+    reopened = (p_result = 'fail' and coalesce(p_reopen,false)), dec_by = auth.uid(), dec_name = nm, dec_at = now() where id = p_id;
+  if p_result = 'fail' and coalesce(p_reopen,false) then
+    insert into public.ticket_work(region, ticket_id, stage, rec, resolved_at, updated_by, updated_by_name)
+    values (a.region, a.ticket_id, 'progress', jsonb_build_object('stage','progress','reopened',1,'returnNote', left(btrim(p_note),500), 'updated', (extract(epoch from now()) * 1000)::bigint), null, auth.uid(), nm)
+    on conflict (region, ticket_id) do update set stage = 'progress', resolved_at = null, updated_at = now(), updated_by = auth.uid(), updated_by_name = nm,
+      rec = public.ticket_work.rec || jsonb_build_object('stage','progress','reopened', coalesce((public.ticket_work.rec->>'reopened')::int,0) + 1, 'returnNote', left(btrim(p_note),500), 'updated', (extract(epoch from now()) * 1000)::bigint);
+  end if;
+  insert into public.ticket_events(region, ticket_id, by_name, type, stage, text) values (a.region, a.ticket_id, nm,
+    case when p_result = 'fail' and coalesce(p_reopen,false) then 'stage' else 'note' end, case when p_result = 'fail' and coalesce(p_reopen,false) then 'progress' end,
+    case when p_result = 'pass' then '✅ تدقيق الجودة ' || a.code || ': مطابق' else '❌ تدقيق الجودة ' || a.code || ': غير مطابق — ' || left(btrim(p_note),400)
+      || case when coalesce(p_reopen,false) then ' (أُعيد للتنفيذ)' else '' end end || case when p_result = 'pass' and nullif(btrim(coalesce(p_note,'')),'') is not null then ' — ' || left(btrim(p_note),300) else '' end);
+  if p_result = 'fail' then
+    begin
+      for u in select * from public.fm_push_people(array['area_engineer','area_manager'], a.region) loop
+        perform public.fm_push_add(u, 'tk_audit', '❌ بلاغ غير مطابق في تدقيق الجودة ' || a.ticket_id, concat_ws(' — ', a.school, a.executor, left(btrim(p_note),120)), 'tkaudit', 'tka-' || a.ticket_id, false);
+      end loop;
+    exception when others then null; end;
+  end if;
+  return p_result;
+end $$;
+
+revoke all on function public.fm_tka_can(text), public.fm_tka_sees(text), public.fm_tk_audit_sample(text,text,jsonb,numeric), public.fm_tk_audit_list(text,text),
+  public.fm_tk_audit_photo(uuid), public.fm_tk_audit_review(uuid,text,text,boolean,text) from public, anon;
+grant execute on function public.fm_tka_can(text), public.fm_tka_sees(text), public.fm_tk_audit_sample(text,text,jsonb,numeric), public.fm_tk_audit_list(text,text),
+  public.fm_tk_audit_photo(uuid), public.fm_tk_audit_review(uuid,text,text,boolean,text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 61 (V258): abnormal parts consumption
+-- fm_wh_abnormal(days): (1) the same item used for the same school again within repeat_days (fm_settings.red_flags,
+-- V252) — store «out» moves with a school and custody «use» moves; (2) a person whose use value is above outlier × the
+-- median of the people with the same job title (≥ 3 people with use). fm_v258_daily() (pg_cron fm-v258-daily 05:45 UTC)
+-- sends push wh_abn once per repeat case to the keepers and area engineers / managers of the store's region.
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.fm_wh_abn_sent (k text primary key, at timestamptz not null default now());
+alter table public.fm_wh_abn_sent enable row level security;
+revoke all on public.fm_wh_abn_sent from public, anon, authenticated;
+
+create or replace function public.fm_wh_abn_can() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_flag_can() or public.fm_wh_edit() or public.fm_scope_all(), false) $$;
+
+-- internal: uses in the period (all regions)
+create or replace function public.fm_wh_uses(p_since timestamptz) returns table(at timestamptz, material_id uuid, school text, qty numeric, value numeric, wo_code text,
+  who uuid, who_name text, region text, src text) language sql stable security definer set search_path = public as $$
+  select mv.at, mv.material_id, btrim(mv.school), abs(mv.qty), abs(mv.qty) * coalesce(mv.unit_price, m.price, 0), mv.wo_code, mv.by_id, mv.by_name, s.region, 'store'
+    from public.wo_stock_moves mv join public.wo_materials m on m.id = mv.material_id left join public.wo_stores s on s.id = mv.store_id
+   where mv.at > p_since and mv.kind = 'out' and coalesce(btrim(mv.school),'') <> ''
+  union all
+  select cm.at, cm.material_id, btrim(cm.school), coalesce(nullif(cm.used,0), abs(cm.qty)), coalesce(nullif(cm.used,0), abs(cm.qty)) * coalesce(cm.unit_price, m.price, 0), cm.wo_code,
+         cm.holder, cm.holder_name, coalesce(s.region, (select p.regions[1] from public.profiles p where p.id = cm.holder)), 'custody'
+    from public.wo_custody_moves cm join public.wo_materials m on m.id = cm.material_id left join public.wo_stores s on s.id = cm.store_id
+   where cm.at > p_since and cm.kind = 'use' $$;
+revoke all on function public.fm_wh_uses(timestamptz) from public, anon, authenticated;
+
+-- internal: repeat cases (consecutive uses of an item at a school with a gap ≤ repeat_days)
+create or replace function public.fm_wh_rep_rows(p_since timestamptz) returns table(k text, material_id uuid, mname text, unit text, school text, region text, n int, q numeric, v numeric, first timestamptz, last timestamptz, uses jsonb)
+language sql stable security definer set search_path = public as $$
+  with c as (select coalesce((public.fm_flag_cfg()->>'repeat_days')::int, 30) d),
+  u as (select x.*, lag(x.at) over (partition by x.material_id, x.school order by x.at) prev from public.fm_wh_uses(p_since) x where coalesce(x.school,'') <> ''),
+  g as (select u.*, sum(case when u.prev is null or u.at - u.prev > make_interval(days => (select d from c)) then 1 else 0 end) over (partition by u.material_id, u.school order by u.at) grp from u)
+  select g.material_id::text || ':' || g.school || ':' || min(g.at)::date, g.material_id, max(m.name), max(m.unit), g.school, max(g.region), count(*)::int, sum(g.qty), sum(g.value), min(g.at), max(g.at),
+         jsonb_agg(jsonb_build_object('at', g.at, 'q', g.qty, 'wo', g.wo_code, 'by', g.who_name, 'src', g.src) order by g.at)
+    from g join public.wo_materials m on m.id = g.material_id
+   group by g.material_id, g.school, g.grp having count(*) >= 2 $$;
+revoke all on function public.fm_wh_rep_rows(timestamptz) from public, anon, authenticated;
+
+create or replace function public.fm_wh_abnormal(p_days int default 90) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare d int := least(greatest(coalesce(p_days,90),7),365); since timestamptz := now() - make_interval(days => d); c jsonb := public.fm_flag_cfg();
+  allr boolean := public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_my_pos() in ('accountant','owner_rep'); rep jsonb; peer jsonb; o numeric := coalesce((c->>'outlier')::numeric, 3);
+begin
+  if auth.uid() is null or not public.fm_wh_abn_can() then raise exception 'not allowed'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('k', r.k, 'material', r.mname, 'unit', r.unit, 'school', r.school, 'region', r.region, 'n', r.n, 'q', r.q, 'v', round(r.v,2),
+      'first', r.first, 'last', r.last, 'uses', r.uses) order by r.n desc, r.last desc), '[]'::jsonb) into rep
+    from public.fm_wh_rep_rows(since) r where allr or public.fm_region_ok(coalesce(r.region,''));
+  with u as (select x.who, max(x.who_name) nm, max(x.region) region, sum(x.value) v, sum(x.qty) q, count(*) n from public.fm_wh_uses(since) x where x.who is not null group by x.who),
+  t as (select u.*, public.fm_posx(p.role, p.job_title) title from u join public.profiles p on p.id = u.who),
+  m as (select title, percentile_cont(0.5) within group (order by v) med, count(*) cnt from t where v > 0 group by title)
+  select coalesce(jsonb_agg(jsonb_build_object('who', t.who, 'name', t.nm, 'title', t.title, 'region', t.region, 'v', round(t.v,2), 'n', t.n, 'med', round(m.med::numeric,2), 'peers', m.cnt,
+      'ratio', round((t.v / m.med)::numeric, 1),
+      'top', (select jsonb_agg(z) from (select jsonb_build_object('material', mm.name, 'q', sum(x.qty), 'v', round(sum(x.value),2)) z from public.fm_wh_uses(since) x join public.wo_materials mm on mm.id = x.material_id
+               where x.who = t.who group by mm.name order by sum(x.value) desc limit 5) zz)) order by t.v / m.med desc), '[]'::jsonb) into peer
+    from t join m on m.title = t.title
+   where m.cnt >= 3 and m.med > 0 and t.v > m.med * o and (allr or public.fm_region_ok(coalesce(t.region,'')));
+  return jsonb_build_object('days', d, 'repeat_days', coalesce((c->>'repeat_days')::int,30), 'outlier', o, 'rep', rep, 'peer', peer);
+end $$;
+
+create or replace function public.fm_v258_daily() returns int language plpgsql security definer set search_path = public as $$
+declare r record; u uuid; n int := 0;
+begin
+  for r in select * from public.fm_wh_rep_rows(now() - interval '120 days') x where x.last > now() - interval '2 days'
+             and not exists (select 1 from public.fm_wh_abn_sent s where s.k = x.k || ':' || x.n) loop
+    insert into public.fm_wh_abn_sent(k) values (r.k || ':' || r.n) on conflict do nothing;
+    for u in select * from public.fm_wh_keepers_of(r.region) union select * from public.fm_push_people(array['area_engineer','area_manager'], r.region) loop
+      begin perform public.fm_push_add(u, 'wh_abn', '🚨 صرف متكرر لنفس القطعة ' || coalesce(r.mname,''), concat_ws(' — ', r.school, r.n || ' مرات', (r.q)::float8 || ' ' || coalesce(r.unit,'')), 'wh=abn', 'abn-' || left(md5(r.k),12), false);
+      exception when others then null; end;
+    end loop;
+    n := n + 1;
+  end loop;
+  delete from public.fm_wh_abn_sent where at < now() - interval '400 days';
+  return n;
+end $$;
+revoke all on function public.fm_v258_daily() from public, anon, authenticated;
+revoke all on function public.fm_wh_abn_can(), public.fm_wh_abnormal(int) from public, anon;
+grant execute on function public.fm_wh_abn_can(), public.fm_wh_abnormal(int) to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v258-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v258-daily'', ''45 5 * * *'', ''select public.fm_v258_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: abnormal consumption alerts are not pushed (the page still shows them)'; end;
+end $do$;
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 62 (V259): monthly three-way reconciliation of custody parts
+-- Per person × item × month: opening balance, issued to him (issue), used on work orders (use: from custody / total),
+-- returned (return), written off, closing; scrap owed by the month's uses vs scrap returned; the month's count (V180
+-- wo_custody_counts) against the closing balance. The engineer above him (or a manager) signs «مطابق» or records
+-- the differences (wo_custody_recon, one per person and month, with the snapshot).
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.wo_custody_recon (
+  id         uuid primary key default gen_random_uuid(),
+  holder     uuid not null references public.profiles(id) on delete cascade,
+  holder_name text,
+  month      text not null,
+  status     text not null check (status in ('ok','diff')),
+  note       text,
+  lines      jsonb not null default '[]',
+  totals     jsonb not null default '{}',
+  by_id      uuid references public.profiles(id) on delete set null,
+  by_name    text,
+  at         timestamptz not null default now(),
+  unique (holder, month)
+);
+alter table public.wo_custody_recon enable row level security;
+revoke all on public.wo_custody_recon from public, anon, authenticated;
+
+create or replace function public.fm_recon_can_sign(h uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and h is distinct from auth.uid() and (public.fm_role() = 'admin' or public.fm_wh_admin()
+    or (public.fm_my_pos() in ('area_engineer','area_manager','ops_manager','project_manager','sysadmin') and public.fm_wh_sees_holder(h))) $$;
+
+-- internal: one person's lines for a month ('YYYY-MM', Riyadh time)
+create or replace function public.fm_recon_lines(h uuid, p_month text) returns jsonb language sql stable security definer set search_path = public as $$
+  with b as (select (p_month || '-01')::timestamp at time zone 'Asia/Riyadh' a, ((p_month || '-01')::date + interval '1 month')::timestamp at time zone 'Asia/Riyadh' z),
+  mv as (select cm.* from public.wo_custody_moves cm, b where cm.holder = h and cm.at < b.z),
+  agg as (select mv.material_id,
+      sum(case when mv.at < b.a then mv.qty else 0 end) open_q,
+      sum(case when mv.at >= b.a and mv.kind = 'issue' then mv.qty else 0 end) issued,
+      -sum(case when mv.at >= b.a and mv.kind = 'use' then mv.qty else 0 end) used_cus,
+      sum(case when mv.at >= b.a and mv.kind = 'use' then coalesce(mv.used,0) else 0 end) used_all,
+      count(distinct case when mv.at >= b.a and mv.kind = 'use' then mv.wo_code end) wos,
+      -sum(case when mv.at >= b.a and mv.kind = 'return' then mv.qty else 0 end) returned,
+      -sum(case when mv.at >= b.a and mv.kind = 'writeoff' then mv.qty else 0 end) writeoff,
+      sum(mv.qty) close_q,
+      sum(case when mv.at >= b.a and mv.scrap > 0 then mv.scrap else 0 end) scrap_new,
+      -sum(case when mv.at >= b.a and mv.scrap < 0 then mv.scrap else 0 end) scrap_back,
+      sum(mv.scrap) scrap_end,
+      max(mv.unit_price) price
+    from mv, b group by mv.material_id),
+  cnt as (select (l->>'material_id')::uuid mid, (l->>'counted')::numeric counted, c.status cst
+            from public.wo_custody_counts c cross join lateral jsonb_array_elements(c.lines) l, b
+           where c.holder = h and c.month = p_month and coalesce(l->>'material_id','') ~ '^[0-9a-fA-F-]{36}$' and l ? 'counted')
+  select coalesce(jsonb_agg(jsonb_build_object('material_id', a.material_id, 'name', m.name, 'code', m.code, 'unit', m.unit,
+      'open', a.open_q, 'issued', a.issued, 'used_cus', a.used_cus, 'used_all', a.used_all, 'wos', a.wos, 'returned', a.returned, 'writeoff', a.writeoff,
+      'close', a.close_q, 'scrap_new', a.scrap_new, 'scrap_back', a.scrap_back, 'scrap_end', a.scrap_end,
+      'price', coalesce(a.price, m.price, 0), 'counted', k.counted, 'count_st', k.cst,
+      'cdiff', case when k.counted is not null then k.counted - a.close_q end,
+      'now', case when p_month = to_char(now() at time zone 'Asia/Riyadh','YYYY-MM') then (select qty from public.wo_custody w where w.holder = h and w.material_id = a.material_id) end)
+      order by m.name), '[]'::jsonb)
+    from agg a join public.wo_materials m on m.id = a.material_id left join cnt k on k.mid = a.material_id
+   where a.open_q <> 0 or a.issued <> 0 or a.used_cus <> 0 or a.used_all <> 0 or a.returned <> 0 or a.writeoff <> 0 or a.scrap_new <> 0 or a.scrap_back <> 0 or a.scrap_end <> 0 or k.counted is not null $$;
+revoke all on function public.fm_recon_lines(uuid,text) from public, anon, authenticated;
+
+-- people with custody activity in the month (or a balance), with totals and the sign status
+create or replace function public.fm_custody_recon_list(p_month text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r record; L jsonb; out jsonb := '[]'::jsonb; t jsonb; rc public.wo_custody_recon;
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  if not public.fm_mod('wh') then raise exception 'module disabled'; end if;
+  for r in select p.id, p.full_name, public.fm_posx(p.role, p.job_title) title, p.regions from public.profiles p
+            where (exists (select 1 from public.wo_custody_moves cm where cm.holder = p.id and cm.at < ((p_month || '-01')::date + interval '1 month')::timestamp at time zone 'Asia/Riyadh'))
+              and public.fm_wh_sees_holder(p.id) order by p.full_name loop
+    L := public.fm_recon_lines(r.id, p_month);
+    if jsonb_array_length(L) = 0 then continue; end if;
+    select jsonb_build_object('lines', jsonb_array_length(L),
+      'issued_v', round(coalesce(sum((x->>'issued')::numeric * (x->>'price')::numeric),0),2),
+      'used_v', round(coalesce(sum((x->>'used_cus')::numeric * (x->>'price')::numeric),0),2),
+      'returned_v', round(coalesce(sum((x->>'returned')::numeric * (x->>'price')::numeric),0),2),
+      'close_v', round(coalesce(sum((x->>'close')::numeric * (x->>'price')::numeric),0),2),
+      'scrap_open', coalesce(sum((x->>'scrap_end')::numeric),0),
+      'cdiff_n', count(*) filter (where x->>'cdiff' is not null and (x->>'cdiff')::numeric <> 0),
+      'now_diff', count(*) filter (where x->>'now' is not null and (x->>'now')::numeric <> (x->>'close')::numeric),
+      'counted', bool_or(x->>'counted' is not null)) into t from jsonb_array_elements(L) x;
+    select * into rc from public.wo_custody_recon where holder = r.id and month = p_month;
+    out := out || jsonb_build_object('holder', r.id, 'name', r.full_name, 'title', r.title, 'regions', to_jsonb(r.regions), 't', t, 'can_sign', public.fm_recon_can_sign(r.id),
+      'recon', case when rc.id is null then null else jsonb_build_object('status', rc.status, 'note', rc.note, 'by', rc.by_name, 'at', rc.at) end);
+  end loop;
+  return out;
+end $$;
+
+create or replace function public.fm_custody_recon_get(p_holder uuid, p_month text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare rc public.wo_custody_recon;
+begin
+  if auth.uid() is null or not public.fm_wh_sees_holder(p_holder) then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  select * into rc from public.wo_custody_recon where holder = p_holder and month = p_month;
+  return jsonb_build_object('name', (select full_name from public.profiles where id = p_holder), 'lines', public.fm_recon_lines(p_holder, p_month),
+    'can_sign', public.fm_recon_can_sign(p_holder),
+    'recon', case when rc.id is null then null else jsonb_build_object('status', rc.status, 'note', rc.note, 'by', rc.by_name, 'at', rc.at, 'lines', rc.lines) end);
+end $$;
+
+create or replace function public.fm_custody_recon_sign(p_holder uuid, p_month text, p_ok boolean, p_note text default '') returns text
+language plpgsql security definer set search_path = public as $$
+declare L jsonb; nm text := public.fm_me_name(); t jsonb;
+begin
+  if not public.fm_recon_can_sign(p_holder) then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' or p_month > to_char(now() at time zone 'Asia/Riyadh','YYYY-MM') then raise exception 'invalid month'; end if;
+  if not coalesce(p_ok,false) and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  L := public.fm_recon_lines(p_holder, p_month);
+  select jsonb_build_object('issued', sum((x->>'issued')::numeric), 'used', sum((x->>'used_cus')::numeric), 'returned', sum((x->>'returned')::numeric), 'close', sum((x->>'close')::numeric)) into t from jsonb_array_elements(L) x;
+  insert into public.wo_custody_recon(holder, holder_name, month, status, note, lines, totals, by_id, by_name)
+  values (p_holder, (select full_name from public.profiles where id = p_holder), p_month, case when p_ok then 'ok' else 'diff' end, left(nullif(btrim(coalesce(p_note,'')),''),1000), L, coalesce(t,'{}'), auth.uid(), nm)
+  on conflict (holder, month) do update set status = excluded.status, note = excluded.note, lines = excluded.lines, totals = excluded.totals, by_id = excluded.by_id, by_name = excluded.by_name, at = now();
+  begin perform public.fm_push_add(p_holder, 'wh_issued', case when p_ok then '✅ اعتُمدت مطابقة عهدتك لشهر ' else '⚠️ فروقات في مطابقة عهدتك لشهر ' end || p_month,
+    concat_ws(' — ', nm, nullif(btrim(coalesce(p_note,'')),'')), 'cus', 'recon-' || p_month, false); exception when others then null; end;
+  return case when p_ok then 'ok' else 'diff' end;
+end $$;
+
+revoke all on function public.fm_recon_can_sign(uuid), public.fm_custody_recon_list(text), public.fm_custody_recon_get(uuid,text), public.fm_custody_recon_sign(uuid,text,boolean,text) from public, anon;
+grant execute on function public.fm_recon_can_sign(uuid), public.fm_custody_recon_list(text), public.fm_custody_recon_get(uuid,text), public.fm_custody_recon_sign(uuid,text,boolean,text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 63 (V260): framework agreements with suppliers
+-- An agreement fixes prices for a period with an optional value cap and per-item quantity caps. A purchase request
+-- raised from it (fm_fa_order → fm_po_save with the agreement prices, no quotations) carries framework_id and still goes
+-- through the normal approval (fm_po_act). Used = requests approved / partial / received (and requested, as reserved).
+-- fm_v260_daily() (pg_cron fm-v260-daily 05:55 UTC): push wh_fa to the managers at 30 / 7 / 0 days before the end and
+-- once when 80 % of the cap is used.
+-- ═══════════════════════════════════════════════════════════════════════════
+create sequence if not exists public.wo_fa_seq;
+create table if not exists public.wo_frameworks (
+  id          uuid primary key default gen_random_uuid(),
+  code        text unique not null default ('FA-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_fa_seq')::text, 3, '0')),
+  supplier_id uuid not null references public.wo_suppliers(id) on delete restrict,
+  title       text not null,
+  ref         text,
+  regions     text[] not null default '{}',
+  start_date  date not null,
+  end_date    date not null,
+  cap_value   numeric(14,2) not null default 0,
+  lines       jsonb not null default '[]',   -- [{material_id, price, cap_qty}]
+  status      text not null default 'active' check (status in ('active','ended','cancelled')),
+  note        text,
+  alerts      jsonb not null default '{}',
+  by_id       uuid references public.profiles(id) on delete set null,
+  by_name     text,
+  at          timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+alter table public.wo_frameworks enable row level security;
+revoke all on public.wo_frameworks from public, anon, authenticated;
+alter table public.wo_purchase_requests add column if not exists framework_id uuid references public.wo_frameworks(id) on delete set null;
+
+create or replace function public.fm_fa_can_edit() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_wh_admin() or public.fm_my_pos() in ('dept_manager','accountant'), false) $$;
+
+-- internal: usage of an agreement
+create or replace function public.fm_fa_used(f uuid) returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'value', coalesce(sum(r.total) filter (where r.status in ('approved','partial','received')), 0),
+    'pending', coalesce(sum(r.total) filter (where r.status = 'requested'), 0),
+    'n', count(*) filter (where r.status not in ('rejected','cancelled')),
+    'qty', coalesce((select jsonb_object_agg(k, q) from (select l->>'material_id' k, sum((l->>'qty')::numeric) q
+        from public.wo_purchase_requests r2 cross join lateral jsonb_array_elements(r2.lines) l
+       where r2.framework_id = f and r2.status not in ('rejected','cancelled') group by 1) z), '{}'::jsonb))
+    from public.wo_purchase_requests r where r.framework_id = f and r.status not in ('rejected','cancelled') $$;
+revoke all on function public.fm_fa_used(uuid) from public, anon, authenticated;
+
+create or replace function public.fm_fa_save(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare id_ uuid := nullif(p->>'id','')::uuid; x jsonb; L jsonb := '[]'; s uuid := nullif(p->>'supplier_id','')::uuid; d1 date; d2 date; r public.wo_frameworks; pr numeric; cq numeric; seen text[] := '{}';
+begin
+  if auth.uid() is null or not public.fm_fa_can_edit() then raise exception 'not allowed'; end if;
+  if not public.fm_mod('wh') then raise exception 'module disabled'; end if;
+  if not exists (select 1 from public.wo_suppliers where id = s) then raise exception 'unknown supplier'; end if;
+  if length(btrim(coalesce(p->>'title',''))) < 3 then raise exception 'title required'; end if;
+  d1 := (p->>'start_date')::date; d2 := (p->>'end_date')::date;
+  if d1 is null or d2 is null or d2 < d1 then raise exception 'invalid dates'; end if;
+  if coalesce(nullif(p->>'cap_value','')::numeric,0) < 0 then raise exception 'invalid cap'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+    if not exists (select 1 from public.wo_materials where id = nullif(x->>'material_id','')::uuid and active) then raise exception 'unknown material'; end if;
+    if (x->>'material_id') = any(seen) then raise exception 'duplicate material'; end if; seen := seen || (x->>'material_id');
+    pr := nullif(x->>'price','')::numeric; if pr is null or pr <= 0 then raise exception 'invalid price'; end if;
+    cq := coalesce(nullif(x->>'cap_qty','')::numeric,0); if cq < 0 then raise exception 'invalid qty'; end if;
+    L := L || jsonb_build_object('material_id', x->>'material_id', 'price', round(pr,2), 'cap_qty', cq);
+  end loop;
+  if jsonb_array_length(L) = 0 or jsonb_array_length(L) > 500 then raise exception 'no lines'; end if;
+  if id_ is null then
+    insert into public.wo_frameworks(supplier_id, title, ref, regions, start_date, end_date, cap_value, lines, note, by_id, by_name)
+    values (s, left(btrim(p->>'title'),200), left(nullif(btrim(coalesce(p->>'ref','')),''),100),
+      coalesce((select array_agg(v) from jsonb_array_elements_text(case when jsonb_typeof(p->'regions') = 'array' then p->'regions' else '[]' end) v), '{}'),
+      d1, d2, coalesce(nullif(p->>'cap_value','')::numeric,0), L, left(nullif(btrim(coalesce(p->>'note','')),''),1000), auth.uid(), public.fm_me_name()) returning * into r;
+  else
+    update public.wo_frameworks set supplier_id = s, title = left(btrim(p->>'title'),200), ref = left(nullif(btrim(coalesce(p->>'ref','')),''),100),
+      regions = coalesce((select array_agg(v) from jsonb_array_elements_text(case when jsonb_typeof(p->'regions') = 'array' then p->'regions' else '[]' end) v), '{}'),
+      start_date = d1, end_date = d2, cap_value = coalesce(nullif(p->>'cap_value','')::numeric,0), lines = L, note = left(nullif(btrim(coalesce(p->>'note','')),''),1000), updated_at = now()
+     where id = id_ and status = 'active' returning * into r;
+    if not found then raise exception 'invalid status'; end if;
+  end if;
+  return jsonb_build_object('id', r.id, 'code', r.code);
+end $$;
+
+create or replace function public.fm_fa_end(p_id uuid, p_cancel boolean default false, p_note text default '') returns text language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_fa_can_edit() then raise exception 'not allowed'; end if;
+  update public.wo_frameworks set status = case when p_cancel then 'cancelled' else 'ended' end, note = concat_ws(' — ', note, nullif(btrim(coalesce(p_note,'')),'')), updated_at = now()
+   where id = p_id and status = 'active';
+  if not found then raise exception 'invalid status'; end if;
+  return 'ok';
+end $$;
+
+create or replace function public.fm_fa_list() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare today date := (now() at time zone 'Asia/Riyadh')::date;
+begin
+  if auth.uid() is null or public.fm_role() in ('pending') or public.fm_my_pos() in ('supervisor','contractor') then raise exception 'not allowed'; end if;
+  return jsonb_build_object('can_edit', public.fm_fa_can_edit(), 'rows', coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'code', f.code, 'title', f.title, 'ref', f.ref,
+      'supplier_id', f.supplier_id, 'supplier', s.name, 'regions', to_jsonb(f.regions), 'start', f.start_date, 'end', f.end_date, 'cap', f.cap_value, 'lines', f.lines,
+      'status', case when f.status = 'active' and f.end_date < today then 'expired' else f.status end, 'note', f.note, 'by', f.by_name, 'at', f.at,
+      'days_left', f.end_date - today, 'used', public.fm_fa_used(f.id)) order by (f.status = 'active') desc, f.end_date)
+    from public.wo_frameworks f left join public.wo_suppliers s on s.id = f.supplier_id
+   where cardinality(f.regions) = 0 or public.fm_role() = 'admin' or public.fm_scope_all() or f.regions && public.fm_regions() or public.fm_my_pos() in ('accountant','owner_rep')), '[]'::jsonb));
+end $$;
+
+-- p {fa_id, store_id, lines:[{material_id, qty}], note}
+create or replace function public.fm_fa_order(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare f public.wo_frameworks; st public.wo_stores; x jsonb; ln jsonb; L jsonb := '[]'; u jsonb; t numeric := 0; q numeric; res jsonb; today date := (now() at time zone 'Asia/Riyadh')::date;
+begin
+  select * into f from public.wo_frameworks where id = nullif(p->>'fa_id','')::uuid for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if f.status <> 'active' or today < f.start_date or today > f.end_date then raise exception 'agreement not active'; end if;
+  select * into st from public.wo_stores where id = nullif(p->>'store_id','')::uuid and active;
+  if not found then raise exception 'not allowed'; end if;
+  if cardinality(f.regions) > 0 and not (st.region = any(f.regions)) then raise exception 'region not covered'; end if;
+  u := public.fm_fa_used(f.id);
+  if jsonb_typeof(p->'lines') <> 'array' or jsonb_array_length(p->'lines') = 0 then raise exception 'no lines'; end if;
+  for x in select * from jsonb_array_elements(p->'lines') loop
+    ln := null;
+    select fl.e into ln from jsonb_array_elements(f.lines) fl(e) where fl.e->>'material_id' = x->>'material_id';
+    if ln is null then raise exception 'item not in agreement'; end if;
+    q := nullif(x->>'qty','')::numeric; if q is null or q <= 0 then raise exception 'invalid qty'; end if;
+    if coalesce((ln->>'cap_qty')::numeric,0) > 0 and coalesce((u->'qty'->>(x->>'material_id'))::numeric,0) + q > (ln->>'cap_qty')::numeric then
+      raise exception 'quantity cap exceeded %', x->>'material_id'; end if;
+    L := L || jsonb_build_object('material_id', x->>'material_id', 'qty', q, 'price', (ln->>'price')::numeric); t := t + q * (ln->>'price')::numeric;
+  end loop;
+  if f.cap_value > 0 and (u->>'value')::numeric + (u->>'pending')::numeric + t > f.cap_value then raise exception 'value cap exceeded'; end if;
+  res := public.fm_po_save(jsonb_build_object('store_id', st.id, 'supplier_id', f.supplier_id, 'lines', L,
+    'note', concat_ws(' — ', f.code || ' — اتفاقية إطارية: ' || f.title, nullif(btrim(coalesce(p->>'note','')),''))));
+  update public.wo_purchase_requests set framework_id = f.id where id = (res->>'id')::uuid;
+  return res || jsonb_build_object('total', round(t,2));
+end $$;
+
+create or replace function public.fm_v260_daily() returns int language plpgsql security definer set search_path = public as $$
+declare f record; u uuid; n int := 0; today date := (now() at time zone 'Asia/Riyadh')::date; k text; used numeric; msg text; ev jsonb;
+begin
+  for f in select * from public.wo_frameworks where status = 'active' loop
+    ev := '[]'::jsonb;
+    if f.end_date - today in (30, 7, 0) and not (f.alerts ? ('end' || (f.end_date - today) || ':' || f.end_date)) then
+      ev := ev || jsonb_build_object('k', 'end' || (f.end_date - today) || ':' || f.end_date, 'm', case when f.end_date = today then 'تنتهي اليوم' else 'تنتهي خلال ' || (f.end_date - today) || ' يوم' end);
+    end if;
+    if f.cap_value > 0 and not (f.alerts ? 'cap80') then
+      used := (public.fm_fa_used(f.id)->>'value')::numeric;
+      if used >= f.cap_value * 0.8 then ev := ev || jsonb_build_object('k', 'cap80', 'm', 'استُهلك ' || round(used / f.cap_value * 100) || '% من سقفها'); end if;
+    end if;
+    for k, msg in select e->>'k', e->>'m' from jsonb_array_elements(ev) e loop
+      update public.wo_frameworks set alerts = alerts || jsonb_build_object(k, now()) where id = f.id;
+      for u in select p.id from public.profiles p where p.active and public.fm_posx(p.role, p.job_title) in ('sysadmin','project_manager','ops_manager','accountant') loop
+        begin perform public.fm_push_add(u, 'wh_fa', '📑 اتفاقية إطارية ' || f.code || ': ' || msg, f.title, 'wh=fa', 'fa-' || f.code || '-' || k, false); exception when others then null; end;
+      end loop;
+      n := n + 1;
+    end loop;
+  end loop;
+  update public.wo_frameworks set status = 'ended', updated_at = now() where status = 'active' and end_date < today - 30;
+  return n;
+end $$;
+revoke all on function public.fm_v260_daily() from public, anon, authenticated;
+revoke all on function public.fm_fa_can_edit(), public.fm_fa_save(jsonb), public.fm_fa_end(uuid,boolean,text), public.fm_fa_list(), public.fm_fa_order(jsonb) from public, anon;
+grant execute on function public.fm_fa_can_edit(), public.fm_fa_save(jsonb), public.fm_fa_end(uuid,boolean,text), public.fm_fa_list(), public.fm_fa_order(jsonb) to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v260-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v260-daily'', ''55 5 * * *'', ''select public.fm_v260_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: framework agreement reminders are not pushed'; end;
+end $do$;
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 64 (V262): supplier portal (supplier.html?k=<64 hex>, no account)
+-- One active private link per supplier. Through anon RPCs the supplier sees open quotation requests (wo_rfqs; all, or only
+-- those that list him in `invited`), sends / updates his quotation (wo_rfq_quotes, by_name «المورد عبر البوابة»), follows
+-- his purchase requests and framework agreements, and uploads invoices (wo_supplier_invoices) that the accountant / warehouse
+-- accepts, rejects or marks paid. Staff: fm_supplier_link_make / _revoke / _list, fm_supplier_inv_list / _act.
+-- ═══════════════════════════════════════════════════════════════════════════
+alter table public.wo_rfqs add column if not exists invited uuid[] not null default '{}';
+create table if not exists public.wo_supplier_links (
+  token        text primary key check (token ~ '^[0-9a-f]{64}$'),
+  supplier_id  uuid not null references public.wo_suppliers(id) on delete cascade,
+  active       boolean not null default true,
+  created_by   uuid default auth.uid() references public.profiles(id) on delete set null,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz,
+  revoked_at   timestamptz
+);
+create unique index if not exists wo_supplier_links_one on public.wo_supplier_links (supplier_id) where active;
+create sequence if not exists public.wo_sinv_seq;
+create table if not exists public.wo_supplier_invoices (
+  id           uuid primary key default gen_random_uuid(),
+  code         text unique not null default ('SI-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_sinv_seq')::text, 4, '0')),
+  supplier_id  uuid not null references public.wo_suppliers(id) on delete cascade,
+  po_id        uuid references public.wo_purchase_requests(id) on delete set null,
+  po_code      text,
+  invoice_no   text not null,
+  invoice_date date,
+  amount       numeric(14,2) not null check (amount > 0),
+  vat          numeric(14,2),
+  photo        text check (photo is null or length(photo) <= 560000),
+  note         text,
+  status       text not null default 'new' check (status in ('new','accepted','rejected','paid')),
+  response     text,
+  pay_ref      text,
+  at           timestamptz not null default now(),
+  dec_by       uuid references public.profiles(id) on delete set null,
+  dec_name     text,
+  dec_at       timestamptz
+);
+alter table public.wo_supplier_links enable row level security;
+alter table public.wo_supplier_invoices enable row level security;
+revoke all on public.wo_supplier_links, public.wo_supplier_invoices from public, anon, authenticated;
+
+create or replace function public.fm_sup_staff() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_wh_edit() or public.fm_my_pos() in ('accountant','dept_manager'), false) $$;
+-- internal: token → supplier id (active link, active supplier); touches last_used_at
+create or replace function public.fm_sup_token(p_token text) returns uuid language plpgsql security definer set search_path = public as $$
+declare s uuid;
+begin
+  select l.supplier_id into s from public.wo_supplier_links l join public.wo_suppliers w on w.id = l.supplier_id
+   where l.token = lower(coalesce(p_token,'')) and l.active and coalesce(w.active, true);
+  if s is null then raise exception 'invalid link'; end if;
+  update public.wo_supplier_links set last_used_at = now() where token = lower(p_token) and (last_used_at is null or last_used_at < now() - interval '5 minutes');
+  return s;
+end $$;
+revoke all on function public.fm_sup_token(text) from public, anon, authenticated;
+
+create or replace function public.fm_supplier_link_make(p_supplier uuid, p_renew boolean default false) returns text language plpgsql security definer set search_path = public as $$
+declare t text;
+begin
+  if auth.uid() is null or not public.fm_sup_staff() then raise exception 'not allowed'; end if;
+  if not exists (select 1 from public.wo_suppliers where id = p_supplier) then raise exception 'unknown supplier'; end if;
+  if p_renew then update public.wo_supplier_links set active = false, revoked_at = now() where supplier_id = p_supplier and active; end if;
+  select token into t from public.wo_supplier_links where supplier_id = p_supplier and active;
+  if t is null then
+    t := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+    insert into public.wo_supplier_links(token, supplier_id) values (t, p_supplier);
+  end if;
+  return t;
+end $$;
+create or replace function public.fm_supplier_link_revoke(p_supplier uuid) returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  if auth.uid() is null or not public.fm_sup_staff() then raise exception 'not allowed'; end if;
+  update public.wo_supplier_links set active = false, revoked_at = now() where supplier_id = p_supplier and active;
+  get diagnostics n = row_count; return n;
+end $$;
+create or replace function public.fm_supplier_links_list() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('supplier_id', s.id, 'name', s.name, 'phone', s.phone, 'token', l.token, 'last_used', l.last_used_at, 'created', l.created_at,
+      'inv_new', (select count(*) from public.wo_supplier_invoices i where i.supplier_id = s.id and i.status = 'new')) order by s.name), '[]'::jsonb)
+    from public.wo_suppliers s left join public.wo_supplier_links l on l.supplier_id = s.id and l.active
+   where auth.uid() is not null and public.fm_sup_staff() $$;
+
+-- anon: everything the supplier sees
+create or replace function public.fm_supplier_portal(p_token text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s uuid; sp public.wo_suppliers;
+begin
+  s := public.fm_sup_token(p_token);
+  select * into sp from public.wo_suppliers where id = s;
+  return jsonb_build_object('state', 'ok', 'supplier', sp.name,
+    'rfqs', coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'code', r.code, 'at', r.at, 'due', r.due_date, 'note', r.note, 'region', r.region,
+        'lines', (select jsonb_agg(jsonb_build_object('material_id', l->>'material_id', 'qty', (l->>'qty')::numeric, 'name', m.name, 'unit', m.unit, 'code', m.code, 'specs', m.specs))
+                    from jsonb_array_elements(r.lines) l left join public.wo_materials m on m.id = (l->>'material_id')::uuid),
+        'quote', (select jsonb_build_object('prices', q.prices, 'total', q.total, 'delivery_days', q.delivery_days, 'valid_until', q.valid_until, 'note', q.note, 'at', q.at)
+                    from public.wo_rfq_quotes q where q.rfq_id = r.id and q.supplier_id = s)) order by r.at desc)
+      from public.wo_rfqs r where r.status = 'open' and (cardinality(r.invited) = 0 or s = any(r.invited)) and (r.due_date is null or r.due_date >= (now() at time zone 'Asia/Riyadh')::date - 1)), '[]'::jsonb),
+    'won', coalesce((select jsonb_agg(jsonb_build_object('code', r.code, 'po', r.po_code, 'at', r.decided_at) order by r.decided_at desc)
+      from (select * from public.wo_rfqs where award_supplier_id = s and status = 'awarded' order by decided_at desc limit 20) r), '[]'::jsonb),
+    'pos', coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'code', p.code, 'at', p.at, 'status', p.status, 'total', p.total, 'received_at', p.received_at,
+        'lines', (select jsonb_agg(jsonb_build_object('name', m.name, 'unit', m.unit, 'qty', (l->>'qty')::numeric, 'price', (l->>'price')::numeric, 'recv', coalesce((l->>'recv')::numeric,0)))
+                    from jsonb_array_elements(p.lines) l left join public.wo_materials m on m.id = (l->>'material_id')::uuid),
+        'inv', (select jsonb_agg(jsonb_build_object('code', i.code, 'status', i.status)) from public.wo_supplier_invoices i where i.po_id = p.id)) order by p.at desc)
+      from (select * from public.wo_purchase_requests where supplier_id = s and status in ('approved','partial','received') order by at desc limit 60) p), '[]'::jsonb),
+    'fas', coalesce((select jsonb_agg(jsonb_build_object('code', f.code, 'title', f.title, 'start', f.start_date, 'end', f.end_date, 'status', f.status, 'cap', f.cap_value, 'used', (public.fm_fa_used(f.id)->>'value')::numeric))
+      from public.wo_frameworks f where f.supplier_id = s and f.status = 'active'), '[]'::jsonb),
+    'invoices', coalesce((select jsonb_agg(jsonb_build_object('code', i.code, 'po', i.po_code, 'no', i.invoice_no, 'date', i.invoice_date, 'amount', i.amount, 'status', i.status, 'response', i.response, 'pay_ref', i.pay_ref, 'at', i.at) order by i.at desc)
+      from (select * from public.wo_supplier_invoices where supplier_id = s order by at desc limit 60) i), '[]'::jsonb));
+end $$;
+
+-- anon: quotation p {prices:[{material_id, price}], delivery_days, valid_until, note, photo}
+create or replace function public.fm_supplier_quote(p_token text, p_rfq uuid, p jsonb) returns numeric language plpgsql security definer set search_path = public as $$
+declare s uuid; sp public.wo_suppliers; r public.wo_rfqs; ln jsonb; pr numeric; PQ jsonb := '[]'; t numeric := 0;
+begin
+  s := public.fm_sup_token(p_token);
+  select * into sp from public.wo_suppliers where id = s;
+  select * into r from public.wo_rfqs where id = p_rfq for update;
+  if not found or r.status <> 'open' or not (cardinality(r.invited) = 0 or s = any(r.invited)) then raise exception 'not open'; end if;
+  if length(coalesce(p->>'photo','')) > 420000 then raise exception 'photo too large'; end if;
+  if nullif(p->>'photo','') is not null and (p->>'photo') !~ '^data:(image/(jpeg|png|webp)|application/pdf);base64,' then raise exception 'invalid photo'; end if;
+  for ln in select * from jsonb_array_elements(r.lines) loop
+    pr := (select nullif(e->>'price','')::numeric from jsonb_array_elements(case when jsonb_typeof(p->'prices') = 'array' then p->'prices' else '[]' end) z(e) where e->>'material_id' = ln->>'material_id' limit 1);
+    if pr is not null and (pr < 0 or pr > 10000000) then raise exception 'invalid price'; end if;
+    PQ := PQ || jsonb_build_object('material_id', ln->>'material_id', 'price', pr);
+    t := t + coalesce(pr, 0) * (ln->>'qty')::numeric;
+  end loop;
+  if not exists(select 1 from jsonb_array_elements(PQ) e where e->>'price' is not null) then raise exception 'no prices'; end if;
+  insert into public.wo_rfq_quotes(rfq_id, supplier_id, supplier_name, prices, total, delivery_days, valid_until, note, photo, by_name)
+  values (r.id, s, sp.name, PQ, round(t,2), least(greatest(nullif(p->>'delivery_days','')::int,0),365), nullif(p->>'valid_until','')::date, left(nullif(btrim(coalesce(p->>'note','')),''),500), nullif(p->>'photo',''), 'المورد عبر البوابة')
+  on conflict (rfq_id, supplier_id) do update set prices = excluded.prices, total = excluded.total, delivery_days = excluded.delivery_days,
+    valid_until = excluded.valid_until, note = excluded.note, photo = coalesce(excluded.photo, public.wo_rfq_quotes.photo), at = now(), by_name = excluded.by_name;
+  return round(t,2);
+end $$;
+
+-- anon: invoice p {po_id?, invoice_no, invoice_date, amount, vat?, photo, note}
+create or replace function public.fm_supplier_invoice(p_token text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s uuid; po public.wo_purchase_requests; i public.wo_supplier_invoices; a numeric := nullif(p->>'amount','')::numeric; u uuid; reg text;
+begin
+  s := public.fm_sup_token(p_token);
+  if (select count(*) from public.wo_supplier_invoices where supplier_id = s and at > now() - interval '1 day') >= 20 then raise exception 'too many'; end if;
+  if length(btrim(coalesce(p->>'invoice_no',''))) < 1 then raise exception 'invoice no required'; end if;
+  if a is null or a <= 0 or a > 100000000 then raise exception 'invalid amount'; end if;
+  if nullif(p->>'photo','') is null then raise exception 'photo required'; end if;
+  if length(p->>'photo') > 560000 or (p->>'photo') !~ '^data:(image/(jpeg|png|webp)|application/pdf);base64,' then raise exception 'invalid photo'; end if;
+  if nullif(p->>'po_id','') is not null then
+    select * into po from public.wo_purchase_requests where id = (p->>'po_id')::uuid and supplier_id = s;
+    if not found then raise exception 'unknown po'; end if;
+    select region into reg from public.wo_stores where id = po.store_id;
+  end if;
+  if exists (select 1 from public.wo_supplier_invoices where supplier_id = s and lower(btrim(invoice_no)) = lower(btrim(p->>'invoice_no')) and status <> 'rejected') then raise exception 'duplicate invoice'; end if;
+  insert into public.wo_supplier_invoices(supplier_id, po_id, po_code, invoice_no, invoice_date, amount, vat, photo, note)
+  values (s, po.id, po.code, left(btrim(p->>'invoice_no'),60), nullif(p->>'invoice_date','')::date, round(a,2), nullif(p->>'vat','')::numeric, p->>'photo', left(nullif(btrim(coalesce(p->>'note','')),''),500)) returning * into i;
+  begin
+    for u in select p2.id from public.profiles p2 where p2.active and public.fm_posx(p2.role, p2.job_title) in ('accountant','project_manager') union select * from public.fm_wh_keepers_of(reg) loop
+      perform public.fm_push_add(u, 'wh_inv', '🧾 فاتورة مورد جديدة ' || i.code, concat_ws(' — ', (select name from public.wo_suppliers where id = s), i.invoice_no, round(i.amount) || ' ر.س', i.po_code), 'wh=inv', 'sinv-' || i.code, false);
+    end loop;
+  exception when others then null; end;
+  return jsonb_build_object('code', i.code);
+end $$;
+
+create or replace function public.fm_supplier_inv_list(p_days int default 180) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'code', i.code, 'supplier', s.name, 'supplier_id', i.supplier_id, 'po', i.po_code, 'po_id', i.po_id, 'po_total', p.total, 'po_status', p.status,
+      'no', i.invoice_no, 'date', i.invoice_date, 'amount', i.amount, 'vat', i.vat, 'note', i.note, 'status', i.status, 'response', i.response, 'pay_ref', i.pay_ref, 'at', i.at,
+      'dec', i.dec_name, 'dec_at', i.dec_at) order by (i.status = 'new') desc, i.at desc), '[]'::jsonb)
+    from public.wo_supplier_invoices i join public.wo_suppliers s on s.id = i.supplier_id left join public.wo_purchase_requests p on p.id = i.po_id
+   where auth.uid() is not null and public.fm_sup_staff() and i.at > now() - make_interval(days => least(greatest(coalesce(p_days,180),7),1100)) $$;
+create or replace function public.fm_supplier_inv_photo(p_id uuid) returns text language sql stable security definer set search_path = public as $$
+  select photo from public.wo_supplier_invoices where id = p_id and auth.uid() is not null and public.fm_sup_staff() $$;
+create or replace function public.fm_supplier_inv_act(p_id uuid, p_action text, p_note text default '', p_ref text default '') returns text language plpgsql security definer set search_path = public as $$
+declare i public.wo_supplier_invoices;
+begin
+  select * into i from public.wo_supplier_invoices where id = p_id for update;
+  if auth.uid() is null or not found or not public.fm_sup_staff() then raise exception 'not allowed'; end if;
+  if p_action = 'accept' and i.status = 'new' then update public.wo_supplier_invoices set status = 'accepted', response = nullif(btrim(coalesce(p_note,'')),''), dec_by = auth.uid(), dec_name = public.fm_me_name(), dec_at = now() where id = p_id;
+  elsif p_action = 'reject' and i.status = 'new' then
+    if length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+    update public.wo_supplier_invoices set status = 'rejected', response = btrim(p_note), dec_by = auth.uid(), dec_name = public.fm_me_name(), dec_at = now() where id = p_id;
+  elsif p_action = 'paid' and i.status in ('new','accepted') then
+    if not (public.fm_role() = 'admin' or public.fm_my_pos() in ('accountant','sysadmin')) then raise exception 'not allowed'; end if;
+    update public.wo_supplier_invoices set status = 'paid', pay_ref = left(nullif(btrim(coalesce(p_ref,'')),''),100), response = coalesce(nullif(btrim(coalesce(p_note,'')),''), response), dec_by = auth.uid(), dec_name = public.fm_me_name(), dec_at = now() where id = p_id;
+  else raise exception 'invalid status'; end if;
+  return p_action;
+end $$;
+
+create or replace function public.fm_rfq_invite(p_rfq uuid, p_suppliers uuid[]) returns int language plpgsql security definer set search_path = public as $$
+declare r public.wo_rfqs;
+begin
+  select * into r from public.wo_rfqs where id = p_rfq;
+  if auth.uid() is null or not found or not (public.fm_stock_can(r.region) or public.fm_wh_keeper(r.store_id)) then raise exception 'not allowed'; end if;
+  update public.wo_rfqs set invited = coalesce(p_suppliers, '{}') where id = p_rfq;
+  return coalesce(cardinality(p_suppliers),0);
+end $$;
+
+revoke all on function public.fm_sup_staff(), public.fm_supplier_link_make(uuid,boolean), public.fm_supplier_link_revoke(uuid), public.fm_supplier_links_list(),
+  public.fm_supplier_inv_list(int), public.fm_supplier_inv_photo(uuid), public.fm_supplier_inv_act(uuid,text,text,text), public.fm_rfq_invite(uuid,uuid[]),
+  public.fm_supplier_portal(text), public.fm_supplier_quote(text,uuid,jsonb), public.fm_supplier_invoice(text,jsonb) from public;
+grant execute on function public.fm_sup_staff(), public.fm_supplier_link_make(uuid,boolean), public.fm_supplier_link_revoke(uuid), public.fm_supplier_links_list(),
+  public.fm_supplier_inv_list(int), public.fm_supplier_inv_photo(uuid), public.fm_supplier_inv_act(uuid,text,text,text), public.fm_rfq_invite(uuid,uuid[]) to authenticated;
+grant execute on function public.fm_supplier_portal(text), public.fm_supplier_quote(text,uuid,jsonb), public.fm_supplier_invoice(text,jsonb) to anon, authenticated;
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 65 (V263): approved alternative items
+-- wo_material_alts: pairs (material, alt) kept in both directions; set by the warehouse (fm_wh_edit) per item with
+-- fm_mat_alt_set(material, alts[], note) (replaces that item's list; both items must be active). Read by every signed-in
+-- non-pending account (fm_mat_alts()). The apps suggest an alternative that has balance when the item runs out.
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.wo_material_alts (
+  material_id uuid not null references public.wo_materials(id) on delete cascade,
+  alt_id      uuid not null references public.wo_materials(id) on delete cascade,
+  note        text,
+  by_name     text,
+  at          timestamptz not null default now(),
+  primary key (material_id, alt_id),
+  check (material_id <> alt_id)
+);
+alter table public.wo_material_alts enable row level security;
+revoke all on public.wo_material_alts from public, anon, authenticated;
+
+create or replace function public.fm_mat_alt_set(p_material uuid, p_alts uuid[], p_note text default '') returns int language plpgsql security definer set search_path = public as $$
+declare a uuid; n int := 0; nm text := public.fm_me_name();
+begin
+  if auth.uid() is null or not public.fm_wh_edit() then raise exception 'not allowed'; end if;
+  if not exists (select 1 from public.wo_materials where id = p_material and active) then raise exception 'unknown material'; end if;
+  if coalesce(cardinality(p_alts),0) > 20 then raise exception 'too many'; end if;
+  delete from public.wo_material_alts where (material_id = p_material and not (alt_id = any(coalesce(p_alts,'{}')))) or (alt_id = p_material and not (material_id = any(coalesce(p_alts,'{}'))));
+  foreach a in array coalesce(p_alts,'{}') loop
+    if a = p_material then continue; end if;
+    if not exists (select 1 from public.wo_materials where id = a and active) then raise exception 'unknown material'; end if;
+    insert into public.wo_material_alts(material_id, alt_id, note, by_name) values (p_material, a, left(nullif(btrim(coalesce(p_note,'')),''),200), nm)
+      on conflict (material_id, alt_id) do update set note = excluded.note, by_name = excluded.by_name, at = now();
+    insert into public.wo_material_alts(material_id, alt_id, note, by_name) values (a, p_material, left(nullif(btrim(coalesce(p_note,'')),''),200), nm)
+      on conflict (material_id, alt_id) do update set note = excluded.note, by_name = excluded.by_name, at = now();
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+create or replace function public.fm_mat_alts() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('m', a.material_id, 'a', a.alt_id, 'note', a.note)), '[]'::jsonb)
+    from public.wo_material_alts a join public.wo_materials x on x.id = a.alt_id and x.active
+   where auth.uid() is not null and public.fm_role() <> 'pending' $$;
+revoke all on function public.fm_mat_alt_set(uuid,uuid[],text), public.fm_mat_alts() from public, anon;
+grant execute on function public.fm_mat_alt_set(uuid,uuid[],text), public.fm_mat_alts() to authenticated;
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 66 (V264): overtime and night emergencies
+-- fm_overtime: one row per piece of work outside the shift. The field app starts it (fm_ot_start, location) and ends it
+-- (fm_ot_end, location → hours), or the person records it afterwards within 7 days (fm_ot_add, flagged manual).
+-- The managers above the person (fm_is_under), project / ops managers, the area manager of his region and the system
+-- admin approve, reject or adjust the hours (fm_ot_act); never their own. fm_ot_list(month) → own rows + rows they may see
+-- (+ accountant / scope_all); the platform sums approved hours per person and kind for payroll.
+-- ═══════════════════════════════════════════════════════════════════════════
+create sequence if not exists public.fm_ot_seq;
+create table if not exists public.fm_overtime (
+  id          uuid primary key default gen_random_uuid(),
+  code        text unique not null default ('OT-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_ot_seq')::text, 5, '0')),
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  user_name   text,
+  region      text,
+  kind        text not null default 'after_hours' check (kind in ('after_hours','emergency','weekend','holiday')),
+  reason      text not null,
+  ticket_ref  text,
+  wo_code     text,
+  school      text,
+  start_at    timestamptz not null,
+  end_at      timestamptz,
+  hours       numeric(6,2),
+  month       text,
+  manual      boolean not null default false,
+  lat1 double precision, lng1 double precision, lat2 double precision, lng2 double precision,
+  status      text not null default 'open' check (status in ('open','pending','approved','rejected')),
+  appr_hours  numeric(6,2),
+  dec_by      uuid references public.profiles(id) on delete set null,
+  dec_name    text,
+  dec_at      timestamptz,
+  dec_note    text,
+  at          timestamptz not null default now()
+);
+create unique index if not exists fm_overtime_open on public.fm_overtime (user_id) where status = 'open';
+create index if not exists fm_overtime_m on public.fm_overtime (month, user_id);
+alter table public.fm_overtime enable row level security;
+revoke all on public.fm_overtime from public, anon, authenticated;
+
+create or replace function public.fm_ot_dec_can(u uuid, reg text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and u is distinct from auth.uid() and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or public.fm_is_under(u, auth.uid()) or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(reg,'')))) $$;
+create or replace function public.fm_ot_sees(u uuid, reg text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (u = auth.uid() or public.fm_ot_dec_can(u, reg) or public.fm_scope_all() or public.fm_my_pos() = 'accountant') $$;
+
+-- internal: close a row with its hours and notify the line manager
+create or replace function public.fm_ot_close(p_id uuid, p_end timestamptz, p_lat double precision, p_lng double precision) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.fm_overtime; h numeric; boss uuid;
+begin
+  select * into r from public.fm_overtime where id = p_id for update;
+  if p_end <= r.start_at then raise exception 'invalid time'; end if;
+  h := round(extract(epoch from (p_end - r.start_at)) / 3600.0, 2);
+  if h > 16 then raise exception 'too long'; end if;
+  update public.fm_overtime set end_at = p_end, hours = h, status = 'pending', lat2 = p_lat, lng2 = p_lng,
+    month = to_char(r.start_at at time zone 'Asia/Riyadh','YYYY-MM') where id = p_id returning * into r;
+  select reports_to into boss from public.profiles where id = r.user_id;
+  begin
+    if boss is not null then perform public.fm_push_add(boss, 'ot', '⏱️ عمل إضافي بانتظار اعتمادك ' || r.code, concat_ws(' — ', r.user_name, h || ' ساعة', r.reason), 'ot', 'ot-' || r.code, false); end if;
+  exception when others then null; end;
+  return jsonb_build_object('id', r.id, 'code', r.code, 'hours', h);
+end $$;
+revoke all on function public.fm_ot_close(uuid,timestamptz,double precision,double precision) from public, anon, authenticated;
+
+-- p {kind, reason, ticket_ref, wo_code, school, lat, lng}
+create or replace function public.fm_ot_start(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare me public.profiles; r public.fm_overtime;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if auth.uid() is null or me.id is null or not coalesce(me.active,true) or public.fm_role() in ('pending','viewer') then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p->>'reason',''))) < 3 then raise exception 'reason required'; end if;
+  if exists (select 1 from public.fm_overtime where user_id = auth.uid() and status = 'open') then raise exception 'already open'; end if;
+  insert into public.fm_overtime(user_id, user_name, region, kind, reason, ticket_ref, wo_code, school, start_at, lat1, lng1, month)
+  values (auth.uid(), me.full_name, (me.regions)[1], coalesce(nullif(p->>'kind',''),'after_hours'), left(btrim(p->>'reason'),300), left(nullif(btrim(coalesce(p->>'ticket_ref','')),''),60),
+    left(nullif(btrim(coalesce(p->>'wo_code','')),''),60), left(nullif(btrim(coalesce(p->>'school','')),''),200), now(), nullif(p->>'lat','')::float8, nullif(p->>'lng','')::float8,
+    to_char(now() at time zone 'Asia/Riyadh','YYYY-MM')) returning * into r;
+  return jsonb_build_object('id', r.id, 'code', r.code, 'start', r.start_at);
+end $$;
+create or replace function public.fm_ot_end(p_id uuid, p jsonb default '{}') returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not exists (select 1 from public.fm_overtime where id = p_id and user_id = auth.uid() and status = 'open') then raise exception 'not found'; end if;
+  if nullif(btrim(coalesce(p->>'note','')),'') is not null then update public.fm_overtime set reason = left(reason || ' — ' || btrim(p->>'note'),600) where id = p_id; end if;
+  return public.fm_ot_close(p_id, now(), nullif(p->>'lat','')::float8, nullif(p->>'lng','')::float8);
+end $$;
+-- p {from, to, kind, reason, ticket_ref, wo_code, school}
+create or replace function public.fm_ot_add(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare me public.profiles; r public.fm_overtime; a timestamptz := (p->>'from')::timestamptz; b timestamptz := (p->>'to')::timestamptz;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if auth.uid() is null or me.id is null or public.fm_role() in ('pending','viewer') then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p->>'reason',''))) < 3 then raise exception 'reason required'; end if;
+  if a is null or b is null or b <= a or b > now() + interval '10 minutes' or a < now() - interval '7 days' then raise exception 'invalid time'; end if;
+  if exists (select 1 from public.fm_overtime where user_id = auth.uid() and status in ('pending','approved') and end_at > start_at and tstzrange(start_at, end_at) && tstzrange(a, b)) then raise exception 'overlap'; end if;
+  insert into public.fm_overtime(user_id, user_name, region, kind, reason, ticket_ref, wo_code, school, start_at, manual, status, month)
+  values (auth.uid(), me.full_name, (me.regions)[1], coalesce(nullif(p->>'kind',''),'after_hours'), left(btrim(p->>'reason'),300), left(nullif(btrim(coalesce(p->>'ticket_ref','')),''),60),
+    left(nullif(btrim(coalesce(p->>'wo_code','')),''),60), left(nullif(btrim(coalesce(p->>'school','')),''),200), a, true, 'pending', to_char(a at time zone 'Asia/Riyadh','YYYY-MM')) returning * into r;
+  return public.fm_ot_close(r.id, b, null, null);
+end $$;
+create or replace function public.fm_ot_cancel(p_id uuid) returns text language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.fm_overtime where id = p_id and user_id = auth.uid() and status in ('open','pending');
+  if not found then raise exception 'not found'; end if;
+  return 'ok';
+end $$;
+create or replace function public.fm_ot_act(p_id uuid, p_action text, p_hours numeric default null, p_note text default '') returns text language plpgsql security definer set search_path = public as $$
+declare r public.fm_overtime; h numeric;
+begin
+  select * into r from public.fm_overtime where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if not public.fm_ot_dec_can(r.user_id, r.region) then raise exception 'not allowed'; end if;
+  if r.status not in ('pending','approved','rejected') then raise exception 'invalid status'; end if;
+  if p_action = 'reject' and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  h := case when p_action = 'approve' then coalesce(p_hours, r.hours) end;
+  if p_action = 'approve' and (h < 0 or h > r.hours) then raise exception 'invalid hours'; end if;
+  if p_action = 'approve' and h < r.hours and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  if p_action not in ('approve','reject') then raise exception 'invalid action'; end if;
+  update public.fm_overtime set status = case when p_action = 'approve' then 'approved' else 'rejected' end, appr_hours = h, dec_by = auth.uid(), dec_name = public.fm_me_name(), dec_at = now(),
+    dec_note = left(nullif(btrim(coalesce(p_note,'')),''),300) where id = p_id;
+  begin perform public.fm_push_add(r.user_id, 'ot', case when p_action = 'approve' then '✅ اعتُمد عملك الإضافي ' || r.code || ' (' || h || ' ساعة)' else '❌ لم يُعتمد عملك الإضافي ' || r.code end,
+    concat_ws(' — ', public.fm_me_name(), nullif(btrim(coalesce(p_note,'')),'')), 'ot', 'ot-' || r.code, false); exception when others then null; end;
+  return p_action;
+end $$;
+create or replace function public.fm_ot_list(p_month text) returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('me', auth.uid(), 'open', (select jsonb_build_object('id', id, 'code', code, 'start', start_at, 'kind', kind, 'reason', reason) from public.fm_overtime where user_id = auth.uid() and status = 'open'),
+    'rows', coalesce((select jsonb_agg(jsonb_build_object('id', o.id, 'code', o.code, 'user', o.user_id, 'name', o.user_name, 'region', o.region, 'kind', o.kind, 'reason', o.reason,
+        'ticket', o.ticket_ref, 'wo', o.wo_code, 'school', o.school, 'start', o.start_at, 'end', o.end_at, 'hours', o.hours, 'manual', o.manual, 'geo', o.lat1 is not null and o.lat2 is not null,
+        'status', o.status, 'appr', o.appr_hours, 'dec', o.dec_name, 'dec_at', o.dec_at, 'note', o.dec_note, 'can', public.fm_ot_dec_can(o.user_id, o.region), 'mine', o.user_id = auth.uid())
+        order by (o.status = 'pending') desc, o.start_at desc)
+      from public.fm_overtime o where o.month = p_month and o.status <> 'open' and public.fm_ot_sees(o.user_id, o.region)), '[]'::jsonb))
+   where auth.uid() is not null $$;
+revoke all on function public.fm_ot_dec_can(uuid,text), public.fm_ot_sees(uuid,text), public.fm_ot_start(jsonb), public.fm_ot_end(uuid,jsonb), public.fm_ot_add(jsonb),
+  public.fm_ot_cancel(uuid), public.fm_ot_act(uuid,text,numeric,text), public.fm_ot_list(text) from public, anon;
+grant execute on function public.fm_ot_dec_can(uuid,text), public.fm_ot_sees(uuid,text), public.fm_ot_start(jsonb), public.fm_ot_end(uuid,jsonb), public.fm_ot_add(jsonb),
+  public.fm_ot_cancel(uuid), public.fm_ot_act(uuid,text,numeric,text), public.fm_ot_list(text) to authenticated;
+notify pgrst, 'reload schema';
