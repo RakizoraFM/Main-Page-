@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V253">
+<meta name="fm-version" content="V254">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V253',date:'2026-10-30',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V254',date:'2026-10-30',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V254',d:'2026-10-30',t:'✅ شروط إغلاق البلاغ ومراجعة الطارئ',i:['في «شروط الإغلاق» (الإعدادات) خيار جديد: إغلاق البلاغ الطارئ يحتاج اعتماد مهندس المنطقة — يعمل لما يُغلق من المنصة أو من تطبيق الميدان (حتى المرسَل بعد انقطاع الشبكة)','يصل لمهندس المنطقة ومدير المنطقة إشعار، وفي «🗂️ سجل البلاغات» زر «✅ مراجعة إغلاق الطارئ (n)»: اعتماد أو «↩️ إعادة للتنفيذ» مع السبب','الإعادة ترجع البلاغ لمرحلة «قيد التنفيذ» مع حدث في سجله ويُبلَّغ من أغلقه؛ ولا يعتمد أحد إغلاقاً قام به','تحت حالة البلاغ في السجل: «🟡 إغلاق طارئ بانتظار اعتماد المهندس» أو «↩️ أُعيد من المراجعة»','باقي الشروط كما هي ومشتركة بين المنصة والميدان: وصف الحل، سبب العطل، صورة بعد الحل']},
 {v:'V253',d:'2026-10-30',t:'⏸️ إيقاف مهلة البلاغ باعتماد',i:['في «🗂️ سجل البلاغات» زر «⏸️» لكل بلاغ: طلب إيقاف عداد المهلة لسبب مقبول (انتظار قطعة، المدرسة مغلقة، عطلة رسمية، تعذّر الدخول، بطلب العميل، سبب آخر) مع التفاصيل والفترة','يصل الطلب لمدير المنطقة فيعتمده أو يرفضه مع السبب (أو مدير العمليات / المشروع / النظام)، و«▶️ إنهاء» يعيد تشغيل العداد؛ ولا يعتمد مقدّم الطلب طلبه','المهلة الأصلية لا تتغير؛ يظهر تحتها «⏸️ n س — المعدّلة: ملتزم / غير ملتزم»، وعمود «المهلة المعدّلة» في Excel السجل','في تطبيق الميدان بطاقة «⏸️ طلب إيقاف مهلة بلاغ» للمشرف والمهندس مع حالة طلباته، وإشعار بالقرار']},
 {v:'V252',d:'2026-10-30',t:'🚩 إنذارات الحوكمة',i:['صفحة «🚩 إنذارات الحوكمة» في «التقارير»: كل علامات الخطر في مكان واحد لفترة 30 / 90 / 180 / 365 يوماً','المشتريات: طلب اعتمده مقدّمه، طلبات مرتبطة (تجزئة محتملة)، سعر فاتورة أعلى من المتفق بأكثر من 10%، مورد يأخذ أكثر من 60% من المشتريات، استثناءات مدير النظام','المستودع: أرصدة سالبة، فروقات جرد اعتمدها من سجّلها، نفس القطعة لنفس المدرسة أكثر من مرة خلال 30 يوماً، شخص يستهلك أكثر من 3 أضعاف متوسط زملائه','البلاغات: بلاغ أُغلق في المنصة بلا صورة بعد التنفيذ ولا وصف حل؛ أوامر العمل: أمر أُعيد للتصحيح مرتين أو أكثر؛ الزيارات: 3 زيارات أو أكثر سُجّلت على بعد أكثر من 500 م من المدرسة','لكل إنذار «🔎 افتح» لشاشته، و«✅ سليم» أو «⚠️ يحتاج إجراء» مع ملاحظة، وتصدير Excel؛ ومدير النظام يغيّر الحدود من «⚙️ الحدود»']},
 {v:'V251',d:'2026-10-30',t:'🏛️ حوكمة المشتريات',i:['مصفوفة اعتماد طلبات الشراء حسب المبلغ والمسمى (مثلاً مهندس المنطقة حتى 1,000، مدير المنطقة حتى 5,000، مدير العمليات حتى 20,000، مدير المشروع بلا حد) واعتماد ممثل الجهة المالكة فوق مبلغ يحدده مدير النظام — من «الإعدادات» ← السحابة «🏛️ حوكمة المشتريات»','فصل المهام: مقدّم الطلب لا يعتمده ولا يرفضه، ومن اعتمد الطلب لا يستلمه (يستلمه أمين المستودع)؛ مدير النظام يستطيع التجاوز ويُسجَّل ذلك','منع تجزئة الطلبات: طلبات نفس المستودع خلال 7 أيام لنفس المورد أو نفس الصنف تُجمع قبل مقارنة حد الاعتماد، فيذهب المجموع للمستوى الأعلى','في «طلبات الشراء»: لكل طلب من يعتمده، وتنبيه الطلبات المرتبطة، ومرحلة اعتماد الجهة المالكة، وزر «🏛️ الحوكمة والاستثناءات» (الاستثناءات، طلبات اعتمدها مقدّمها، فروقات جرد اعتمدها صاحبها، حصة كل مورد)']},
@@ -29237,7 +29238,7 @@ const CAUSES=['تلف / عطل فني','انتهاء العمر الافتراض
 const WKEY='fm_ticket_work_v135',UKEY='fm_user_v135',RKEY='fm_work_rules_v135';
 function loadW(){try{const o=JSON.parse(localStorage.getItem(WKEY)||'{}');return o&&typeof o==='object'?o:{}}catch(e){return {}}}
 function saveW(W){try{localStorage.setItem(WKEY,JSON.stringify(W));return true}catch(e){toast('تعذر الحفظ — مساحة المتصفح ممتلئة. الصور تُحفظ منفصلة ولا تسبب هذا عادةً','error');return false}}
-function rules(){let r={};try{r=JSON.parse(localStorage.getItem(RKEY)||'{}')||{}}catch(e){}return {desc:r.desc!==false,photo:!!r.photo,cause:!!r.cause}}
+function rules(){let r={};try{r=JSON.parse(localStorage.getItem(RKEY)||'{}')||{}}catch(e){}return {desc:r.desc!==false,photo:!!r.photo,cause:!!r.cause,urgent:!!r.urgent}}
 function saveRules(r){try{localStorage.setItem(RKEY,JSON.stringify(r))}catch(e){}}
 window.fmV135Rules=rules;
 const keyOf=(r,reg)=>(reg||regionK())+':'+tidOf(r);
@@ -29572,9 +29573,10 @@ window.fmV135Assign=async function(ids,tech,note){await askUser(false);tech=S(te
   <label style="display:flex;gap:8px;align-items:center;font-weight:700;margin:8px 0"><input type="checkbox" id="h135-desc" ${R.desc?'checked':''} style="width:auto"> وصف الحل إلزامي</label>
   <label style="display:flex;gap:8px;align-items:center;font-weight:700;margin:8px 0"><input type="checkbox" id="h135-photo" ${R.photo?'checked':''} style="width:auto"> صورة بعد الحل إلزامية</label>
   <label style="display:flex;gap:8px;align-items:center;font-weight:700;margin:8px 0"><input type="checkbox" id="h135-cause" ${R.cause?'checked':''} style="width:auto"> سبب العطل إلزامي</label>
+  <label style="display:flex;gap:8px;align-items:center;font-weight:700;margin:8px 0"><input type="checkbox" id="h135-urgent" ${R.urgent?'checked':''} style="width:auto"> إغلاق البلاغ الطارئ يحتاج اعتماد مهندس المنطقة (المنصة وتطبيق الميدان)</label>
   <div class="fm125-hint">تاريخ ووقت الحل مطلوب دائماً لأنه يدخل في حساب الـ SLA. المستخدم الحالي: <b>${esc(userName()||'لم يُحدد')}</b> <a href="#" id="h135-u">تغيير</a></div>
   <div style="margin-top:10px"><button class="fm103-btn primary" type="button" id="h135-save">حفظ</button></div></div>`);
- pane.querySelector('#h135-save').onclick=()=>{saveRules({desc:pane.querySelector('#h135-desc').checked,photo:pane.querySelector('#h135-photo').checked,cause:pane.querySelector('#h135-cause').checked});toast('تم حفظ شروط الإغلاق')};
+ pane.querySelector('#h135-save').onclick=()=>{saveRules({desc:pane.querySelector('#h135-desc').checked,photo:pane.querySelector('#h135-photo').checked,cause:pane.querySelector('#h135-cause').checked,urgent:!!pane.querySelector('#h135-urgent')?.checked});toast('تم حفظ شروط الإغلاق')};
  pane.querySelector('#h135-u').onclick=async e=>{e.preventDefault();await askUser(true);document.querySelector('.fm130-hubbar [data-hub=rules]')?.click()};
 });
 
@@ -32011,6 +32013,7 @@ const MANUAL=[
  {id:'v2-nav-recurring',t:'الأعطال المتكررة',where:'متابعة البلاغات ← «🔁 الأعطال المتكررة وجودة الإغلاق» ← تبويب «الأعطال المتكررة»',what:'البلاغات المتكررة في نفس المدرسة بنفس الوصف أو وصف مشابه.',how:['راجع المجموعات المتكررة، وحوّل المتكرر إلى أمر إصلاح جذري.'],who:'المديرون والمهندس',v:'V237'},
  {id:'v2-nav-fm131-cost',t:'الأعلى تكلفة تشغيلية',where:'المدارس والأعطال ← «الأعلى تكلفة تشغيلية»',what:'مؤشر عبء لكل مدرسة وترشيح الصيانة الوقائية أو دراسة الإحلال، مع تكلفة تقديرية اختيارية.',how:['راجع المدارس الأعلى عبئاً وخطط لها صيانة وقائية.'],who:'المديرون',v:'V131'},
  {id:'v2-nav-fm244-reg',t:'سجل البلاغات',where:'متابعة البلاغات ← «🗂️ سجل البلاغات»',what:'كل بلاغات المنطقة الحالية في صفحة واحدة، ومنها تُسند البلاغ لمنفّذ أو تعدّل مرحلته وبياناته.',how:['ابحث برقم البلاغ أو المدرسة أو المنفّذ، أو صفِّ بالحالة والمرحلة والأولوية والمهلة والمنفّذ والمشرف والتاريخ؛ العدّادات أعلى الصفحة تصفّي بضغطة («مفتوحة بلا منفّذ» مثلاً).','«👷 إسناد»: اكتب أو اختر اسم الفني / المقاول مع ملاحظة؛ البلاغ الذي لم يبدأ ينتقل إلى «مُسند للتنفيذ».','«🛠️ إدارة»: نافذة البلاغ الكاملة (المراحل، الأولوية، التصنيف، الوصف، المنفّذ، قطع الغيار، الصور، الملاحظات، تقرير الإغلاق).','حدد عدة بلاغات بمربع الاختيار ثم «👷 إسناد المحدد» أو «🔄 تحديث المرحلة»؛ «⬇️ Excel» يصدّر النتيجة المصفّاة.'],who:'كل من يدير البلاغات (المشاهد يرى فقط)',tips:['التعديل يُحفظ مع اسمك ويُرسل للسحابة مثل «🛠️ إدارة» في جدول البلاغات، فتتغير المؤشرات تبعاً للمرحلة الجديدة.'],v:'V250'},
+ {id:'fm254-close',t:'شروط إغلاق البلاغ ومراجعة الطارئ',where:'الإعدادات ← «شروط إغلاق البلاغ»، وفي «🗂️ سجل البلاغات» زر «✅ مراجعة إغلاق الطارئ»',what:'شروط موحّدة للمنصة وتطبيق الميدان قبل «تم الحل»: وصف الحل، سبب العطل، صورة بعد الحل، واعتماد مهندس المنطقة لإغلاق البلاغ الطارئ.',how:['مدير النظام: فعّل الشروط المطلوبة واحفظ؛ تصل للجميع مع مزامنة الإعدادات.','عند إغلاق بلاغ طارئ يصل لمهندس المنطقة إشعار، ويظهر في السجل «🟡 بانتظار اعتماد المهندس».','المهندس يفتح «✅ مراجعة إغلاق الطارئ» ويعتمد أو يعيد البلاغ للتنفيذ مع السبب.'],who:'الإعداد لمدير النظام؛ المراجعة لمهندس ومدير المنطقة لمنطقتهما ومدير العمليات والمشروع والنظام',tips:['الإغلاق لا يُمنع أثناء الانتظار؛ الإعادة ترجع البلاغ لـ«قيد التنفيذ» وتُسجَّل في سجله.','لا يعتمد أحد إغلاقاً قام به بنفسه.'],v:'V254'},
  {id:'fm253-pause',t:'إيقاف مهلة البلاغ باعتماد',where:'متابعة البلاغات ← «🗂️ سجل البلاغات» ← «⏸️» على البلاغ، و«⏸️ إيقاف المهلة» أعلى الجدول؛ وفي تطبيق الميدان «⏸️ طلب إيقاف مهلة بلاغ»',what:'يُوقف عداد مهلة بلاغ لسبب مقبول بعد اعتماد مدير المنطقة، دون تغيير حساب المهلة الأصلي: تظهر «المهلة المعدّلة» بجانبه.',how:['اضغط «⏸️» على البلاغ، اختر السبب واكتب التفاصيل، وحدد البداية (الآن افتراضياً) والنهاية إن كانت معروفة.','مدير المنطقة يفتح «⏸️ إيقاف المهلة (n بانتظار)» ويعتمد أو يرفض مع السبب؛ «▶️ إنهاء» يعيد تشغيل العداد عند زوال السبب.','تحت المهلة في السجل: «⏸️ ساعات الإيقاف — المعدّلة: ملتزم / غير ملتزم»، وفي Excel عمود «المهلة المعدّلة».'],who:'الطلب: المشرف والمهندس ومديرو المنطقة؛ الاعتماد: مدير المنطقة لمنطقته، ومدير العمليات والمشروع والنظام',tips:['لا يمكن طلب إيقاف جديد والبلاغ عليه طلب معلق أو إيقاف قائم.','المؤشرات الرسمية (SLA) لم تتغير؛ المعدّلة للعرض والتفاوض مع العميل.'],v:'V253'},
  {id:'v2-nav-fm252-flags',t:'إنذارات الحوكمة',where:'التقارير والإرسال ← «🚩 إنذارات الحوكمة»',what:'علامات تستحق المراجعة في المشتريات والمستودع والبلاغات وأوامر العمل والزيارات في صفحة واحدة، مرتبة حسب الأهمية، مع تسجيل نتيجة المراجعة.',how:['اختر الفترة (30 / 90 / 180 / 365 يوماً)؛ البطاقات أعلى الصفحة تعرض عدد الإنذارات المفتوحة لكل مجال (اضغطها للتصفية).','لكل إنذار: «🔎 افتح» لفتح الشاشة المعنية (طلبات الشراء، الجرد، العهد، البلاغ، أمر العمل، الحضور).','بعد المراجعة: «✅ سليم» مع السبب، أو «⚠️ يحتاج إجراء» مع الإجراء المطلوب؛ يختفي الإنذار المراجَع ويظهر عند «إظهار ما تمت مراجعته».','«⬇️ Excel» لكل الإنذارات ونتائج مراجعتها، و«⚙️ الحدود» (مدير النظام) لتغيير النسب والأيام.'],who:'مدير النظام والإدارة والمشروع والعمليات، ومدير الجودة، والمحاسب، وممثل الجهة المالكة',tips:['الحدود الافتراضية: فرق سعر 10%، حصة مورد 60%، تكرار القطعة خلال 30 يوماً، استهلاك 3 أضعاف المتوسط، إعادة الأمر مرتين، 3 زيارات على بعد أكثر من 500 م.','الإنذار علامة للمراجعة وليس حكماً؛ سجّل السبب عند «سليم» ليبقى أثر المراجعة.'],v:'V252'},
  {id:'fm251-gov',t:'حوكمة المشتريات',where:'المستودعات ← «🛒 طلبات الشراء»، والإعدادات ← السحابة ← «🏛️ حوكمة المشتريات»',what:'من يعتمد طلب الشراء حسب مبلغه، وفصل المهام بين من يطلب ومن يعتمد ومن يستلم، وجمع الطلبات المرتبطة حتى لا يُقسَّم الشراء لطلبات صغيرة تحت حد الاعتماد.',how:['مدير النظام: فعّل «مصفوفة الاعتماد» وحدّد لكل مسمى حده بالريال (0 = بلا حد)، ومبلغاً يحتاج فوقه اعتماد ممثل الجهة المالكة، وعدد أيام جمع الطلبات المرتبطة.','في قائمة طلبات الشراء يظهر لكل طلب: من يعتمده، والطلبات المرتبطة به ومجموعها، وهل هو بانتظار الجهة المالكة.','مقدّم الطلب لا يرى زر الاعتماد على طلبه، ومن اعتمد الطلب لا يستلمه — يستلمه أمين المستودع.','«🏛️ الحوكمة والاستثناءات»: سجل الاستثناءات، وطلبات اعتمدها مقدّمها، وفروقات جرد اعتمدها من سجّلها، وحصة كل مورد من المشتريات (تنبيه فوق 60%).'],who:'الإعدادات لمدير النظام؛ التقرير للإدارة العليا والجودة والمحاسب وممثل الجهة المالكة',tips:['بدون تفعيل المصفوفة تبقى حدود مدير المنطقة ومدير العمليات الحالية، مع فصل المهام وجمع الطلبات المرتبطة.','مدير النظام يستطيع اعتماد طلبه أو استلام ما اعتمده عند الضرورة، ويظهر ذلك في سجل الاستثناءات.'],v:'V251'},
@@ -34949,7 +34952,7 @@ const say=(m,k)=>{try{if(window.showToast)return window.showToast(m,k==='e'?'err
 const SUP='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window&&window.isSecureContext;
 const IOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const STANDALONE=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
-const KINDS=[['sla_pause','⏸️ طلبات إيقاف مهلة البلاغ وقراراتها'],['tk_assign','↪️ بلاغ مُسند إليّ أو تغيّر إسناده'],['idea','💡 المقترحات والمشكلات'],['weekly','📬 الملخص الأسبوعي للمديرين'],['badge','🏅 حصلت على شارة تقدير'],['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
+const KINDS=[['tk_review','🟡 مراجعة إغلاق البلاغات الطارئة'],['sla_pause','⏸️ طلبات إيقاف مهلة البلاغ وقراراتها'],['tk_assign','↪️ بلاغ مُسند إليّ أو تغيّر إسناده'],['idea','💡 المقترحات والمشكلات'],['weekly','📬 الملخص الأسبوعي للمديرين'],['badge','🏅 حصلت على شارة تقدير'],['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
  ['wo_esc','⏫ تصعيد أمر متأخر إليّ'],['wo_stop','⛔ إيقاف عمل'],['wh_req','📦 طلب صرف جديد (أمين المستودع)'],['wh_issued','🧰 صُرفت قطع لعهدتي أو رُفض طلبي'],
  ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات'],['ops_due','🔔 التصعيد التشغيلي'],['parts_due','⏱️ متابعة طلبات القطع (مسؤول / تصعيد / تأخير)'],['tools','🛠️ العُدد والأدوات (تسليم / موعد الإرجاع)'],['wh_adj','⚖️ فرق جرد بانتظار اعتمادي / قراره'],['wh_neg','➖ رصيد صنف صار بالسالب (المستودع)'],['wh_tr','🚚 تحويل بين المستودعات (في الطريق / وصل / نقص)'],['wh_idle','💤 قطع راكدة في عهدتي / عهدة فريقي'],['wh_cnt','🔁 أصناف مستحقة للجرد الدوري (أمين المستودع)'],['sla_due','⏰ بلاغ يقترب من تجاوز المهلة (وملخص الصباح)'],['docs','📄 وثائق وأوراق سيارات تقترب من الانتهاء']];
 const b64u=buf=>{let s='';const b=new Uint8Array(buf);for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
@@ -38601,7 +38604,7 @@ function render(keepFocus){const p=page(),b=p.querySelector('.body');const A=row
  b.querySelectorAll('[data-a]').forEach(x=>x.onclick=()=>assignDlg([x.dataset.a],A));
  b.querySelectorAll('[data-s]').forEach(x=>x.onchange=()=>{x.checked?SEL.add(x.dataset.s):SEL.delete(x.dataset.s);bar(b)});
  const all=b.querySelector('[data-all]');if(all){all.checked=V.length&&V.every(x=>SEL.has(x.id));all.onchange=()=>{V.forEach(x=>all.checked?SEL.add(x.id):SEL.delete(x.id));b.querySelectorAll('[data-s]').forEach(c=>c.checked=all.checked);bar(b)}}
- const ba=b.querySelector('[data-ba]');if(ba){ba.onclick=()=>assignDlg([...SEL],A);b.querySelector('[data-bs]').onclick=()=>{if(window.fmV135Bulk){window.fmV135Bulk([...SEL]);watch()}};b.querySelector('[data-bc]').onclick=()=>{SEL.clear();render()}}try{window.fmV250Decorate?.(b)}catch(e){}try{window.fmV253Decorate?.(b)}catch(e){}}
+ const ba=b.querySelector('[data-ba]');if(ba){ba.onclick=()=>assignDlg([...SEL],A);b.querySelector('[data-bs]').onclick=()=>{if(window.fmV135Bulk){window.fmV135Bulk([...SEL]);watch()}};b.querySelector('[data-bc]').onclick=()=>{SEL.clear();render()}}try{window.fmV250Decorate?.(b)}catch(e){}try{window.fmV253Decorate?.(b)}catch(e){}try{window.fmV254Decorate?.(b)}catch(e){}}
 function bar(b){const s=b.querySelector('.fm244-sel');s.classList.toggle('on',SEL.size>0);s.querySelector('span').textContent='المحدد: '+SEL.size}
 /* re-render once the V135 dialog / bulk dialog closes */
 function watch(){const t0=Date.now();const iv=setInterval(()=>{const open=document.querySelector('.fm135-wrap,.fm122-dlg-wrap');if(!open&&Date.now()-t0>300){clearInterval(iv);if(document.getElementById('fm244-page')?.classList.contains('open')){SEL.clear();render()}}},400)}
@@ -39412,6 +39415,46 @@ async function listDlg(){await load(true);const L=CAN.rows||[];
   try{await rpc('fm_sla_pause_act',{p_id:x.id,p_action:a,p_note:note});toast('تم');w.remove();await load(true);window.fmV244Render?.();listDlg()}catch(e){alert(emsg(e))}})}
 window.fmV253List=listDlg;
 const go=h=>{if(String(h||'').replace(/^#+/,'')!=='slap')return;let k=0;const t=setInterval(()=>{if(++k>30||(on()&&window.fmV244Register)){clearInterval(t);if(window.fmV244Register){window.fmV244Register();setTimeout(listDlg,800)}}},1000)};
+window.addEventListener('hashchange',()=>go(location.hash));go(location.hash);
+navigator.serviceWorker?.addEventListener?.('message',e=>{if(e.data&&e.data.fmPush)go(e.data.hash)});
+})();
+</script>
+<script id="fm-v254-tkrev">
+/* V254 (section 59): review of urgent-ticket closures — with the shared closing rule «urgent» on, a ticket of urgent priority
+   that reaches resolved / closed (platform or field app) waits for the area engineer: «✅ اعتماد» or «↩️ إعادة للتنفيذ»
+   (back to «قيد التنفيذ», event, push to whoever closed it). The register shows a chip and a bar button with the queue. */
+(function(){
+if(window.__fm254)return;window.__fm254=1;
+const C=window.FMCloud;
+const S=v=>String(v??'').trim(),esc=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const GREG='ar-SA-u-ca-gregory',dt=d=>{try{return d?new Date(d).toLocaleString(GREG,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}catch(e){return ''}};
+const toast=(m,t)=>{try{window.showToast?.(m,t||'success')}catch(e){}};
+const on=()=>!!(C&&C.state&&C.state.on);
+async function rpc(fn,a){const d=await C.engClient();const r=await d.rpc(fn,a);if(r.error)throw Error(r.error.message);return r.data}
+const missing=e=>/does not exist|schema cache|Could not find/i.test(String(e&&e.message||e));
+const reg=()=>(window.FM41&&FM41.active)||'';
+let L=null,LREG='',LAT=0,OFF=false;
+async function load(force){const g=reg();if(!on()||OFF||!g)return;if(!force&&g===LREG&&Date.now()-LAT<60e3)return;try{L=await rpc('fm_tk_close_list',{p_region:g});LREG=g;LAT=Date.now()}catch(e){if(missing(e))OFF=true}}
+window.fmV254Decorate=function(b){if(!on()||OFF)return;const t=b.querySelector('#fm244-t');if(!t)return;
+ if(reg()!==LREG||Date.now()-LAT>60e3){load().then(()=>{if(LREG)window.fmV244Render?.()});return}
+ const rows=(L&&L.rows)||[],pend=new Map(rows.filter(x=>x.status==='pending').map(x=>[x.ticket,x])),ret=new Map(rows.filter(x=>x.status==='returned').map(x=>[x.ticket,x]));
+ const hs=[...t.querySelectorAll('thead th')].map(th=>S(th.textContent));const ci=hs.findIndex(h=>/الحالة/.test(h));
+ t.querySelectorAll('tbody tr[data-id]').forEach(tr=>{const c=ci>=0?tr.children[ci]:null;if(!c||c.querySelector('.fm254-b'))return;const p=pend.get(tr.dataset.id),r=ret.get(tr.dataset.id);
+  if(p)c.insertAdjacentHTML('beforeend','<span class="fm253-b wait fm254-b">🟡 إغلاق طارئ بانتظار اعتماد المهندس</span>');else if(r)c.insertAdjacentHTML('beforeend',`<span class="fm253-b br fm254-b">↩️ أُعيد من المراجعة: ${esc(r.note||'')}</span>`)});
+ const bar=b.querySelector('.fm244-bar');const n=pend.size;if(bar&&(n||rows.length)&&!bar.querySelector('[data-f254]')){const bt=document.createElement('button');bt.className='fm244-btn'+(n&&L.can?' p':'');bt.dataset.f254='1';bt.textContent='✅ مراجعة إغلاق الطارئ'+(n?' ('+n+')':'');bt.onclick=listDlg;bar.insertBefore(bt,bar.querySelector('[data-clr]'))}};
+async function listDlg(){await load(true);const R=(L&&L.rows)||[];const x=document.createElement('div');x.className='fm122-dlg-wrap';
+ x.innerHTML=`<div class="fm122-dlg fm253-dlg" style="width:min(900px,96vw)"><h3>✅ مراجعة إغلاق البلاغات الطارئة</h3><div class="meta">البلاغ الطارئ الذي أُغلق ينتظر اعتماد مهندس المنطقة؛ «↩️ إعادة للتنفيذ» تعيده لمرحلة «قيد التنفيذ» ويُبلَّغ من أغلقه.</div>
+  ${R.length?`<div class="fm103-tw" style="max-height:60vh"><table><thead><tr><th>البلاغ</th><th>المدرسة</th><th>الحل</th><th>أغلقه</th><th>الحالة</th><th></th></tr></thead><tbody>${R.map((r,i)=>`<tr><td><b>${esc(r.ticket)}</b><div class="fm125-src">${esc(r.priority||'')}</div></td><td>${esc(r.school||'')}</td><td>${esc(r.sol||'—')}</td><td>${esc(r.by||'')}<div class="fm125-src">${esc(dt(r.at))}</div></td>
+   <td>${r.status==='pending'?'🟡 بانتظار الاعتماد':r.status==='approved'?'✅ معتمد':'↩️ أُعيد'}${r.dec?`<div class="fm125-src">${esc(r.dec)}${r.note?' — '+esc(r.note):''}</div>`:''}</td>
+   <td>${r.status==='pending'&&r.can?`<button data-a="approve" data-i="${i}">✅ اعتماد</button><button data-a="return" data-i="${i}">↩️ إعادة للتنفيذ</button>`:''}${window.fmV135Open&&r.region===reg()?`<button data-o="${i}">🛠️</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد بلاغات طارئة مغلقة بانتظار المراجعة</div>'}
+  <div class="row"><button data-x>إغلاق</button></div></div>`;
+ document.body.appendChild(x);x.onclick=e=>{if(e.target===x)x.remove()};x.querySelector('[data-x]').onclick=()=>x.remove();
+ x.querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{x.remove();window.fmV135Open(R[+b.dataset.o].ticket)});
+ x.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{const r=R[+b.dataset.i],a=b.dataset.a;let note='';if(a==='return'){note=prompt('ما الذي يحتاج تصحيحاً؟ (يصل لمن أغلق البلاغ)');if(!note)return}
+  try{await rpc('fm_tk_close_act',{p_id:r.id,p_action:a,p_note:note});toast(a==='approve'?'اعتُمد الإغلاق':'أُعيد البلاغ للتنفيذ');x.remove();await load(true);if(a==='return')try{await window.fmV136Pull?.(true)}catch(e){}window.fmV244Render?.();listDlg()}
+  catch(e){alert(/self approval/.test(e.message)?'لا تعتمد إغلاق بلاغ أغلقته بنفسك':/note required/.test(e.message)?'اكتب السبب':e.message)}})}
+window.fmV254List=listDlg;
+const go=h=>{if(String(h||'').replace(/^#+/,'')!=='tkrev')return;let k=0;const t=setInterval(()=>{if(++k>30||(on()&&window.fmV244Register)){clearInterval(t);if(window.fmV244Register){window.fmV244Register();setTimeout(listDlg,800)}}},1000)};
 window.addEventListener('hashchange',()=>go(location.hash));go(location.hash);
 navigator.serviceWorker?.addEventListener?.('message',e=>{if(e.data&&e.data.fmPush)go(e.data.hash)});
 })();

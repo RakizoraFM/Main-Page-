@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F64">
+<meta name="fm-version" content="F65">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -1934,7 +1934,7 @@ const say=(m,k)=>{try{if(window.showToast)return window.showToast(m,k==='e'?'err
 const SUP='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window&&window.isSecureContext;
 const IOS=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const STANDALONE=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
-const KINDS=[['sla_pause','⏸️ طلبات إيقاف مهلة البلاغ وقراراتها'],['tk_assign','↪️ بلاغ مُسند إليّ أو تغيّر إسناده'],['idea','💡 المقترحات والمشكلات'],['weekly','📬 الملخص الأسبوعي للمديرين'],['badge','🏅 حصلت على شارة تقدير'],['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
+const KINDS=[['tk_review','🟡 مراجعة إغلاق البلاغات الطارئة'],['sla_pause','⏸️ طلبات إيقاف مهلة البلاغ وقراراتها'],['tk_assign','↪️ بلاغ مُسند إليّ أو تغيّر إسناده'],['idea','💡 المقترحات والمشكلات'],['weekly','📬 الملخص الأسبوعي للمديرين'],['badge','🏅 حصلت على شارة تقدير'],['wo_new','🛠️ أمر عمل جديد أُسند إليّ'],['wo_done','✅ أمر بانتظار اعتمادي أو رُفض'],['wo_return','↩️ أمر أُعيد إليّ للتصحيح'],['wo_closed','🎉 اعتُمد أمر نفّذته'],
  ['wo_esc','⏫ تصعيد أمر متأخر إليّ'],['wo_stop','⛔ إيقاف عمل'],['wh_req','📦 طلب صرف جديد (أمين المستودع)'],['wh_issued','🧰 صُرفت قطع لعهدتي أو رُفض طلبي'],
  ['wh_scrap','⏰ تالف متأخر عليّ'],['wh_low','⚠️ أصناف تحت الحد الأدنى (أمين المستودع)'],['appr','🟡 صنف أو طلب شراء بانتظار اعتمادي'],['bill','🧾 المستخلصات'],['parts_due','⏱️ متابعة طلبات القطع (مسؤول / تصعيد / تأخير)'],['tools','🛠️ العُدد والأدوات (تسليم / موعد الإرجاع)'],['wh_idle','💤 قطع راكدة في عهدتي'],['sla_due','⏰ بلاغ يقترب من تجاوز المهلة (وملخص الصباح)'],['docs','📄 وثائق وأوراق سيارات تقترب من الانتهاء']];
 const b64u=buf=>{let s='';const b=new Uint8Array(buf);for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};

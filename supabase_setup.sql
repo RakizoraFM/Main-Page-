@@ -10308,3 +10308,94 @@ revoke all on function public.fm_slap_can_req(text), public.fm_slap_can_dec(text
 grant execute on function public.fm_slap_can_req(text), public.fm_slap_can_dec(text), public.fm_sla_pause_request(text,text,text,text,timestamptz,timestamptz,text),
   public.fm_sla_pause_act(uuid,text,text), public.fm_sla_pauses_list(text,int) to authenticated;
 notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Section 59 (V254): urgent tickets closed in the platform or the field app wait for the area engineer's review
+-- When the shared closing rules (app_kv fm_work_rules_v135) have `urgent: true`, a ticket whose priority is urgent
+-- (طارئ / حرج / urgent) that reaches resolved / closed gets a review row; the area engineer / manager of the region
+-- (or ops / project manager, system admin) approves it or returns it — a return puts the ticket back in «قيد التنفيذ»
+-- with an event and tells whoever closed it. Nothing is blocked while the review waits. Idempotent.
+-- =====================================================================
+create table if not exists public.fm_tk_close_rev (
+  id         uuid primary key default gen_random_uuid(),
+  region     text not null,
+  ticket_id  text not null,
+  school     text,
+  priority   text,
+  sol        text,
+  closed_by  uuid references public.profiles(id) on delete set null,
+  closed_name text,
+  closed_at  timestamptz not null default now(),
+  status     text not null default 'pending' check (status in ('pending','approved','returned')),
+  dec_by     uuid references public.profiles(id) on delete set null,
+  dec_name   text,
+  dec_at     timestamptz,
+  note       text
+);
+create unique index if not exists fm_tk_close_rev_pending on public.fm_tk_close_rev (region, ticket_id) where status = 'pending';
+alter table public.fm_tk_close_rev enable row level security;
+revoke all on public.fm_tk_close_rev from public, anon, authenticated;
+
+create or replace function public.fm_tkrev_can(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(coalesce(p_region,''))), false) $$;
+
+create or replace function public.fm_tk_close_trg() returns trigger language plpgsql security definer set search_path = public as $$
+declare pr text; sch text; u uuid;
+begin
+  begin
+    if new.stage not in ('resolved','closed') or (tg_op = 'UPDATE' and old.stage in ('resolved','closed')) then return null; end if;
+    if not coalesce((select (value->>'urgent')::boolean from public.app_kv where key = 'fm_work_rules_v135'), false) then return null; end if;
+    select coalesce(nullif(new.rec->'edits'->>'priority',''), t.priority), t.school into pr, sch from public.tickets t where t.region = new.region and t.ticket_id = new.ticket_id;
+    pr := coalesce(pr, new.rec->'edits'->>'priority', '');
+    if not (pr ~* 'طارئ|حرج|urgent|critical') then return null; end if;
+    insert into public.fm_tk_close_rev(region, ticket_id, school, priority, sol, closed_by, closed_name)
+    values (new.region, new.ticket_id, coalesce(sch, new.rec->>'school'), pr, left(coalesce(new.rec->'resolution'->>'desc',''),1000), new.updated_by, new.updated_by_name)
+    on conflict do nothing;
+    for u in select * from public.fm_push_people(array['area_engineer','area_manager'], new.region) loop
+      perform public.fm_push_add(u, 'tk_review', '🟡 إغلاق بلاغ طارئ بانتظار اعتمادك ' || new.ticket_id, concat_ws(' — ', coalesce(sch, new.rec->>'school'), new.updated_by_name), 'tkrev', 'tkrev-' || new.ticket_id, false);
+    end loop;
+  exception when others then null; end;
+  return null;
+end $$;
+drop trigger if exists fm_tk_close_trg on public.ticket_work;
+create trigger fm_tk_close_trg after insert or update of stage on public.ticket_work for each row execute function public.fm_tk_close_trg();
+
+create or replace function public.fm_tk_close_list(p_region text default null) returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('can', public.fm_tkrev_can(p_region), 'rows', coalesce(jsonb_agg(jsonb_build_object('id', id, 'region', region, 'ticket', ticket_id, 'school', school, 'priority', priority,
+      'sol', sol, 'by', closed_name, 'at', closed_at, 'status', status, 'dec', dec_name, 'dec_at', dec_at, 'note', note,
+      'can', public.fm_tkrev_can(region) and closed_by is distinct from auth.uid()) order by (status = 'pending') desc, closed_at desc), '[]'::jsonb))
+    from public.fm_tk_close_rev
+   where auth.uid() is not null and (p_region is null or region = p_region) and closed_at > now() - interval '180 days'
+     and (public.fm_tkrev_can(region) or closed_by = auth.uid() or public.fm_scope_all()) $$;
+
+create or replace function public.fm_tk_close_act(p_id uuid, p_action text, p_note text default '') returns text
+language plpgsql security definer set search_path = public as $$
+declare r public.fm_tk_close_rev; nm text := public.fm_me_name();
+begin
+  select * into r from public.fm_tk_close_rev where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  if r.status <> 'pending' then raise exception 'invalid status'; end if;
+  if not public.fm_tkrev_can(r.region) then raise exception 'not allowed'; end if;
+  if r.closed_by = auth.uid() and not (public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin') then raise exception 'self approval'; end if;
+  if p_action = 'return' and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  if p_action not in ('approve','return') then raise exception 'invalid action'; end if;
+  update public.fm_tk_close_rev set status = case when p_action = 'approve' then 'approved' else 'returned' end, dec_by = auth.uid(), dec_name = nm, dec_at = now(),
+    note = left(nullif(btrim(coalesce(p_note,'')),''),500) where id = p_id;
+  if p_action = 'return' then
+    update public.ticket_work set stage = 'progress', resolved_at = null, updated_at = now(), updated_by = auth.uid(), updated_by_name = nm,
+      rec = rec || jsonb_build_object('stage','progress','reopened', coalesce((rec->>'reopened')::int,0) + 1, 'returnNote', left(btrim(p_note),500), 'updated', (extract(epoch from now()) * 1000)::bigint)
+     where region = r.region and ticket_id = r.ticket_id;
+    insert into public.ticket_events(region, ticket_id, by_name, type, stage, text) values (r.region, r.ticket_id, nm, 'stage', 'progress', '↩️ أُعيد من مراجعة إغلاق البلاغ الطارئ: ' || left(btrim(p_note),400));
+  else
+    insert into public.ticket_events(region, ticket_id, by_name, type, stage, text) values (r.region, r.ticket_id, nm, 'note', null, '✅ اعتُمد إغلاق البلاغ الطارئ' || coalesce(' — ' || nullif(btrim(p_note),''), ''));
+  end if;
+  begin perform public.fm_push_add(r.closed_by, 'tk_review', case when p_action = 'approve' then '✅ اعتُمد إغلاق البلاغ الطارئ ' else '↩️ أُعيد البلاغ الطارئ للتنفيذ ' end || r.ticket_id,
+    concat_ws(' — ', r.school, nm, nullif(btrim(p_note),'')), 'tkrev', 'tkrev-' || r.ticket_id, false); exception when others then null; end;
+  return p_action;
+end $$;
+
+revoke all on function public.fm_tk_close_trg() from public, anon, authenticated;
+revoke all on function public.fm_tkrev_can(text), public.fm_tk_close_list(text), public.fm_tk_close_act(uuid,text,text) from public, anon;
+grant execute on function public.fm_tkrev_can(text), public.fm_tk_close_list(text), public.fm_tk_close_act(uuid,text,text) to authenticated;
+notify pgrst, 'reload schema';
