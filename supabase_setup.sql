@@ -9572,3 +9572,225 @@ grant execute on function public.fm_idea_cfg(), public.fm_idea_decider(text), pu
   public.fm_idea_new(jsonb), public.fm_idea_list(int), public.fm_idea_get(uuid), public.fm_idea_vote(uuid,boolean), public.fm_idea_comment(uuid,text),
   public.fm_idea_act(uuid,text,text,jsonb), public.fm_idea_points(uuid,int,text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Section 55 (V250): assign a ticket to a real account when the primary person is unavailable
+-- «↪️ إسناد بلاغ لحساب» from «🗂️ سجل البلاغات»: the manager picks an available person (leave, load and the
+-- primary's deputy are shown), with a reason and an optional end date; the person gets a push and sees the
+-- ticket in the field app («↪️ بلاغات مُسندة إليّ»), confirms receipt and reports it done. The primary person
+-- is told. A work order with the same school and description may be created and linked. Idempotent.
+-- =====================================================================
+create table if not exists public.fm_tk_assign (
+  region       text not null,
+  ticket_id    text not null,
+  assignee     uuid references public.profiles(id) on delete set null,
+  assignee_name text not null default '',
+  primary_name text not null default '',
+  primary_id   uuid references public.profiles(id) on delete set null,
+  reason       text not null default 'other' check (reason in ('leave','absent','busy','far','skill','other')),
+  note         text not null default '' check (length(note) <= 1000),
+  until        date,
+  snap         jsonb not null default '{}'::jsonb,
+  wo_id        uuid,
+  wo_code      text,
+  status       text not null default 'active' check (status in ('active','done','ended')),
+  ack_at       timestamptz,
+  done_at      timestamptz,
+  done_note    text,
+  by_id        uuid references public.profiles(id) on delete set null,
+  by_name      text,
+  at           timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  primary key (region, ticket_id)
+);
+create index if not exists fm_tk_assign_who on public.fm_tk_assign (assignee, status);
+create table if not exists public.fm_tk_assign_log (
+  id        uuid primary key default gen_random_uuid(),
+  region    text not null,
+  ticket_id text not null,
+  action    text not null check (action in ('assign','unassign','ack','done','wo')),
+  assignee_name text,
+  reason    text,
+  note      text not null default '',
+  by_id     uuid references public.profiles(id) on delete set null,
+  by_name   text,
+  at        timestamptz not null default now()
+);
+create index if not exists fm_tk_assign_log_t on public.fm_tk_assign_log (region, ticket_id, at);
+alter table public.fm_tk_assign enable row level security;
+alter table public.fm_tk_assign_log enable row level security;
+revoke all on public.fm_tk_assign, public.fm_tk_assign_log from public, anon, authenticated;
+
+-- who may reassign tickets of a region: admin, system admin, project / ops manager, area manager / engineer and supervisor of the region
+create or replace function public.fm_tk_can(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() in ('area_manager','area_engineer','supervisor') and public.fm_region_ok(coalesce(p_region,''))), false) $$;
+-- may the caller give a ticket to this person? (a supervisor only to the people under him)
+create or replace function public.fm_tk_target_ok(p_region text, p_user uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles t where t.id = p_user and t.active and t.role <> 'pending' and t.id <> auth.uid()
+    and public.fm_posx(t.role, t.job_title) in ('supervisor','contractor','area_engineer')
+    and (cardinality(coalesce(t.regions,'{}')) = 0 or coalesce(p_region,'') = any(t.regions))
+    and (public.fm_my_pos() <> 'supervisor' or public.fm_is_under(t.id, auth.uid()))) $$;
+-- the account behind a name written in the tickets (full name or person_names)
+create or replace function public.fm_tk_person(p_name text) returns uuid language sql stable security definer set search_path = public as $$
+  select p.id from public.profiles p where p.active and coalesce(btrim(p_name),'') <> ''
+     and (btrim(coalesce(p.full_name,'')) = btrim(p_name) or btrim(p_name) = any(coalesce(p.person_names,'{}')))
+   order by p.created_at limit 1 $$;
+-- the active leave of a person: {until, deputy, deputy_name}
+create or replace function public.fm_tk_leave(p_user uuid) returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('until', d.to_at, 'deputy', d.deputy, 'deputy_name', coalesce(nullif(p.full_name,''), p.email))
+    from public.fm_deputies d join public.profiles p on p.id = d.deputy
+   where d.principal = p_user and d.active and now() >= d.from_at and now() < d.to_at order by d.to_at desc limit 1 $$;
+
+-- people the caller may choose, with availability and load, and the primary person of each given name
+create or replace function public.fm_tk_people(p_region text, p_names text[] default '{}') returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare ppl jsonb; pri jsonb;
+begin
+  if auth.uid() is null or not public.fm_tk_can(p_region) then raise exception 'not allowed'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', t.id, 'name', coalesce(nullif(t.full_name,''), t.email), 'title', public.fm_posx(t.role, t.job_title),
+      'phone', t.phone, 'leave', public.fm_tk_leave(t.id),
+      'wo', (select count(*) from public.work_orders w where w.assignee = t.id and w.status in ('assigned','accepted','in_progress','returned')),
+      'tk', (select count(*) from public.fm_tk_assign a where a.assignee = t.id and a.status = 'active' and (a.until is null or a.until >= (now() at time zone 'Asia/Riyadh')::date)))
+      order by coalesce(nullif(t.full_name,''), t.email)), '[]'::jsonb) into ppl
+    from public.profiles t where public.fm_tk_target_ok(p_region, t.id);
+  select coalesce(jsonb_agg(jsonb_build_object('name', n, 'id', u, 'leave', case when u is not null then public.fm_tk_leave(u) end,
+      'active', (select active from public.profiles where id = u))), '[]'::jsonb) into pri
+    from (select n, public.fm_tk_person(n) u from unnest(coalesce(p_names,'{}')) n where coalesce(btrim(n),'') <> '' group by n) x;
+  return jsonb_build_object('people', ppl, 'primaries', pri);
+end $$;
+
+-- assign: p_rows [{id, school, cat, pri, desc, date, primary}] (≤ 200)
+create or replace function public.fm_tk_assign(p_region text, p_rows jsonb, p_user uuid, p_reason text, p_note text, p_until date default null) returns int
+language plpgsql security definer set search_path = public as $$
+declare me text; tn text; x jsonb; n int := 0; pid uuid; tid text; sch text; prv uuid;
+begin
+  if auth.uid() is null or not public.fm_tk_can(p_region) then raise exception 'not allowed'; end if;
+  if not public.fm_mod('tickets') then raise exception 'module disabled'; end if;
+  if not public.fm_tk_target_ok(p_region, p_user) then raise exception 'invalid assignee'; end if;
+  if coalesce(p_reason,'') not in ('leave','absent','busy','far','skill','other') then raise exception 'invalid reason'; end if;
+  if p_reason = 'other' and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  if p_until is not null and p_until < (now() at time zone 'Asia/Riyadh')::date then raise exception 'invalid date'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) = 0 or jsonb_array_length(p_rows) > 200 then raise exception 'invalid rows'; end if;
+  select coalesce(nullif(full_name,''), email) into me from public.profiles where id = auth.uid();
+  select coalesce(nullif(full_name,''), email) into tn from public.profiles where id = p_user;
+  for x in select * from jsonb_array_elements(p_rows) loop
+    tid := btrim(coalesce(x->>'id','')); if tid = '' or length(tid) > 80 then continue; end if;
+    pid := public.fm_tk_person(x->>'primary');
+    select assignee into prv from public.fm_tk_assign where region = p_region and ticket_id = tid and status = 'active';
+    insert into public.fm_tk_assign(region, ticket_id, assignee, assignee_name, primary_name, primary_id, reason, note, until, snap, status, ack_at, done_at, done_note, by_id, by_name, at, updated_at)
+    values (p_region, tid, p_user, tn, left(btrim(coalesce(x->>'primary','')),200), pid, p_reason, left(btrim(coalesce(p_note,'')),1000), p_until,
+            jsonb_build_object('school', left(x->>'school',200), 'cat', left(x->>'cat',200), 'pri', left(x->>'pri',40), 'desc', left(x->>'desc',1500), 'date', left(x->>'date',40)),
+            'active', null, null, null, auth.uid(), me, now(), now())
+    on conflict (region, ticket_id) do update set assignee = excluded.assignee, assignee_name = excluded.assignee_name, primary_name = excluded.primary_name,
+      primary_id = excluded.primary_id, reason = excluded.reason, note = excluded.note, until = excluded.until, snap = excluded.snap, status = 'active',
+      ack_at = null, done_at = null, done_note = null, by_id = auth.uid(), by_name = me, at = now(), updated_at = now(),
+      wo_id = case when public.fm_tk_assign.assignee = excluded.assignee then public.fm_tk_assign.wo_id end,
+      wo_code = case when public.fm_tk_assign.assignee = excluded.assignee then public.fm_tk_assign.wo_code end;
+    insert into public.fm_tk_assign_log(region, ticket_id, action, assignee_name, reason, note, by_id, by_name) values (p_region, tid, 'assign', tn, p_reason, left(btrim(coalesce(p_note,'')),1000), auth.uid(), me);
+    n := n + 1; sch := coalesce(x->>'school','');
+    begin
+      if prv is not null and prv <> p_user then
+        perform public.fm_push_add(prv, 'tk_assign', '↩️ سُحب منك البلاغ ' || tid, concat_ws(' — ', 'أُسند إلى ' || tn, nullif(sch,'')), 'tka', 'tka-' || tid, false); end if;
+      if pid is not null and pid <> p_user and pid is distinct from prv then
+        perform public.fm_push_add(pid, 'tk_assign', '↪️ أُسند بلاغك ' || tid || ' إلى ' || tn, sch || coalesce(' — حتى ' || p_until, ''), 'tka', 'tka-' || tid, false); end if;
+    exception when others then null; end;
+  end loop;
+  begin
+    perform public.fm_push_add(p_user, 'tk_assign', '↪️ ' || case when n = 1 then 'بلاغ مُسند إليك ' || tid else n || ' بلاغات مُسندة إليك' end,
+      case when n = 1 and sch <> '' then sch || ' — ' else '' end || 'من ' || me || coalesce(' حتى ' || p_until, '') || coalesce(' — ' || nullif(btrim(p_note),''), ''), 'tka', 'tka-' || p_user, false);
+  exception when others then null; end;
+  return n;
+end $$;
+
+-- back to the primary person
+create or replace function public.fm_tk_unassign(p_region text, p_ids text[], p_note text default '') returns int
+language plpgsql security definer set search_path = public as $$
+declare me text; r record; n int := 0;
+begin
+  if auth.uid() is null or not public.fm_tk_can(p_region) then raise exception 'not allowed'; end if;
+  select coalesce(nullif(full_name,''), email) into me from public.profiles where id = auth.uid();
+  for r in select * from public.fm_tk_assign where region = p_region and ticket_id = any(coalesce(p_ids,'{}')) and status = 'active' for update loop
+    update public.fm_tk_assign set status = 'ended', updated_at = now() where region = r.region and ticket_id = r.ticket_id;
+    insert into public.fm_tk_assign_log(region, ticket_id, action, assignee_name, note, by_id, by_name) values (r.region, r.ticket_id, 'unassign', r.assignee_name, left(coalesce(p_note,''),1000), auth.uid(), me);
+    begin perform public.fm_push_add(r.assignee, 'tk_assign', '↩️ أُعيد البلاغ ' || r.ticket_id || ' للمسؤول الأساسي', coalesce(r.snap->>'school','') || ' — ' || me, 'tka', 'tka-' || r.ticket_id, false);
+    exception when others then null; end;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+
+-- the current assignments of a region (for the register) — managers of the region, or rows the caller is part of
+create or replace function public.fm_tk_list(p_region text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', a.ticket_id, 'assignee', a.assignee, 'name', a.assignee_name, 'primary', a.primary_name, 'reason', a.reason,
+      'note', a.note, 'until', a.until, 'status', case when a.status = 'active' and a.until < (now() at time zone 'Asia/Riyadh')::date then 'expired' else a.status end,
+      'ack_at', a.ack_at, 'done_at', a.done_at, 'done_note', a.done_note, 'wo_code', a.wo_code, 'by', a.by_name, 'at', a.at)), '[]'::jsonb)
+    from public.fm_tk_assign a
+   where a.region = p_region and a.status <> 'ended' and auth.uid() is not null
+     and (public.fm_tk_can(p_region) or a.assignee = auth.uid() or a.primary_id = auth.uid() or public.fm_scope_all()) $$;
+
+-- my assigned tickets (field app): active and not past the end date, plus those I finished in the last 7 days
+create or replace function public.fm_tk_my() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('region', a.region, 'id', a.ticket_id, 'snap', a.snap, 'primary', a.primary_name, 'reason', a.reason, 'note', a.note,
+      'until', a.until, 'status', a.status, 'ack_at', a.ack_at, 'done_at', a.done_at, 'wo_code', a.wo_code, 'wo_id', a.wo_id, 'by', a.by_name, 'at', a.at,
+      'tstatus', t.status) order by a.status, a.at desc), '[]'::jsonb)
+    from public.fm_tk_assign a left join public.tickets t on t.region = a.region and t.ticket_id = a.ticket_id
+   where a.assignee = auth.uid() and ((a.status = 'active' and (a.until is null or a.until >= (now() at time zone 'Asia/Riyadh')::date))
+      or (a.status = 'done' and a.done_at > now() - interval '7 days')) $$;
+
+-- the assignee: ack (received) | done (with a note)
+create or replace function public.fm_tk_act(p_region text, p_id text, p_action text, p_note text default '') returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare a public.fm_tk_assign; me text;
+begin
+  select * into a from public.fm_tk_assign where region = p_region and ticket_id = p_id for update;
+  if not found or a.assignee is distinct from auth.uid() or a.status <> 'active' then raise exception 'not allowed'; end if;
+  select coalesce(nullif(full_name,''), email) into me from public.profiles where id = auth.uid();
+  if p_action = 'ack' then
+    update public.fm_tk_assign set ack_at = coalesce(ack_at, now()), updated_at = now() where region = p_region and ticket_id = p_id;
+    begin perform public.fm_push_add(a.by_id, 'tk_assign', '✔️ ' || me || ' استلم البلاغ ' || p_id, coalesce(a.snap->>'school',''), 'tka', 'tka-' || p_id, false); exception when others then null; end;
+  elsif p_action = 'done' then
+    if length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+    update public.fm_tk_assign set status = 'done', done_at = now(), done_note = left(btrim(p_note),1000), ack_at = coalesce(ack_at, now()), updated_at = now()
+     where region = p_region and ticket_id = p_id;
+    begin perform public.fm_push_add(a.by_id, 'tk_assign', '✅ ' || me || ' نفّذ البلاغ ' || p_id, left(btrim(p_note),200), 'tka', 'tka-' || p_id, false);
+      if a.primary_id is not null and a.primary_id <> a.by_id then perform public.fm_push_add(a.primary_id, 'tk_assign', '✅ نُفّذ بلاغك ' || p_id || ' بواسطة ' || me, left(btrim(p_note),200), 'tka', 'tka-' || p_id, false); end if;
+    exception when others then null; end;
+  else raise exception 'invalid action'; end if;
+  insert into public.fm_tk_assign_log(region, ticket_id, action, assignee_name, note, by_id, by_name) values (p_region, p_id, p_action, me, left(coalesce(p_note,''),1000), auth.uid(), me);
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- link the work order created for the assigned ticket
+create or replace function public.fm_tk_link_wo(p_region text, p_id text, p_wo uuid) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare c text;
+begin
+  if auth.uid() is null or not public.fm_tk_can(p_region) then raise exception 'not allowed'; end if;
+  select code into c from public.work_orders where id = p_wo;
+  if not found then raise exception 'unknown order'; end if;
+  update public.fm_tk_assign set wo_id = p_wo, wo_code = c, updated_at = now() where region = p_region and ticket_id = p_id and status = 'active';
+  if not found then return false; end if;
+  insert into public.fm_tk_assign_log(region, ticket_id, action, note, by_id, by_name)
+  values (p_region, p_id, 'wo', c, auth.uid(), (select coalesce(nullif(full_name,''), email) from public.profiles where id = auth.uid()));
+  return true;
+end $$;
+
+create or replace function public.fm_tk_history(p_region text, p_id text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('action', l.action, 'name', l.assignee_name, 'reason', l.reason, 'note', l.note, 'by', l.by_name, 'at', l.at) order by l.at), '[]'::jsonb)
+    from public.fm_tk_assign_log l
+   where l.region = p_region and l.ticket_id = p_id and auth.uid() is not null
+     and (public.fm_tk_can(p_region) or public.fm_scope_all()
+          or exists (select 1 from public.fm_tk_assign a where a.region = p_region and a.ticket_id = p_id and (a.assignee = auth.uid() or a.primary_id = auth.uid()))) $$;
+
+revoke all on function public.fm_tk_person(text), public.fm_tk_leave(uuid) from public, anon, authenticated;
+revoke all on function public.fm_tk_can(text), public.fm_tk_target_ok(text,uuid), public.fm_tk_people(text,text[]), public.fm_tk_assign(text,jsonb,uuid,text,text,date),
+  public.fm_tk_unassign(text,text[],text), public.fm_tk_list(text), public.fm_tk_my(), public.fm_tk_act(text,text,text,text), public.fm_tk_link_wo(text,text,uuid),
+  public.fm_tk_history(text,text) from public, anon;
+grant execute on function public.fm_tk_can(text), public.fm_tk_target_ok(text,uuid), public.fm_tk_people(text,text[]), public.fm_tk_assign(text,jsonb,uuid,text,text,date),
+  public.fm_tk_unassign(text,text[],text), public.fm_tk_list(text), public.fm_tk_my(), public.fm_tk_act(text,text,text,text), public.fm_tk_link_wo(text,text,uuid),
+  public.fm_tk_history(text,text) to authenticated;
+notify pgrst, 'reload schema';
