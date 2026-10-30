@@ -10883,3 +10883,203 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: framework agreement reminders are not pushed'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Section 64 (V262): supplier portal (supplier.html?k=<64 hex>, no account)
+-- One active private link per supplier. Through anon RPCs the supplier sees open quotation requests (wo_rfqs; all, or only
+-- those that list him in `invited`), sends / updates his quotation (wo_rfq_quotes, by_name «المورد عبر البوابة»), follows
+-- his purchase requests and framework agreements, and uploads invoices (wo_supplier_invoices) that the accountant / warehouse
+-- accepts, rejects or marks paid. Staff: fm_supplier_link_make / _revoke / _list, fm_supplier_inv_list / _act.
+-- ═══════════════════════════════════════════════════════════════════════════
+alter table public.wo_rfqs add column if not exists invited uuid[] not null default '{}';
+create table if not exists public.wo_supplier_links (
+  token        text primary key check (token ~ '^[0-9a-f]{64}$'),
+  supplier_id  uuid not null references public.wo_suppliers(id) on delete cascade,
+  active       boolean not null default true,
+  created_by   uuid default auth.uid() references public.profiles(id) on delete set null,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz,
+  revoked_at   timestamptz
+);
+create unique index if not exists wo_supplier_links_one on public.wo_supplier_links (supplier_id) where active;
+create sequence if not exists public.wo_sinv_seq;
+create table if not exists public.wo_supplier_invoices (
+  id           uuid primary key default gen_random_uuid(),
+  code         text unique not null default ('SI-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.wo_sinv_seq')::text, 4, '0')),
+  supplier_id  uuid not null references public.wo_suppliers(id) on delete cascade,
+  po_id        uuid references public.wo_purchase_requests(id) on delete set null,
+  po_code      text,
+  invoice_no   text not null,
+  invoice_date date,
+  amount       numeric(14,2) not null check (amount > 0),
+  vat          numeric(14,2),
+  photo        text check (photo is null or length(photo) <= 560000),
+  note         text,
+  status       text not null default 'new' check (status in ('new','accepted','rejected','paid')),
+  response     text,
+  pay_ref      text,
+  at           timestamptz not null default now(),
+  dec_by       uuid references public.profiles(id) on delete set null,
+  dec_name     text,
+  dec_at       timestamptz
+);
+alter table public.wo_supplier_links enable row level security;
+alter table public.wo_supplier_invoices enable row level security;
+revoke all on public.wo_supplier_links, public.wo_supplier_invoices from public, anon, authenticated;
+
+create or replace function public.fm_sup_staff() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_wh_edit() or public.fm_my_pos() in ('accountant','dept_manager'), false) $$;
+-- internal: token → supplier id (active link, active supplier); touches last_used_at
+create or replace function public.fm_sup_token(p_token text) returns uuid language plpgsql security definer set search_path = public as $$
+declare s uuid;
+begin
+  select l.supplier_id into s from public.wo_supplier_links l join public.wo_suppliers w on w.id = l.supplier_id
+   where l.token = lower(coalesce(p_token,'')) and l.active and coalesce(w.active, true);
+  if s is null then raise exception 'invalid link'; end if;
+  update public.wo_supplier_links set last_used_at = now() where token = lower(p_token) and (last_used_at is null or last_used_at < now() - interval '5 minutes');
+  return s;
+end $$;
+revoke all on function public.fm_sup_token(text) from public, anon, authenticated;
+
+create or replace function public.fm_supplier_link_make(p_supplier uuid, p_renew boolean default false) returns text language plpgsql security definer set search_path = public as $$
+declare t text;
+begin
+  if auth.uid() is null or not public.fm_sup_staff() then raise exception 'not allowed'; end if;
+  if not exists (select 1 from public.wo_suppliers where id = p_supplier) then raise exception 'unknown supplier'; end if;
+  if p_renew then update public.wo_supplier_links set active = false, revoked_at = now() where supplier_id = p_supplier and active; end if;
+  select token into t from public.wo_supplier_links where supplier_id = p_supplier and active;
+  if t is null then
+    t := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+    insert into public.wo_supplier_links(token, supplier_id) values (t, p_supplier);
+  end if;
+  return t;
+end $$;
+create or replace function public.fm_supplier_link_revoke(p_supplier uuid) returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  if auth.uid() is null or not public.fm_sup_staff() then raise exception 'not allowed'; end if;
+  update public.wo_supplier_links set active = false, revoked_at = now() where supplier_id = p_supplier and active;
+  get diagnostics n = row_count; return n;
+end $$;
+create or replace function public.fm_supplier_links_list() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('supplier_id', s.id, 'name', s.name, 'phone', s.phone, 'token', l.token, 'last_used', l.last_used_at, 'created', l.created_at,
+      'inv_new', (select count(*) from public.wo_supplier_invoices i where i.supplier_id = s.id and i.status = 'new')) order by s.name), '[]'::jsonb)
+    from public.wo_suppliers s left join public.wo_supplier_links l on l.supplier_id = s.id and l.active
+   where auth.uid() is not null and public.fm_sup_staff() $$;
+
+-- anon: everything the supplier sees
+create or replace function public.fm_supplier_portal(p_token text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s uuid; sp public.wo_suppliers;
+begin
+  s := public.fm_sup_token(p_token);
+  select * into sp from public.wo_suppliers where id = s;
+  return jsonb_build_object('state', 'ok', 'supplier', sp.name,
+    'rfqs', coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'code', r.code, 'at', r.at, 'due', r.due_date, 'note', r.note, 'region', r.region,
+        'lines', (select jsonb_agg(jsonb_build_object('material_id', l->>'material_id', 'qty', (l->>'qty')::numeric, 'name', m.name, 'unit', m.unit, 'code', m.code, 'specs', m.specs))
+                    from jsonb_array_elements(r.lines) l left join public.wo_materials m on m.id = (l->>'material_id')::uuid),
+        'quote', (select jsonb_build_object('prices', q.prices, 'total', q.total, 'delivery_days', q.delivery_days, 'valid_until', q.valid_until, 'note', q.note, 'at', q.at)
+                    from public.wo_rfq_quotes q where q.rfq_id = r.id and q.supplier_id = s)) order by r.at desc)
+      from public.wo_rfqs r where r.status = 'open' and (cardinality(r.invited) = 0 or s = any(r.invited)) and (r.due_date is null or r.due_date >= (now() at time zone 'Asia/Riyadh')::date - 1)), '[]'::jsonb),
+    'won', coalesce((select jsonb_agg(jsonb_build_object('code', r.code, 'po', r.po_code, 'at', r.decided_at) order by r.decided_at desc)
+      from (select * from public.wo_rfqs where award_supplier_id = s and status = 'awarded' order by decided_at desc limit 20) r), '[]'::jsonb),
+    'pos', coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'code', p.code, 'at', p.at, 'status', p.status, 'total', p.total, 'received_at', p.received_at,
+        'lines', (select jsonb_agg(jsonb_build_object('name', m.name, 'unit', m.unit, 'qty', (l->>'qty')::numeric, 'price', (l->>'price')::numeric, 'recv', coalesce((l->>'recv')::numeric,0)))
+                    from jsonb_array_elements(p.lines) l left join public.wo_materials m on m.id = (l->>'material_id')::uuid),
+        'inv', (select jsonb_agg(jsonb_build_object('code', i.code, 'status', i.status)) from public.wo_supplier_invoices i where i.po_id = p.id)) order by p.at desc)
+      from (select * from public.wo_purchase_requests where supplier_id = s and status in ('approved','partial','received') order by at desc limit 60) p), '[]'::jsonb),
+    'fas', coalesce((select jsonb_agg(jsonb_build_object('code', f.code, 'title', f.title, 'start', f.start_date, 'end', f.end_date, 'status', f.status, 'cap', f.cap_value, 'used', (public.fm_fa_used(f.id)->>'value')::numeric))
+      from public.wo_frameworks f where f.supplier_id = s and f.status = 'active'), '[]'::jsonb),
+    'invoices', coalesce((select jsonb_agg(jsonb_build_object('code', i.code, 'po', i.po_code, 'no', i.invoice_no, 'date', i.invoice_date, 'amount', i.amount, 'status', i.status, 'response', i.response, 'pay_ref', i.pay_ref, 'at', i.at) order by i.at desc)
+      from (select * from public.wo_supplier_invoices where supplier_id = s order by at desc limit 60) i), '[]'::jsonb));
+end $$;
+
+-- anon: quotation p {prices:[{material_id, price}], delivery_days, valid_until, note, photo}
+create or replace function public.fm_supplier_quote(p_token text, p_rfq uuid, p jsonb) returns numeric language plpgsql security definer set search_path = public as $$
+declare s uuid; sp public.wo_suppliers; r public.wo_rfqs; ln jsonb; pr numeric; PQ jsonb := '[]'; t numeric := 0;
+begin
+  s := public.fm_sup_token(p_token);
+  select * into sp from public.wo_suppliers where id = s;
+  select * into r from public.wo_rfqs where id = p_rfq for update;
+  if not found or r.status <> 'open' or not (cardinality(r.invited) = 0 or s = any(r.invited)) then raise exception 'not open'; end if;
+  if length(coalesce(p->>'photo','')) > 420000 then raise exception 'photo too large'; end if;
+  if nullif(p->>'photo','') is not null and (p->>'photo') !~ '^data:(image/(jpeg|png|webp)|application/pdf);base64,' then raise exception 'invalid photo'; end if;
+  for ln in select * from jsonb_array_elements(r.lines) loop
+    pr := (select nullif(e->>'price','')::numeric from jsonb_array_elements(case when jsonb_typeof(p->'prices') = 'array' then p->'prices' else '[]' end) z(e) where e->>'material_id' = ln->>'material_id' limit 1);
+    if pr is not null and (pr < 0 or pr > 10000000) then raise exception 'invalid price'; end if;
+    PQ := PQ || jsonb_build_object('material_id', ln->>'material_id', 'price', pr);
+    t := t + coalesce(pr, 0) * (ln->>'qty')::numeric;
+  end loop;
+  if not exists(select 1 from jsonb_array_elements(PQ) e where e->>'price' is not null) then raise exception 'no prices'; end if;
+  insert into public.wo_rfq_quotes(rfq_id, supplier_id, supplier_name, prices, total, delivery_days, valid_until, note, photo, by_name)
+  values (r.id, s, sp.name, PQ, round(t,2), least(greatest(nullif(p->>'delivery_days','')::int,0),365), nullif(p->>'valid_until','')::date, left(nullif(btrim(coalesce(p->>'note','')),''),500), nullif(p->>'photo',''), 'المورد عبر البوابة')
+  on conflict (rfq_id, supplier_id) do update set prices = excluded.prices, total = excluded.total, delivery_days = excluded.delivery_days,
+    valid_until = excluded.valid_until, note = excluded.note, photo = coalesce(excluded.photo, public.wo_rfq_quotes.photo), at = now(), by_name = excluded.by_name;
+  return round(t,2);
+end $$;
+
+-- anon: invoice p {po_id?, invoice_no, invoice_date, amount, vat?, photo, note}
+create or replace function public.fm_supplier_invoice(p_token text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s uuid; po public.wo_purchase_requests; i public.wo_supplier_invoices; a numeric := nullif(p->>'amount','')::numeric; u uuid; reg text;
+begin
+  s := public.fm_sup_token(p_token);
+  if (select count(*) from public.wo_supplier_invoices where supplier_id = s and at > now() - interval '1 day') >= 20 then raise exception 'too many'; end if;
+  if length(btrim(coalesce(p->>'invoice_no',''))) < 1 then raise exception 'invoice no required'; end if;
+  if a is null or a <= 0 or a > 100000000 then raise exception 'invalid amount'; end if;
+  if nullif(p->>'photo','') is null then raise exception 'photo required'; end if;
+  if length(p->>'photo') > 560000 or (p->>'photo') !~ '^data:(image/(jpeg|png|webp)|application/pdf);base64,' then raise exception 'invalid photo'; end if;
+  if nullif(p->>'po_id','') is not null then
+    select * into po from public.wo_purchase_requests where id = (p->>'po_id')::uuid and supplier_id = s;
+    if not found then raise exception 'unknown po'; end if;
+    select region into reg from public.wo_stores where id = po.store_id;
+  end if;
+  if exists (select 1 from public.wo_supplier_invoices where supplier_id = s and lower(btrim(invoice_no)) = lower(btrim(p->>'invoice_no')) and status <> 'rejected') then raise exception 'duplicate invoice'; end if;
+  insert into public.wo_supplier_invoices(supplier_id, po_id, po_code, invoice_no, invoice_date, amount, vat, photo, note)
+  values (s, po.id, po.code, left(btrim(p->>'invoice_no'),60), nullif(p->>'invoice_date','')::date, round(a,2), nullif(p->>'vat','')::numeric, p->>'photo', left(nullif(btrim(coalesce(p->>'note','')),''),500)) returning * into i;
+  begin
+    for u in select p2.id from public.profiles p2 where p2.active and public.fm_posx(p2.role, p2.job_title) in ('accountant','project_manager') union select * from public.fm_wh_keepers_of(reg) loop
+      perform public.fm_push_add(u, 'wh_inv', '🧾 فاتورة مورد جديدة ' || i.code, concat_ws(' — ', (select name from public.wo_suppliers where id = s), i.invoice_no, round(i.amount) || ' ر.س', i.po_code), 'wh=inv', 'sinv-' || i.code, false);
+    end loop;
+  exception when others then null; end;
+  return jsonb_build_object('code', i.code);
+end $$;
+
+create or replace function public.fm_supplier_inv_list(p_days int default 180) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'code', i.code, 'supplier', s.name, 'supplier_id', i.supplier_id, 'po', i.po_code, 'po_id', i.po_id, 'po_total', p.total, 'po_status', p.status,
+      'no', i.invoice_no, 'date', i.invoice_date, 'amount', i.amount, 'vat', i.vat, 'note', i.note, 'status', i.status, 'response', i.response, 'pay_ref', i.pay_ref, 'at', i.at,
+      'dec', i.dec_name, 'dec_at', i.dec_at) order by (i.status = 'new') desc, i.at desc), '[]'::jsonb)
+    from public.wo_supplier_invoices i join public.wo_suppliers s on s.id = i.supplier_id left join public.wo_purchase_requests p on p.id = i.po_id
+   where auth.uid() is not null and public.fm_sup_staff() and i.at > now() - make_interval(days => least(greatest(coalesce(p_days,180),7),1100)) $$;
+create or replace function public.fm_supplier_inv_photo(p_id uuid) returns text language sql stable security definer set search_path = public as $$
+  select photo from public.wo_supplier_invoices where id = p_id and auth.uid() is not null and public.fm_sup_staff() $$;
+create or replace function public.fm_supplier_inv_act(p_id uuid, p_action text, p_note text default '', p_ref text default '') returns text language plpgsql security definer set search_path = public as $$
+declare i public.wo_supplier_invoices;
+begin
+  select * into i from public.wo_supplier_invoices where id = p_id for update;
+  if auth.uid() is null or not found or not public.fm_sup_staff() then raise exception 'not allowed'; end if;
+  if p_action = 'accept' and i.status = 'new' then update public.wo_supplier_invoices set status = 'accepted', response = nullif(btrim(coalesce(p_note,'')),''), dec_by = auth.uid(), dec_name = public.fm_me_name(), dec_at = now() where id = p_id;
+  elsif p_action = 'reject' and i.status = 'new' then
+    if length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+    update public.wo_supplier_invoices set status = 'rejected', response = btrim(p_note), dec_by = auth.uid(), dec_name = public.fm_me_name(), dec_at = now() where id = p_id;
+  elsif p_action = 'paid' and i.status in ('new','accepted') then
+    if not (public.fm_role() = 'admin' or public.fm_my_pos() in ('accountant','sysadmin')) then raise exception 'not allowed'; end if;
+    update public.wo_supplier_invoices set status = 'paid', pay_ref = left(nullif(btrim(coalesce(p_ref,'')),''),100), response = coalesce(nullif(btrim(coalesce(p_note,'')),''), response), dec_by = auth.uid(), dec_name = public.fm_me_name(), dec_at = now() where id = p_id;
+  else raise exception 'invalid status'; end if;
+  return p_action;
+end $$;
+
+create or replace function public.fm_rfq_invite(p_rfq uuid, p_suppliers uuid[]) returns int language plpgsql security definer set search_path = public as $$
+declare r public.wo_rfqs;
+begin
+  select * into r from public.wo_rfqs where id = p_rfq;
+  if auth.uid() is null or not found or not (public.fm_stock_can(r.region) or public.fm_wh_keeper(r.store_id)) then raise exception 'not allowed'; end if;
+  update public.wo_rfqs set invited = coalesce(p_suppliers, '{}') where id = p_rfq;
+  return coalesce(cardinality(p_suppliers),0);
+end $$;
+
+revoke all on function public.fm_sup_staff(), public.fm_supplier_link_make(uuid,boolean), public.fm_supplier_link_revoke(uuid), public.fm_supplier_links_list(),
+  public.fm_supplier_inv_list(int), public.fm_supplier_inv_photo(uuid), public.fm_supplier_inv_act(uuid,text,text,text), public.fm_rfq_invite(uuid,uuid[]),
+  public.fm_supplier_portal(text), public.fm_supplier_quote(text,uuid,jsonb), public.fm_supplier_invoice(text,jsonb) from public;
+grant execute on function public.fm_sup_staff(), public.fm_supplier_link_make(uuid,boolean), public.fm_supplier_link_revoke(uuid), public.fm_supplier_links_list(),
+  public.fm_supplier_inv_list(int), public.fm_supplier_inv_photo(uuid), public.fm_supplier_inv_act(uuid,text,text,text), public.fm_rfq_invite(uuid,uuid[]) to authenticated;
+grant execute on function public.fm_supplier_portal(text), public.fm_supplier_quote(text,uuid,jsonb), public.fm_supplier_invoice(text,jsonb) to anon, authenticated;
+notify pgrst, 'reload schema';
