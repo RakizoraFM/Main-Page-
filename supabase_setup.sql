@@ -9245,3 +9245,330 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: send the summary from «📬 الملخص الأسبوعي»'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Section 54 (V249): ideas and problems bank «💡 بنك المقترحات»
+-- Anyone in the project raises an idea or a problem with its solution; it goes to his direct manager
+-- (reports_to) and to top management (fm_settings.ideas.top). Colleagues support it, managers study /
+-- recommend, top management approves, implements or rejects. An implemented idea gives its owner points,
+-- the 💡 badge and a news item; management may add impact points later while the idea keeps helping.
+-- Idempotent.
+-- =====================================================================
+
+-- V246 fix: push hashes are given without '#' (fm_push_url adds it)
+create or replace function public.fm_badge_put(p_user uuid, p_kind text, p_period text, p_auto boolean, p_value numeric, p_reason text, p_by uuid, p_by_name text)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare pr record; k jsonb := public.fm_badge_kinds()->p_kind; rc int := 0;
+begin
+  if k is null then raise exception 'unknown badge'; end if;
+  select id, coalesce(nullif(full_name,''), email) nm, public.fm_posx(role, job_title) pos, coalesce(regions[1],'') rg into pr
+    from public.profiles where id = p_user and active;
+  if not found then return false; end if;
+  insert into public.fm_badges(user_id, user_name, job_title, region, kind, period, auto, value, reason, by_id, by_name)
+  values (p_user, pr.nm, pr.pos, pr.rg, p_kind, p_period, p_auto, p_value, left(coalesce(p_reason,''),500), p_by, p_by_name)
+  on conflict do nothing;
+  get diagnostics rc = row_count;
+  if rc > 0 then
+    begin
+      perform public.fm_push_add(p_user, 'badge', (k->>'i') || ' حصلت على شارة «' || (k->>'t') || '»',
+        case when p_auto then 'مبروك! شارة شهر ' || coalesce(p_period,'') else coalesce(nullif(p_reason,''),'تقديراً لعملك') || ' — ' || coalesce(p_by_name,'') end,
+        'badges', 'badge', false);
+    exception when others then null; end;
+  end if;
+  return rc > 0;
+end $$;
+revoke all on function public.fm_badge_put(uuid,text,text,boolean,numeric,text,uuid,text) from public, anon, authenticated;
+
+create table if not exists public.fm_ideas (
+  id         uuid primary key default gen_random_uuid(),
+  code       text unique,
+  kind       text not null default 'idea' check (kind in ('idea','problem')),
+  title      text not null check (length(btrim(title)) between 5 and 150),
+  body       text not null check (length(btrim(body)) between 10 and 3000),
+  solution   text not null default '' check (length(solution) <= 3000),
+  benefit    text not null default '' check (length(benefit) <= 1000),
+  category   text not null default 'other',
+  region     text not null default '',
+  by_id      uuid references public.profiles(id) on delete set null,
+  by_name    text not null default '',
+  by_title   text,
+  mgr_id     uuid references public.profiles(id) on delete set null,
+  mgr_name   text,
+  status     text not null default 'new' check (status in ('new','study','approved','implemented','rejected','duplicate','withdrawn')),
+  dup_of     text,
+  decided_by text,
+  decided_at timestamptz,
+  impl_at    timestamptz,
+  points     int not null default 0,
+  votes      int not null default 0,
+  photo      text check (photo is null or length(photo) <= 420000),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists fm_ideas_by on public.fm_ideas (by_id);
+create index if not exists fm_ideas_status on public.fm_ideas (status, created_at);
+create table if not exists public.fm_idea_votes (
+  idea_id uuid not null references public.fm_ideas(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  at      timestamptz not null default now(),
+  primary key (idea_id, user_id)
+);
+create table if not exists public.fm_idea_events (
+  id      uuid primary key default gen_random_uuid(),
+  idea_id uuid not null references public.fm_ideas(id) on delete cascade,
+  kind    text not null check (kind in ('create','comment','status','points','recommend')),
+  status  text,
+  pts     int,
+  ok      boolean,
+  note    text not null default '' check (length(note) <= 2000),
+  by_id   uuid references public.profiles(id) on delete set null,
+  by_name text,
+  at      timestamptz not null default now()
+);
+create index if not exists fm_idea_events_idea on public.fm_idea_events (idea_id, at);
+alter table public.fm_ideas enable row level security;
+alter table public.fm_idea_votes enable row level security;
+alter table public.fm_idea_events enable row level security;
+revoke all on public.fm_ideas, public.fm_idea_votes, public.fm_idea_events from public, anon, authenticated;
+
+-- settings: {public (true), top [titles], pts_approve (5), pts_implement (20), pts_max (50), daily (10)}
+create or replace function public.fm_idea_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'public', coalesce((s->>'public')::boolean, true),
+    'top', case when jsonb_typeof(s->'top') = 'array' then s->'top' else '["sysadmin","project_manager","ops_manager"]'::jsonb end,
+    'pts_approve', coalesce((s->>'pts_approve')::int, 5),
+    'pts_implement', coalesce((s->>'pts_implement')::int, 20),
+    'pts_max', coalesce((s->>'pts_max')::int, 50),
+    'daily', coalesce((s->>'daily')::int, 10))
+  from (select coalesce(public.fm_setting('ideas'), '{}') s) x $$;
+
+-- top management decides (approve / implement / reject / points); the area manager for his regions
+create or replace function public.fm_idea_decider(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin'
+    or public.fm_my_pos() in (select jsonb_array_elements_text(public.fm_idea_cfg()->'top'))
+    or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,''))), false) $$;
+-- the author's managers up the line (direct manager first) may study, recommend and comment
+create or replace function public.fm_idea_line(i public.fm_ideas) returns boolean language sql stable security definer set search_path = public as $$
+  select i.by_id is not null and auth.uid() is not null and (i.mgr_id = auth.uid() or public.fm_is_under(i.by_id, auth.uid())) $$;
+create or replace function public.fm_idea_sees(i public.fm_ideas) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() <> 'pending', false) and (coalesce((public.fm_idea_cfg()->>'public')::boolean, true)
+    or i.by_id = auth.uid() or public.fm_idea_line(i) or public.fm_idea_decider(i.region)) $$;
+
+-- internal: one event + the push to the author / managers
+create or replace function public.fm_idea_log(p_id uuid, p_kind text, p_status text, p_pts int, p_ok boolean, p_note text) returns void
+language plpgsql security definer set search_path = public as $$
+declare nm text;
+begin
+  select coalesce(nullif(full_name,''), email) into nm from public.profiles where id = auth.uid();
+  insert into public.fm_idea_events(idea_id, kind, status, pts, ok, note, by_id, by_name)
+  values (p_id, p_kind, p_status, p_pts, p_ok, left(coalesce(p_note,''),2000), auth.uid(), coalesce(nm, 'النظام'));
+end $$;
+
+create or replace function public.fm_idea_new(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare me record; cfg jsonb := public.fm_idea_cfg(); r public.fm_ideas; k text := coalesce(p->>'kind','idea'); n int; u uuid; tt text; ph text := nullif(p->>'photo','');
+begin
+  select id, coalesce(nullif(full_name,''), email) nm, public.fm_posx(role, job_title) pos, coalesce(regions[1],'') rg, reports_to into me
+    from public.profiles where id = auth.uid() and active;
+  if not found or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  if k not in ('idea','problem') then raise exception 'invalid kind'; end if;
+  if length(btrim(coalesce(p->>'title',''))) < 5 then raise exception 'title required'; end if;
+  if length(btrim(coalesce(p->>'body',''))) < 10 then raise exception 'description required'; end if;
+  if k = 'problem' and length(btrim(coalesce(p->>'solution',''))) < 5 then raise exception 'solution required'; end if;
+  if ph is not null and (ph !~ '^data:image/(jpeg|png|webp);base64,' or length(ph) > 420000) then raise exception 'invalid photo'; end if;
+  select count(*) into n from public.fm_ideas where by_id = auth.uid() and created_at > now() - interval '1 day';
+  if n >= (cfg->>'daily')::int then raise exception 'too many today'; end if;
+  insert into public.fm_ideas(code, kind, title, body, solution, benefit, category, region, by_id, by_name, by_title, mgr_id, mgr_name, photo)
+  values ('IDEA-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad((select count(*) + 1 from public.fm_ideas
+           where code like 'IDEA-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-%')::text, 4, '0'),
+          k, btrim(p->>'title'), btrim(p->>'body'), btrim(coalesce(p->>'solution','')), btrim(coalesce(p->>'benefit','')),
+          case when p->>'category' in ('safety','quality','cost','time','tools','schools','process','other') then p->>'category' else 'other' end,
+          coalesce(nullif(p->>'region',''), me.rg), me.id, me.nm, me.pos, me.reports_to,
+          (select coalesce(nullif(full_name,''), email) from public.profiles where id = me.reports_to), ph)
+  returning * into r;
+  perform public.fm_idea_log(r.id, 'create', 'new', null, null, '');
+  tt := case when k = 'problem' then '⚠️ مشكلة وحلها' else '💡 مقترح جديد' end || ' من ' || me.nm;
+  begin
+    for u in select distinct x from (select me.reports_to x union all
+               select public.fm_push_people(array(select jsonb_array_elements_text(cfg->'top')), null)
+               union all select public.fm_push_people(array['area_manager'], nullif(r.region,''))) y where x is not null and x <> me.id loop
+      perform public.fm_push_add(u, 'idea', tt, r.code || ' — ' || r.title, 'ideas=' || r.id, 'idea', false);
+    end loop;
+  exception when others then null; end;
+  return jsonb_build_object('id', r.id, 'code', r.code);
+end $$;
+
+-- the bank (year = created in that year, null = all) + the points board
+create or replace function public.fm_idea_list(p_year int default null) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare rows jsonb; lead jsonb;
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'code', i.code, 'kind', i.kind, 'title', i.title, 'body', i.body, 'solution', i.solution,
+      'benefit', i.benefit, 'category', i.category, 'region', i.region, 'by', i.by_name, 'by_title', i.by_title, 'mgr', i.mgr_name,
+      'mine', i.by_id = auth.uid(), 'status', i.status, 'dup_of', i.dup_of, 'decided_by', i.decided_by, 'decided_at', i.decided_at,
+      'impl_at', i.impl_at, 'points', i.points, 'votes', i.votes, 'photo', i.photo is not null, 'at', i.created_at,
+      'voted', exists(select 1 from public.fm_idea_votes v where v.idea_id = i.id and v.user_id = auth.uid()),
+      'can_decide', i.by_id is distinct from auth.uid() and public.fm_idea_decider(i.region),
+      'in_line', public.fm_idea_line(i),
+      'last', (select e.at from public.fm_idea_events e where e.idea_id = i.id order by e.at desc limit 1)) order by i.created_at desc), '[]'::jsonb)
+    into rows from public.fm_ideas i
+   where public.fm_idea_sees(i) and (p_year is null or extract(year from i.created_at at time zone 'Asia/Riyadh') = p_year);
+  select coalesce(jsonb_agg(x order by x.points desc, x.impl desc, x.name), '[]'::jsonb) into lead from (
+    select i.by_id uid, max(i.by_name) name, max(i.by_title) title, sum(i.points)::int points, count(*)::int ideas,
+           count(*) filter (where i.status = 'implemented')::int impl, count(*) filter (where i.status in ('approved','implemented'))::int ok
+      from public.fm_ideas i where i.by_id is not null and i.status <> 'withdrawn' and public.fm_idea_sees(i)
+       and (p_year is null or extract(year from i.created_at at time zone 'Asia/Riyadh') = p_year)
+     group by i.by_id) x;
+  return jsonb_build_object('me', auth.uid(), 'cfg', public.fm_idea_cfg(), 'rows', rows, 'leaders', lead,
+    'can_decide', public.fm_idea_decider(null) or public.fm_my_pos() = 'area_manager',
+    'can_set', coalesce(public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin', false));
+end $$;
+
+-- one idea with its photo and history
+create or replace function public.fm_idea_get(p_id uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare i public.fm_ideas;
+begin
+  select * into i from public.fm_ideas where id = p_id;
+  if not found or not public.fm_idea_sees(i) then raise exception 'not found'; end if;
+  return jsonb_build_object('photo', i.photo, 'events', coalesce((select jsonb_agg(jsonb_build_object('kind', e.kind, 'status', e.status, 'pts', e.pts,
+    'ok', e.ok, 'note', e.note, 'by', e.by_name, 'at', e.at) order by e.at) from public.fm_idea_events e where e.idea_id = p_id), '[]'::jsonb),
+    'voters', coalesce((select jsonb_agg(coalesce(nullif(p.full_name,''), p.email) order by v.at) from public.fm_idea_votes v join public.profiles p on p.id = v.user_id
+      where v.idea_id = p_id), '[]'::jsonb));
+end $$;
+
+create or replace function public.fm_idea_vote(p_id uuid, p_on boolean) returns int
+language plpgsql security definer set search_path = public as $$
+declare i public.fm_ideas;
+begin
+  select * into i from public.fm_ideas where id = p_id for update;
+  if not found or not public.fm_idea_sees(i) then raise exception 'not found'; end if;
+  if i.by_id = auth.uid() then raise exception 'own idea'; end if;
+  if i.status in ('rejected','duplicate','withdrawn') then raise exception 'closed'; end if;
+  if p_on then insert into public.fm_idea_votes(idea_id, user_id) values (p_id, auth.uid()) on conflict do nothing;
+  else delete from public.fm_idea_votes where idea_id = p_id and user_id = auth.uid(); end if;
+  update public.fm_ideas set votes = (select count(*) from public.fm_idea_votes where idea_id = p_id) where id = p_id returning votes into i.votes;
+  return i.votes;
+end $$;
+
+create or replace function public.fm_idea_comment(p_id uuid, p_note text) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare i public.fm_ideas;
+begin
+  select * into i from public.fm_ideas where id = p_id;
+  if not found or not public.fm_idea_sees(i) then raise exception 'not found'; end if;
+  if length(btrim(coalesce(p_note,''))) < 2 then raise exception 'note required'; end if;
+  if (select count(*) from public.fm_idea_events where by_id = auth.uid() and kind = 'comment' and at > now() - interval '1 day') >= 50 then raise exception 'too many today'; end if;
+  perform public.fm_idea_log(p_id, 'comment', null, null, null, btrim(p_note));
+  update public.fm_ideas set updated_at = now() where id = p_id;
+  begin
+    if i.by_id is distinct from auth.uid() then perform public.fm_push_add(i.by_id, 'idea', '💬 تعليق على مقترحك ' || i.code, left(btrim(p_note), 200), 'ideas=' || i.id, 'idea-' || i.id, false);
+    elsif i.mgr_id is not null then perform public.fm_push_add(i.mgr_id, 'idea', '💬 ' || i.by_name || ' علّق على مقترحه ' || i.code, left(btrim(p_note), 200), 'ideas=' || i.id, 'idea-' || i.id, false); end if;
+  exception when others then null; end;
+  return true;
+end $$;
+
+-- study | recommend (managers of the author's line or deciders), approve | implement | reject | duplicate | reopen (deciders, never on their own),
+-- withdraw (the author while new / study)
+create or replace function public.fm_idea_act(p_id uuid, p_action text, p_note text default '', p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare i public.fm_ideas; cfg jsonb := public.fm_idea_cfg(); nm text; st text; pts int := 0; note text := btrim(coalesce(p_note,'')); msg text; ok boolean;
+begin
+  select * into i from public.fm_ideas where id = p_id for update;
+  if not found or not public.fm_idea_sees(i) then raise exception 'not found'; end if;
+  select coalesce(nullif(full_name,''), email) into nm from public.profiles where id = auth.uid();
+  if p_action = 'withdraw' then
+    if i.by_id is distinct from auth.uid() or i.status not in ('new','study') then raise exception 'not allowed'; end if;
+    update public.fm_ideas set status = 'withdrawn', updated_at = now() where id = p_id;
+    perform public.fm_idea_log(p_id, 'status', 'withdrawn', null, null, note);
+    return jsonb_build_object('status', 'withdrawn');
+  end if;
+  if i.by_id = auth.uid() then raise exception 'own idea'; end if;
+  if p_action in ('study','recommend') then
+    if not (public.fm_idea_line(i) or public.fm_idea_decider(i.region)) then raise exception 'not allowed'; end if;
+    if i.status not in ('new','study') then raise exception 'invalid status'; end if;
+    if p_action = 'recommend' then
+      ok := coalesce((p->>'ok')::boolean, true);
+      if length(note) < 3 then raise exception 'note required'; end if;
+      perform public.fm_idea_log(p_id, 'recommend', null, null, ok, note);
+      begin
+        for st in select distinct x::text from public.fm_push_people(array(select jsonb_array_elements_text(cfg->'top')), null) x loop
+          perform public.fm_push_add(st::uuid, 'idea', case when ok then '👍 ' else '👎 ' end || nm || (case when ok then ' يوصي بتطبيق ' else ' لا يوصي بتطبيق ' end) || i.code, i.title, 'ideas=' || i.id, 'idea-' || i.id, false);
+        end loop;
+      exception when others then null; end;
+    end if;
+    if i.status = 'new' then update public.fm_ideas set status = 'study', updated_at = now() where id = p_id;
+      if p_action = 'study' then perform public.fm_idea_log(p_id, 'status', 'study', null, null, note); end if;
+      msg := '🔎 مقترحك ' || i.code || ' قيد الدراسة'; end if;
+  elsif p_action in ('approve','implement','reject','duplicate','reopen') then
+    if not public.fm_idea_decider(i.region) then raise exception 'not allowed'; end if;
+    if p_action = 'approve' then
+      if i.status not in ('new','study') then raise exception 'invalid status'; end if;
+      st := 'approved'; msg := '✅ اعتُمد مقترحك ' || i.code || ' للتطبيق';
+      if not exists(select 1 from public.fm_idea_events where idea_id = p_id and kind = 'points' and status = 'approved') then pts := (cfg->>'pts_approve')::int; end if;
+    elsif p_action = 'implement' then
+      if i.status not in ('new','study','approved') then raise exception 'invalid status'; end if;
+      st := 'implemented'; msg := '🎉 طُبِّق مقترحك ' || i.code || ' — شكراً لك';
+      if not exists(select 1 from public.fm_idea_events where idea_id = p_id and kind = 'points' and status = 'approved') and i.status <> 'approved' then pts := (cfg->>'pts_approve')::int; end if;
+      if not exists(select 1 from public.fm_idea_events where idea_id = p_id and kind = 'points' and status = 'implemented') then pts := pts + (cfg->>'pts_implement')::int; end if;
+    elsif p_action = 'reject' then
+      if i.status not in ('new','study','approved') then raise exception 'invalid status'; end if;
+      if length(note) < 3 then raise exception 'note required'; end if;
+      st := 'rejected'; msg := 'لم يُعتمد مقترحك ' || i.code || ': ' || note;
+    elsif p_action = 'duplicate' then
+      if i.status not in ('new','study') then raise exception 'invalid status'; end if;
+      if not exists(select 1 from public.fm_ideas where code = btrim(coalesce(p->>'of','')) and id <> p_id) then raise exception 'unknown idea'; end if;
+      st := 'duplicate'; msg := 'مقترحك ' || i.code || ' مكرر مع ' || btrim(p->>'of');
+    else
+      if i.status not in ('rejected','duplicate','approved') then raise exception 'invalid status'; end if;
+      st := 'study'; msg := '🔄 أُعيد فتح مقترحك ' || i.code;
+    end if;
+    update public.fm_ideas set status = st, dup_of = case when st = 'duplicate' then btrim(p->>'of') else dup_of end,
+      decided_by = nm, decided_at = now(), impl_at = case when st = 'implemented' then now() else impl_at end, updated_at = now(),
+      points = points + pts where id = p_id;
+    perform public.fm_idea_log(p_id, 'status', st, null, null, note);
+    if pts > 0 then perform public.fm_idea_log(p_id, 'points', st, pts, null, case st when 'approved' then 'اعتماد المقترح' else 'تطبيق المقترح' end); end if;
+    if st = 'implemented' and i.by_id is not null then
+      begin perform public.fm_badge_put(i.by_id, 'initiative', null, false, pts, 'تطبيق المقترح ' || i.code || ': ' || left(i.title, 120), auth.uid(), nm);
+      exception when others then null; end;
+      begin perform public.fm_badge_news('💡 طُبِّق مقترح ' || i.by_name || ': ' || left(i.title, 200),
+        i.code || E'\n' || left(i.body, 1000) || case when i.solution <> '' then E'\n\nالحل: ' || left(i.solution, 1000) else '' end || E'\n\nالتفاصيل في «💡 بنك المقترحات».');
+      exception when others then null; end;
+    end if;
+  else raise exception 'invalid action'; end if;
+  if msg is not null and i.by_id is not null then
+    begin perform public.fm_push_add(i.by_id, 'idea', msg, case when pts > 0 then '+' || pts || ' نقطة — ' else '' end || i.title, 'ideas=' || i.id, 'idea-' || i.id, false);
+    exception when others then null; end;
+  end if;
+  select status into st from public.fm_ideas where id = p_id;
+  return jsonb_build_object('status', st, 'pts', pts);
+end $$;
+
+-- impact points while the idea keeps helping (approved / implemented)
+create or replace function public.fm_idea_points(p_id uuid, p_pts int, p_note text) returns int
+language plpgsql security definer set search_path = public as $$
+declare i public.fm_ideas; cfg jsonb := public.fm_idea_cfg();
+begin
+  select * into i from public.fm_ideas where id = p_id for update;
+  if not found or not public.fm_idea_sees(i) then raise exception 'not found'; end if;
+  if i.by_id = auth.uid() then raise exception 'own idea'; end if;
+  if not public.fm_idea_decider(i.region) then raise exception 'not allowed'; end if;
+  if i.status not in ('approved','implemented') then raise exception 'invalid status'; end if;
+  if p_pts is null or p_pts < 1 or p_pts > (cfg->>'pts_max')::int then raise exception 'invalid points'; end if;
+  if length(btrim(coalesce(p_note,''))) < 5 then raise exception 'note required'; end if;
+  update public.fm_ideas set points = points + p_pts, updated_at = now() where id = p_id returning points into i.points;
+  perform public.fm_idea_log(p_id, 'points', 'impact', p_pts, null, btrim(p_note));
+  begin perform public.fm_push_add(i.by_id, 'idea', '⭐ +' || p_pts || ' نقطة لأثر مقترحك ' || i.code, left(btrim(p_note), 200), 'ideas=' || i.id, 'idea-' || i.id, false);
+  exception when others then null; end;
+  return i.points;
+end $$;
+
+revoke all on function public.fm_idea_log(uuid,text,text,int,boolean,text) from public, anon, authenticated;
+revoke all on function public.fm_idea_cfg(), public.fm_idea_decider(text), public.fm_idea_line(public.fm_ideas), public.fm_idea_sees(public.fm_ideas),
+  public.fm_idea_new(jsonb), public.fm_idea_list(int), public.fm_idea_get(uuid), public.fm_idea_vote(uuid,boolean), public.fm_idea_comment(uuid,text),
+  public.fm_idea_act(uuid,text,text,jsonb), public.fm_idea_points(uuid,int,text) from public, anon;
+grant execute on function public.fm_idea_cfg(), public.fm_idea_decider(text), public.fm_idea_line(public.fm_ideas), public.fm_idea_sees(public.fm_ideas),
+  public.fm_idea_new(jsonb), public.fm_idea_list(int), public.fm_idea_get(uuid), public.fm_idea_vote(uuid,boolean), public.fm_idea_comment(uuid,text),
+  public.fm_idea_act(uuid,text,text,jsonb), public.fm_idea_points(uuid,int,text) to authenticated;
+notify pgrst, 'reload schema';
