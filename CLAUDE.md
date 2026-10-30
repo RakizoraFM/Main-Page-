@@ -461,3 +461,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V269 — users page in the sidebar
 - `fm-v269-users-nav`: `#v2-nav-fm269-users` «👥 المستخدمون والصلاحيات», first in the V123 group `system` (system admin only: the button is removed for other roles), opens `#fm269-page` (`window.fmV269Users`, hash `#users`) which renders the same V141 screen through `fmV141UsersTable(box)`; the screen also stays in «الإعدادات» ← السحابة. Manual entry id is now `v2-nav-fm269-users` (RMAP: sysadmin).
+
+## V270 — users table on phones
+- `fm-v270-users-mobile` (CSS only, ≤ 760 px): the V141 `table.fm141-t` becomes one card per user (thead hidden, cells as blocks with labels from `td:nth-child(n)::before`, English labels under `html.fm228-en`), regions side by side, «مفعّل» on one line, actions as a grid of full-width buttons (save across the row). Desktop unchanged. If the V141 columns change, update the nth-child labels.
