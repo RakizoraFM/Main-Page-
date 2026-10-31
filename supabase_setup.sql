@@ -12105,3 +12105,80 @@ grant execute on function public.fm_wo_doc_add(uuid,text,text,text,bigint), publ
 update public.fm_settings set value = value || '{"check": {"mode": "time", "hours": 2, "meters": 300, "scope": "arrival"}}'::jsonb
  where key = 'wo_photos' and not (value ? 'check');
 notify pgrst, 'reload schema';
+
+-- ---------- 75) bulk actions on selected work orders (V280) ----------
+-- Same «creator side» rule as fm_wo_act (creator, admin, project / ops manager, area manager of the region, a deputy of one of them).
+create or replace function public.fm_wo_mgr(p_wo uuid)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare w public.work_orders; me public.profiles;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not me.active then return false; end if;
+  select * into w from public.work_orders where id = p_wo;
+  if w.id is null then return false; end if;
+  return w.created_by = me.id or me.role = 'admin' or public.fm_posx(me.role, me.job_title) in ('project_manager','ops_manager')
+     or (public.fm_posx(me.role, me.job_title) = 'area_manager' and public.fm_region_ok(coalesce(w.region,'')))
+     or exists (select 1 from public.fm_deputies d join public.profiles pr on pr.id = d.principal
+                 where d.deputy = me.id and d.active and now() between d.from_at and d.to_at
+                   and (pr.id = w.created_by or public.fm_posx(pr.role, pr.job_title) in ('project_manager','ops_manager')
+                        or (public.fm_posx(pr.role, pr.job_title) = 'area_manager'
+                            and (cardinality(pr.regions) = 0 or coalesce(w.region,'') = any(pr.regions)))));
+end $$;
+
+-- p: {assignee?: uuid (reassign), approver?: uuid | 'none', priority?: text, due_at?: timestamptz, cancel?: true, note?: text}
+-- Each order on its own: a refused order is reported and the others go on. ≤ 500 orders a call.
+create or replace function public.fm_wo_bulk(p_ids uuid[], p jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare me public.profiles; i uuid; w public.work_orders; ap public.profiles; out jsonb := '[]'::jsonb; ch text[]; nm text;
+  pr text := nullif(trim(coalesce(p->>'priority','')),''); du timestamptz; note text := nullif(trim(coalesce(p->>'note','')),'');
+  apv text := nullif(trim(coalesce(p->>'approver','')),''); asg uuid := public.fm_uuid_or_null(p->>'assignee');
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not me.active then raise exception 'not allowed' using errcode = '42501'; end if;
+  if coalesce(cardinality(p_ids),0) = 0 then return out; end if;
+  if cardinality(p_ids) > 500 then raise exception 'too many'; end if;
+  if pr is not null and pr not in ('طارئ','عالي','متوسط','منخفض') then raise exception 'invalid priority'; end if;
+  if nullif(p->>'due_at','') is not null then du := (p->>'due_at')::timestamptz; end if;
+  if apv is not null and apv <> 'none' then
+    select * into ap from public.profiles where id = public.fm_uuid_or_null(apv);
+    if ap.id is null or not ap.active or ap.role not in ('admin','manager','engineer') then raise exception 'invalid approver'; end if;
+  end if;
+  if coalesce((p->>'cancel')::boolean,false) and note is null then raise exception 'reason required'; end if;
+  nm := coalesce(me.full_name, me.email);
+  foreach i in array p_ids loop
+    begin
+      if coalesce((p->>'cancel')::boolean,false) then
+        perform public.fm_wo_act(i, 'cancel', note, null, null);
+      else
+        if asg is not null then perform public.fm_wo_act(i, 'reassign', null, null, jsonb_build_object('assignee', asg)); end if;
+        if pr is not null or du is not null or apv is not null then
+          select * into w from public.work_orders where id = i for update;
+          if w.id is null or not public.fm_wo_can_see(i) then raise exception 'work order not found'; end if;
+          if not public.fm_wo_mgr(i) then raise exception 'not allowed'; end if;
+          if w.status in ('closed','cancelled') then raise exception 'order is closed'; end if;
+          ch := '{}';
+          if pr is not null and pr is distinct from w.priority then ch := ch || ('الأولوية: ' || pr); end if;
+          if du is not null and du is distinct from w.due_at then ch := ch || ('الموعد: ' || to_char(du at time zone 'Asia/Riyadh','YYYY-MM-DD HH24:MI')); end if;
+          if apv = 'none' and w.approver is not null then ch := ch || 'يعتمده: منشئ الأمر'::text;
+          elsif apv is not null and apv <> 'none' and ap.id is distinct from w.approver then ch := ch || ('يعتمده: ' || coalesce(ap.full_name, ap.email)); end if;
+          update public.work_orders set priority = coalesce(pr, priority), due_at = coalesce(du, due_at),
+                 approver = case when apv = 'none' then null when apv is not null then ap.id else approver end,
+                 approver_name = case when apv = 'none' then null when apv is not null then coalesce(ap.full_name, ap.email) else approver_name end,
+                 updated_at = now() where id = i;
+          if cardinality(ch) > 0 then
+            insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+            values (i, me.id, nm, 'note', w.status, '✏️ تعديل جماعي — ' || array_to_string(ch, '، ') || coalesce(' — ' || note, ''));
+          end if;
+        end if;
+      end if;
+      out := out || jsonb_build_object('id', i, 'ok', true);
+    exception when others then
+      out := out || jsonb_build_object('id', i, 'ok', false, 'err', sqlerrm);
+    end;
+  end loop;
+  return out;
+end $$;
+revoke all on function public.fm_wo_mgr(uuid) from public;
+revoke all on function public.fm_wo_bulk(uuid[], jsonb) from public;
+grant execute on function public.fm_wo_mgr(uuid), public.fm_wo_bulk(uuid[], jsonb) to authenticated;
+notify pgrst, 'reload schema';
