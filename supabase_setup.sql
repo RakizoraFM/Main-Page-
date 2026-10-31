@@ -11465,3 +11465,83 @@ drop trigger if exists fm_push_sr_new on public.fm_school_requests;
 create trigger fm_push_sr_new after insert on public.fm_school_requests for each row execute function public.fm_push_sr_new();
 revoke all on function public.fm_push_tk_new(), public.fm_push_news(), public.fm_push_sr_new(), public.fm_school_staff_ids(text, text, text) from public, anon, authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 70) push setup in one click + connection check (V272) ----------
+-- The fm-push function can now read its two secrets from the database (service role only), so the system admin no longer
+-- adds them in Supabase ← Edge Functions ← Secrets: fm_push_autoset saves the keys, the hook secret, the function URL and
+-- turns notifications on in one call. Secrets set in Supabase (FM_PUSH_HOOK / VAPID_PRIVATE) still take precedence.
+-- The kick keeps the id of its last request so fm_push_status can show what the function answered (404 not deployed,
+-- 401 JWT check on, 403 hook mismatch, 500 with the message).
+alter table public.fm_push_cfg add column if not exists vapid_private text;
+alter table public.fm_push_cfg add column if not exists last_req bigint;
+create or replace function public.fm_push_kick() returns void language plpgsql security definer set search_path = public as $$
+declare c public.fm_push_cfg; rid bigint;
+begin
+  update public.fm_push_cfg set kicked_at = now() where id = 1 and fn_url is not null and coalesce(kicked_at, 'epoch') < now() - interval '3 seconds' returning * into c;
+  if not found then return; end if;
+  begin
+    execute 'select net.http_post(url := $1, body := ''{}''::jsonb, headers := $2, timeout_milliseconds := 20000)' into rid
+      using c.fn_url, jsonb_build_object('Content-Type','application/json','x-fm-hook', coalesce(c.hook_secret,''))
+                     || case when c.anon_key is not null then jsonb_build_object('Authorization','Bearer ' || c.anon_key, 'apikey', c.anon_key) else '{}'::jsonb end;
+    update public.fm_push_cfg set last_req = rid where id = 1;
+  exception when others then null;
+  end;
+end $$;
+-- the function's secrets (service role only)
+create or replace function public.fm_push_secrets() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('hook', hook_secret, 'vapid', vapid_private) from public.fm_push_cfg where id = 1 $$;
+-- one-click setup by the system admin: p {vapid_public, vapid_private, hook_secret, fn_url, anon_key, subject}
+create or replace function public.fm_push_autoset(p jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+declare s jsonb := coalesce(public.fm_setting('push'), '{}');
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed'; end if;
+  if coalesce(p->>'vapid_public','') !~ '^[A-Za-z0-9_-]{80,100}$' or coalesce(p->>'vapid_private','') !~ '^[A-Za-z0-9_-]{40,50}$' then raise exception 'invalid keys'; end if;
+  if length(coalesce(p->>'hook_secret','')) < 24 then raise exception 'secret too short'; end if;
+  if coalesce(p->>'fn_url','') !~ '^https://[^ ]+$' then raise exception 'invalid url'; end if;
+  insert into public.fm_push_cfg(id) values (1) on conflict do nothing;
+  update public.fm_push_cfg set fn_url = p->>'fn_url', hook_secret = p->>'hook_secret', vapid_private = p->>'vapid_private',
+    anon_key = coalesce(nullif(btrim(p->>'anon_key'),''), anon_key), kicked_at = null where id = 1;
+  insert into public.fm_settings(key, value) values ('push', s || jsonb_build_object('enabled', true, 'vapid_public', p->>'vapid_public',
+      'subject', coalesce(nullif(p->>'subject',''), s->>'subject', 'mailto:admin@rakizora.com')))
+  on conflict (key) do update set value = excluded.value;
+  return true;
+end $$;
+-- call the function now (admin) and return the request id; read the answer with fm_push_status a few seconds later
+create or replace function public.fm_push_check() returns bigint language plpgsql security definer set search_path = public as $$
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed'; end if;
+  update public.fm_push_cfg set kicked_at = null, last_req = null where id = 1;
+  perform public.fm_push_kick();
+  return (select last_req from public.fm_push_cfg where id = 1);
+end $$;
+create or replace function public.fm_push_status() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare hs int; hc text; rid bigint;
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed'; end if;
+  select last_req into rid from public.fm_push_cfg where id = 1;
+  if rid is not null then
+    begin
+      execute 'select status_code, left(coalesce(content::text, error_msg, ''''), 300) from net._http_response where id = $1' into hs, hc using rid;
+    exception when others then null; end;
+  end if;
+  return jsonb_build_object(
+    'fn_url', (select fn_url from public.fm_push_cfg where id = 1), 'has_secret', (select hook_secret is not null from public.fm_push_cfg where id = 1),
+    'has_anon', (select anon_key is not null from public.fm_push_cfg where id = 1),
+    'has_vapid', (select vapid_private is not null from public.fm_push_cfg where id = 1),
+    'pg_net', exists(select 1 from pg_extension where extname = 'pg_net'), 'pg_cron', exists(select 1 from pg_extension where extname = 'pg_cron'),
+    'devices', (select count(*) from public.fm_push_subs), 'people', (select count(distinct user_id) from public.fm_push_subs),
+    'waiting', (select count(*) from public.fm_push_queue where sent_at is null and tries < 5 and created_at > now() - interval '1 day'),
+    'sent24', (select count(*) from public.fm_push_queue where sent_at > now() - interval '1 day'),
+    'failed24', (select count(*) from public.fm_push_queue where sent_at is null and err is not null and created_at > now() - interval '1 day'),
+    'last_err', (select err from public.fm_push_queue where err is not null order by id desc limit 1),
+    'last_sent', (select max(sent_at) from public.fm_push_queue),
+    'last_req', rid, 'http_status', hs, 'http_body', hc,
+    'by_kind', coalesce((select jsonb_object_agg(kind, n) from (select kind, count(*) n from public.fm_push_queue where created_at > now() - interval '30 days' group by kind) k), '{}'));
+end $$;
+revoke all on function public.fm_push_secrets(), public.fm_push_kick() from public, anon, authenticated;
+revoke all on function public.fm_push_autoset(jsonb), public.fm_push_check() from public, anon;
+grant execute on function public.fm_push_autoset(jsonb), public.fm_push_check(), public.fm_push_status() to authenticated;
+do $do$ begin
+  execute 'grant execute on function public.fm_push_secrets() to service_role';
+exception when undefined_object then null; end $do$;
+notify pgrst, 'reload schema';
