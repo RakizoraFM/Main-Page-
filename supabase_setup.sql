@@ -11545,3 +11545,64 @@ do $do$ begin
   execute 'grant execute on function public.fm_push_secrets() to service_role';
 exception when undefined_object then null; end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 71) edit and delete users (V274) ----------
+-- The system admin changes a user's e-mail / phone and deletes accounts. An account that never signed in and has no
+-- records is removed; any other account is archived (deleted_at, inactive, sign-in blocked) so its history stays intact.
+alter table public.profiles add column if not exists deleted_at timestamptz;
+
+create or replace function public.fm_admin_update_user(p_user uuid, p_email text, p_phone text default null)
+returns jsonb language plpgsql security definer set search_path = public, extensions, auth as $$
+declare v_email text := lower(trim(coalesce(p_email,''))); v_old text; v_phone text := nullif(regexp_replace(coalesce(p_phone,''), '[^0-9+]', '', 'g'), '');
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed' using errcode = '42501'; end if;
+  select email into v_old from auth.users where id = p_user;
+  if not found then raise exception 'user not found'; end if;
+  if v_email <> '' and v_email is distinct from lower(v_old) then
+    if v_email !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then raise exception 'invalid email'; end if;
+    if exists (select 1 from auth.users where lower(email) = v_email and id <> p_user) then raise exception 'User already registered'; end if;
+    update auth.users set email = v_email, updated_at = now() where id = p_user;
+    update auth.identities set identity_data = coalesce(identity_data,'{}'::jsonb) || jsonb_build_object('email', v_email), updated_at = now()
+     where user_id = p_user and provider = 'email';
+    update public.profiles set email = v_email, updated_at = now() where id = p_user;
+  end if;
+  if p_phone is not null then
+    if v_phone is not null and v_phone ~ '^0?5[0-9]{8}$' then v_phone := '0' || right(v_phone, 9); end if;
+    update public.profiles set phone = v_phone, updated_at = now() where id = p_user;
+  end if;
+  return jsonb_build_object('email', coalesce(nullif(v_email,''), v_old), 'phone', v_phone);
+end $$;
+
+create or replace function public.fm_admin_delete_user(p_user uuid) returns text
+language plpgsql security definer set search_path = public, extensions, auth as $$
+declare v_seen timestamptz;
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed' using errcode = '42501'; end if;
+  if p_user = auth.uid() then raise exception 'cannot delete yourself'; end if;
+  select last_sign_in_at into v_seen from auth.users where id = p_user;
+  if not found then raise exception 'user not found'; end if;
+  if v_seen is null then
+    begin
+      delete from auth.users where id = p_user;
+      return 'deleted';
+    exception when foreign_key_violation then null;
+    end;
+  end if;
+  update public.profiles set deleted_at = now(), active = false, reports_to = null, updated_at = now() where id = p_user;
+  update public.profiles set reports_to = null, updated_at = now() where reports_to = p_user;
+  update auth.users set banned_until = 'infinity', updated_at = now() where id = p_user;
+  return 'archived';
+end $$;
+
+create or replace function public.fm_admin_restore_user(p_user uuid) returns void
+language plpgsql security definer set search_path = public, extensions, auth as $$
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed' using errcode = '42501'; end if;
+  update public.profiles set deleted_at = null, active = true, updated_at = now() where id = p_user;
+  if not found then raise exception 'user not found'; end if;
+  update auth.users set banned_until = null, updated_at = now() where id = p_user;
+end $$;
+
+revoke all on function public.fm_admin_update_user(uuid,text,text), public.fm_admin_delete_user(uuid), public.fm_admin_restore_user(uuid) from public, anon;
+grant execute on function public.fm_admin_update_user(uuid,text,text), public.fm_admin_delete_user(uuid), public.fm_admin_restore_user(uuid) to authenticated;
+notify pgrst, 'reload schema';
