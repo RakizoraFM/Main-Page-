@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F81">
+<meta name="fm-version" content="F82">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -3081,7 +3081,7 @@ let busy=false;
 function deco(){const card=document.getElementById('ci-card'),cur=window.__fmfCur;if(!card||!cur||!cur.w||busy)return;busy=true;
  try{const w=cur.w,ph=cur.ph||[],cl=Array.isArray(w.checklist)?w.checklist:[];
   const bad=cl.map((x,i)=>[x,i]).filter(([x])=>x&&x.rv&&x.rv.ok===false);
-  if(!document.querySelector('.f79-ban')&&(bad.length||w.approver_name)){
+  if(!document.querySelector('.f79-ban,.f79-ok')&&(bad.length||w.approver_name)){
    const h=bad.length?`<div class="f79-ban">↩️ <b>${bad.length}</b> بند لم يعتمده ${esc(bad[0][0].rv.by||w.approver_name||'المهندس')}${w.status==='done'?' — أُعيد إرسالها للاعتماد':' — صحّحها ثم أرسل «تم الإجراء» مرة أخرى'}. البنود مظللة بالأحمر أدناه.</div>`
      :`<div class="f79-ok">✅ يعتمد هذا الأمر: ${esc(w.approver_name)} (مهندس المدرسة) بنداً بنداً.</div>`;
    card.insertAdjacentHTML('beforebegin',h)}
@@ -3089,7 +3089,8 @@ function deco(){const card=document.getElementById('ci-card'),cur=window.__fmfCu
    const pics=ph.filter(p=>p.kind==='review'&&p.item===i&&p.d).map(p=>`<a href="${esc(p.d)}" target="_blank" rel="noopener"><img src="${esc(p.d)}" alt=""></a>`).join('');
    row.insertAdjacentHTML('afterbegin',`<div class="f79-n">❌ لم يُعتمد: ${esc(x.rv.note||'')}${pics?'<br>'+pics:''}</div>`)})}
  finally{busy=false}}
-new MutationObserver(()=>{if(document.getElementById('ci-card'))deco()}).observe(document.documentElement,{childList:true,subtree:true});
+/* F82: debounced — a synchronous call here re-entered on its own insertions */
+let tm79=null;new MutationObserver(()=>{if(tm79)return;tm79=setTimeout(()=>{tm79=null;if(document.getElementById('ci-card'))deco()},120)}).observe(document.documentElement,{childList:true,subtree:true});
 })();
 </script>
 <style id="fmf-80-css">
