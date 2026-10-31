@@ -12182,3 +12182,29 @@ revoke all on function public.fm_wo_mgr(uuid) from public;
 revoke all on function public.fm_wo_bulk(uuid[], jsonb) from public;
 grant execute on function public.fm_wo_mgr(uuid), public.fm_wo_bulk(uuid[], jsonb) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 76) an «after» photo under every item (V281) ----------
+-- For every order except a site handover (type handover / FCI graded items): each plain checklist item whose result is
+-- «ok» or «fixed» needs a photo of kind «after» on that item before «done». Setting fm_settings.wo_photos.after:
+-- 'items' (default) | 'none'.
+update public.fm_settings set value = value || '{"after": "items"}'::jsonb where key = 'wo_photos' and not (value ? 'after');
+create or replace function public.fm_wo_after_check() returns trigger language plpgsql security definer set search_path = public as $$
+declare it jsonb; i int := -1; mode text;
+begin
+  if new.status <> 'done' or old.status = 'done' then return new; end if;
+  if new.type = 'handover' then return new; end if;
+  if exists (select 1 from jsonb_array_elements(coalesce(new.checklist,'[]'::jsonb)) x where x->>'k' = 'grade') then return new; end if;
+  mode := coalesce((select value->>'after' from public.fm_settings where key = 'wo_photos'), 'items');
+  if mode = 'none' then return new; end if;
+  for it in select value from jsonb_array_elements(coalesce(new.checklist,'[]'::jsonb)) loop
+    i := i + 1;
+    if coalesce(it->>'k','') = '' and coalesce(it->>'res','') in ('ok','fixed')
+       and not exists (select 1 from public.wo_photos p where p.wo_id = new.id and p.item = i and p.kind = 'after') then
+      raise exception 'item after photo required: %', i + 1;
+    end if;
+  end loop;
+  return new;
+end $$;
+drop trigger if exists fm_wo_after_check on public.work_orders;
+create trigger fm_wo_after_check before update of status on public.work_orders for each row execute function public.fm_wo_after_check();
+notify pgrst, 'reload schema';
