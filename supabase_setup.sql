@@ -11919,3 +11919,136 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: returned orders become tickets when the platform opens'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 73) work-order photos: «before» required, «after» optional, only the school sign on arrival (V276) ----------
+-- fm_settings.wo_photos {before: all (every item with a result) | issues (only items that need / had a repair), defer: true}
+-- «defer» only tells the field app to keep item photos on the phone until «تم الإجراء».
+insert into public.fm_settings(key, value) values ('wo_photos', '{"before": "all", "defer": true}') on conflict (key) do nothing;
+
+create or replace function public.fm_wo_act(p_id uuid, p_action text, p_note text default null, p_geo jsonb default null, p_data jsonb default null)
+returns text language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; me public.profiles; t public.profiles; nm text; isA boolean; isC boolean; ns text; msg text; it jsonb; i int;
+  rj jsonb; nrej int := 0; cl jsonb; rv jsonb; evt text; isR boolean;
+  ball boolean := coalesce((select value->>'before' from public.fm_settings where key = 'wo_photos'), 'all') <> 'issues';
+  note text := nullif(trim(coalesce(p_note,'')),'');
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not me.active then raise exception 'not allowed' using errcode = '42501'; end if;
+  select * into w from public.work_orders where id = p_id for update;
+  if w.id is null or not public.fm_wo_can_see(w.id) then raise exception 'work order not found'; end if;
+  nm := coalesce(me.full_name, me.email);
+  isA := w.assignee = me.id;
+  -- V157: also the project / operations managers, and the area manager in his regions
+  isC := w.created_by = me.id or me.role = 'admin' or public.fm_posx(me.role, me.job_title) in ('project_manager','ops_manager')
+         or (public.fm_posx(me.role, me.job_title) = 'area_manager' and public.fm_region_ok(coalesce(w.region,'')))
+         -- V158: a deputy approves what his principal may
+         or exists (select 1 from public.fm_deputies d join public.profiles pr on pr.id = d.principal
+                     where d.deputy = me.id and d.active and now() between d.from_at and d.to_at
+                       and (pr.id = w.created_by or public.fm_posx(pr.role, pr.job_title) in ('project_manager','ops_manager')
+                            or (public.fm_posx(pr.role, pr.job_title) = 'area_manager'
+                                and (cardinality(pr.regions) = 0 or coalesce(w.region,'') = any(pr.regions)))));
+  -- V275: the approver (the school's engineer) may review / close / return, nothing else
+  isR := isC or w.approver = me.id;
+  ns := w.status;
+  if p_action = 'accept' and isA and w.status = 'assigned' then ns := 'accepted'; msg := '✅ قبل الأمر';
+  elsif p_action = 'reject' and isA and w.status = 'assigned' then
+    if note is null then raise exception 'reason required'; end if; ns := 'rejected'; msg := '⛔ رفض الأمر';
+  elsif p_action = 'start' and isA and w.status in ('accepted','returned') then ns := 'in_progress'; msg := '🛠️ بدأ التنفيذ';
+  elsif p_action = 'arrive' and isA and w.status in ('accepted','in_progress','returned') then msg := '📍 وصل للموقع';
+  elsif p_action = 'checklist' and isA and w.status in ('accepted','in_progress','returned') then
+    update public.work_orders set checklist = coalesce(p_data,'[]'::jsonb), updated_at = now() where id = w.id;
+    return w.status;
+  elsif p_action = 'done' and isA and w.status in ('accepted','in_progress','returned') then
+    -- V276: «after» photos are optional; «before» photos are required (every item with a result, or one for an order without items)
+    if ball and jsonb_array_length(case when jsonb_typeof(p_data) = 'array' then p_data else coalesce(w.checklist,'[]'::jsonb) end) = 0
+       and not exists (select 1 from public.wo_photos where wo_id = w.id and kind = 'before') then raise exception 'before photo required'; end if;
+    -- V148: a school order needs the three arrival photos; a repaired item needs materials and before / after photos,
+    -- an item that still needs repair needs a before photo
+    -- V276: only the school sign is required on arrival (entrance / fence / extra photos are optional)
+    if w.school is not null and not exists (select 1 from public.wo_photos where wo_id = w.id and kind = 'arrival' and tag = 'sign') then
+      raise exception 'arrival photos required'; end if;
+    for it, i in select e, (o - 1)::int from jsonb_array_elements(case when jsonb_typeof(p_data) = 'array' then p_data else w.checklist end) with ordinality as t(e, o) loop
+      if it->>'res' = 'fixed' and (jsonb_typeof(it->'materials') is distinct from 'array' or jsonb_array_length(it->'materials') = 0
+          or not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'before')) then
+        raise exception 'item documentation required: %', i + 1; end if;
+      -- V149: a purchased material needs its unit price and an invoice photo on the item
+      if it->>'res' = 'fixed' and exists (select 1 from jsonb_array_elements(it->'materials') m where m->>'src' = 'buy') and (
+          exists (select 1 from jsonb_array_elements(it->'materials') m where m->>'src' = 'buy'
+                    and coalesce(nullif(regexp_replace(m->>'price', '[^0-9.]', '', 'g'), '')::numeric, 0) <= 0)
+          or not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'invoice')) then
+        raise exception 'invoice required: %', i + 1; end if;
+      if (it->>'res' = 'fix' or (ball and it->>'res' = 'ok' and coalesce(it->>'k','grade') = 'grade'))
+         and not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'before') then
+        raise exception 'item documentation required: %', i + 1; end if;
+    end loop;
+    if jsonb_typeof(p_data) = 'array' then update public.work_orders set checklist = p_data where id = w.id; end if;
+    ns := 'done'; msg := '📨 أبلغ: تم الإجراء — بانتظار الاعتماد';
+  -- V275: item-by-item review. Every item is approved unless listed in p_data.items with ok = false (a note is required);
+  -- any rejected item returns the order to the assignee, otherwise it closes like «close».
+  elsif p_action = 'review' and isR and w.status = 'done' then
+    rj := coalesce((select jsonb_object_agg(x->>'i', x) from jsonb_array_elements(case when jsonb_typeof(p_data->'items') = 'array' then p_data->'items' else '[]'::jsonb end) x
+                    where coalesce((x->>'ok')::boolean, true) = false), '{}'::jsonb);
+    cl := '[]'::jsonb;
+    for it, i in select e, (o - 1)::int from jsonb_array_elements(coalesce(w.checklist,'[]'::jsonb)) with ordinality as t(e, o) loop
+      if rj ? i::text then
+        if length(trim(coalesce(rj->i::text->>'note',''))) < 3 then raise exception 'item note required: %', i + 1; end if;
+        rv := jsonb_build_object('ok', false, 'note', trim(rj->i::text->>'note'), 'by', nm, 'at', now(), 'round', w.rv_round + 1);
+        nrej := nrej + 1;
+      else
+        rv := jsonb_build_object('ok', true, 'by', nm, 'at', now(), 'round', w.rv_round + 1)
+              || case when it->'rv'->>'ok' = 'false' then jsonb_build_object('prev', it->'rv'->>'note') else '{}'::jsonb end;
+      end if;
+      cl := cl || jsonb_build_array(it || jsonb_build_object('rv', rv));
+    end loop;
+    if nrej < (select count(*) from jsonb_object_keys(rj)) then raise exception 'unknown item'; end if;
+    if nrej > 0 then
+      update public.work_orders set checklist = cl, rv_round = w.rv_round + 1, ret_at = now() where id = w.id;
+      ns := 'returned'; evt := 'return';
+      msg := '↩️ لم يُعتمد ' || nrej || ' من ' || jsonb_array_length(cl) || ' بند — أُعيد للتصحيح';
+    else
+      if public.fm_wo_spend_rank(w.checklist) > greatest(public.fm_prank(public.fm_posx(me.role, me.job_title)),
+           coalesce((select max(public.fm_prank(public.fm_posx(pr.role, pr.job_title))) from public.fm_deputies d join public.profiles pr on pr.id = d.principal
+                      where d.deputy = me.id and d.active and now() between d.from_at and d.to_at), 0)) then
+        raise exception 'spend approval required: %', case public.fm_wo_spend_rank(w.checklist) when 6 then 'ops_manager' else 'area_manager' end;
+      end if;
+      update public.work_orders set checklist = cl, rv_round = w.rv_round + 1 where id = w.id;
+      ns := 'closed'; evt := 'close'; msg := '🔒 اعتُمدت كل البنود وأُغلق الأمر';
+    end if;
+  elsif p_action = 'close' and isR and w.status = 'done' then
+    -- V158: purchases above the limits set in the system need the area / operations manager (or a higher title)
+    if public.fm_wo_spend_rank(w.checklist) > greatest(public.fm_prank(public.fm_posx(me.role, me.job_title)),
+         coalesce((select max(public.fm_prank(public.fm_posx(pr.role, pr.job_title))) from public.fm_deputies d join public.profiles pr on pr.id = d.principal
+                    where d.deputy = me.id and d.active and now() between d.from_at and d.to_at), 0)) then
+      raise exception 'spend approval required: %', case public.fm_wo_spend_rank(w.checklist) when 6 then 'ops_manager' else 'area_manager' end;
+    end if;
+    ns := 'closed'; msg := '🔒 اعتمد الإنجاز وأغلق الأمر';
+  -- V158: the safety manager stops unsafe work (reason required) and lets it resume
+  elsif p_action = 'stop' and public.fm_posx(me.role, me.job_title) in ('hse_manager','sysadmin') and w.status not in ('closed','cancelled','stopped') then
+    if note is null then raise exception 'reason required'; end if;
+    update public.work_orders set stop_prev = w.status where id = w.id;
+    ns := 'stopped'; msg := '⛔ أوقف العمل لأسباب تتعلق بالسلامة';
+  elsif p_action = 'resume' and public.fm_posx(me.role, me.job_title) in ('hse_manager','sysadmin') and w.status = 'stopped' then
+    ns := coalesce(nullif(w.stop_prev,''), 'accepted'); msg := '▶️ سمح باستئناف العمل';
+  elsif p_action = 'return' and isR and w.status = 'done' then
+    if note is null then raise exception 'reason required'; end if; update public.work_orders set ret_at = now() where id = w.id; ns := 'returned'; msg := '↩️ أعاد الأمر للتصحيح';
+  elsif p_action = 'cancel' and isC and w.status not in ('closed','cancelled','stopped') then ns := 'cancelled'; msg := '🚫 ألغى الأمر';
+  elsif p_action = 'reassign' and isC and w.status in ('assigned','rejected','accepted','in_progress','returned') then
+    select * into t from public.profiles where id = public.fm_uuid_or_null(p_data->>'assignee');
+    if t.id is null or not public.fm_can_assign_to(t.id) then raise exception 'cannot assign to this user'; end if;
+    update public.work_orders set assignee = t.id, assignee_name = coalesce(t.full_name, t.email), accepted_at = null where id = w.id;
+    ns := 'assigned'; msg := '🔁 أعاد الإسناد إلى ' || coalesce(t.full_name, t.email);
+  elsif p_action = 'note' and note is not null then
+    insert into public.wo_events (wo_id, by_id, by_name, type, status, text, geo) values (w.id, me.id, nm, 'note', w.status, '✍️ ' || note, p_geo);
+    update public.work_orders set updated_at = now() where id = w.id;
+    return w.status;
+  else raise exception 'action not allowed'; end if;
+  update public.work_orders set status = ns, updated_at = now(),
+         accepted_at = case when ns = 'accepted' then now() else accepted_at end,
+         done_at     = case when ns = 'done' then now() else done_at end,
+         closed_at   = case when ns in ('closed','cancelled') then now() else closed_at end
+   where id = w.id;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text, geo)
+  values (w.id, me.id, nm, coalesce(evt, p_action), ns, msg || coalesce(' — ' || note, ''), p_geo);
+  return ns;
+end $$;
+notify pgrst, 'reload schema';
