@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S12">
+<meta name="fm-version" content="S13">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -205,13 +205,13 @@ function welcomeView(p,mode){
  const name=S(p.full_name)||S(p.email);const regions=(p.regions||[]).map(r=>RN[r]||r).join('، ');
  /* mode: index | field = one workspace (opens by itself); choose (or the system admin) = both, with «remember my choice» */
  const both=mode==='choose'||p.role==='admin',dest=mode==='field'?'field.html':'index.html',other=both?(dest==='index.html'?'field.html':'index.html'):'';
- let pref='';try{pref=localStorage.getItem(prefKey(p))||''}catch(e){}if(!/^(index|field)\.html$/.test(pref)||!both)pref='';
+ /* S13: whoever can open both always chooses here — no remembered choice opens by itself (old ones are cleared) */
+ let pref='';try{localStorage.removeItem(prefKey(p))}catch(e){}
  const first=pref||dest,second=first==='index.html'?'field.html':'index.html';
  frame(`<div class="who"><div class="av">${esc(name.charAt(0))}</div><div><b>${esc(name)}</b><span>${esc(POS[p.job_title]||ROLE[p.role]||p.role)}${regions?' • '+esc(regions):''}</span></div></div>
   <div class="sub" style="margin:10px 0 0">${both&&!pref?'اختر ما تريد فتحه':`جارٍ فتح ${DEST[first]}…`}</div>
   <button class="go" id="w-go">${first==='field.html'?'📱':'🖥️'} فتح ${DEST[first]}</button>
-  ${both?`<button class="go sec" id="w-alt">${second==='field.html'?'📱':'🖥️'} فتح ${DEST[second]}</button>
-   <label class="rem" style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:10px;font-weight:700;font-size:13.5px;color:#475569"><input type="checkbox" id="w-rem" ${pref?'checked':''} style="width:auto;margin:0"> تذكّر اختياري على هذا الجهاز</label>`:''}
+  ${both?`<button class="go sec" id="w-alt">${second==='field.html'?'📱':'🖥️'} فتح ${DEST[second]}</button>`:''}
   <div class="links"><a href="#" class="mut" id="w-out">ليس أنت؟ تسجيل الخروج</a></div>`);
  const open=u=>{clearTimeout(timer);try{localStorage.setItem('fm_last_app',u);const r=document.getElementById('w-rem');if(r){r.checked?localStorage.setItem(prefKey(p),u):localStorage.removeItem(prefKey(p))}}catch(e){}location.href=u};
  $('#w-go').onclick=()=>open(first);if(both)$('#w-alt').onclick=()=>open(second);
