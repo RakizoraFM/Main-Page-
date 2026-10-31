@@ -1,8 +1,9 @@
 // RakizoraFM — Edge Function «fm-push» (V187): sends the queued notifications (table fm_push_queue) with Web Push.
 // No libraries: VAPID (RFC 8292) and the payload encryption aes128gcm (RFC 8291) use WebCrypto only.
-// Secrets of the function (Supabase → Edge Functions → fm-push → Secrets):
-//   FM_PUSH_HOOK   the shared secret the database sends in the header x-fm-hook (made in «الإعدادات» ← السحابة ← «🔔 الإشعارات»)
-//   VAPID_PRIVATE  the private VAPID key (made there too; it is shown once and never stored in the database)
+// Secrets: since V272 the function reads them from the database (fm_push_secrets(), service role only), saved there by the
+// one-click setup in «الإعدادات» ← السحابة ← «🔔 معالج تفعيل الإشعارات». Optional overrides in Supabase → Edge Functions → Secrets:
+//   FM_PUSH_HOOK   the shared secret the database sends in the header x-fm-hook
+//   VAPID_PRIVATE  the private VAPID key
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are given to every function by Supabase. The public key and the contact
 // (subject) are read from fm_settings.push. Deploy with JWT verification off: the hook secret protects the function.
 
@@ -63,15 +64,28 @@ export async function sendOne(sub, payload, v, fetchFn = fetch) {
 }
 
 // one call: take what is waiting, send it, report back (up to 5 rounds of 100)
-export async function run(env, fetchFn = fetch) {
+// the two secrets: the function's own (Supabase Secrets) first, else the ones saved in the database (V272)
+export async function secrets(env, fetchFn = fetch) {
+  if (env.FM_PUSH_HOOK && env.VAPID_PRIVATE) return { hook: env.FM_PUSH_HOOK, vapid: env.VAPID_PRIVATE };
+  let db = {};
+  try {
+    const r = await fetchFn(env.SUPABASE_URL + '/rest/v1/rpc/fm_push_secrets', { method: 'POST',
+      headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY, 'Content-Type': 'application/json' }, body: '{}' });
+    if (r.ok) db = (await r.json()) || {};
+  } catch (e) { db = {}; }
+  return { hook: env.FM_PUSH_HOOK || db.hook || '', vapid: env.VAPID_PRIVATE || db.vapid || '' };
+}
+
+export async function run(env, fetchFn = fetch, sec) {
   const url = env.SUPABASE_URL, sk = env.SUPABASE_SERVICE_ROLE_KEY;
+  const vapidPrivate = (sec || await secrets(env, fetchFn)).vapid;
   const rest = (path, body) => fetchFn(url + '/rest/v1/' + path, { method: body === undefined ? 'GET' : 'POST',
     headers: { apikey: sk, Authorization: 'Bearer ' + sk, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
     .then(async (r) => { const t = await r.text(); if (!r.ok) throw new Error(path + ' ' + r.status + ' ' + t.slice(0, 200)); return t ? JSON.parse(t) : null; });
   const set = ((await rest('fm_settings?select=value&key=eq.push')) || [])[0];
   const s = (set && set.value) || {};
-  if (!s.vapid_public || !env.VAPID_PRIVATE) throw new Error('VAPID keys missing');
-  const v = { pub: s.vapid_public, subject: s.subject || 'mailto:admin@rakizora.com', key: await vapidKey(s.vapid_public, env.VAPID_PRIVATE) };
+  if (!s.vapid_public || !vapidPrivate) throw new Error('VAPID keys missing');
+  const v = { pub: s.vapid_public, subject: s.subject || 'mailto:admin@rakizora.com', key: await vapidKey(s.vapid_public, vapidPrivate) };
   let total = 0, sent = 0;
   for (let round = 0; round < 5; round++) {
     const rows = await rest('rpc/fm_push_claim', { n: 100 });
@@ -96,8 +110,9 @@ export async function run(env, fetchFn = fetch) {
 }
 
 export async function handle(req, env, fetchFn = fetch) {
-  if (!env.FM_PUSH_HOOK || req.headers.get('x-fm-hook') !== env.FM_PUSH_HOOK) return new Response('forbidden', { status: 403 });
-  try { return Response.json(await run(env, fetchFn)); }
+  const sec = await secrets(env, fetchFn);
+  if (!sec.hook || req.headers.get('x-fm-hook') !== sec.hook) return new Response('forbidden', { status: 403 });
+  try { return Response.json(await run(env, fetchFn, sec)); }
   catch (e) { return new Response(String(e && e.message || e), { status: 500 }); }
 }
 
