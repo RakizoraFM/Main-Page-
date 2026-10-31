@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V272">
+<meta name="fm-version" content="V273">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V272',date:'2026-10-30',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V273',date:'2026-10-30',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V273',d:'2026-10-31',t:'🧩 تشغيل الجزء الناقص من ملف الإعداد',i:['معالج الإشعارات يكتشف أن القسمين 69 و70 لم يُشغَّلا على الخادم (الملف الكامل كبير وقد يتوقف قبل نهايته)','زر «📋 انسخ الجزء الناقص» ينسخ القسمين فقط، وزر يفتح SQL Editor في Supabase مباشرة، ثم «🔄 إعادة الفحص»']},
 {v:'V272',d:'2026-10-31',t:'🧙 معالج تفعيل الإشعارات',i:['معالج من 3 خطوات لمدير النظام: تجهيز تلقائي بضغطة واحدة، نشر دالة الإرسال في Supabase بالنسخ واللصق، ثم فحص وتجربة','لم يعد مطلوباً نسخ أي مفتاح أو سر إلى Supabase: الدالة تقرأها من قاعدة البيانات','زر «افحص الربط» يوضح المشكلة بالضبط إن وُجدت (الدالة غير منشورة، التحقق من JWT مفعّل، السر غير متطابق)','يحتاج القسم 70 من supabase_setup.sql']},
 {v:'V271',d:'2026-10-31',t:'🔔 الإشعارات دائماً على الأجهزة',i:['إشعار للمشرف والمهندس والمقاول عند وصول بلاغات جديدة على مدارسهم (ملخص واحد لكل رفع، البلاغات المفتوحة من آخر 3 أيام فقط)','إشعار لكل من يخصه خبر أو رسالة جديدة في شريط الأخبار','إشعار لمشرف ومهندس المدرسة ومديري المنطقة عند طلب جديد من بوابة المدرسة','نافذة «🔔 فعّل الإشعارات» تظهر في كل زيارة حتى يُسمح بها، وتفعيل تلقائي على الجهاز الذي سبق أن سمح','تنبيه يومي بطريقة السماح إذا كانت ممنوعة، وخطوات iPhone، وتنبيه لمدير النظام إذا لم تُجهَّز الإشعارات','يحتاج القسم 69 من supabase_setup.sql']},
 {v:'V270',d:'2026-10-30',t:'📱 جدول المستخدمين على الجوال',i:['على الجوال يظهر كل مستخدم في بطاقة: الاسم، المسمى، يتبع لـ، اسمه في البلاغات، المناطق، مفعّل، ثم الأزرار','أزرار «حفظ» و«كلمة مرور» و«الملف» و«الصلاحيات» بعرض كامل ونص مقروء بدل حرف في كل سطر','شريط البحث والفلتر يأخذان عرض الشاشة']},
@@ -40615,6 +40616,10 @@ const missing=e=>/does not exist|schema cache|Could not find/i.test(String(e&&e.
 async function copy(t){try{await navigator.clipboard.writeText(t);say('✅ نُسخ');return true}catch(e){const a=document.createElement('textarea');a.value=t;a.style.cssText='position:fixed;top:0;opacity:0';document.body.appendChild(a);a.select();let ok=false;try{ok=document.execCommand('copy')}catch(x){}a.remove();say(ok?'✅ نُسخ':'تعذّر النسخ تلقائياً',ok?'success':'warning');return ok}}
 async function code(){for(const u of ['supabase/functions/fm-push/index.ts','https://raw.githubusercontent.com/RakizoraFM/Main-Page-/main/supabase/functions/fm-push/index.ts']){
  try{const r=await fetch(u,{cache:'no-store'});if(r.ok){const t=await r.text();if(/fm_push_claim/.test(t))return t}}catch(e){}}throw Error('code')}
+// the end of supabase_setup.sql from a section marker (the big file can stop part-way in the SQL editor)
+async function sqlTail(n){for(const u of ['supabase_setup.sql','https://raw.githubusercontent.com/RakizoraFM/Main-Page-/main/supabase_setup.sql']){
+ try{const r=await fetch(u,{cache:'no-store'});if(!r.ok)continue;const t=await r.text(),i=t.indexOf('-- ---------- '+n+')');if(i>=0)return t.slice(i)}catch(e){}}throw Error('sql')}
+window.fmV273SqlTail=sqlTail;
 function diag(st){const h=st&&st.http_status,b=S(st&&st.http_body);
  if(h===200)return ['g','✅ الدالة تعمل ومتصلة بالمنصة.'];
  if(h===404)return ['r','❌ لم نجد الدالة: تأكد أن اسمها <code>fm-push</code> تماماً وأنك ضغطت «Deploy» وانتهى النشر.'];
@@ -40636,7 +40641,10 @@ async function open(){if(!isAdmin()){say('المعالج لمدير النظام
  bd.innerHTML=`
   <div class="st ${ready?'ok':''}"><h4><span class="n">${ready?'✓':'1'}</span>التجهيز التلقائي</h4>
    <div style="font-size:13.5px;color:#475569">ضغطة واحدة: تُنشأ مفاتيح الإرسال والرابط وتُحفظ في قاعدة البيانات، وتُفعَّل الإشعارات للشركة. لا تحتاج نسخ أي مفتاح.</div>
-   ${v70?'':'<div class="msg r">يحتاج القسم 70 من supabase_setup.sql — شغّل الملف المحدَّث ثم أعد فتح المعالج.</div>'}
+   ${v70?'':`<div class="msg r"><b>الخادم لم يُحدَّث بعد:</b> القسمان 69 و70 من supabase_setup.sql غير موجودين (غالباً توقف تشغيل الملف الكبير قبل نهايته). شغّل الجزء الناقص فقط:
+     <ol style="margin:6px 0"><li><button type="button" class="mini" data-sql>📋 انسخ الجزء الناقص (القسمان 69–70)</button></li>
+     <li><a class="mini" href="${esc(r?`https://supabase.com/dashboard/project/${r}/sql/new`:'https://supabase.com/dashboard/projects')}" target="_blank" rel="noopener" style="text-decoration:none">🔗 افتح SQL Editor في Supabase</a></li>
+     <li>الصق (<b>Ctrl+V</b>) ثم اضغط <b>«Run»</b> وانتظر رسالة <b>Success</b>.</li><li>ارجع هنا واضغط <button type="button" class="mini" data-re>🔄 إعادة الفحص</button></li></ol></div>`}
    <div class="row"><button type="button" class="${ready?'':'p'}" data-auto ${v70?'':'disabled'}>${ready?'🔁 إعادة التجهيز':'⚡ جهّز الآن'}</button></div><div data-m1></div></div>
   <div class="st ${ok3?'ok':''}"><h4><span class="n">${ok3?'✓':'2'}</span>نشر دالة الإرسال في Supabase (مرة واحدة)</h4>
    <ol>
@@ -40663,10 +40671,12 @@ async function open(){if(!isAdmin()){say('المعالج لمدير النظام
    say('✅ تم التجهيز');open()}catch(e){q('[data-m1]').innerHTML=`<div class="msg r">${esc(missing(e)?'شغّل القسم 70 من supabase_setup.sql':e.message)}</div>`;b.disabled=false;b.textContent='⚡ جهّز الآن'}};
  q('[data-code]').onclick=async()=>{try{await copy(await code())}catch(e){window.open('https://github.com/RakizoraFM/Main-Page-/blob/main/supabase/functions/fm-push/index.ts','_blank','noopener');say('افتح الملف وانسخه من GitHub','warning')}};
  q('[data-name]').onclick=()=>copy('fm-push');
+ const sq=q('[data-sql]');if(sq)sq.onclick=async()=>{sq.disabled=true;try{await copy(await sqlTail('69'))}catch(e){window.open('https://github.com/RakizoraFM/Main-Page-/blob/main/supabase_setup.sql','_blank','noopener');say('انسخ من «-- ---------- 69)» حتى نهاية الملف','warning')}sq.disabled=false};
+ const re=q('[data-re]');if(re)re.onclick=()=>open();
  q('[data-chk]').onclick=async ev=>{const b=ev.currentTarget,m=q('[data-m3]');b.disabled=true;m.innerHTML='<div class="msg y">⏳ نتصل بالدالة…</div>';
   try{await rpc('fm_push_check');let x=null;for(let i=0;i<6;i++){await new Promise(r=>setTimeout(r,2500));x=await rpc('fm_push_status');if(x.http_status)break}
    const d=diag(x);m.innerHTML=`<div class="msg ${d[0]}">${d[1]}</div>`;if(x.http_status===200){q('[data-test]').disabled=false;b.closest('.st').classList.add('ok')}}
-  catch(e){m.innerHTML=`<div class="msg r">${esc(missing(e)?'شغّل القسم 70 من supabase_setup.sql':e.message)}</div>`}b.disabled=false};
+  catch(e){m.innerHTML=`<div class="msg r">${esc(missing(e)?'الخادم لم يُحدَّث: شغّل الجزء الناقص من الخطوة 1 (القسمان 69–70).':e.message)}</div>`}b.disabled=false};
  q('[data-test]').onclick=async ev=>{const b=ev.currentTarget,m=q('[data-m3]');b.disabled=true;
   try{let perm='default';try{perm=await Notification.requestPermission()}catch(e){}
    if(perm!=='granted')throw Error('اسمح بالإشعارات في المتصفح أولاً (🔒 بجانب العنوان ← الإشعارات ← سماح).');
