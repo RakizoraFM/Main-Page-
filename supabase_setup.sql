@@ -12052,3 +12052,56 @@ begin
   return ns;
 end $$;
 notify pgrst, 'reload schema';
+
+-- ---------- 74) work-order attachments (V277) ----------
+-- Files (PDF / images / office documents) the creator or the approver attaches to an order; the supervisor opens them
+-- during the visit. The file is in the wo-photos bucket under «<order id>/doc-<id>.<ext>» (the existing storage policies:
+-- read = fm_wo_can_see, write = fm_wo_party). Rows are read by fm_wo_can_see and written only through fm_wo_doc_add / _del.
+create table if not exists public.wo_docs (
+  id       uuid primary key default gen_random_uuid(),
+  wo_id    uuid not null references public.work_orders(id) on delete cascade,
+  name     text not null check (length(name) between 1 and 200),
+  path     text not null,
+  mime     text,
+  size     bigint,
+  at       timestamptz not null default now(),
+  by_id    uuid default auth.uid(),
+  by_name  text
+);
+create index if not exists wo_docs_wo_idx on public.wo_docs (wo_id, at);
+alter table public.wo_docs enable row level security;
+drop policy if exists p_wodoc_read on public.wo_docs;
+create policy p_wodoc_read on public.wo_docs for select using (public.fm_wo_can_see(wo_id));
+revoke insert, update, delete on public.wo_docs from anon, authenticated;
+grant select on public.wo_docs to authenticated;
+
+create or replace function public.fm_wo_doc_add(p_wo uuid, p_name text, p_path text, p_mime text, p_size bigint)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid := gen_random_uuid(); nm text;
+begin
+  if not public.fm_wo_party(p_wo) then raise exception 'not allowed' using errcode = '42501'; end if;
+  if coalesce(p_path,'') not like p_wo::text || '/doc-%' then raise exception 'bad path'; end if;
+  if coalesce(p_size,0) > 15 * 1024 * 1024 then raise exception 'file too large'; end if;
+  if (select count(*) from public.wo_docs where wo_id = p_wo) >= 20 then raise exception 'too many files'; end if;
+  select coalesce(full_name, email) into nm from public.profiles where id = auth.uid();
+  insert into public.wo_docs (id, wo_id, name, path, mime, size, by_name) values (v_id, p_wo, left(trim(p_name),200), p_path, p_mime, p_size, nm);
+  insert into public.wo_events (wo_id, by_name, type, status, text)
+  select p_wo, nm, 'note', w.status, '📎 أرفق ملفاً: ' || left(trim(p_name),200) from public.work_orders w where w.id = p_wo;
+  return v_id;
+end $$;
+create or replace function public.fm_wo_doc_del(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare d public.wo_docs;
+begin
+  select * into d from public.wo_docs where id = p_id;
+  if d.id is null then raise exception 'not found'; end if;
+  if not (public.fm_role() = 'admin' or (d.by_id = auth.uid() and public.fm_wo_party(d.wo_id))) then
+    raise exception 'not allowed' using errcode = '42501'; end if;
+  delete from public.wo_docs where id = p_id;
+end $$;
+revoke all on function public.fm_wo_doc_add(uuid,text,text,text,bigint), public.fm_wo_doc_del(uuid) from public, anon;
+grant execute on function public.fm_wo_doc_add(uuid,text,text,text,bigint), public.fm_wo_doc_del(uuid) to authenticated;
+-- photo checks chosen by the company (the field app applies them when a photo is taken)
+update public.fm_settings set value = value || '{"check": {"mode": "time", "hours": 2, "meters": 300, "scope": "arrival"}}'::jsonb
+ where key = 'wo_photos' and not (value ? 'check');
+notify pgrst, 'reload schema';
