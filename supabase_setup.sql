@@ -11361,3 +11361,107 @@ create or replace function public.fm_cc_can(k text) returns boolean language sql
 revoke all on function public.fm_perm_x(text), public.fm_perm_any(text), public.fm_cc_title(text), public.fm_cc_eff(text) from public, anon;
 grant execute on function public.fm_perm_x(text), public.fm_perm_any(text), public.fm_cc_title(text), public.fm_cc_eff(text), public.fm_perm_keys(), public.fm_perms_ok(jsonb) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 69) notifications for new tickets, news and school requests (V271, field F78) ----------
+-- Before, a new ticket from the uploaded file, a news item and a school-portal request did not notify anyone. Each trigger
+-- is wrapped so a notification can never block the write. fm_push_add still skips the author, people without a device,
+-- kinds turned off for the company / the person, and does nothing while fm_settings.push is off.
+-- (1) new tickets: one summary per person per upload, only open tickets created in the last 3 days (a full re-upload of
+--     old tickets after a reset notifies nobody). People = the supervisor / engineer / contractor names of the ticket matched
+--     to accounts (full name / person_names), as fm_sla_people does.
+create or replace function public.fm_push_tk_new() returns trigger language plpgsql security definer set search_path = public as $$
+declare r record; n int; u int; one record;
+begin
+  begin
+    if not coalesce((public.fm_setting('push')->>'enabled')::boolean, false) then return null; end if;
+    for r in
+      with t as (
+        select x.region, x.ticket_id, x.school, x.priority, x.sub_category, x.supervisor, x.engineer, x.contractor
+          from nt x
+         where coalesce(x.created_at, x.uploaded_at) > now() - interval '3 days'
+           and coalesce(x.status,'') !~* '(مغلق|تم الحل|تم حل|محلول|ملغ|مكتمل|closed|resolved|cancel|done|complete)'),
+      who as (
+        select p.id as uid, t.* from t, public.profiles p
+         where p.active and public.fm_posx(p.role, p.job_title) is not null
+           and exists (select 1 from unnest(array[nullif(btrim(coalesce(t.supervisor,'')),''), nullif(btrim(coalesce(t.engineer,'')),''),
+                                                   nullif(btrim(coalesce(t.contractor,'')),'')]) nm(v)
+                        where nm.v is not null and (nm.v = any(coalesce(p.person_names,'{}')) or btrim(coalesce(p.full_name,'')) = nm.v)))
+      select uid, region, count(distinct ticket_id) as n,
+             count(distinct ticket_id) filter (where coalesce(priority,'') ~* '(طارئ|حرج|عاجل|urgent|critical|emergency)') as u,
+             min(ticket_id) as t1, min(school) as s1, min(coalesce(sub_category,'')) as c1
+        from who group by uid, region
+    loop
+      perform public.fm_push_add(r.uid, 'tk_new',
+        case when r.n = 1 then case when r.u > 0 then '🚨 بلاغ طارئ جديد' else '🎫 بلاغ جديد' end
+             else '🎫 ' || r.n || ' بلاغات جديدة' || case when r.u > 0 then ' (منها ' || r.u || ' طارئ)' else '' end end,
+        case when r.n = 1 then coalesce(r.s1,'') || case when r.c1 <> '' then ' — ' || r.c1 else '' end || ' • رقم ' || r.t1
+             else 'منها ' || coalesce(r.s1,'') || ' — افتح قائمة البلاغات' end,
+        'tknew', 'tknew-' || coalesce(r.region,''), false);
+    end loop;
+  exception when others then null; end;
+  return null;
+end $$;
+drop trigger if exists fm_push_tk_new on public.tickets;
+create trigger fm_push_tk_new after insert on public.tickets referencing new table as nt for each statement execute function public.fm_push_tk_new();
+
+-- (2) news: everyone the item is meant for (titles, regions, team — the same rules as fm_news_for_me), when it starts now
+create or replace function public.fm_push_news() returns trigger language plpgsql security definer set search_path = public as $$
+declare p record;
+begin
+  begin
+    if not new.active or new.start_at > now() + interval '5 minutes' or (new.end_at is not null and new.end_at <= now()) then return new; end if;
+    if not coalesce((public.fm_setting('push')->>'enabled')::boolean, false) then return new; end if;
+    for p in select x.id from public.profiles x
+              where x.active and x.id <> new.author and public.fm_posx(x.role, x.job_title) is not null
+                and (cardinality(new.titles) = 0 or public.fm_posx(x.role, x.job_title) = any(new.titles))
+                and (cardinality(new.regions) = 0 or cardinality(coalesce(x.regions,'{}')) = 0 or coalesce(x.regions,'{}') && new.regions)
+                and (new.scope <> 'team' or public.fm_is_under(x.id, new.author))
+    loop
+      perform public.fm_push_add(p.id, 'news',
+        case new.priority when 'urgent' then '🚨 خبر عاجل' when 'important' then '⚠️ خبر مهم' else '📢 خبر جديد' end
+          || coalesce(' — ' || nullif(new.author_name,''), ''),
+        left(new.text, 280), 'news', 'news-' || new.id, false);
+    end loop;
+  exception when others then null; end;
+  return new;
+end $$;
+drop trigger if exists fm_push_news on public.fm_news;
+create trigger fm_push_news after insert on public.fm_news for each row execute function public.fm_push_news();
+
+-- (3) a new school-portal request: the school's supervisor / engineer / light-services staff from the school DB (by building
+--     key, else the name) and the area managers / engineers of its region
+create or replace function public.fm_school_staff_ids(p_bkey text, p_name text, p_region text) returns uuid[] language plpgsql stable security definer set search_path = public as $$
+declare v jsonb; nm text[]; ids uuid[];
+begin
+  select value into v from public.app_kv where key = 'fm_school_master_db_v1';
+  if jsonb_typeof(v) = 'string' then v := (v #>> '{}')::jsonb; end if;
+  if v is not null and jsonb_typeof(v) = 'array' then
+    select coalesce(array_agg(distinct btrim(n)), '{}') into nm
+      from jsonb_array_elements(v) e, unnest(array[e->>'supervisor', e->>'engineer', e->>'lightSupervisor', e->>'lightEngineer']) n
+     where jsonb_typeof(e) = 'object' and btrim(coalesce(n,'')) <> ''
+       and (public.fm_bkey(e->>'buildingId', e->>'school') = p_bkey or btrim(coalesce(e->>'school','')) = btrim(coalesce(p_name,'')));
+  end if;
+  select coalesce(array_agg(distinct p.id), '{}') into ids from public.profiles p
+   where p.active and public.fm_posx(p.role, p.job_title) is not null
+     and ((cardinality(coalesce(nm,'{}')) > 0 and (coalesce(p.person_names,'{}') && nm or btrim(coalesce(p.full_name,'')) = any(nm)))
+          or p.id in (select public.fm_push_people(array['area_manager','area_engineer'], p_region)));
+  return ids;
+end $$;
+create or replace function public.fm_push_sr_new() returns trigger language plpgsql security definer set search_path = public as $$
+declare u uuid;
+begin
+  begin
+    if not coalesce((public.fm_setting('push')->>'enabled')::boolean, false) then return new; end if;
+    foreach u in array public.fm_school_staff_ids(new.bkey, new.school_name, new.region) loop
+      perform public.fm_push_add(u, 'sr_new',
+        case when new.urgency = 'urgent' then '🚨 طلب عاجل من مدرسة' else '🏫 طلب جديد من مدرسة' end,
+        coalesce(new.school_name,'') || ' — ' || coalesce(new.category,'') || ': ' || left(coalesce(new.description,''), 160),
+        'sr', 'sr-' || new.id, false);
+    end loop;
+  exception when others then null; end;
+  return new;
+end $$;
+drop trigger if exists fm_push_sr_new on public.fm_school_requests;
+create trigger fm_push_sr_new after insert on public.fm_school_requests for each row execute function public.fm_push_sr_new();
+revoke all on function public.fm_push_tk_new(), public.fm_push_news(), public.fm_push_sr_new(), public.fm_school_staff_ids(text, text, text) from public, anon, authenticated;
+notify pgrst, 'reload schema';
