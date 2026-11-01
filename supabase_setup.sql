@@ -12208,3 +12208,118 @@ end $$;
 drop trigger if exists fm_wo_after_check on public.work_orders;
 create trigger fm_wo_after_check before update of status on public.work_orders for each row execute function public.fm_wo_after_check();
 notify pgrst, 'reload schema';
+
+-- ---------- 77) template bank: a display, data fields, photo slots and report layout per template (V282) ----------
+-- A template's design lives in wo_templates.data.form (free jsonb, no change needed) and is copied to the order at
+-- creation in work_orders.form:
+--   {v, view list|compact|steps, res true|false (result buttons ok / fix / fixed / na),
+--    head   [{id, l, t text|num|date|select|yesno, o[], u, req}]   order-level fields → work_orders.form_vals {id: value}
+--    fields [{id, l, t, o[], u, req}]                             per plain item       → checklist[i].fv {id: value}
+--    photos [{id, l, k before|after, req always|issue|never}]     per plain item       → wo_photos (item = i, tag = id)
+--    out    {title, orient p|l, cols[], ph grid|inline|none, phn, sign[], foot}}     the printed report (platform)
+-- «done» checks the required head fields, item fields and photo slots (items with result «na» are skipped; «issue»
+-- = only when the result is fix / fixed). An order with its own photo slots skips the V281 «after» rule.
+alter table public.work_orders add column if not exists form      jsonb;
+alter table public.work_orders add column if not exists form_vals jsonb not null default '{}';
+
+create or replace function public.fm_wo_create_as(p_me uuid, p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare me public.profiles; t public.profiles; ap public.profiles; v_id uuid := gen_random_uuid(); v_code text; v_form jsonb;
+begin
+  select * into me from public.profiles where id = p_me;
+  if me.id is null or not me.active or me.role not in ('admin','manager','staff','engineer','supervisor') then
+    raise exception 'not allowed' using errcode = '42501'; end if;
+  if coalesce(trim(p->>'title'),'') = '' then raise exception 'title required'; end if;
+  select * into t from public.profiles where id = public.fm_uuid_or_null(p->>'assignee');
+  if t.id is null or not public.fm_can_assign_as(me.id, t.id) then raise exception 'cannot assign to this user'; end if;
+  if public.fm_uuid_or_null(p->>'approver') is not null then
+    select * into ap from public.profiles where id = public.fm_uuid_or_null(p->>'approver');
+    if ap.id is null or not ap.active or ap.role not in ('admin','manager','engineer') then raise exception 'invalid approver'; end if;
+  end if;
+  -- V282: the template's design (object, ≤ 40 000 chars)
+  if jsonb_typeof(p->'form') = 'object' then
+    if length((p->'form')::text) > 40000 then raise exception 'form too large'; end if;
+    v_form := p->'form';
+  end if;
+  v_code := 'WO-' || to_char(now(),'YYYY') || '-' || lpad(nextval('public.wo_seq')::text, 4, '0');
+  insert into public.work_orders (id, code, title, description, type, region, school, priority, due_at, checklist, ticket_refs,
+                                  created_by, created_by_name, assignee, assignee_name, batch_id, batch_title, building_id, approver, approver_name, form)
+  values (v_id, v_code, trim(p->>'title'), nullif(trim(p->>'description'),''), coalesce(nullif(p->>'type',''),'task'),
+          nullif(p->>'region',''), nullif(trim(p->>'school'),''), coalesce(nullif(p->>'priority',''),'متوسط'),
+          nullif(p->>'due_at','')::timestamptz,
+          case when jsonb_typeof(p->'checklist') = 'array' then p->'checklist' else '[]'::jsonb end,
+          case when jsonb_typeof(p->'ticket_refs') = 'array' then array(select jsonb_array_elements_text(p->'ticket_refs')) else '{}' end,
+          me.id, coalesce(me.full_name, me.email), t.id, coalesce(t.full_name, t.email),
+          public.fm_uuid_or_null(p->>'batch_id'), nullif(trim(p->>'batch_title'),''), nullif(trim(p->>'building_id'),''),
+          ap.id, case when ap.id is not null then coalesce(ap.full_name, ap.email) end, v_form);
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (v_id, me.id, coalesce(me.full_name, me.email), 'create', 'assigned',
+          case when p->>'schedule' is not null then '🔁 أُنشئ تلقائياً (حملة متكررة) وأُسند إلى ' else '📝 أُنشئ الأمر وأُسند إلى ' end || coalesce(t.full_name, t.email));
+  return v_id;
+end $$;
+revoke all on function public.fm_wo_create_as(uuid,jsonb) from public, anon, authenticated;
+
+-- the assignee saves the order-level fields while working on it
+create or replace function public.fm_wo_form_vals(p_id uuid, p_vals jsonb) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare w public.work_orders;
+begin
+  select * into w from public.work_orders where id = p_id for update;
+  if w.id is null or not public.fm_wo_can_see(w.id) then raise exception 'work order not found'; end if;
+  if w.assignee is distinct from auth.uid() or w.status not in ('accepted','in_progress','returned') then
+    raise exception 'not allowed' using errcode = '42501'; end if;
+  if jsonb_typeof(p_vals) <> 'object' or length(p_vals::text) > 20000 then raise exception 'invalid values'; end if;
+  update public.work_orders set form_vals = p_vals, updated_at = now() where id = w.id;
+  return true;
+end $$;
+grant execute on function public.fm_wo_form_vals(uuid,jsonb) to authenticated;
+
+create or replace function public.fm_wo_form_check() returns trigger language plpgsql security definer set search_path = public as $$
+declare f jsonb; it jsonb; i int := -1; r text; h jsonb; s jsonb;
+begin
+  if new.status <> 'done' or old.status = 'done' or jsonb_typeof(new.form) is distinct from 'object' then return new; end if;
+  f := new.form;
+  for h in select value from jsonb_array_elements(case when jsonb_typeof(f->'head') = 'array' then f->'head' else '[]'::jsonb end) loop
+    if coalesce((h->>'req')::boolean, false) and coalesce(trim(new.form_vals->>(h->>'id')),'') = '' then
+      raise exception 'form head required: %', coalesce(h->>'l', h->>'id'); end if;
+  end loop;
+  for it in select value from jsonb_array_elements(coalesce(new.checklist,'[]'::jsonb)) loop
+    i := i + 1;
+    if coalesce(it->>'k','') <> '' then continue; end if;
+    r := coalesce(it->>'res','');
+    if r = 'na' then continue; end if;
+    for h in select value from jsonb_array_elements(case when jsonb_typeof(f->'fields') = 'array' then f->'fields' else '[]'::jsonb end) loop
+      if coalesce((h->>'req')::boolean, false) and coalesce(trim(it->'fv'->>(h->>'id')),'') = '' then
+        raise exception 'form field required: % %', i + 1, coalesce(h->>'l', h->>'id'); end if;
+    end loop;
+    for s in select value from jsonb_array_elements(case when jsonb_typeof(f->'photos') = 'array' then f->'photos' else '[]'::jsonb end) loop
+      if (s->>'req' = 'always' or (s->>'req' = 'issue' and r in ('fix','fixed')))
+         and not exists (select 1 from public.wo_photos p where p.wo_id = new.id and p.item = i and p.tag = s->>'id') then
+        raise exception 'form photo required: % %', i + 1, coalesce(s->>'l', s->>'id'); end if;
+    end loop;
+  end loop;
+  return new;
+end $$;
+drop trigger if exists fm_wo_form_check on public.work_orders;
+create trigger fm_wo_form_check before update of status on public.work_orders for each row execute function public.fm_wo_form_check();
+
+-- V281 «after under every item» does not apply to an order whose template defines its own photo slots
+create or replace function public.fm_wo_after_check() returns trigger language plpgsql security definer set search_path = public as $$
+declare it jsonb; i int := -1; mode text;
+begin
+  if new.status <> 'done' or old.status = 'done' then return new; end if;
+  if new.type = 'handover' then return new; end if;
+  if jsonb_typeof(new.form->'photos') = 'array' and jsonb_array_length(new.form->'photos') > 0 then return new; end if;
+  if exists (select 1 from jsonb_array_elements(coalesce(new.checklist,'[]'::jsonb)) x where x->>'k' = 'grade') then return new; end if;
+  mode := coalesce((select value->>'after' from public.fm_settings where key = 'wo_photos'), 'items');
+  if mode = 'none' then return new; end if;
+  for it in select value from jsonb_array_elements(coalesce(new.checklist,'[]'::jsonb)) loop
+    i := i + 1;
+    if coalesce(it->>'k','') = '' and coalesce(it->>'res','') in ('ok','fixed')
+       and not exists (select 1 from public.wo_photos p where p.wo_id = new.id and p.item = i and p.kind = 'after') then
+      raise exception 'item after photo required: %', i + 1;
+    end if;
+  end loop;
+  return new;
+end $$;
+notify pgrst, 'reload schema';
