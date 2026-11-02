@@ -12323,3 +12323,126 @@ begin
   return new;
 end $$;
 notify pgrst, 'reload schema';
+
+-- ---------- 78) the approved report goes to chosen people (V285) ----------
+-- work_orders.notify_to = accounts that receive the approved work-order report (push «📄 تقرير أمر عمل معتمد» when the order
+-- becomes closed, and read access to the closed order); notify_ext = outside people {name, phone, email, role} (e.g. the owner's
+-- supervisor of the school from the school DB) who get it from the platform by WhatsApp / e-mail. Set at creation
+-- (fm_wo_create_as p.notify_to / p.notify_ext) or later by the creator side / the approver (fm_wo_notify_set).
+alter table public.work_orders add column if not exists notify_to  uuid[] not null default '{}';
+alter table public.work_orders add column if not exists notify_ext jsonb  not null default '[]';
+
+create or replace function public.fm_wo_create_as(p_me uuid, p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare me public.profiles; t public.profiles; ap public.profiles; v_id uuid := gen_random_uuid(); v_code text; v_form jsonb; v_to uuid[] := '{}'; v_ext jsonb := '[]';
+begin
+  select * into me from public.profiles where id = p_me;
+  if me.id is null or not me.active or me.role not in ('admin','manager','staff','engineer','supervisor') then
+    raise exception 'not allowed' using errcode = '42501'; end if;
+  if coalesce(trim(p->>'title'),'') = '' then raise exception 'title required'; end if;
+  select * into t from public.profiles where id = public.fm_uuid_or_null(p->>'assignee');
+  if t.id is null or not public.fm_can_assign_as(me.id, t.id) then raise exception 'cannot assign to this user'; end if;
+  if public.fm_uuid_or_null(p->>'approver') is not null then
+    select * into ap from public.profiles where id = public.fm_uuid_or_null(p->>'approver');
+    if ap.id is null or not ap.active or ap.role not in ('admin','manager','engineer') then raise exception 'invalid approver'; end if;
+  end if;
+  -- V282: the template's design (object, ≤ 40 000 chars)
+  if jsonb_typeof(p->'form') = 'object' then
+    if length((p->'form')::text) > 40000 then raise exception 'form too large'; end if;
+    v_form := p->'form';
+  end if;
+  -- V285: who receives the approved report — accounts (active, ≤ 20) and outside people {name, phone, email, role} (≤ 10)
+  if jsonb_typeof(p->'notify_to') = 'array' then
+    select coalesce(array_agg(distinct pr.id), '{}') into v_to from public.profiles pr
+     where pr.id in (select public.fm_uuid_or_null(x) from jsonb_array_elements_text(p->'notify_to') x) and pr.active and pr.deleted_at is null;
+    if cardinality(v_to) > 20 then raise exception 'too many recipients'; end if;
+  end if;
+  if jsonb_typeof(p->'notify_ext') = 'array' then
+    select coalesce(jsonb_agg(jsonb_build_object('name', left(trim(coalesce(x->>'name','')),120), 'phone', left(trim(coalesce(x->>'phone','')),20),
+                                                  'email', left(trim(coalesce(x->>'email','')),160), 'role', left(trim(coalesce(x->>'role','')),60))), '[]')
+      into v_ext from jsonb_array_elements(p->'notify_ext') x
+     where jsonb_typeof(x) = 'object' and (trim(coalesce(x->>'phone','')) <> '' or trim(coalesce(x->>'email','')) <> '');
+    if jsonb_array_length(v_ext) > 10 then raise exception 'too many recipients'; end if;
+  end if;
+  v_code := 'WO-' || to_char(now(),'YYYY') || '-' || lpad(nextval('public.wo_seq')::text, 4, '0');
+  insert into public.work_orders (id, code, title, description, type, region, school, priority, due_at, checklist, ticket_refs,
+                                  created_by, created_by_name, assignee, assignee_name, batch_id, batch_title, building_id, approver, approver_name, form, notify_to, notify_ext)
+  values (v_id, v_code, trim(p->>'title'), nullif(trim(p->>'description'),''), coalesce(nullif(p->>'type',''),'task'),
+          nullif(p->>'region',''), nullif(trim(p->>'school'),''), coalesce(nullif(p->>'priority',''),'متوسط'),
+          nullif(p->>'due_at','')::timestamptz,
+          case when jsonb_typeof(p->'checklist') = 'array' then p->'checklist' else '[]'::jsonb end,
+          case when jsonb_typeof(p->'ticket_refs') = 'array' then array(select jsonb_array_elements_text(p->'ticket_refs')) else '{}' end,
+          me.id, coalesce(me.full_name, me.email), t.id, coalesce(t.full_name, t.email),
+          public.fm_uuid_or_null(p->>'batch_id'), nullif(trim(p->>'batch_title'),''), nullif(trim(p->>'building_id'),''),
+          ap.id, case when ap.id is not null then coalesce(ap.full_name, ap.email) end, v_form, v_to, v_ext);
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (v_id, me.id, coalesce(me.full_name, me.email), 'create', 'assigned',
+          case when p->>'schedule' is not null then '🔁 أُنشئ تلقائياً (حملة متكررة) وأُسند إلى ' else '📝 أُنشئ الأمر وأُسند إلى ' end || coalesce(t.full_name, t.email));
+  return v_id;
+end $$;
+revoke all on function public.fm_wo_create_as(uuid,jsonb) from public, anon, authenticated;
+
+create or replace function public.fm_wo_can_see(p_wo uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.fm_role() <> 'pending' and exists (select 1 from public.work_orders w where w.id = p_wo
+    and (w.created_by = auth.uid() or w.assignee = auth.uid() or w.approver = auth.uid() or public.fm_role() = 'admin' or public.fm_scope_region(w.region)
+         or public.fm_is_under(w.assignee, auth.uid()) or public.fm_is_under(w.created_by, auth.uid())
+         -- V285: a recipient of the approved report reads the order once it is closed
+         or (w.status = 'closed' and auth.uid() = any(w.notify_to)))) $$;
+
+-- accounts that may be chosen as recipients (any active account; names only)
+create or replace function public.fm_wo_notify_people() returns table(id uuid, full_name text, email text, person_names text[], job_title text, regions text[])
+language sql stable security definer set search_path = public as $$
+  select p.id, coalesce(p.full_name, p.email), p.email, p.person_names, public.fm_posx(p.role, p.job_title), p.regions
+    from public.profiles p
+   where public.fm_role() in ('admin','manager','staff','engineer','supervisor') and p.active and p.deleted_at is null and p.role <> 'pending'
+   order by p.full_name $$;
+grant execute on function public.fm_wo_notify_people() to authenticated;
+
+create or replace function public.fm_wo_notify_set(p_id uuid, p_to uuid[], p_ext jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; v_to uuid[]; v_ext jsonb; u uuid; n int := 0;
+begin
+  select * into w from public.work_orders where id = p_id for update;
+  if w.id is null or not public.fm_wo_can_see(w.id) then raise exception 'work order not found'; end if;
+  if not coalesce(public.fm_wo_mgr(w.id) or w.approver = auth.uid(), false) then raise exception 'not allowed' using errcode = '42501'; end if;
+  select coalesce(array_agg(distinct pr.id), '{}') into v_to from public.profiles pr
+   where pr.id = any(coalesce(p_to, '{}')) and pr.active and pr.deleted_at is null;
+  if cardinality(v_to) > 20 then raise exception 'too many recipients'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('name', left(trim(coalesce(x->>'name','')),120), 'phone', left(trim(coalesce(x->>'phone','')),20),
+                                                'email', left(trim(coalesce(x->>'email','')),160), 'role', left(trim(coalesce(x->>'role','')),60))), '[]')
+    into v_ext from jsonb_array_elements(case when jsonb_typeof(p_ext) = 'array' then p_ext else '[]'::jsonb end) x
+   where jsonb_typeof(x) = 'object' and (trim(coalesce(x->>'phone','')) <> '' or trim(coalesce(x->>'email','')) <> '');
+  if jsonb_array_length(v_ext) > 10 then raise exception 'too many recipients'; end if;
+  update public.work_orders set notify_to = v_to, notify_ext = v_ext, updated_at = now() where id = w.id;
+  -- already approved: the people just added get the report now
+  if w.status = 'closed' then
+    foreach u in array v_to loop
+      if not (u = any(w.notify_to)) then
+        perform public.fm_push_add(u, 'wo_closed', '📄 تقرير أمر عمل معتمد: ' || coalesce(w.code,''), concat_ws(' — ', w.title, w.school), 'wo=' || w.id, 'woc-' || w.id);
+        n := n + 1;
+      end if;
+    end loop;
+  end if;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (w.id, auth.uid(), (select coalesce(full_name, email) from public.profiles where id = auth.uid()), 'note', w.status,
+          '📤 مستلمو التقرير المعتمد: ' || cardinality(v_to) || ' حساب' || case when jsonb_array_length(v_ext) > 0 then ' + ' || jsonb_array_length(v_ext) || ' من خارج المنصة' else '' end);
+  return jsonb_build_object('to', cardinality(v_to), 'ext', jsonb_array_length(v_ext), 'sent', n);
+end $$;
+grant execute on function public.fm_wo_notify_set(uuid, uuid[], jsonb) to authenticated;
+
+create or replace function public.fm_wo_notify_close() returns trigger language plpgsql security definer set search_path = public as $$
+declare u uuid;
+begin
+  if new.status = 'closed' and old.status is distinct from 'closed' and cardinality(new.notify_to) > 0 then
+    foreach u in array new.notify_to loop
+      begin
+        perform public.fm_push_add(u, 'wo_closed', '📄 تقرير أمر عمل معتمد: ' || coalesce(new.code,''), concat_ws(' — ', new.title, new.school), 'wo=' || new.id, 'woc-' || new.id);
+      exception when others then null; end;
+    end loop;
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_wo_notify_close on public.work_orders;
+create trigger fm_wo_notify_close after update of status on public.work_orders for each row execute function public.fm_wo_notify_close();
+notify pgrst, 'reload schema';
