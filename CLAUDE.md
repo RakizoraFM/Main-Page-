@@ -575,3 +575,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V292 — the setup wizard no longer opens by itself
 - `fm-v183-setup`: the auto-open block returns right after it finds the nav button (the owner asked not to see it at every sign-in). «🚀 خطوات البداية» stays in the sidebar (group النظام); the «⏰ لاحقاً» button is now only a close. Manual entry updated.
+
+## V293 — plan upload: short supervisor / engineer names
+- `fm-v287-ppm-plan` `find(L, v, kind)`: e-mail / exact name / `person_names` first, then the same letters without spaces («عمادالدكش» = «عماد الدكش»), then every word of the file name inside one account's name («حمزة», «ضياء طارق»), then a name starting with it — each accepted only when exactly one account fits (more → `{amb}`: «يطابق n حسابات»). The preview gets `.fm287-fix` «⚠️ أسماء في الملف لم تُطابَق بحساب»: one select per unknown supervisor / engineer name (ambiguous candidates first with ⭐); a pick fixes all its rows, re-renders the table / summary and is remembered in `localStorage fm287_map` {sup, eng: {normalised name: account id}} for later files. The «ليس ضمن من يمكنك الإسناد له» wording became «لا يوجد حساب باسم … ضمن من يمكنك الإسناد له — اختره أعلاه».
