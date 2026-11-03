@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F91">
+<meta name="fm-version" content="F92">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -3347,7 +3347,7 @@ const URG=/⛔|متأخر|تجاوز|بانتظار استلامك|بانتظا�
 const firstLine=b=>S((b.innerText||b.textContent||'').split('\n')[0]).replace(/\s*(فتح|بدء|عرض)?\s*←\s*$/,'').trim();
 const noIcon=s=>s.replace(/^[^\p{L}\p{N}]+/u,'').trim();
 function status(id,b,title){if(id==='h-wo'){const m=firstLine(b).match(/[\d٠-٩]+/);return m?m[0]+' يحتاج إجراءك':''}
- let t=noIcon(firstLine(b));if(!t)return '';const i=t.indexOf(':');if(i>=0)return t.slice(i+1).trim();
+ let t=noIcon(firstLine(b));if(!t)return '';const i=t.search(/:(?![\d٠-٩])/);if(i>=0)return t.slice(i+1).trim();
  if(id==='f36-parts')return '';if(id==='f53-sla'){const m=t.match(/—\s*(.+)$/);return m?m[1]:''}
  return t.length<=34&&!/^(ال)?عمل الإضافي$|^عهدتي وطلب/.test(t)?t:''}
 function setTxt(el,v){if(el.textContent!==v)el.textContent=v}
@@ -3366,14 +3366,14 @@ function arrange(){if(busy)return;busy=true;try{
  IDS.forEach(([id,ic,title],k)=>{const b=document.getElementById(id);if(!b||!b.isConnected)return;
   const line=firstLine(b),urg=id==='h-wo'||URG.test(line);const cls=urg?'f91-r':'f91-t';
   const w0=b.parentElement,own=w0&&w0.dataset.for===b.id,w=(own&&w0.classList.contains(cls))?w0:wrapOf(b,cls);if(own&&w0!==w)w0.remove();
-  w.dataset.k=k;const host=urg?L:G;if(w.parentElement!==host)host.appendChild(w);if(urg)nU++;
+  w.dataset.k=k;const hid=id==='f32-h'&&/مفعّلة|مفعلة/.test(line);if(w.hidden!==hid)w.hidden=hid;const host=urg?L:G;if(w.parentElement!==host)host.appendChild(w);if(urg)nU++;
   setTxt(w.querySelector('i'),ic);
   if(urg){const sp=w.querySelector('span'),t=id==='h-wo'?line.replace(/^📋\s*/,''):noIcon(line);setTxt(sp,t||title)}
   else{setTxt(w.querySelector('b'),title);setTxt(w.querySelector('small'),status(id,b,title));const al=/\b(bad|late|run|red)\b/.test(b.className||'')||URG.test(line);if(w.classList.contains('al')!==al)w.classList.toggle('al',al)}});
  for(const host of [L,G]){[...host.children].forEach(w=>{if(!w.querySelector(':scope>[id]'))w.remove()});
   const kids=[...host.children],sorted=kids.slice().sort((a,b)=>(+a.dataset.k)-(+b.dataset.k));if(sorted.some((x,i)=>x!==kids[i]))sorted.forEach(x=>host.appendChild(x))}
  const em=now.querySelector('h3');const ht='⚡ يحتاج إجراءك الآن'+(nU?` <em>${nU}</em>`:'');if(em.innerHTML!==ht)em.innerHTML=ht;
- const hideN=!nU;if(now.hidden!==hideN)now.hidden=hideN;const hideG=!G.children.length;if(grid.hidden!==hideG)grid.hidden=hideG;
+ const hideN=!nU;if(now.hidden!==hideN)now.hidden=hideN;const hideG=![...G.children].some(x=>!x.hidden);if(grid.hidden!==hideG)grid.hidden=hideG;
  // weekly goal + this month → one collapsible block after the services
  const goal=wrap.querySelector(':scope>.card.goal'),month=[...wrap.querySelectorAll(':scope>.card')].find(c=>/^📈/.test(S(c.querySelector('h3')?.textContent)));
  if(goal||month){let p=wrap.querySelector(':scope>details.f91-perf');if(!p){p=document.createElement('details');p.className='f91-perf';p.innerHTML='<summary>📊 أدائي: هدف الأسبوع وهذا الشهر</summary>';
