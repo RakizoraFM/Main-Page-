@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V302">
+<meta name="fm-version" content="V303">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V302',date:'2026-11-03',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V303',date:'2026-11-03',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V303',d:'2026-11-03',t:'شريط أزرار أوامر العمل أوضح',i:['أزرار صفحة أوامر العمل في شريط بخلفية هادئة؛ «➕ أمر عمل جديد» وحده باللون الأزرق والباقي أزرار فاتحة.']},
 {v:'V302',d:'2026-11-03',t:'صفحة أوامر العمل تظهر فوراً',i:['تُعرض قائمة الأوامر أولاً بدون بنود الفحص (نحو 0.2 ميجابايت بدل 15)، ثم تُستكمل البنود في الخلفية؛ فتح أمر قبل اكتمالها يجلب بنوده فوراً.']},
 {v:'V301',d:'2026-11-03',t:'تسريع تحميل أوامر العمل',i:['قاعدة رؤية أوامر العمل في السيرفر أصبحت تُحسب مرة واحدة لكل طلب بدل كل أمر (القسم 84 من supabase_setup.sql) — كانت قراءة كل الأوامر تتجاوز مهلة السيرفر.','قائمة أوامر العمل تُنزَّل مرة واحدة وتُشارَك بين الصفحات لمدة 20 ثانية، وتُحدَّث فور أي تعديل على الأوامر، وتُقرأ على دفعات.']},
 {v:'V300',d:'2026-11-03',t:'إصلاح إنذار «كود ملصق داخل سكربت»',i:['أُزيل إنذار «وُجد تنسيق/كود ملصق داخل سكربت» في فحص التشغيل: سطر سليم في نافذة طباعة «خطة الوقائية الشهرية» (V287) يبدأ بوسم script فاعتبره الفحص كوداً ملصقاً. لا تغيير في عمل الصفحة.']},
@@ -42963,6 +42964,17 @@ install();setInterval(install,2000);
 })();
 </script>
 
+<style id="fm-v303-wo-toolbar">
+/* V303 — the work-orders page toolbar: one calm panel, only «➕ أمر عمل جديد» is solid; the rest are light buttons */
+#fm145-page .fm103-actions .extra{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:8px}
+@media (min-width:761px){#fm145-page .fm103-actions .extra{display:flex;flex-wrap:wrap;gap:6px;align-items:center}}
+#fm145-page .fm103-actions .extra>button,#fm145-page .fm103-actions .extra .fm103-btn{background:#fff!important;color:#1e293b!important;border:1px solid #cbd5e1!important;box-shadow:none!important;border-radius:10px!important;font-weight:800;transition:background .15s,border-color .15s}
+#fm145-page .fm103-actions .extra>button:hover,#fm145-page .fm103-actions .extra .fm103-btn:hover{background:#eff6ff!important;border-color:#93c5fd!important;color:#1d4ed8!important}
+#fm145-page .fm103-actions .extra [data-a=new]{background:#2563eb!important;color:#fff!important;border-color:#2563eb!important}
+#fm145-page .fm103-actions .extra [data-a=new]:hover{background:#1d4ed8!important;color:#fff!important}
+#fm145-page .fm103-actions .extra [data-a=grp],#fm145-page .fm103-actions .extra [data-a=x287]{background:#eff6ff!important;color:#1d4ed8!important;border-color:#bfdbfe!important}
+#fm145-page .fm103-actions .extra b{background:#dc2626;color:#fff;border-radius:999px;padding:0 7px;margin-inline-start:4px;font-size:12px}
+</style>
 <script id="fm-v228-i18n">
 /* V228: English interface — dictionary (Arabic → English) and the translator (text nodes, placeholder / title, alert / confirm). Data stays as entered. */
 (function(){
