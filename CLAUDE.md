@@ -622,3 +622,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## Field F101 — an item stays on its page after a result / photo / material
 - The `woDetail` `redraw(i)` replaced the row with `outerHTML`, so the new row lost the F97 `f97-on` (and F85 `f85-on`) class and was hidden by `#ci-card.f97-pg` the moment a result was chosen — it looked like the page jumped to the next section, and the materials / photo boxes of a «تم الإصلاح» item could not be used. `redraw` now copies those classes to the new row. When a layer replaces a checklist row, keep the page marks.
+
+## V303 — calmer work-orders toolbar
+- `fm-v303-wo-toolbar` (CSS only): `#fm145-page .fm103-actions .extra` is one light panel (flex ≥ 761 px; the V214 phone grid stays); every button there is white with a grey border (several layers copied the primary class), `[data-a=new]` stays solid blue, `[data-a=grp]` / `[data-a=x287]` light blue, count badges `b` red.
