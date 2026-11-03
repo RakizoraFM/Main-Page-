@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V300">
+<meta name="fm-version" content="V301">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V300',date:'2026-11-03',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V301',date:'2026-11-03',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V301',d:'2026-11-03',t:'تسريع تحميل أوامر العمل',i:['قاعدة رؤية أوامر العمل في السيرفر أصبحت تُحسب مرة واحدة لكل طلب بدل كل أمر (القسم 84 من supabase_setup.sql) — كانت قراءة كل الأوامر تتجاوز مهلة السيرفر.','قائمة أوامر العمل تُنزَّل مرة واحدة وتُشارَك بين الصفحات لمدة 20 ثانية، وتُحدَّث فور أي تعديل على الأوامر، وتُقرأ على دفعات.']},
 {v:'V300',d:'2026-11-03',t:'إصلاح إنذار «كود ملصق داخل سكربت»',i:['أُزيل إنذار «وُجد تنسيق/كود ملصق داخل سكربت» في فحص التشغيل: سطر سليم في نافذة طباعة «خطة الوقائية الشهرية» (V287) يبدأ بوسم script فاعتبره الفحص كوداً ملصقاً. لا تغيير في عمل الصفحة.']},
 {v:'V299',d:'2026-11-03',t:'نتيجة كل بند إلزامية قبل «تم الإجراء»',i:['لا يُقبل «تم الإجراء» إلا بعد تسجيل نتيجة لكل بند (سليم / يحتاج إصلاح / تم الإصلاح / لا ينطبق، أو المستوى في نموذج FCI)؛ تطبيق الميدان يذكر البنود الناقصة.','يُغيَّر من الإعدادات ← السحابة ← «📷 صور أوامر العمل» ← «نتيجة البنود عند تم الإجراء»: إلزامية (الافتراضي) أو اختيارية (تنبيه فقط).']},
 {v:'V298',d:'2026-11-03',t:'المشرف يعدّل تقريره قبل الاعتماد ويطلب التعديل بعده',i:['في تطبيق الميدان: الأمر «بانتظار الاعتماد» عليه زر «✏️ تعديل قبل الاعتماد» يعيده للمشرف ليعدّل البنود والصور ثم يبلّغ «تم الإجراء» من جديد.','بعد الاعتماد: «✏️ طلب تعديل بعد الاعتماد» مع السبب؛ يوافق مهندس المدرسة أو منشئ الأمر أو من هو أعلى فيُعاد فتح الأمر للمشرف.','في المنصة: الطلب يظهر في تفاصيل الأمر مع ✅ / ⛔، وزر «✏️ طلبات تعديل الأوامر» في صفحة أوامر العمل، وإشعار للمهندس وللمشرف بالقرار.','الأمر الداخل في مستخلص مقاول لا يُعاد فتحه.']},
@@ -42911,6 +42912,38 @@ setInterval(async()=>{try{const g=document.querySelector('#fm145-page [data-a=x2
  const h='✏️ طلبات تعديل الأوامر'+(n?` <b>${n}</b>`:'');if(b.innerHTML!==h)b.innerHTML=h}catch(e){}},2000);
 })();
 </script>
+<script id="fm-v301-wo-cache">
+/* V301 — one download of the work-orders list for all layers. Many pages / boxes call C.api.woList() on their own (the
+   orders page, portal numbers, reports, capex, penalties, kits …); every call downloaded every order with its full checklist
+   (~14 MB for 800 orders). Now: calls made while one is running share it, the result is reused for 20 s, and any work-order
+   write through C.api (create, act, bulk, photos, notify, visit …) clears it so the next read is fresh. The list is read in
+   pages of 500 (a 1000-row page of big checklists could hit the server's statement timeout). Section 84 of
+   supabase_setup.sql makes the read itself faster (the visibility rule runs once per query, not per row). */
+(function(){
+'use strict';
+const TTL=20000,RO=/^(woList|woEvents|woPhotos|woAssignable|woMaterials|woMaterialsList|woStock|woTemplates|woSchedules)$/;
+let cache=null,at=0,run=null,gen=0;
+function clear(){cache=null;at=0;gen++}
+window.fmV301WoClear=clear;
+function install(){const C=window.FMCloud,A=C&&C.api;if(!A||!A.woList)return;
+ if(!A.woList.__f301){const base=A.woList;
+  const fast=async function(){const c=C.engClient?await C.engClient():null;if(!c)return base.apply(A,arguments);let out=[];
+   for(let i=0;i<20;i++){const r=await c.from('work_orders').select('*').order('updated_at',{ascending:false}).order('id').range(i*500,i*500+499);
+    if(r.error)throw r.error;out=out.concat(r.data||[]);if((r.data||[]).length<500)break}return out};
+  const w=async function(opt){if(opt&&opt.fresh)clear();
+   if(cache&&Date.now()-at<TTL)return cache.map(x=>Object.assign({},x));
+   if(run)return (await run).map(x=>Object.assign({},x));
+   const g=gen;run=(async()=>{try{let L;try{L=await fast()}catch(e){if(/schema cache|Could not find/i.test(String(e&&e.message)))L=await base.apply(A,[]);else throw e}
+     if(g===gen){cache=L;at=Date.now()}return L}finally{run=null}})();
+   return (await run).map(x=>Object.assign({},x))};
+  w.__f301=1;A.woList=w}
+ for(const k of Object.keys(A)){const f=A[k];if(typeof f!=='function'||f.__f301||!/^wo/.test(k)||RO.test(k))continue;
+  /* other layers mark their own wrappers (V290 __f290 on woAct): copy the marks so they do not wrap again */
+  const v=async function(){try{return await f.apply(A,arguments)}finally{clear()}};Object.keys(f).forEach(p=>{v[p]=f[p]});v.__f301=1;A[k]=v}}
+install();setInterval(install,2000);
+})();
+</script>
+
 <script id="fm-v228-i18n">
 /* V228: English interface — dictionary (Arabic → English) and the translator (text nodes, placeholder / title, alert / confirm). Data stays as entered. */
 (function(){

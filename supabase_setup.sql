@@ -12893,3 +12893,40 @@ end $$;
 drop trigger if exists fm_wo_items_check on public.work_orders;
 create trigger fm_wo_items_check before update of status on public.work_orders for each row execute function public.fm_wo_items_check();
 notify pgrst, 'reload schema';
+
+-- ---------- 84) faster reads of work orders (V301) ----------
+-- The read policy called fm_wo_can_see(id) for every row: a sub-select of the same row plus fm_role(), fm_scope_region()
+-- and two recursive fm_is_under() calls each time. With ~800 orders a full read hit the statement timeout on the real
+-- project. The new policy is the same rule written so the per-person parts run ONCE per query (sub-selects = init plans):
+-- who I am, whether I see everything, and the ids of my team (everyone under me, deputies included).
+create or replace function public.fm_wo_see_all() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_scope_all(), false) $$;
+create or replace function public.fm_wo_team() returns uuid[]
+language sql stable security definer set search_path = public as $$
+  select coalesce(array_agg(p.id), '{}') from public.profiles p
+   where auth.uid() is not null and p.id <> auth.uid() and public.fm_is_under(p.id, auth.uid()) $$;
+revoke all on function public.fm_wo_see_all(), public.fm_wo_team() from public, anon;
+grant execute on function public.fm_wo_see_all(), public.fm_wo_team() to authenticated;
+
+drop policy if exists p_wo_read on public.work_orders;
+create policy p_wo_read on public.work_orders for select using (
+  (select public.fm_role()) <> 'pending' and (
+    (select public.fm_wo_see_all())
+    or created_by = (select auth.uid()) or assignee = (select auth.uid()) or approver = (select auth.uid())
+    or ((select public.fm_my_pos()) = 'area_manager' and public.fm_region_ok(coalesce(region, '')))
+    or assignee = any((select public.fm_wo_team())::uuid[]) or created_by = any((select public.fm_wo_team())::uuid[])
+    or (status = 'closed' and (select auth.uid()) = any(notify_to))));
+
+-- the same rule for the V195 overview (security definer: RLS does not apply, so it is written out)
+create or replace function public.fm195_orders() returns jsonb language sql stable security definer set search_path = public as $$
+  with me as (select auth.uid() u, public.fm_role() r, public.fm_wo_see_all() a, public.fm_my_pos() p, public.fm_wo_team() t)
+  select coalesce(jsonb_agg(to_jsonb(w) order by w.created_at desc, w.id), '[]'::jsonb)
+    from public.work_orders w, me
+   where me.r <> 'pending' and public.fm_mod('wo')
+     and (me.a or w.created_by = me.u or w.assignee = me.u or w.approver = me.u
+          or (me.p = 'area_manager' and public.fm_region_ok(coalesce(w.region, '')))
+          or w.assignee = any(me.t) or w.created_by = any(me.t)
+          or (w.status = 'closed' and me.u = any(w.notify_to))) $$;
+create index if not exists work_orders_upd_idx on public.work_orders (updated_at desc, id);
+notify pgrst, 'reload schema';
