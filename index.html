@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V287">
+<meta name="fm-version" content="V288">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V287',date:'2026-11-03',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V288',date:'2026-11-03',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V288',d:'2026-11-03',t:'إصلاح: الدخول بحساب آخر بعد تسجيل الخروج',i:['تسجيل الخروج يمسح الجلسة من الجهاز دائماً، حتى لو تعذّر الاتصال بالخادم.','بعد تسجيل الدخول أو الخروج تُعاد تحميل الصفحة، فلا تبقى بيانات الحساب السابق ظاهرة.']},
 {v:'V287',d:'2026-11-03',t:'خطة الصيانة الوقائية الشهرية من Excel',i:['«📥 رفع خطة الشهر»: سطر لكل زيارة (الرقم الوزاري أو اسم المدرسة وتاريخ الزيارة، ويمكن تاريخان في الخانة)، فيُنشأ أمر صيانة وقائية لكل زيارة موعده يوم الزيارة، يُسند لمشرف صيانة المدرسة ويعتمده مهندسها حسب قاعدة المدارس (أو حسب الملف)، في حملة واحدة «خطة الصيانة الوقائية — الشهر».','نموذج الخطة فارغ أو مُعبّأ بمدارس القاعدة ومشرفيها ومهندسيها، ومعاينة قبل الإرسال (حسب المشرف، الأخطاء، الزيارات الموجودة مسبقاً لا تتكرر).','صفحة «🗓️ خطة الوقائية الشهرية»: تقويم الشهر وقائمة الزيارات وملخص حسب المشرف والمهندس، والمهندس يفتح على مدارسه، مع Excel وطباعة.','تطبيق الميدان: بطاقة «🗓️ خطتي الوقائية» للمشرف (زياراته) والمهندس (ما يعتمده) مرتبة بالتاريخ.']},
  {v:'V286',d:'2026-11-03',t:'الاعتماد وإرسال التقرير في «أمر لمجموعة مدارس»',i:['نافذة «🏘️ أمر لمجموعة مدارس» فيها الآن قسم «✅ الاعتماد والإرسال»: من يعتمد أمر كل مدرسة (مهندس الصيانة أو مهندس الخدمات الخفيفة حسب قاعدة المدارس، أو أنت، أو شخص واحد لكل الأوامر)','ولمن يُرسل التقرير المعتمد: أشخاص من المنصة، أو من خارجها بالجوال أو البريد، أو «مشرف الجهة المالكة» لكل مدرسة حسب قاعدة المدارس','الحملات المتكررة تحفظ المعتمد والمستلمين لكل مدرسة فتُطبَّق في كل تشغيل']},
  {v:'V285',d:'2026-11-02',t:'من يعتمد الأمر ولمن يُرسل التقرير المعتمد',i:['إصلاح: «أمر لمجموعة مدارس» (ومنه الصيانة الوقائية والحملات المتكررة) — زر «إسناد» كان لا يفعل شيئاً منذ V275؛ الآن يُنشئ الأوامر / يحفظ الحملة، ويوضح السبب إذا لم تُحدَّد مدارس أو لم يكن مسؤولوها ضمن فريقك','«✅ يعتمده» فيه «مهندس الصيانة حسب قاعدة المدارس» و«مهندس الخدمات الخفيفة حسب قاعدة المدارس»: أمر كل مدرسة يعتمده مهندسها، واختيار شخص بعينه يعتمد كل الأوامر','«📤 بعد الاعتماد يُرسل التقرير المعتمد إلى»: أشخاص من المنصة (يصلهم إشعار ويفتحون الأمر المعتمد)، أو أشخاص من خارج المنصة بالجوال أو البريد، أو «مشرف الجهة المالكة» لكل مدرسة حسب قاعدة المدارس','تفاصيل الأمر: «📤 مستلمو التقرير المعتمد» مع «✏️ تعديل المستلمين» حتى بعد الاعتماد (من يُضاف بعده يصله الإشعار فوراً)، وواتساب / بريد لمن هم خارج المنصة مع التقرير PDF','قاعدة المدارس: ثلاثة أعمدة جديدة في آخر القالب — اسم وجوال وبريد مشرف الجهة المالكة','يحتاج تشغيل القسم 78 من supabase_setup.sql']},
@@ -29678,7 +29679,7 @@ const uuid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xx
 const real={
  async signIn(email,pw){const c=await sb();return chk(await c.auth.signInWithPassword({email:S(email),password:pw}))},
  async signUp(email,pw,name){const c=await sb();return chk(await c.auth.signUp({email:S(email),password:pw,options:{data:{full_name:S(name)}}}))},
- async signOut(){const c=await sb();await c.auth.signOut()},
+ async signOut(){const c=await sb();try{const r=await c.auth.signOut();if(r&&r.error)throw r.error}catch(e){try{await c.auth.signOut({scope:'local'})}catch(_){}}try{localStorage.removeItem('fm-cloud-auth')}catch(_){}},
  async session(){const c=await sb();const {data}=await c.auth.getSession();return data?.session||null},
  async me(){const c=await sb();const {data:{user}}=await c.auth.getUser();if(!user)return null;const p=chk(await c.from('profiles').select('*').eq('id',user.id).maybeSingle());return p?Object.assign({},p,{email:p.email||user.email}):{id:user.id,email:user.email,role:'pending',person_names:[],regions:[]}},
  async listProfiles(){const c=await sb();return chk(await c.from('profiles').select('*').order('created_at'))},
@@ -29795,7 +29796,7 @@ function loginScreen(msg){
    try{if(mode==='up'){const nm=S(w.querySelector('#l-name').value);if(!nm){toast('اكتب اسمك','warning');b.disabled=false;b.textContent='إنشاء الحساب';return}
      const r=await C.api.signUp(em,pw,nm);if(!r?.session){draw('in','تم إنشاء الحساب. إذا وصلتك رسالة تأكيد على البريد افتحها أولاً، ثم سجّل الدخول. بعد ذلك يفعّل مدير النظام صلاحياتك.');return}}
     else await C.api.signIn(em,pw);
-    w.remove();await start(true);
+    w.remove();location.reload();return; /* V288: a fresh page, so nothing of the previous account stays loaded */
    }catch(e){toast(C.msg(e.message),'error');b.disabled=false;b.textContent=mode==='up'?'إنشاء الحساب':'دخول'}};
   w.querySelector('#l-go').onclick=go;w.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter')go()});
   setTimeout(()=>w.querySelector('input')?.focus(),60)};

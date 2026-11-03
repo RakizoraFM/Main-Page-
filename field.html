@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F92">
+<meta name="fm-version" content="F93">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -253,7 +253,7 @@ const uuid=()=>crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xx
 const real={
  async signIn(email,pw){const c=await sb();return chk(await c.auth.signInWithPassword({email:S(email),password:pw}))},
  async signUp(email,pw,name){const c=await sb();return chk(await c.auth.signUp({email:S(email),password:pw,options:{data:{full_name:S(name)}}}))},
- async signOut(){const c=await sb();await c.auth.signOut()},
+ async signOut(){const c=await sb();try{const r=await c.auth.signOut();if(r&&r.error)throw r.error}catch(e){try{await c.auth.signOut({scope:'local'})}catch(_){}}try{localStorage.removeItem('fm-cloud-auth')}catch(_){}},
  async updateContact(phone){const c=await sb();return chk(await c.rpc('fm_update_my_contact',{p_phone:phone}))},
  async changeEmail(em){const c=await sb();return chk(await c.auth.updateUser({email:em},{emailRedirectTo:location.origin+location.pathname.replace(/[^/]*$/,'')+'start.html'}))},
  async setPassword(pw){const c=await sb();chk(await c.auth.updateUser({password:pw}));try{chk(await c.rpc('fm_password_changed'))}catch(e){}return true},
@@ -409,12 +409,12 @@ function loginView(info){
   <p style="margin-top:14px"><a href="#" class="link" id="l-sw">${m==='up'?'لدي حساب':'مستخدم جديد؟ إنشاء حساب'}</a></p></div></div>`;
   $('#l-sw').onclick=e=>{e.preventDefault();draw(mode==='up'?'in':'up')};
   $('#l-go').onclick=async()=>{const em=S($('#l-e').value),pw=$('#l-p').value;if(!em||!pw){toast('اكتب البريد وكلمة المرور','w');return}const b=$('#l-go');b.disabled=true;
-   try{if(mode==='up'){const n=S($('#l-n').value);if(!n){toast('اكتب اسمك','w');b.disabled=false;return}const r=await C.api.signUp(em,pw,n);if(!r?.session){info='تم إنشاء الحساب. افتح رسالة التأكيد في بريدك إن وصلت، ثم سجّل الدخول.';draw('in');return}}else await C.api.signIn(em,pw);boot()}
+   try{if(mode==='up'){const n=S($('#l-n').value);if(!n){toast('اكتب اسمك','w');b.disabled=false;return}const r=await C.api.signUp(em,pw,n);if(!r?.session){info='تم إنشاء الحساب. افتح رسالة التأكيد في بريدك إن وصلت، ثم سجّل الدخول.';draw('in');return}}else await C.api.signIn(em,pw);location.reload()}
    catch(e){toast(C.msg(e.message),'e');b.disabled=false}}};
  draw('in');
 }
 function pendingView(){$('#app').innerHTML=`<div class="login"><div class="card"><div style="font-size:40px;text-align:center">⏳</div><h2>بانتظار التفعيل</h2><p>${esc(D.me?.email||'')}</p><div class="note">أبلغ مدير النظام ليحدد دورك واسمك في البلاغات، ثم اضغط «تحقق».</div><button class="big p" style="width:100%" id="re">تحقق</button><p><a href="#" class="link" id="out">تسجيل الخروج</a></p></div></div>`;
- $('#re').onclick=boot;$('#out').onclick=async e=>{e.preventDefault();await C.api.signOut().catch(()=>{});loginView()}}
+ $('#re').onclick=boot;$('#out').onclick=async e=>{e.preventDefault();await C.api.signOut().catch(()=>{});location.reload()}}
 
 /* first sign-in with a temporary password set by the admin */
 function forcePwView(err){$('#app').innerHTML=`<div class="login"><div class="card"><img class="lg" src="${FM_BRAND.logo}" alt="${FM_BRAND.name}"><h2>تغيير كلمة المرور</h2><p>${esc(myName())} — هذا أول دخول لك، اختر كلمة مرور خاصة بك</p>
@@ -463,7 +463,7 @@ function bindTop(){
  $('#rf')&&($('#rf').onclick=async()=>{toast('جارٍ التحديث…');try{await flush();await pull()}catch(e){toast(C.msg(e.message),'e')}});
  $('#lo')&&($('#lo').onclick=signOutNow);
 }
-async function signOutNow(){if(!confirm(qLoad().length?'توجد تحديثات محفوظة ستبقى لهذا الحساب فقط. تسجيل الخروج؟':'تسجيل الخروج؟'))return;const scope=outbox.scope();await C.api.signOut().catch(()=>{});if(scope)localStorage.removeItem('fmf_cache_v191:'+scope);localStorage.removeItem('fmf_cache_v1');D.me=null;pendMem.clear();loginView()}
+async function signOutNow(){if(!confirm(qLoad().length?'توجد تحديثات محفوظة ستبقى لهذا الحساب فقط. تسجيل الخروج؟':'تسجيل الخروج؟'))return;const scope=outbox.scope();await C.api.signOut().catch(()=>{});if(scope)localStorage.removeItem('fmf_cache_v191:'+scope);localStorage.removeItem('fmf_cache_v1');D.me=null;pendMem.clear();location.reload()}
 const dayStart=()=>{const d=new Date();d.setHours(0,0,0,0);return d};
 const monthStart=(off=0)=>{const d=new Date();d.setHours(0,0,0,0);d.setDate(1);d.setMonth(d.getMonth()+off);return d};
 /* ---------- analytics on the platform's own rules (F6) ---------- */

@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S13">
+<meta name="fm-version" content="S14">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -117,7 +117,7 @@ const API=window.FMStartAPI=window.FMStartAPI||{
  async signUp(em,pw,name){const c=await sb();return chk(await c.auth.signUp({email:em,password:pw,options:{data:{full_name:name}}}))},
  async reset(em){const c=await sb();return chk(await c.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname}))},
  async setPassword(pw){const c=await sb();chk(await c.auth.updateUser({password:pw}));try{chk(await c.rpc('fm_password_changed'))}catch(e){}return true},
- async signOut(){const c=await sb();await c.auth.signOut()},
+ async signOut(){const c=await sb();try{const r=await c.auth.signOut();if(r&&r.error)throw r.error}catch(e){try{await c.auth.signOut({scope:'local'})}catch(_){}}try{localStorage.removeItem('fm-cloud-auth')}catch(_){}},
  async routes(){try{const c=await sb();const r=await c.from('fm_settings').select('value').eq('key','routes').maybeSingle();return (r&&!r.error&&r.data&&r.data.value)||{}}catch(e){return {}}}
 };
 
@@ -221,7 +221,7 @@ function welcomeView(p,mode){
  clearTimeout(timer);if(!both||pref)timer=setTimeout(()=>open(first),1500);
 }
 
-async function signOut(){try{await API.signOut()}catch(e){}loginView('in')}
+async function signOut(){try{await API.signOut()}catch(e){}location.reload()}
 
 async function route(){
  const p=await API.me();if(!p)return loginView('in');
