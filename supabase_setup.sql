@@ -12730,3 +12730,203 @@ end $$;
 revoke all on function public.fm_wo_visit_can(uuid), public.fm_wo_visit_req(uuid, date, text), public.fm_wo_visit_act(uuid, boolean, text), public.fm_wo_visit_reqs(uuid, int) from public, anon;
 grant execute on function public.fm_wo_visit_can(uuid), public.fm_wo_visit_req(uuid, date, text), public.fm_wo_visit_act(uuid, boolean, text), public.fm_wo_visit_reqs(uuid, int) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 82) the supervisor edits his report until it is approved; after approval he asks the engineer or someone above (V298) ----------
+-- fm_wo_edit(wo, note): the assignee takes back a «done» order (not approved yet) to change items / photos → in_progress; he
+-- reports «done» again (all done checks run again). After «closed» he asks through fm_wo_edit_req(wo, reason); the order's
+-- approver, the creator side (fm_wo_mgr), anyone above the approver / assignee or the system admin (fm_wo_visit_can, V295)
+-- approves with fm_wo_edit_act(id, true, note) → the order is reopened as in_progress (closed_at cleared). An order already in a
+-- contractor bill that is not cancelled cannot be reopened. Store materials already taken out at the first close are not taken again.
+create table if not exists public.wo_edit_requests (
+  id uuid primary key default gen_random_uuid(),
+  wo_id uuid not null references public.work_orders(id) on delete cascade,
+  wo_code text, school text,
+  by_id uuid not null, by_name text,
+  reason text not null,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'cancelled')),
+  dec_by uuid, dec_name text, dec_at timestamptz, dec_note text,
+  at timestamptz not null default now()
+);
+create unique index if not exists wo_edit_requests_one on public.wo_edit_requests (wo_id) where status = 'pending';
+create index if not exists wo_edit_requests_by on public.wo_edit_requests (by_id, at desc);
+alter table public.wo_edit_requests enable row level security;
+revoke all on public.wo_edit_requests from anon, authenticated;
+
+create or replace function public.fm_wo_billed(p_wo uuid)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare b boolean := false;
+begin
+  if to_regclass('public.fm_bill_wos') is null then return false; end if;
+  execute 'select exists (select 1 from public.fm_bill_wos x join public.fm_bills b on b.id = x.bill_id where x.wo_id = $1 and b.status <> ''cancelled'')' into b using p_wo;
+  return coalesce(b, false);
+exception when others then return false;
+end $$;
+
+create or replace function public.fm_wo_edit(p_wo uuid, p_note text default null)
+returns text language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; me public.profiles; nm text;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not coalesce(me.active, false) then raise exception 'not allowed'; end if;
+  select * into w from public.work_orders where id = p_wo for update;
+  if w.id is null then raise exception 'not found'; end if;
+  if w.assignee is distinct from me.id then raise exception 'not allowed'; end if;
+  if w.status = 'closed' then raise exception 'already approved'; end if;
+  if w.status <> 'done' then raise exception 'not submitted'; end if;
+  nm := coalesce(me.full_name, me.email);
+  update public.work_orders set status = 'in_progress', updated_at = now() where id = w.id;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (w.id, me.id, nm, 'edit', 'in_progress', '✏️ سحب الإبلاغ للتعديل قبل الاعتماد' || coalesce(' — ' || nullif(btrim(coalesce(p_note, '')), ''), ''));
+  return 'in_progress';
+end $$;
+
+create or replace function public.fm_wo_edit_req(p_wo uuid, p_reason text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; me public.profiles; r public.wo_edit_requests; u uuid;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not coalesce(me.active, false) then raise exception 'not allowed'; end if;
+  select * into w from public.work_orders where id = p_wo for update;
+  if w.id is null then raise exception 'not found'; end if;
+  if w.assignee is distinct from me.id then raise exception 'not allowed'; end if;
+  if w.status <> 'closed' then raise exception 'not approved'; end if;
+  if length(btrim(coalesce(p_reason, ''))) < 3 then raise exception 'reason required'; end if;
+  if public.fm_wo_billed(p_wo) then raise exception 'order billed'; end if;
+  if exists (select 1 from public.wo_edit_requests where wo_id = p_wo and status = 'pending') then raise exception 'request pending'; end if;
+  if (select count(*) from public.wo_edit_requests where by_id = me.id and at > now() - interval '1 day') >= 30 then raise exception 'too many today'; end if;
+  insert into public.wo_edit_requests (wo_id, wo_code, school, by_id, by_name, reason)
+  values (p_wo, w.code, w.school, me.id, coalesce(me.full_name, me.email), left(btrim(p_reason), 500)) returning * into r;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (p_wo, me.id, r.by_name, 'note', w.status, '✏️ طلب تعديل التقرير بعد الاعتماد — ' || r.reason);
+  begin
+    for u in select distinct x from unnest(array[w.approver, w.created_by, me.reports_to]) x where x is not null and x <> me.id loop
+      perform public.fm_push_add(u, 'wo_edit', '✏️ طلب تعديل أمر معتمد', r.by_name || ' — ' || coalesce(w.school, w.code) || ': ' || r.reason, 'wo=' || w.id, 'wer-' || r.id);
+    end loop;
+  exception when others then null; end;
+  return to_jsonb(r);
+end $$;
+
+create or replace function public.fm_wo_edit_act(p_id uuid, p_ok boolean, p_note text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.wo_edit_requests; w public.work_orders; me public.profiles;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not coalesce(me.active, false) then raise exception 'not allowed'; end if;
+  select * into r from public.wo_edit_requests where id = p_id for update;
+  if r.id is null then raise exception 'not found'; end if;
+  if r.status <> 'pending' then raise exception 'already decided'; end if;
+  if r.by_id = me.id then
+    if p_ok is null then
+      update public.wo_edit_requests set status = 'cancelled', dec_by = me.id, dec_name = coalesce(me.full_name, me.email), dec_at = now() where id = p_id returning * into r;
+      return to_jsonb(r);
+    end if;
+    raise exception 'not allowed';
+  end if;
+  if not public.fm_wo_visit_can(r.wo_id) then raise exception 'not allowed'; end if;
+  select * into w from public.work_orders where id = r.wo_id for update;
+  if not coalesce(p_ok, false) and length(btrim(coalesce(p_note, ''))) < 3 then raise exception 'note required'; end if;
+  if coalesce(p_ok, false) then
+    if w.status <> 'closed' then raise exception 'not approved'; end if;
+    if public.fm_wo_billed(w.id) then raise exception 'order billed'; end if;
+    update public.work_orders set status = 'in_progress', closed_at = null, updated_at = now() where id = w.id;
+  end if;
+  update public.wo_edit_requests set status = case when p_ok then 'approved' else 'rejected' end,
+         dec_by = me.id, dec_name = coalesce(me.full_name, me.email), dec_at = now(), dec_note = nullif(btrim(coalesce(p_note, '')), '')
+   where id = p_id returning * into r;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (w.id, me.id, r.dec_name, case when p_ok then 'reopen' else 'note' end, case when p_ok then 'in_progress' else w.status end,
+          case when p_ok then '🔓 وافق على تعديل التقرير وأعاد فتح الأمر للمشرف' else '⛔ رفض طلب تعديل التقرير' end || coalesce(' — ' || r.dec_note, ''));
+  begin
+    perform public.fm_push_add(r.by_id, 'wo_edit', case when p_ok then '🔓 فُتح الأمر للتعديل' else '⛔ لم يُوافق على تعديل الأمر' end,
+      coalesce(w.school, w.code) || case when p_ok then ': عدّل البنود ثم اضغط «تم الإجراء»' else coalesce(' — ' || r.dec_note, '') end, 'wo=' || w.id, 'wer-' || r.id);
+  exception when others then null; end;
+  return to_jsonb(r);
+end $$;
+
+create or replace function public.fm_wo_edit_reqs(p_wo uuid default null, p_days int default 30)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  if me is null then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(x order by (x->>'status') <> 'pending', x->>'at' desc) from (
+    select to_jsonb(r) || jsonb_build_object('mine', r.by_id = me, 'can', r.status = 'pending' and r.by_id <> me and public.fm_wo_visit_can(r.wo_id)) x
+      from public.wo_edit_requests r
+     where (p_wo is null or r.wo_id = p_wo) and r.at > now() - make_interval(days => greatest(1, least(coalesce(p_days, 30), 365)))
+       and (r.by_id = me or public.fm_wo_visit_can(r.wo_id))
+     order by r.at desc limit 300) q), '[]'::jsonb);
+end $$;
+
+revoke all on function public.fm_wo_billed(uuid), public.fm_wo_edit(uuid, text), public.fm_wo_edit_req(uuid, text), public.fm_wo_edit_act(uuid, boolean, text), public.fm_wo_edit_reqs(uuid, int) from public, anon;
+grant execute on function public.fm_wo_edit(uuid, text), public.fm_wo_edit_req(uuid, text), public.fm_wo_edit_act(uuid, boolean, text), public.fm_wo_edit_reqs(uuid, int) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 83) every checklist item needs a result before «done» (V299) ----------
+-- fm_settings.wo_photos.items = 'required' (default) | 'optional'. Trigger fm_wo_items_check (before update of status → done):
+-- a plain or graded item without a result, or a required text item without a value, refuses «done» with
+-- «item result required: n» (1-based). Quantity items are optional; orders whose designed form has no result buttons
+-- (form.res = false) are left to the form check (section 77).
+update public.fm_settings set value = value || '{"items": "required"}'::jsonb where key = 'wo_photos' and not (value ? 'items');
+create or replace function public.fm_wo_items_check()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare it jsonb; i int;
+begin
+  if new.status <> 'done' or old.status = 'done' then return new; end if;
+  if coalesce((select value->>'items' from public.fm_settings where key = 'wo_photos'), 'required') = 'optional' then return new; end if;
+  if jsonb_typeof(new.form) = 'object' and new.form->>'res' = 'false' then return new; end if;
+  for it, i in select e, o::int from jsonb_array_elements(case when jsonb_typeof(new.checklist) = 'array' then new.checklist else '[]'::jsonb end) with ordinality as t(e, o) loop
+    if jsonb_typeof(it) <> 'object' then continue; end if;
+    if it->>'k' = 'qty' then continue; end if;
+    if it->>'k' = 'text' then
+      if coalesce((it->>'req')::boolean, false) and btrim(coalesce(it->>'v', '')) = '' then raise exception 'item result required: %', i; end if;
+      continue;
+    end if;
+    if it->>'k' = 'grade' then
+      if it->'lv' is null or jsonb_typeof(it->'lv') = 'null' then raise exception 'item result required: %', i; end if;
+      continue;
+    end if;
+    if coalesce(it->>'res', '') not in ('ok', 'fix', 'fixed', 'na') and not coalesce((it->>'done')::boolean, false) then
+      raise exception 'item result required: %', i; end if;
+  end loop;
+  return new;
+exception when invalid_text_representation then return new;
+end $$;
+drop trigger if exists fm_wo_items_check on public.work_orders;
+create trigger fm_wo_items_check before update of status on public.work_orders for each row execute function public.fm_wo_items_check();
+notify pgrst, 'reload schema';
+
+-- ---------- 84) faster reads of work orders (V301) ----------
+-- The read policy called fm_wo_can_see(id) for every row: a sub-select of the same row plus fm_role(), fm_scope_region()
+-- and two recursive fm_is_under() calls each time. With ~800 orders a full read hit the statement timeout on the real
+-- project. The new policy is the same rule written so the per-person parts run ONCE per query (sub-selects = init plans):
+-- who I am, whether I see everything, and the ids of my team (everyone under me, deputies included).
+create or replace function public.fm_wo_see_all() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_scope_all(), false) $$;
+create or replace function public.fm_wo_team() returns uuid[]
+language sql stable security definer set search_path = public as $$
+  select coalesce(array_agg(p.id), '{}') from public.profiles p
+   where auth.uid() is not null and p.id <> auth.uid() and public.fm_is_under(p.id, auth.uid()) $$;
+revoke all on function public.fm_wo_see_all(), public.fm_wo_team() from public, anon;
+grant execute on function public.fm_wo_see_all(), public.fm_wo_team() to authenticated;
+
+drop policy if exists p_wo_read on public.work_orders;
+create policy p_wo_read on public.work_orders for select using (
+  (select public.fm_role()) <> 'pending' and (
+    (select public.fm_wo_see_all())
+    or created_by = (select auth.uid()) or assignee = (select auth.uid()) or approver = (select auth.uid())
+    or ((select public.fm_my_pos()) = 'area_manager' and public.fm_region_ok(coalesce(region, '')))
+    or assignee = any((select public.fm_wo_team())::uuid[]) or created_by = any((select public.fm_wo_team())::uuid[])
+    or (status = 'closed' and (select auth.uid()) = any(notify_to))));
+
+-- the same rule for the V195 overview (security definer: RLS does not apply, so it is written out)
+create or replace function public.fm195_orders() returns jsonb language sql stable security definer set search_path = public as $$
+  with me as (select auth.uid() u, public.fm_role() r, public.fm_wo_see_all() a, public.fm_my_pos() p, public.fm_wo_team() t)
+  select coalesce(jsonb_agg(to_jsonb(w) order by w.created_at desc, w.id), '[]'::jsonb)
+    from public.work_orders w, me
+   where me.r <> 'pending' and public.fm_mod('wo')
+     and (me.a or w.created_by = me.u or w.assignee = me.u or w.approver = me.u
+          or (me.p = 'area_manager' and public.fm_region_ok(coalesce(w.region, '')))
+          or w.assignee = any(me.t) or w.created_by = any(me.t)
+          or (w.status = 'closed' and me.u = any(w.notify_to))) $$;
+create index if not exists work_orders_upd_idx on public.work_orders (updated_at desc, id);
+notify pgrst, 'reload schema';

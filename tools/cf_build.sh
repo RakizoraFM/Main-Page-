@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 rm -rf dist && mkdir -p dist
 cp index.html field.html start.html rate.html school.html supplier.html saas.html try.html dist/
-cp sw.js manifest.webmanifest fci_template.xlsx dist/
+cp sw.js manifest.webmanifest fci_template.xlsx ppm_template.xlsx dist/
 cp -r icons dist/
 # the Edge Function code (the settings cards copy it from the site)
 for f in supabase/functions/*/index.ts; do mkdir -p "dist/$(dirname "$f")"; cp "$f" "dist/$f"; done
