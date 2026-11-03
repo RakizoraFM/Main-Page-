@@ -608,3 +608,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 ## V299 / field F100 — a result for every item before «done»
 - Section 83 of `supabase_setup.sql`: `fm_settings.wo_photos.items` = `required` (default, added when missing) | `optional`; trigger `fm_wo_items_check` (before update of status → done, not when already done): a plain item without `res` ok / fix / fixed / na (or `done`), a `k:'grade'` item without `lv`, or a `k:'text'` item with `req` and no `v` → «item result required: n» (1-based). `k:'qty'` items are optional; orders whose `form.res` is false are skipped (section 77 checks their fields). Inserts (demo seed) are not checked.
 - Platform: select `#f299-i` in the V276 card `#fm276-card` (kept with the other keys of the value). Field F100: `WO_ITEMS_REQ(w)`; `woDo('done')` blocks with the list of items without a result (optional mode keeps the old confirm); the error is translated.
+
+## V300 — false «pasted code inside a script» alarm
+- The V116 health check flags any inline script with a line starting `<style` / `<script` / `<link`. The V287 plan print template had a line starting `<script>setTimeout(()=>print()…` → it now starts with `${""}`. When writing print templates inside a script, never start a line with one of those tags (V198 had the same fix for V177).

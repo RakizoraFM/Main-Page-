@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V299">
+<meta name="fm-version" content="V300">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V299',date:'2026-11-03',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V300',date:'2026-11-03',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V300',d:'2026-11-03',t:'إصلاح إنذار «كود ملصق داخل سكربت»',i:['أُزيل إنذار «وُجد تنسيق/كود ملصق داخل سكربت» في فحص التشغيل: سطر سليم في نافذة طباعة «خطة الوقائية الشهرية» (V287) يبدأ بوسم script فاعتبره الفحص كوداً ملصقاً. لا تغيير في عمل الصفحة.']},
 {v:'V299',d:'2026-11-03',t:'نتيجة كل بند إلزامية قبل «تم الإجراء»',i:['لا يُقبل «تم الإجراء» إلا بعد تسجيل نتيجة لكل بند (سليم / يحتاج إصلاح / تم الإصلاح / لا ينطبق، أو المستوى في نموذج FCI)؛ تطبيق الميدان يذكر البنود الناقصة.','يُغيَّر من الإعدادات ← السحابة ← «📷 صور أوامر العمل» ← «نتيجة البنود عند تم الإجراء»: إلزامية (الافتراضي) أو اختيارية (تنبيه فقط).']},
 {v:'V298',d:'2026-11-03',t:'المشرف يعدّل تقريره قبل الاعتماد ويطلب التعديل بعده',i:['في تطبيق الميدان: الأمر «بانتظار الاعتماد» عليه زر «✏️ تعديل قبل الاعتماد» يعيده للمشرف ليعدّل البنود والصور ثم يبلّغ «تم الإجراء» من جديد.','بعد الاعتماد: «✏️ طلب تعديل بعد الاعتماد» مع السبب؛ يوافق مهندس المدرسة أو منشئ الأمر أو من هو أعلى فيُعاد فتح الأمر للمشرف.','في المنصة: الطلب يظهر في تفاصيل الأمر مع ✅ / ⛔، وزر «✏️ طلبات تعديل الأوامر» في صفحة أوامر العمل، وإشعار للمهندس وللمشرف بالقرار.','الأمر الداخل في مستخلص مقاول لا يُعاد فتحه.']},
 {v:'V297',d:'2026-11-03',t:'تقرير أمر الصيانة الوقائية بملف الاستشاري، وشعارات المالك والاستشاري والمقاول',i:['زر «⬇️ تقرير الاستشاري (وقائي)» في تفاصيل أمر الصيانة الوقائية و«⬇️ تقارير الاستشاري (وقائي)» في رأس الحملة: ملف Excel بنموذج الاستشاري — بيانات الأمر، المهام وحالتها والملاحظات، وصورتان قبل وصورتان بعد لكل بند.','أمر «الصيانة الوقائية الشاملة» يُقسَّم في الملف إلى تقرير لكل نظام (20 تقريراً) كما في نموذج الاستشاري.','«🖼️ شعارات ملفات Excel» في الإعدادات ← السحابة: شعار المالك والاستشاري والمقاول، لكل منها شعار النموذج أو صورة من اختيارك أو بدون؛ شعار المالك يظهر أيضاً في نموذج FCI.']},
@@ -42397,7 +42398,7 @@ function print(R){const w=window.open('','_blank');if(!w){toast('اسمح بال
  w.document.write(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>خطة الصيانة الوقائية ${ST.m}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:16px;color:#0f172a}h1{font-size:18px;margin:0}p{margin:4px 0 10px;color:#475569}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:right}th{background:#eef2ff}@page{size:A4 landscape;margin:10mm}</style></head><body>
   <h1>🗓️ خطة الصيانة الوقائية — ${esc(monLabel(ST.m))}</h1><p>${esc(tn)}${ST.sup?' • المشرف: '+esc(ST.sup):''}${ST.eng?' • المهندس: '+esc(ST.eng):''} • ${fmt(R.length)} زيارة</p>
   <table><thead><tr>${Object.keys(rowX(R[0]||{w:{},d:ST.m+'-01',s:'plan',sup:'',eng:''})).map(k=>`<th>${k}</th>`).join('')}</tr></thead><tbody>${R.map(r=>`<tr>${Object.values(rowX(r)).map(v=>`<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>
-  <script>setTimeout(()=>print(),300)<\/script></body></html>`);w.document.close()}
+  ${""}<script>setTimeout(()=>print(),300)<\/script></body></html>`);w.document.close()}
 window.fmV287Plan=async function(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.body.classList.remove('v2-mobile-nav');
  try{window.v2SetActive?.(btn||document.getElementById('v2-nav-fm287-plan'))}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;await render()};
 
