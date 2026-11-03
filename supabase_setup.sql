@@ -12446,3 +12446,85 @@ end $$;
 drop trigger if exists fm_wo_notify_close on public.work_orders;
 create trigger fm_wo_notify_close after update of status on public.work_orders for each row execute function public.fm_wo_notify_close();
 notify pgrst, 'reload schema';
+
+-- ---------- 79) the approved work-order report by e-mail (V290) ----------
+-- The platform builds the report (PDF, + the consultant's Excel for FCI) in the browser and hands it to the Edge Function
+-- fm-mail, which asks fm_mail_begin (with the caller's JWT) who may receive it — only the order's recipients (notify_ext e-mails
+-- + the e-mails of the notify_to accounts) — sends it through the e-mail provider and reports back with fm_mail_end.
+-- fm_settings.mail {enabled, auto, from_name, reply_to} is written by the system admin; the provider key lives only in the
+-- function's secrets (RESEND_API_KEY, MAIL_FROM).
+create table if not exists public.fm_mail_log(
+  id bigserial primary key, wo_id uuid, wo_code text, to_list text[] not null default '{}',
+  status text not null default 'sending' check (status in ('sending','sent','failed')),
+  err text, ref text, test boolean not null default false,
+  by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(), done_at timestamptz);
+alter table public.fm_mail_log enable row level security;
+revoke all on public.fm_mail_log from anon, authenticated;
+create index if not exists fm_mail_log_wo on public.fm_mail_log(wo_id, at desc);
+
+create or replace function public.fm_mail_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce((select value from public.fm_settings where key = 'mail'), '{}'::jsonb)
+$$;
+
+create or replace function public.fm_mail_begin(p_wo uuid, p_test boolean default false) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_me uuid := auth.uid(); v_p public.profiles; v_w public.work_orders; v_cfg jsonb := public.fm_mail_cfg();
+        v_to text[]; v_id bigint; v_n int;
+begin
+  if v_me is null then raise exception 'not allowed'; end if;
+  select * into v_p from public.profiles where id = v_me;
+  if v_p.id is null or coalesce(v_p.active, true) = false or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  select count(*) into v_n from public.fm_mail_log where by_id = v_me and at > now() - interval '1 day';
+  if v_n >= 200 then raise exception 'too many today'; end if;
+  if coalesce(p_test, false) then
+    if public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+    if coalesce(trim(v_p.email), '') = '' then raise exception 'no recipients'; end if;
+    insert into public.fm_mail_log(to_list, test, by_name) values (array[lower(trim(v_p.email))], true, v_p.full_name) returning id into v_id;
+    return jsonb_build_object('id', v_id, 'to', to_jsonb(array[lower(trim(v_p.email))]), 'test', true, 'cfg', v_cfg);
+  end if;
+  if coalesce((v_cfg->>'enabled')::boolean, false) = false then raise exception 'mail disabled'; end if;
+  select * into v_w from public.work_orders where id = p_wo;
+  if v_w.id is null then raise exception 'not found'; end if;
+  if not (public.fm_role() = 'admin' or coalesce(v_w.approver = v_me, false) or coalesce(public.fm_wo_mgr(v_w.id), false)) then raise exception 'not allowed'; end if; -- coalesce: a NULL approver must not pass
+  if v_w.status <> 'closed' then raise exception 'not approved'; end if;
+  select count(*) into v_n from public.fm_mail_log where wo_id = v_w.id and not test and at > now() - interval '1 day';
+  if v_n >= 5 then raise exception 'too many today'; end if;
+  select array_agg(distinct e) into v_to from (
+    select lower(trim(x->>'email')) e from jsonb_array_elements(case when jsonb_typeof(v_w.notify_ext) = 'array' then v_w.notify_ext else '[]'::jsonb end) x
+    union select lower(trim(pr.email)) from public.profiles pr where pr.id = any(coalesce(v_w.notify_to, '{}'::uuid[])) and coalesce(pr.active, true)
+  ) s where e ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$';
+  if v_to is null or cardinality(v_to) = 0 then raise exception 'no recipients'; end if;
+  insert into public.fm_mail_log(wo_id, wo_code, to_list, by_name) values (v_w.id, v_w.code, v_to, v_p.full_name) returning id into v_id;
+  return jsonb_build_object('id', v_id, 'to', to_jsonb(v_to), 'code', v_w.code, 'title', v_w.title, 'school', v_w.school,
+    'closed_at', v_w.closed_at, 'approver', coalesce(v_w.approver_name, ''), 'assignee', coalesce(v_w.assignee_name, ''), 'cfg', v_cfg);
+end $$;
+
+create or replace function public.fm_mail_end(p_id bigint, p_ok boolean, p_err text default null, p_ref text default null) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  update public.fm_mail_log set status = case when p_ok then 'sent' else 'failed' end, err = left(p_err, 500), ref = left(p_ref, 200), done_at = now()
+   where id = p_id and by_id = auth.uid() and status = 'sending';
+  return found;
+end $$;
+
+create or replace function public.fm_mail_list(p_wo uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v_w public.work_orders;
+begin
+  select * into v_w from public.work_orders where id = p_wo;
+  if v_w.id is null or not (public.fm_role() = 'admin' or coalesce(v_w.approver = auth.uid(), false) or coalesce(public.fm_wo_mgr(v_w.id), false)) then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('to', to_list, 'status', status, 'err', err, 'at', at, 'by', by_name) order by at desc)
+    from (select * from public.fm_mail_log where wo_id = p_wo and not test order by at desc limit 10) l), '[]'::jsonb);
+end $$;
+
+create or replace function public.fm_mail_status() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  return jsonb_build_object('cfg', public.fm_mail_cfg(),
+    'sent30', (select count(*) from public.fm_mail_log where status = 'sent' and at > now() - interval '30 days'),
+    'failed30', (select count(*) from public.fm_mail_log where status = 'failed' and at > now() - interval '30 days'),
+    'last', (select jsonb_build_object('status', status, 'err', err, 'at', at, 'test', test) from public.fm_mail_log order by at desc limit 1));
+end $$;
+
+revoke all on function public.fm_mail_begin(uuid, boolean), public.fm_mail_end(bigint, boolean, text, text), public.fm_mail_list(uuid), public.fm_mail_status(), public.fm_mail_cfg() from public, anon;
+grant execute on function public.fm_mail_begin(uuid, boolean), public.fm_mail_end(bigint, boolean, text, text), public.fm_mail_list(uuid), public.fm_mail_status() to authenticated;
+notify pgrst, 'reload schema';
