@@ -12528,3 +12528,205 @@ end $$;
 revoke all on function public.fm_mail_begin(uuid, boolean), public.fm_mail_end(bigint, boolean, text, text), public.fm_mail_list(uuid), public.fm_mail_status(), public.fm_mail_cfg() from public, anon;
 grant execute on function public.fm_mail_begin(uuid, boolean), public.fm_mail_end(bigint, boolean, text, text), public.fm_mail_list(uuid), public.fm_mail_status() to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 80) preventive visits: the order is accepted only from its visit day (V294) ----------
+-- work_orders.visit_on = the planned visit day. The monthly plan upload (V287) writes «📅 زيارة الخطة: YYYY-MM-DD» at the start of
+-- the description; a trigger copies that date into visit_on for new orders, and existing orders are filled once below.
+-- The assignee may see the order before that day but may not accept / start / finish it (fm_settings.wo_visit.enabled, default true).
+alter table public.work_orders add column if not exists visit_on date;
+
+create or replace function public.fm_wo_visit_from(p_desc text)
+returns date language plpgsql immutable as $$
+declare m text;
+begin
+  m := substring(coalesce(p_desc, '') from '📅 زيارة الخطة: ([0-9]{4}-[0-9]{2}-[0-9]{2})');
+  if m is null then return null; end if;
+  return m::date;
+exception when others then return null;
+end $$;
+
+create or replace function public.fm_wo_visit_fill()
+returns trigger language plpgsql as $$
+begin
+  if new.visit_on is null and new.type = 'preventive' then new.visit_on := public.fm_wo_visit_from(new.description); end if;
+  return new;
+end $$;
+drop trigger if exists fm_wo_visit_fill on public.work_orders;
+create trigger fm_wo_visit_fill before insert on public.work_orders for each row execute function public.fm_wo_visit_fill();
+
+do $do$ begin
+  update public.work_orders set visit_on = public.fm_wo_visit_from(description)
+   where visit_on is null and type = 'preventive' and description like '%📅 زيارة الخطة:%';
+exception when others then raise notice 'visit_on backfill skipped: %', sqlerrm;
+end $do$;
+
+create or replace function public.fm_wo_visit_on()
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare v boolean;
+begin
+  select (value->>'enabled')::boolean into v from public.fm_settings where key = 'wo_visit';
+  return coalesce(v, true);
+exception when others then return true;
+end $$;
+
+create or replace function public.fm_wo_visit_guard()
+returns trigger language plpgsql as $$
+begin
+  if new.visit_on is null or old.status is distinct from 'assigned' then return new; end if;
+  if new.status not in ('accepted', 'in_progress', 'done') then return new; end if;
+  if new.visit_on > (now() at time zone 'Asia/Riyadh')::date and public.fm_wo_visit_on() then
+    raise exception 'visit not due: %', to_char(new.visit_on, 'YYYY-MM-DD');
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_wo_visit_guard on public.work_orders;
+create trigger fm_wo_visit_guard before update of status on public.work_orders for each row execute function public.fm_wo_visit_guard();
+
+-- move the visit day of open orders (the creator side: fm_wo_mgr); null clears it
+create or replace function public.fm_wo_visit_set(p_ids uuid[], p_on date, p_note text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare i uuid; w public.work_orders; me public.profiles; nm text; out jsonb := '[]'::jsonb;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not coalesce(me.active, false) then raise exception 'not allowed'; end if;
+  if coalesce(cardinality(p_ids), 0) = 0 or cardinality(p_ids) > 500 then raise exception 'bad ids'; end if;
+  nm := coalesce(me.full_name, me.email);
+  foreach i in array p_ids loop
+    begin
+      select * into w from public.work_orders where id = i;
+      if w.id is null then raise exception 'not found'; end if;
+      if not public.fm_wo_mgr(i) then raise exception 'not allowed'; end if;
+      if w.status in ('closed', 'cancelled', 'rejected') then raise exception 'order closed'; end if;
+      if w.visit_on is distinct from p_on then
+        update public.work_orders set visit_on = p_on, updated_at = now() where id = i;
+        insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+        values (i, me.id, nm, 'note', w.status, '🗓️ موعد الزيارة: ' || coalesce(to_char(p_on, 'YYYY-MM-DD'), 'بدون') ||
+               coalesce(' (كان ' || to_char(w.visit_on, 'YYYY-MM-DD') || ')', '') || coalesce(' — ' || nullif(btrim(p_note), ''), ''));
+      end if;
+      out := out || jsonb_build_object('id', i, 'ok', true);
+    exception when others then
+      out := out || jsonb_build_object('id', i, 'ok', false, 'err', sqlerrm);
+    end;
+  end loop;
+  return out;
+end $$;
+
+revoke all on function public.fm_wo_visit_set(uuid[], date, text), public.fm_wo_visit_on() from public, anon;
+grant execute on function public.fm_wo_visit_set(uuid[], date, text), public.fm_wo_visit_on() to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 81) the supervisor asks to open a preventive visit earlier; the engineer or someone above approves (V295) ----------
+create table if not exists public.wo_visit_requests (
+  id uuid primary key default gen_random_uuid(),
+  wo_id uuid not null references public.work_orders(id) on delete cascade,
+  wo_code text, school text,
+  by_id uuid not null, by_name text,
+  old_on date, want_on date not null,
+  reason text not null,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'cancelled')),
+  dec_by uuid, dec_name text, dec_at timestamptz, dec_note text,
+  at timestamptz not null default now()
+);
+create unique index if not exists wo_visit_requests_one on public.wo_visit_requests (wo_id) where status = 'pending';
+create index if not exists wo_visit_requests_by on public.wo_visit_requests (by_id, at desc);
+alter table public.wo_visit_requests enable row level security;
+revoke all on public.wo_visit_requests from anon, authenticated;
+
+-- who may decide: the order's approver (the school's engineer), the creator side (fm_wo_mgr), anyone above the approver or above
+-- the assignee in the reporting line (deputies included), the system admin — never the requester himself
+create or replace function public.fm_wo_visit_can(p_wo uuid)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare w public.work_orders; me uuid := auth.uid();
+begin
+  select * into w from public.work_orders where id = p_wo;
+  if w.id is null or me is null then return false; end if;
+  if not exists (select 1 from public.profiles where id = me and active) then return false; end if;
+  return coalesce(w.approver = me, false) or public.fm_wo_mgr(p_wo)
+      or (w.approver is not null and public.fm_is_under(w.approver, me))
+      or (w.assignee is not null and w.assignee <> me and public.fm_is_under(w.assignee, me))
+      or exists (select 1 from public.profiles where id = me and role = 'admin');
+end $$;
+
+create or replace function public.fm_wo_visit_req(p_wo uuid, p_on date, p_reason text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; me public.profiles; r public.wo_visit_requests; t date := (now() at time zone 'Asia/Riyadh')::date; u uuid;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not coalesce(me.active, false) then raise exception 'not allowed'; end if;
+  select * into w from public.work_orders where id = p_wo for update;
+  if w.id is null then raise exception 'not found'; end if;
+  if w.assignee is distinct from me.id then raise exception 'not allowed'; end if;
+  if w.status <> 'assigned' or w.visit_on is null or w.visit_on <= t then raise exception 'visit already open'; end if;
+  if length(btrim(coalesce(p_reason, ''))) < 3 then raise exception 'reason required'; end if;
+  p_on := coalesce(p_on, t);
+  if p_on < t or p_on >= w.visit_on then raise exception 'bad date'; end if;
+  if exists (select 1 from public.wo_visit_requests where wo_id = p_wo and status = 'pending') then raise exception 'request pending'; end if;
+  if (select count(*) from public.wo_visit_requests where by_id = me.id and at > now() - interval '1 day') >= 30 then raise exception 'too many today'; end if;
+  insert into public.wo_visit_requests (wo_id, wo_code, school, by_id, by_name, old_on, want_on, reason)
+  values (p_wo, w.code, w.school, me.id, coalesce(me.full_name, me.email), w.visit_on, p_on, left(btrim(p_reason), 500))
+  returning * into r;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (p_wo, me.id, r.by_name, 'note', w.status, '📨 طلب فتح الزيارة يوم ' || to_char(p_on, 'YYYY-MM-DD') || ' بدل ' || to_char(w.visit_on, 'YYYY-MM-DD') || ' — ' || r.reason);
+  begin
+    for u in select distinct x from unnest(array[w.approver, w.created_by, me.reports_to]) x where x is not null and x <> me.id loop
+      perform public.fm_push_add(u, 'wo_visit', '📨 طلب فتح زيارة مبكراً', r.by_name || ' — ' || coalesce(w.school, w.code) || ': يوم ' ||
+        to_char(p_on, 'YYYY-MM-DD') || ' بدل ' || to_char(w.visit_on, 'YYYY-MM-DD'), 'wo=' || w.id, 'wvr-' || r.id);
+    end loop;
+  exception when others then null; end;
+  return to_jsonb(r);
+end $$;
+
+create or replace function public.fm_wo_visit_act(p_id uuid, p_ok boolean, p_note text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.wo_visit_requests; w public.work_orders; me public.profiles; t date := (now() at time zone 'Asia/Riyadh')::date;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not coalesce(me.active, false) then raise exception 'not allowed'; end if;
+  select * into r from public.wo_visit_requests where id = p_id for update;
+  if r.id is null then raise exception 'not found'; end if;
+  if r.status <> 'pending' then raise exception 'already decided'; end if;
+  if r.by_id = me.id then
+    if p_ok is null then   -- the requester withdraws his own request
+      update public.wo_visit_requests set status = 'cancelled', dec_by = me.id, dec_name = coalesce(me.full_name, me.email), dec_at = now() where id = p_id returning * into r;
+      return to_jsonb(r);
+    end if;
+    raise exception 'not allowed';
+  end if;
+  if not public.fm_wo_visit_can(r.wo_id) then raise exception 'not allowed'; end if;
+  select * into w from public.work_orders where id = r.wo_id for update;
+  if not coalesce(p_ok, false) and length(btrim(coalesce(p_note, ''))) < 3 then raise exception 'note required'; end if;
+  if coalesce(p_ok, false) then
+    if w.status in ('closed', 'cancelled', 'rejected') then raise exception 'order closed'; end if;
+    update public.work_orders set visit_on = greatest(r.want_on, t), updated_at = now() where id = w.id;
+  end if;
+  update public.wo_visit_requests set status = case when p_ok then 'approved' else 'rejected' end,
+         dec_by = me.id, dec_name = coalesce(me.full_name, me.email), dec_at = now(), dec_note = nullif(btrim(coalesce(p_note, '')), '')
+   where id = p_id returning * into r;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (w.id, me.id, r.dec_name, 'note', w.status, case when p_ok then '✅ وافق على فتح الزيارة يوم ' || to_char(greatest(r.want_on, t), 'YYYY-MM-DD')
+          else '⛔ رفض طلب فتح الزيارة مبكراً' end || coalesce(' — ' || r.dec_note, ''));
+  begin
+    perform public.fm_push_add(r.by_id, 'wo_visit', case when p_ok then '✅ فُتحت الزيارة' else '⛔ لم يُوافق على فتح الزيارة' end,
+      coalesce(w.school, w.code) || case when p_ok then ': يمكنك قبول الأمر يوم ' || to_char(greatest(r.want_on, t), 'YYYY-MM-DD') else coalesce(' — ' || r.dec_note, '') end,
+      'wo=' || w.id, 'wvr-' || r.id);
+  exception when others then null; end;
+  return to_jsonb(r);
+end $$;
+
+-- requests the caller sees: his own, and those he may decide (pending first); p_wo narrows to one order
+create or replace function public.fm_wo_visit_reqs(p_wo uuid default null, p_days int default 30)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  if me is null then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(x order by (x->>'status') <> 'pending', x->>'at' desc) from (
+    select to_jsonb(r) || jsonb_build_object('mine', r.by_id = me, 'can', r.status = 'pending' and r.by_id <> me and public.fm_wo_visit_can(r.wo_id)) x
+      from public.wo_visit_requests r
+     where (p_wo is null or r.wo_id = p_wo) and r.at > now() - make_interval(days => greatest(1, least(coalesce(p_days, 30), 365)))
+       and (r.by_id = me or public.fm_wo_visit_can(r.wo_id))
+     order by r.at desc limit 300) q), '[]'::jsonb);
+end $$;
+
+revoke all on function public.fm_wo_visit_can(uuid), public.fm_wo_visit_req(uuid, date, text), public.fm_wo_visit_act(uuid, boolean, text), public.fm_wo_visit_reqs(uuid, int) from public, anon;
+grant execute on function public.fm_wo_visit_can(uuid), public.fm_wo_visit_req(uuid, date, text), public.fm_wo_visit_act(uuid, boolean, text), public.fm_wo_visit_reqs(uuid, int) to authenticated;
+notify pgrst, 'reload schema';
