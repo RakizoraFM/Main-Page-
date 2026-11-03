@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V301">
+<meta name="fm-version" content="V302">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V301',date:'2026-11-03',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V302',date:'2026-11-03',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V302',d:'2026-11-03',t:'صفحة أوامر العمل تظهر فوراً',i:['تُعرض قائمة الأوامر أولاً بدون بنود الفحص (نحو 0.2 ميجابايت بدل 15)، ثم تُستكمل البنود في الخلفية؛ فتح أمر قبل اكتمالها يجلب بنوده فوراً.']},
 {v:'V301',d:'2026-11-03',t:'تسريع تحميل أوامر العمل',i:['قاعدة رؤية أوامر العمل في السيرفر أصبحت تُحسب مرة واحدة لكل طلب بدل كل أمر (القسم 84 من supabase_setup.sql) — كانت قراءة كل الأوامر تتجاوز مهلة السيرفر.','قائمة أوامر العمل تُنزَّل مرة واحدة وتُشارَك بين الصفحات لمدة 20 ثانية، وتُحدَّث فور أي تعديل على الأوامر، وتُقرأ على دفعات.']},
 {v:'V300',d:'2026-11-03',t:'إصلاح إنذار «كود ملصق داخل سكربت»',i:['أُزيل إنذار «وُجد تنسيق/كود ملصق داخل سكربت» في فحص التشغيل: سطر سليم في نافذة طباعة «خطة الوقائية الشهرية» (V287) يبدأ بوسم script فاعتبره الفحص كوداً ملصقاً. لا تغيير في عمل الصفحة.']},
 {v:'V299',d:'2026-11-03',t:'نتيجة كل بند إلزامية قبل «تم الإجراء»',i:['لا يُقبل «تم الإجراء» إلا بعد تسجيل نتيجة لكل بند (سليم / يحتاج إصلاح / تم الإصلاح / لا ينطبق، أو المستوى في نموذج FCI)؛ تطبيق الميدان يذكر البنود الناقصة.','يُغيَّر من الإعدادات ← السحابة ← «📷 صور أوامر العمل» ← «نتيجة البنود عند تم الإجراء»: إلزامية (الافتراضي) أو اختيارية (تنبيه فقط).']},
@@ -30605,7 +30606,15 @@ function navBtn(){if(document.getElementById('v2-nav-fm145-wo'))return;const nav
  b.innerHTML='<i class="fas fa-clipboard-list"></i><span class="v2-nav-label">أوامر العمل</span><span class="fm145-badge" style="display:none"></span>';
  b.addEventListener('click',()=>openPage(b));const a=document.getElementById('v2-nav-actions');if(a)a.after(b);else nav.appendChild(b)}
 function badge(){const b=document.querySelector('#v2-nav-fm145-wo .fm145-badge');if(!b)return;const n=L.filter(needsMe).length;b.textContent=n?fmt(n):'';b.style.display=n?'':'none'}
-async function load(){if(!C.state?.on)return;try{L=await C.api.woList();err=''}catch(e){err=String(e.message||e);L=[]}badge()}
+async function load(){if(!C.state?.on)return;
+ /* V302: draw from the light list first (no checklists), then swap in the full list in the background */
+ const hit=C.api.woListCached&&C.api.woListCached();if(Array.isArray(hit)){L=hit;err='';badge();return}
+ if(C.api.woListLite){let lite=null;try{lite=await C.api.woListLite()}catch(e){}
+  if(Array.isArray(lite)){L=lite;err='';badge();const my=++loadSeq;
+   C.api.woList().then(full=>{if(my!==loadSeq||!Array.isArray(full))return;const keep=new Map(L.map(w=>[w.id,w]));L=full.map(f=>{const o=keep.get(f.id);return o&&!o.__lite?o:f});badge();
+    const p=document.getElementById('fm145-page');if(p&&p.classList.contains('open')&&!document.querySelector('.fm122-dlg-wrap,.fm122-dlg'))render()}).catch(()=>{});return}}
+ try{L=await C.api.woList();err=''}catch(e){err=String(e.message||e);L=[]}badge()}
+let loadSeq=0;
 
 /* ---------- the page ---------- */
 function page(){let p=document.getElementById('fm145-page');if(!p){p=document.createElement('section');p.id='fm145-page';p.className='fm103-page';
@@ -30647,6 +30656,7 @@ function dlg(html,w){const d=document.createElement('div');d.className='fm122-dl
 
 /* ---------- detail + the assigner's actions ---------- */
 async function detail(id){const w=L.find(x=>x.id===id);if(!w)return;
+ if(w.__lite&&C.api.woGet){try{const f=await C.api.woGet(id);if(f){Object.assign(w,f);delete w.__lite}}catch(e){}} /* V302: a light row gets its checklist first */
  const d=dlg('<div class="fm125-src">جارٍ التحميل…</div>');let ev=[],ph=[];try{[ev,ph]=await Promise.all([C.api.woEvents(id),C.api.woPhotos(id)])}catch(e){toast(sqlMsg(e.message),'error')}
  const t=T[w.type]||T.task,isC=w.created_by===me().id||['admin','manager'].includes(me().role),isR=isC||(w.approver&&w.approver===me().id),isA=w.assignee===me().id,cl=Array.isArray(w.checklist)?w.checklist:[];
  const act=(a,l,cls)=>`<button type="button" ${cls?`class="${cls}"`:''} data-act="${a}">${l}</button>`;
@@ -42936,7 +42946,16 @@ function install(){const C=window.FMCloud,A=C&&C.api;if(!A||!A.woList)return;
    const g=gen;run=(async()=>{try{let L;try{L=await fast()}catch(e){if(/schema cache|Could not find/i.test(String(e&&e.message)))L=await base.apply(A,[]);else throw e}
      if(g===gen){cache=L;at=Date.now()}return L}finally{run=null}})();
    return (await run).map(x=>Object.assign({},x))};
-  w.__f301=1;A.woList=w}
+  w.__f301=1;A.woList=w;
+  /* V302: the same rows without the checklist / form (≈ 0.2 MB instead of ≈ 15 MB) so the orders page can draw at once */
+  const LITE='id,code,title,description,type,region,school,priority,due_at,status,ticket_refs,created_by,created_by_name,assignee,assignee_name,created_at,updated_at,accepted_at,done_at,closed_at,batch_id,batch_title,building_id,source_wo,stop_prev,esc_level,esc_to,esc_at,transfer_note,transfer_from,deputy_id,sc_status,sc_at,sc_note,sc_name,approver,approver_name,rv_round,ret_at,ret_ticket,form_vals,notify_to,notify_ext,visit_on';
+  A.woListLite=async function(){if(cache&&Date.now()-at<TTL)return cache.map(x=>Object.assign({},x));
+   const c=C.engClient?await C.engClient():null;if(!c)return null;let out=[];
+   for(let i=0;i<20;i++){const r=await c.from('work_orders').select(LITE).order('updated_at',{ascending:false}).order('id').range(i*1000,i*1000+999);
+    if(r.error)return null;out=out.concat(r.data||[]);if((r.data||[]).length<1000)break}
+   return out.map(x=>Object.assign(x,{__lite:1}))};
+  A.woListCached=()=>cache&&Date.now()-at<TTL?cache.map(x=>Object.assign({},x)):null;
+  A.woGet=async function(id){const c=await C.engClient();const r=await c.from('work_orders').select('*').eq('id',id).maybeSingle();if(r.error)throw r.error;return r.data}}
  for(const k of Object.keys(A)){const f=A[k];if(typeof f!=='function'||f.__f301||!/^wo/.test(k)||RO.test(k))continue;
   /* other layers mark their own wrappers (V290 __f290 on woAct): copy the marks so they do not wrap again */
   const v=async function(){try{return await f.apply(A,arguments)}finally{clear()}};Object.keys(f).forEach(p=>{v[p]=f[p]});v.__f301=1;A[k]=v}}
