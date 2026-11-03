@@ -553,3 +553,7 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## Field F92 — home tiles: small fixes
 - `fmf-91-home`: the «🔔 الإشعارات» tile is hidden while its card says notifications are on (nothing to do); a tile's short status is the text after the first «:» that is not inside a time (`/:(?![\d٠-٩])/` — «بدأ الدوام ٠٧:٥٠ ص» used to show «٥٠ ص»).
+
+## V288 / field F93 / start S14 — signing in with another account after signing out
+- The three `API.signOut()` now try the normal (global) sign-out, fall back to `signOut({scope:'local'})` when it errors or throws, and always remove `localStorage['fm-cloud-auth']`. Before, supabase-js kept the session when the server call failed (network / 5xx), so the device stayed signed in as the previous account.
+- A sign-in or sign-out reloads the page instead of rendering in place: platform login (`C.api.signIn` → `location.reload()`, so V165 `fm-v165-device-owner` stashes the previous account's local data on load), field login / «خروج» / pending «تسجيل الخروج», start.html `signOut`. Many layers keep the signed-in person in their own closures — never switch accounts without a reload.
