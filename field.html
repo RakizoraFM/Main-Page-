@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F103">
+<meta name="fm-version" content="F104">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -1367,6 +1367,11 @@ function woStepNav(w,cl){const f=WO_F(w);if(!f||f.view!=='steps'||!cl.length)ret
    «تم الإجراء» button stay outside #ci-card). The page is kept per order while it re-renders; «عرض الكل» = localStorage f97_all. */
 function f97Pages(card,cl,w){try{card.querySelectorAll('.f97-nav').forEach(x=>x.remove());card.classList.remove('f97-pg');
  const G=[];cl.forEach(x=>{const g=x.g||'';if(!G.includes(g))G.push(g)});if(G.length<2)return;
+ /* F104: handler installed before the «show all» early return (the button did nothing there); F103: the guard mark must not be data-f97 — the card itself then matched the «next» button selector and every tap inside moved a section */
+ card.__f97=[cl,w];if(!card.dataset.f97l){card.dataset.f97l='1';card.addEventListener('click',e=>{const b=e.target.closest('button[data-f97],button[data-f97a],button[data-f97e]');if(!b||!card.contains(b))return;e.preventDefault();
+  if(b.dataset.f97a!==undefined){try{localStorage.setItem('f97_all',b.dataset.f97a)}catch(er){}f97Pages(card,card.__f97[0],card.__f97[1]);return}
+  if(b.dataset.f97e!==undefined){(document.querySelector('.f80-q')||card.nextElementSibling||card).scrollIntoView({block:'start',behavior:'smooth'});return}
+  D.f97=(D.f97||0)+ +b.dataset.f97;f97Pages(card,card.__f97[0],card.__f97[1]);card.scrollIntoView({block:'start',behavior:'smooth'})})}
  let all=false;try{all=localStorage.getItem('f97_all')==='1'}catch(e){}
  const nav=pos=>{const d=document.createElement('div');d.className='f97-nav'+(pos?' bot':'');return d};
  if(all){const t=nav(0);t.innerHTML='<button type="button" data-f97a="0">📄 عرض كل قسم في صفحة</button>';card.querySelector('.ci,.cisec')?.before(t);return}
@@ -1380,11 +1385,7 @@ function f97Pages(card,cl,w){try{card.querySelectorAll('.f97-nav').forEach(x=>x.
   <div class="b"><button type="button" data-f97="-1" ${n?'':'disabled'}>→ السابق</button>${last?'<button type="button" class="end" data-f97e>✅ آخر قسم — للأسفل</button>':'<button type="button" class="nx" data-f97="1">التالي ←</button>'}</div>
   ${pos?'':'<button type="button" class="all" data-f97a="1">📄 عرض كل البنود في صفحة واحدة</button>'}`;return d};
  card.querySelector('.ci.f97-on,.cisec.f97-on')?.before(bar(0));card.appendChild(bar(1));
- /* F103: the guard mark must not be data-f97 — the card itself then matched the «next» button selector and every tap inside moved a section */
- if(!card.dataset.f97l){card.dataset.f97l='1';card.addEventListener('click',e=>{const b=e.target.closest('button[data-f97],button[data-f97a],button[data-f97e]');if(!b||!card.contains(b))return;e.preventDefault();
-  if(b.dataset.f97a!==undefined){try{localStorage.setItem('f97_all',b.dataset.f97a)}catch(er){}f97Pages(card,cl,w);return}
-  if(b.dataset.f97e!==undefined){(document.querySelector('.f80-q')||card.nextElementSibling||card).scrollIntoView({block:'start',behavior:'smooth'});return}
-  D.f97=(D.f97||0)+ +b.dataset.f97;f97Pages(card,cl,w);card.scrollIntoView({block:'start',behavior:'smooth'})})}}catch(e){console.warn('F97',e)}}
+}catch(e){console.warn('F97',e)}}
 function f85Step(card,cl){if(!card)return;const n=Math.max(0,Math.min(cl.length-1,D.st85||0));D.st85=n;card.querySelectorAll('.ci[data-row]').forEach(r=>r.classList.toggle('f85-on',+r.dataset.row===n));
  const t=card.querySelector('[data-st85n]');if(t)t.textContent=`البند ${fmt(n+1)} من ${fmt(cl.length)}${cl[n]&&cl[n].g?' • '+cl[n].g:''}`;const pg=card.querySelector('[data-st85p]');if(pg)pg.style.width=Math.round(cl.filter(ciRes).length/cl.length*100)+'%'}
 const ciNum=v=>+String(v??'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace('٫','.').replace(/[^\d.]/g,'')||0;
