@@ -12859,3 +12859,37 @@ end $$;
 revoke all on function public.fm_wo_billed(uuid), public.fm_wo_edit(uuid, text), public.fm_wo_edit_req(uuid, text), public.fm_wo_edit_act(uuid, boolean, text), public.fm_wo_edit_reqs(uuid, int) from public, anon;
 grant execute on function public.fm_wo_edit(uuid, text), public.fm_wo_edit_req(uuid, text), public.fm_wo_edit_act(uuid, boolean, text), public.fm_wo_edit_reqs(uuid, int) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 83) every checklist item needs a result before «done» (V299) ----------
+-- fm_settings.wo_photos.items = 'required' (default) | 'optional'. Trigger fm_wo_items_check (before update of status → done):
+-- a plain or graded item without a result, or a required text item without a value, refuses «done» with
+-- «item result required: n» (1-based). Quantity items are optional; orders whose designed form has no result buttons
+-- (form.res = false) are left to the form check (section 77).
+update public.fm_settings set value = value || '{"items": "required"}'::jsonb where key = 'wo_photos' and not (value ? 'items');
+create or replace function public.fm_wo_items_check()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare it jsonb; i int;
+begin
+  if new.status <> 'done' or old.status = 'done' then return new; end if;
+  if coalesce((select value->>'items' from public.fm_settings where key = 'wo_photos'), 'required') = 'optional' then return new; end if;
+  if jsonb_typeof(new.form) = 'object' and new.form->>'res' = 'false' then return new; end if;
+  for it, i in select e, o::int from jsonb_array_elements(case when jsonb_typeof(new.checklist) = 'array' then new.checklist else '[]'::jsonb end) with ordinality as t(e, o) loop
+    if jsonb_typeof(it) <> 'object' then continue; end if;
+    if it->>'k' = 'qty' then continue; end if;
+    if it->>'k' = 'text' then
+      if coalesce((it->>'req')::boolean, false) and btrim(coalesce(it->>'v', '')) = '' then raise exception 'item result required: %', i; end if;
+      continue;
+    end if;
+    if it->>'k' = 'grade' then
+      if it->'lv' is null or jsonb_typeof(it->'lv') = 'null' then raise exception 'item result required: %', i; end if;
+      continue;
+    end if;
+    if coalesce(it->>'res', '') not in ('ok', 'fix', 'fixed', 'na') and not coalesce((it->>'done')::boolean, false) then
+      raise exception 'item result required: %', i; end if;
+  end loop;
+  return new;
+exception when invalid_text_representation then return new;
+end $$;
+drop trigger if exists fm_wo_items_check on public.work_orders;
+create trigger fm_wo_items_check before update of status on public.work_orders for each row execute function public.fm_wo_items_check();
+notify pgrst, 'reload schema';
