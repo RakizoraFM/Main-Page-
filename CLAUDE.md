@@ -619,3 +619,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V302 — the orders page draws at once
 - `fm-v301-wo-cache` adds `C.api.woListLite()` (every column except `checklist` / `form`, rows marked `__lite`; ≈ 1.2 MB / 1.3 s for 807 orders on the real project instead of ≈ 15 MB), `C.api.woListCached()` (the fresh full cache or null) and `C.api.woGet(id)` (one full row). V145 `load()`: the cached full list if fresh, else the light list (draw now), then `woList()` in the background replaces it and re-renders when no order dialog is open (`loadSeq` drops a stale reply). V145 `detail(id)` fetches the full row first when the row is light. Other layers still call `woList()` (full, shared).
+
+## Field F101 — an item stays on its page after a result / photo / material
+- The `woDetail` `redraw(i)` replaced the row with `outerHTML`, so the new row lost the F97 `f97-on` (and F85 `f85-on`) class and was hidden by `#ci-card.f97-pg` the moment a result was chosen — it looked like the page jumped to the next section, and the materials / photo boxes of a «تم الإصلاح» item could not be used. `redraw` now copies those classes to the new row. When a layer replaces a checklist row, keep the page marks.

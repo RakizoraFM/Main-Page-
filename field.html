@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F100">
+<meta name="fm-version" content="F101">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -1173,7 +1173,9 @@ async function woDetail(id,keep){
  /* F9: each item gets a result — ok / fix (needs repair) / fixed (repaired on the spot) / na — with a note, the materials used
     (when fixed) and its own before / after photos; saved after a short pause. One delegated handler for the whole card. */
  let clT=null;const clSave=()=>{clearTimeout(clT);clT=setTimeout(async()=>{try{await woSend({k:'woact',id,a:'checklist',data:JSON.parse(JSON.stringify(cl))});w.checklist=cl}catch(e){toast(woSql(e.message),'e')}},600)};
- const card=$('#ci-card'),redraw=i=>{const row=card.querySelector(`[data-row="${i}"]`);if(row)row.outerHTML=ciRow(cl[i],i,itemsOn,openPh);
+ const card=$('#ci-card'),redraw=i=>{const row=card.querySelector(`[data-row="${i}"]`);if(row){
+  /* F101: keep the page marks (F97 section page / F85 one item) on the redrawn row — without them it was hidden right after a result / photo / material */
+  const keep=['f97-on','f85-on'].filter(c=>row.classList.contains(c));row.outerHTML=ciRow(cl[i],i,itemsOn,openPh);const nr=card.querySelector(`[data-row="${i}"]`);if(nr)keep.forEach(c=>nr.classList.add(c))}
   const n=$('#ci-n');if(n)n.textContent=`(${fmt(cl.filter(x=>ciNeed(x)&&ciRes(x)).length)} من ${fmt(cl.filter(ciNeed).length)})`;const sm=card.querySelector('.cisum');if(sm)sm.outerHTML=ciSum(cl);
   card.querySelectorAll('.cisec[data-g]').forEach(h=>{const L=cl.filter(y=>y.g===h.dataset.g&&ciNeed(y));h.querySelector('span').textContent=`${fmt(L.filter(ciRes).length)} / ${fmt(L.length)}`})};
  if(card&&itemsOn){
