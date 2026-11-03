@@ -625,3 +625,7 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V303 — calmer work-orders toolbar
 - `fm-v303-wo-toolbar` (CSS only): `#fm145-page .fm103-actions .extra` is one light panel (flex ≥ 761 px; the V214 phone grid stays); every button there is white with a grey border (several layers copied the primary class), `[data-a=new]` stays solid blue, `[data-a=grp]` / `[data-a=x287]` light blue, count badges `b` red.
+
+## Field F102 — tools box folded, items numbered by section
+- `fmf-46-tools` `deco()`: the «🛠️ الأدوات المطلوبة لهذا الأمر» box is a closed `details.f46-tb` with a one-line summary (count, ✅ in custody • ⚠️ not in custody); the list opens on a tap and stays open while the needed tools do not change.
+- Main script `ciNo(i)`: with two or more sections a plain item shows «section.item» in `.no` (section number from the leading digits of `g` — «04 — …» → 4 — else the section's order; item = its place among the section's plain items). One section keeps 1, 2, 3 …

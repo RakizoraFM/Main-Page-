@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F101">
+<meta name="fm-version" content="F102">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -1392,6 +1392,10 @@ function ciIa(i){const n=(D.curPh||[]).filter(p=>p.item===i).length;return `<spa
 function ciPhotos(i,on,need){const P=(D.curPh||[]).filter(p=>p.item===i),row=(k,l,req)=>{const L=P.filter(p=>p.kind===k);if(k==='invoice'&&!req&&!L.length)return '';
   return `<div class="cph"><span class="${req&&!L.length?'req':''}">${l}${req?' *':''}</span>${L.map(p=>`<a href="${esc(p.d)}" target="_blank" rel="noopener"><img src="${esc(p.d)}" alt=""></a>`).join('')}${on?`<label class="plus">+<input type="file" accept="image/*" capture="environment" multiple data-ip="${i}" data-k="${k}" hidden></label>`:''}${!on&&!L.length?'<i class="muted">—</i>':''}</div>`};
  return row('before','📷 قبل',need.b)+row('after','✅ بعد',need.a)+row('invoice','🧾 فاتورة',need.inv)}
+/* F102: with two or more sections an item is numbered «section.item» (04 — … → 4.1, 4.2 …; a section without a number uses its order) */
+function ciNo(i){const cl=(D.curW&&Array.isArray(D.curW.checklist)&&D.curW.checklist)||[],x=cl[i];if(!x)return i+1;
+ const G=[];cl.forEach(y=>{const g=y.g||'';if(!G.includes(g))G.push(g)});if(G.length<2)return i+1;
+ const g=x.g||'',m=String(g).match(/^\s*0*(\d+)/),sec=m?+m[1]:G.indexOf(g)+1;let k=0;for(let j=0;j<=i;j++)if((cl[j].g||'')===g&&!cl[j].k)k++;return sec+'.'+k}
 function ciRow(x,i,on,open){if(x.k)return ciRich(x,i,on,open);const r=ciRes(x),b=([k,l])=>`<button type="button" class="${k} ${r===k?'on':''}" data-ci="${i}" data-r="${k}" ${on?'':'disabled'}>${l}</button>`;
  const P=(D.curPh||[]).filter(p=>p.item===i),buy=r==='fixed'&&(x.materials||[]).some(m=>m.src==='buy'),need={b:r==='fix'||r==='fixed'||(r==='ok'&&WO_BEFORE_ALL()),a:WO_AFTER()&&(r==='ok'||r==='fixed'),inv:buy},showPh=!!F_PH()||!WO_HO(D.curW)||need.b||P.length||(open&&open.has(i)),F85=WO_F();
  const M=D.mats||[],cats=[...new Set(M.map(c=>c.category||'أخرى'))],dat=(m,j,f)=>`data-mi="${i}" data-mj="${j}" data-mf="${f}"`;
@@ -1402,7 +1406,7 @@ function ciRow(x,i,on,open){if(x.k)return ciRich(x,i,on,open);const r=ciRes(x),b
  const mats=r==='fixed'?`<div class="mat"><div class="mh">🧰 المواد المستخدمة *</div>${(x.materials||[]).map((m,j)=>on?`<div class="mr">${pickM(m,j)}<input class="in" ${dat(m,j,'q')} inputmode="decimal" placeholder="الكمية" value="${esc(m.q||'')}">${cat(m)?`<span class="u">${esc(m.u||'')}</span>`:`<input class="in" ${dat(m,j,'u')} placeholder="الوحدة" value="${esc(m.u||'')}">`}<select class="in" ${dat(m,j,'src')}>${Object.entries(MAT_SRC).map(([k,l])=>`<option value="${k}" ${m.src===k?'selected':''}>${l}</option>`).join('')}</select>${m.src==='buy'?`<input class="in" ${dat(m,j,'price')} inputmode="decimal" placeholder="سعر الوحدة *" value="${esc(m.price||'')}">`:`<span class="u">${ciNum(m.price)?ciNum(m.price)+' ر.س':''}</span>`}<button type="button" class="del" data-mi="${i}" data-mdel="${j}">🗑</button></div>`
    :`<div class="mrv">• ${esc(m.n)} — ${esc(m.q)} ${esc(m.u||'')} <span class="muted">(${MAT_SRC[m.src]||'—'}${cost(m)?' • '+fmt(cost(m))+' ر.س':''})</span></div>`).join('')}${on?`<button type="button" class="madd" data-madd="${i}">➕ إضافة مادة</button>`:''}${buy?'<div class="muted" style="margin-top:4px">🧾 المواد المشتراة تحتاج سعر الوحدة وصورة الفاتورة.</div>':''}</div>`:'';
  const note=['fix','fixed'].includes(r)||S(x.note)||NOTE80.has(i)?(on?`<input class="in" data-cn="${i}" placeholder="${r==='fix'?'صف المشكلة (مثال: فيش مكسور في فصل 3)':r==='fixed'?'ما الذي تم إصلاحه؟':'ملاحظة على البند (اختياري)'}" value="${esc(x.note||'')}">`:x.note?`<div class="muted" style="margin-top:4px">📝 ${esc(x.note)}</div>`:''):'';
- return `<div class="ci ${r==='fix'?'fixed':r==='fixed'?'rep':''}${F85&&F85.view==='steps'&&(D.st85||0)===i?' f85-on':''}" data-row="${i}"><div class="t">${on?ciIa(i):''}<span class="no">${i+1}</span> ${esc(x.t)}${x.tool?`<small>🔧 ${esc(x.tool)}</small>`:''}</div>
+ return `<div class="ci ${r==='fix'?'fixed':r==='fixed'?'rep':''}${F85&&F85.view==='steps'&&(D.st85||0)===i?' f85-on':''}" data-row="${i}"><div class="t">${on?ciIa(i):''}<span class="no">${ciNo(i)}</span> ${esc(x.t)}${x.tool?`<small>🔧 ${esc(x.tool)}</small>`:''}</div>
   ${F85&&F85.res===false?'':`<div class="seg">${CI_R.map(b).join('')}</div>`}${note}${ciForm(x,i,on)}${mats}${x.rwo?`<div class="muted" style="margin-top:4px;color:var(--pri)">🔧 صدر لها أمر إصلاح ${esc(x.rwo)}</div>`:''}${x.src_item?`<div class="muted" style="margin-top:2px">من البند ${fmt(x.src_item)} في أمر الفحص</div>`:''}
   ${showPh?(F_PH()?ciSlots(i,on,r,buy):ciPhotos(i,on,need)):''}</div>`}
 function ciSum(cl){const c={ok:0,fix:0,fixed:0,na:0};cl.forEach(x=>{const r=ciRes(x);if(r)c[r]++});return `<div class="cisum"><span>✅ ${fmt(c.ok)}</span><span>⚠️ ${fmt(c.fix)}</span><span>🔧 ${fmt(c.fixed)}</span><span>➖ ${fmt(c.na)}</span></div>`}
@@ -2504,7 +2508,7 @@ window.fmfQrScan=title=>new Promise(done=>{document.getElementById('fm219-scan')
 #f46-rp h3{margin:0 0 6px}#f46-rp label{display:block;font-weight:800;font-size:13px;margin-top:8px}#f46-rp select,#f46-rp textarea{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:10px;font:600 14px Cairo,Tahoma,sans-serif;box-sizing:border-box}
 #f46-rp .cam{display:grid;place-items:center;border:2px dashed #cbd5e1;border-radius:12px;min-height:90px;margin-top:6px;cursor:pointer;color:#475569;font-weight:800}#f46-rp .cam img{max-width:100%;max-height:200px;border-radius:10px}
 #f46-rp .bt2{display:flex;gap:8px;margin-top:12px}#f46-rp .bt2 button{flex:1;padding:11px;border-radius:12px;border:1px solid #cbd5e1;background:#f8fafc;font:800 14px Cairo,Tahoma,sans-serif}#f46-rp .bt2 .p{background:#b91c1c;color:#fff;border-color:#b91c1c}
-.f46-tb{margin:10px 0;border:1px solid #c7d2fe;background:#eef2ff;border-radius:14px;padding:10px 12px;font-size:13.5px;color:#1e293b}.f46-tb b{display:block;margin-bottom:4px}.f46-tb div{margin:3px 0}.f46-tb .ok{color:#166534}.f46-tb .no{color:#b45309}
+.f46-tb summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;gap:6px;align-items:center}.f46-tb summary::-webkit-details-marker{display:none}.f46-tb summary b{margin:0!important}.f46-tb summary::after{content:'▾';margin-inline-start:auto;color:#6366f1;font-weight:900}.f46-tb[open] summary::after{content:'▴'}.f46-tb[open] summary{margin-bottom:6px}.f102-s{font-size:12.5px;font-weight:700;color:#475569}.f46-tb{margin:10px 0;border:1px solid #c7d2fe;background:#eef2ff;border-radius:14px;padding:10px 12px;font-size:13.5px;color:#1e293b}.f46-tb b{display:block;margin-bottom:4px}.f46-tb div{margin:3px 0}.f46-tb .ok{color:#166534}.f46-tb .no{color:#b45309}
 </style>
 <script id="fmf-46-tools">(function(){'use strict';
 /* F46 — (30) «⚠️ بلاغ فقد / تلف» for a tool in my custody (fm_tool_report: note + photo; the area manager decides on the platform);
@@ -2534,7 +2538,10 @@ let busy=false;
 async function deco(){const card=document.getElementById('ci-card');if(!card||busy)return;const need=[];
  card.querySelectorAll('.ci .t small').forEach(x=>{const t=S(x.textContent).replace(/^🔧\s*/,'');if(!t)return;for(const p of t.split(/[،,+\/؛;]| و /).map(S).filter(Boolean))if(!need.some(y=>norm(y)===norm(p)))need.push(p)});
  const k=need.join('|'),ex=document.querySelector('.f46-tb');if(ex&&ex.dataset.k===k)return;if(!need.length){ex&&ex.remove();return}
- busy=true;try{const H=await held();const html=`<div class="f46-tb" data-k="${esc(k)}"><b>🛠️ الأدوات المطلوبة لهذا الأمر</b>${need.map(n=>{const m=H?match(n,H.map(h=>h.name)):null;return `<div class="${m?'ok':'no'}">${m?'✅':'⚠️'} ${esc(n)} — ${H==null?'تعذر قراءة عُددك':m?'في عهدتك: '+esc(m):'ليست في عهدتك — اطلبها من أمين المستودع قبل الذهاب'}</div>`}).join('')}</div>`;
+ busy=true;try{const H=await held();
+  /* F102: folded by default — one line with the counts, the list opens on a tap */
+  const rows=need.map(n=>{const m=H?match(n,H.map(h=>h.name)):null;return {n,m}}),have=rows.filter(r=>r.m).length,miss=rows.length-have;
+  const html=`<details class="f46-tb" data-k="${esc(k)}"><summary><b>🛠️ الأدوات المطلوبة لهذا الأمر (${rows.length})</b><span class="f102-s">${H==null?'اضغط للعرض':`${have?'✅ '+have+' في عهدتك':''}${have&&miss?' • ':''}${miss?'⚠️ '+miss+' ليست في عهدتك':''}`}</span></summary>${rows.map(({n,m})=>`<div class="${m?'ok':'no'}">${m?'✅':'⚠️'} ${esc(n)} — ${H==null?'تعذر قراءة عُددك':m?'في عهدتك: '+esc(m):'ليست في عهدتك — اطلبها من أمين المستودع قبل الذهاب'}</div>`).join('')}</details>`;
   const c2=document.getElementById('ci-card');if(!c2)return;const old=document.querySelector('.f46-tb');if(old)old.remove();c2.insertAdjacentHTML('beforebegin',html)}finally{busy=false}}
 setInterval(()=>{try{deco()}catch(e){}},1200);
 })();</script>
