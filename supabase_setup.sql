@@ -12930,3 +12930,89 @@ create or replace function public.fm195_orders() returns jsonb language sql stab
           or (w.status = 'closed' and me.u = any(w.notify_to))) $$;
 create index if not exists work_orders_upd_idx on public.work_orders (updated_at desc, id);
 notify pgrst, 'reload schema';
+
+-- ---------- 85) support from an inspection item: a repair order for the engineer (V304) ----------
+-- In the field app an item recorded «يحتاج إصلاح» / «تم الإصلاح» offers «🆘 طلب دعم»: repairs → fm_wo_support_repair opens a repair
+-- order for the engineer (the order's approver, else the supervisor's reports_to): he is its creator and assignee, so he may hand
+-- it on or do it and close it himself. The item's before photos are copied. Spare parts go through the existing warehouse request
+-- (fm_issue_req_new, source = this order). wo_support keeps the link per item (the checklist is rewritten by every save).
+create table if not exists public.wo_support (
+  id uuid primary key default gen_random_uuid(),
+  wo_id uuid not null references public.work_orders(id) on delete cascade,
+  item int not null,
+  kind text not null check (kind in ('repair', 'parts')),
+  ref_id uuid, ref_code text,
+  to_id uuid, to_name text,
+  note text,
+  by_id uuid, by_name text,
+  at timestamptz not null default now()
+);
+create index if not exists wo_support_wo on public.wo_support (wo_id, item);
+alter table public.wo_support enable row level security;
+revoke all on public.wo_support from anon, authenticated;
+
+create or replace function public.fm_wo_support_repair(p_wo uuid, p_item int, p_note text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare s public.work_orders; me public.profiles; eng public.profiles; it jsonb; v_id uuid := gen_random_uuid(); v_code text; nm text;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not coalesce(me.active, false) then raise exception 'not allowed'; end if;
+  select * into s from public.work_orders where id = p_wo for update;
+  if s.id is null then raise exception 'not found'; end if;
+  if s.assignee is distinct from me.id then raise exception 'not allowed'; end if;
+  if s.status not in ('accepted', 'in_progress', 'returned') then raise exception 'not in progress'; end if;
+  it := s.checklist -> p_item;
+  if it is null or jsonb_typeof(it) <> 'object' or coalesce(it->>'k', '') in ('qty', 'text') then raise exception 'bad item'; end if;
+  if exists (select 1 from public.wo_support where wo_id = p_wo and item = p_item and kind = 'repair') then raise exception 'already requested'; end if;
+  select * into eng from public.profiles
+   where id = coalesce(s.approver, me.reports_to) and active and deleted_at is null and role in ('admin', 'manager', 'engineer');
+  if eng.id is null then raise exception 'no engineer'; end if;
+  nm := coalesce(me.full_name, me.email);
+  v_code := 'WO-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('public.wo_seq')::text, 4, '0');
+  insert into public.work_orders (id, code, title, description, type, region, school, priority, checklist, created_by, created_by_name,
+                                  assignee, assignee_name, building_id, source_wo)
+  values (v_id, v_code, left('دعم إصلاح — ' || coalesce(s.school, s.title), 200),
+          '🆘 طلب دعم من ' || nm || ' في ' || coalesce(s.code, '') || ' — البند ' || (p_item + 1) || ': ' || coalesce(it->>'t', '')
+            || coalesce(' — ' || nullif(it->>'opt', ''), '') || coalesce(E'\nملاحظة البند: ' || nullif(btrim(it->>'note'), ''), '')
+            || coalesce(E'\n' || nullif(btrim(coalesce(p_note, '')), ''), ''),
+          'repair', s.region, s.school, s.priority,
+          jsonb_build_array(jsonb_strip_nulls(jsonb_build_object('t', it->>'t', 'tool', it->>'tool', 'src_item', (p_item + 1)::text, 'done', false))),
+          eng.id, coalesce(eng.full_name, eng.email), eng.id, coalesce(eng.full_name, eng.email), s.building_id, s.id);
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (v_id, me.id, nm, 'create', 'assigned', '🆘 طلب دعم إصلاح من ' || nm || ' (' || coalesce(s.code, '') || ') — أُسند إلى ' || coalesce(eng.full_name, eng.email));
+  insert into public.wo_photos (wo_id, kind, path, at, by_id, by_name, geo, item)
+  select v_id, 'before', ph.path, ph.at, ph.by_id, ph.by_name, ph.geo, 0
+    from public.wo_photos ph where ph.wo_id = s.id and ph.kind = 'before' and ph.item = p_item;
+  insert into public.wo_support (wo_id, item, kind, ref_id, ref_code, to_id, to_name, note, by_id, by_name)
+  values (s.id, p_item, 'repair', v_id, v_code, eng.id, coalesce(eng.full_name, eng.email), nullif(btrim(coalesce(p_note, '')), ''), me.id, nm);
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (s.id, me.id, nm, 'note', s.status, '🆘 طلب دعم إصلاح للبند ' || (p_item + 1) || ' — أمر ' || v_code || ' إلى ' || coalesce(eng.full_name, eng.email));
+  return jsonb_build_object('id', v_id, 'code', v_code, 'to', coalesce(eng.full_name, eng.email));
+end $$;
+
+-- a parts request raised from an item (the request itself is made with fm_issue_req_new)
+create or replace function public.fm_wo_support_note(p_wo uuid, p_item int, p_ref uuid, p_code text)
+returns void language plpgsql security definer set search_path = public as $$
+declare s public.work_orders; me public.profiles;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  select * into s from public.work_orders where id = p_wo;
+  if s.id is null or me.id is null or s.assignee is distinct from me.id then raise exception 'not allowed'; end if;
+  insert into public.wo_support (wo_id, item, kind, ref_id, ref_code, by_id, by_name)
+  values (p_wo, p_item, 'parts', p_ref, left(p_code, 40), me.id, coalesce(me.full_name, me.email));
+end $$;
+
+-- the support links of an order with the current state of each repair order / parts request
+create or replace function public.fm_wo_support_list(p_wo uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_wo_can_see(p_wo) then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('item', x.item, 'kind', x.kind, 'code', x.ref_code, 'ref', x.ref_id, 'to', x.to_name, 'at', x.at,
+      'status', case when x.kind = 'repair' then (select w.status from public.work_orders w where w.id = x.ref_id)
+                     else (select r.status from public.wo_issue_requests r where r.id = x.ref_id) end) order by x.at)
+    from public.wo_support x where x.wo_id = p_wo), '[]'::jsonb);
+exception when undefined_table then return '[]'::jsonb;
+end $$;
+revoke all on function public.fm_wo_support_repair(uuid, int, text), public.fm_wo_support_note(uuid, int, uuid, text), public.fm_wo_support_list(uuid) from public, anon;
+grant execute on function public.fm_wo_support_repair(uuid, int, text), public.fm_wo_support_note(uuid, int, uuid, text), public.fm_wo_support_list(uuid) to authenticated;
+notify pgrst, 'reload schema';
