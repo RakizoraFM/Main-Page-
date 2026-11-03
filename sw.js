@@ -7,17 +7,20 @@
      • everything else (Supabase, the version check «?fmc=», uploads) goes to the network untouched.
    A page posts {fmCache:{page, libs}} after registering, so what it loaded before the worker existed is saved too. */
 'use strict';
-const SHELL = 'fm-shell-v233', PAGES = 'fm-pages', LIBS = 'fm-libs', TILES = 'fm-tiles', TILE_MAX = 3000;
+const SHELL = 'fm-shell-v291', PAGES = 'fm-pages', LIBS = 'fm-libs', TILES = 'fm-tiles', TILE_MAX = 3000;
 const SHELL_FILES = ['start.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
-const APP_PAGES = new Set(['start.html', 'index.html', 'field.html', 'school.html', 'rate.html', 'try.html', 'saas.html']);
+const APP_PAGES = new Set(['start.html', 'index.html', 'field.html', 'school.html', 'rate.html', 'try.html', 'saas.html', 'supplier.html']);
 const LIB_HOST = /^(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)$/;
 const TILE_HOST = /(^|\.)tile\.openstreetmap\.org$/;
 const at = (p) => new URL(p, self.registration.scope).href;
+// V291: a response that came through a redirect cannot answer a page navigation (the browser refuses it),
+// so it is saved as a plain copy. Hosts that drop «.html» (Cloudflare: /start.html → /start) need this.
+const plain = async (r) => (r && r.redirected) ? new Response(await r.blob(), { status: r.status, statusText: r.statusText, headers: r.headers }) : r;
 
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     const c = await caches.open(SHELL);
-    await Promise.all(SHELL_FILES.map((f) => c.add(new Request(at(f), { cache: 'reload' })).catch(() => null)));
+    await Promise.all(SHELL_FILES.map(async (f) => { try { const r = await fetch(new Request(at(f), { cache: 'reload' })); if (r.ok) await c.put(at(f), await plain(r)); } catch (err) {} }));
     const p = await caches.open(PAGES);
     if (!(await p.match(at('start.html')))) { const r = await c.match(at('start.html')); if (r) await p.put(at('start.html'), r); }
     await self.skipWaiting();
@@ -34,7 +37,8 @@ self.addEventListener('activate', (e) => {
 function pageOf(url) {
   const scope = new URL(self.registration.scope);
   if (url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return null;
-  const name = url.pathname.slice(scope.pathname.length) || 'index.html';
+  let name = url.pathname.slice(scope.pathname.length) || 'index.html';
+  if (!name.includes('.') && APP_PAGES.has(name + '.html')) name += '.html';   // «/start» = start.html
   return APP_PAGES.has(name) ? name : null;
 }
 const offlinePage = () => new Response(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -45,7 +49,7 @@ const offlinePage = () => new Response(`<!doctype html><html lang="ar" dir="rtl"
 
 async function pageFirstNetwork(req, name) {
   const key = at(name), c = await caches.open(PAGES);
-  const net = fetch(req).then((r) => { if (r && r.ok && r.type === 'basic') c.put(key, r.clone()).catch(() => {}); return r; });
+  const net = fetch(req).then((r) => { if (r && r.ok && r.type === 'basic') plain(r.clone()).then((x) => c.put(key, x)).catch(() => {}); return r; });
   try {
     // a very slow network with a saved copy: show the saved copy after 8 s (the network still refreshes it)
     const saved = await c.match(key);
@@ -95,7 +99,7 @@ self.addEventListener('message', (e) => {
   e.waitUntil((async () => {
     if (d.page && APP_PAGES.has(d.page)) {
       const c = await caches.open(PAGES), key = at(d.page);
-      if (!(await c.match(key))) { try { const r = await fetch(key, { cache: 'no-cache' }); if (r.ok) await c.put(key, r); } catch (err) {} }
+      if (!(await c.match(key))) { try { const r = await fetch(key, { cache: 'no-cache' }); if (r.ok) await c.put(key, await plain(r)); } catch (err) {} }
     }
     const L = await caches.open(LIBS);
     for (const u of (d.libs || []).slice(0, 80)) {
