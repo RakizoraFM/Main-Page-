@@ -638,3 +638,7 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## Field F104 — «عرض كل قسم في صفحة» works again
 - `f97Pages` returned early in «show all» mode (`f97_all` = '1') before it attached the card's click handler, so after reopening an order in that mode the button «📄 عرض كل قسم في صفحة» did nothing. The handler is now attached first and reads the current checklist / order from `card.__f97`.
+
+## V305 / field F105 — repair support needs quantity, unit and a photo
+- Section 86 of `supabase_setup.sql`: `fm_wo_support_repair(wo, item, note, qty, unit)` (the 3-argument version is dropped) refuses `qty` ≤ 0 / null («qty required»), an empty unit («unit required», ≤ 20 chars) and an item with no `before` photo on the source order («photo required»). The quantity goes into the repair order's item text («— الكمية: 12.5 م²»), its description and `wo_support.qty` / `unit`; `fm_wo_support_list` returns them.
+- Field `fmf-103-support`: «🔧 طلب إصلاح من المهندس» opens a sheet (`#f96` styles, `data-f103`): quantity (text + `inputmode=decimal`, Arabic digits and «٫» accepted), unit select (`UNITS` + «أخرى…» free text), photos (the item's uploaded `before` photos count; queued / deferred ones do not), note. New photos are uploaded directly with `C.api.woUpload(id, 'before', …, item)` (online only, not the outbox) before the RPC; then `fmfWoRefresh`. The link under the item shows the quantity.

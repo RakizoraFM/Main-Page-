@@ -13016,3 +13016,72 @@ end $$;
 revoke all on function public.fm_wo_support_repair(uuid, int, text), public.fm_wo_support_note(uuid, int, uuid, text), public.fm_wo_support_list(uuid) from public, anon;
 grant execute on function public.fm_wo_support_repair(uuid, int, text), public.fm_wo_support_note(uuid, int, uuid, text), public.fm_wo_support_list(uuid) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 86) a repair support request needs the quantity / area, its unit and a photo of the problem (V305) ----------
+-- fm_wo_support_repair now takes p_qty (> 0) and p_unit (م² / م.ط / عدد …) and refuses an item without a «before» photo on the
+-- source order (the field app uploads the photos to the item first). The quantity goes into the repair order's item and
+-- description and into wo_support. The old 3-argument version is dropped, so an old cached app cannot skip the rule.
+alter table public.wo_support add column if not exists qty numeric;
+alter table public.wo_support add column if not exists unit text;
+drop function if exists public.fm_wo_support_repair(uuid, int, text);
+create or replace function public.fm_wo_support_repair(p_wo uuid, p_item int, p_note text, p_qty numeric, p_unit text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare s public.work_orders; me public.profiles; eng public.profiles; it jsonb; v_id uuid := gen_random_uuid(); v_code text; nm text;
+  v_u text := left(btrim(coalesce(p_unit, '')), 20); v_q text; v_n int;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not coalesce(me.active, false) then raise exception 'not allowed'; end if;
+  select * into s from public.work_orders where id = p_wo for update;
+  if s.id is null then raise exception 'not found'; end if;
+  if s.assignee is distinct from me.id then raise exception 'not allowed'; end if;
+  if s.status not in ('accepted', 'in_progress', 'returned') then raise exception 'not in progress'; end if;
+  it := s.checklist -> p_item;
+  if it is null or jsonb_typeof(it) <> 'object' or coalesce(it->>'k', '') in ('qty', 'text') then raise exception 'bad item'; end if;
+  if p_qty is null or p_qty <= 0 or p_qty > 10000000 then raise exception 'qty required'; end if;
+  if v_u = '' then raise exception 'unit required'; end if;
+  select count(*) into v_n from public.wo_photos where wo_id = s.id and kind = 'before' and item = p_item;
+  if v_n = 0 then raise exception 'photo required'; end if;
+  if exists (select 1 from public.wo_support where wo_id = p_wo and item = p_item and kind = 'repair') then raise exception 'already requested'; end if;
+  select * into eng from public.profiles
+   where id = coalesce(s.approver, me.reports_to) and active and deleted_at is null and role in ('admin', 'manager', 'engineer');
+  if eng.id is null then raise exception 'no engineer'; end if;
+  nm := coalesce(me.full_name, me.email);
+  v_q := trim_scale(round(p_qty, 3))::text || ' ' || v_u;
+  v_code := 'WO-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('public.wo_seq')::text, 4, '0');
+  insert into public.work_orders (id, code, title, description, type, region, school, priority, checklist, created_by, created_by_name,
+                                  assignee, assignee_name, building_id, source_wo)
+  values (v_id, v_code, left('دعم إصلاح — ' || coalesce(s.school, s.title), 200),
+          '🆘 طلب دعم من ' || nm || ' في ' || coalesce(s.code, '') || ' — البند ' || (p_item + 1) || ': ' || coalesce(it->>'t', '')
+            || coalesce(' — ' || nullif(it->>'opt', ''), '') || E'\nالكمية / المساحة: ' || v_q
+            || coalesce(E'\nملاحظة البند: ' || nullif(btrim(it->>'note'), ''), '')
+            || coalesce(E'\n' || nullif(btrim(coalesce(p_note, '')), ''), ''),
+          'repair', s.region, s.school, s.priority,
+          jsonb_build_array(jsonb_strip_nulls(jsonb_build_object('t', coalesce(it->>'t', '') || ' — الكمية: ' || v_q, 'tool', it->>'tool',
+            'src_item', (p_item + 1)::text, 'done', false))),
+          eng.id, coalesce(eng.full_name, eng.email), eng.id, coalesce(eng.full_name, eng.email), s.building_id, s.id);
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (v_id, me.id, nm, 'create', 'assigned', '🆘 طلب دعم إصلاح من ' || nm || ' (' || coalesce(s.code, '') || ') — ' || v_q || ' — أُسند إلى ' || coalesce(eng.full_name, eng.email));
+  insert into public.wo_photos (wo_id, kind, path, at, by_id, by_name, geo, item)
+  select v_id, 'before', ph.path, ph.at, ph.by_id, ph.by_name, ph.geo, 0
+    from public.wo_photos ph where ph.wo_id = s.id and ph.kind = 'before' and ph.item = p_item;
+  insert into public.wo_support (wo_id, item, kind, ref_id, ref_code, to_id, to_name, note, by_id, by_name, qty, unit)
+  values (s.id, p_item, 'repair', v_id, v_code, eng.id, coalesce(eng.full_name, eng.email), nullif(btrim(coalesce(p_note, '')), ''), me.id, nm, p_qty, v_u);
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+  values (s.id, me.id, nm, 'note', s.status, '🆘 طلب دعم إصلاح للبند ' || (p_item + 1) || ' (' || v_q || ') — أمر ' || v_code || ' إلى ' || coalesce(eng.full_name, eng.email));
+  return jsonb_build_object('id', v_id, 'code', v_code, 'to', coalesce(eng.full_name, eng.email), 'photos', v_n);
+end $$;
+
+create or replace function public.fm_wo_support_list(p_wo uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_wo_can_see(p_wo) then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('item', x.item, 'kind', x.kind, 'code', x.ref_code, 'ref', x.ref_id, 'to', x.to_name, 'at', x.at,
+      'qty', x.qty, 'unit', x.unit,
+      'status', case when x.kind = 'repair' then (select w.status from public.work_orders w where w.id = x.ref_id)
+                     else (select r.status from public.wo_issue_requests r where r.id = x.ref_id) end) order by x.at)
+    from public.wo_support x where x.wo_id = p_wo), '[]'::jsonb);
+exception when undefined_table then return '[]'::jsonb;
+end $$;
+revoke all on function public.fm_wo_support_repair(uuid, int, text, numeric, text), public.fm_wo_support_list(uuid) from public, anon;
+grant execute on function public.fm_wo_support_repair(uuid, int, text, numeric, text), public.fm_wo_support_list(uuid) to authenticated;
+notify pgrst, 'reload schema';
