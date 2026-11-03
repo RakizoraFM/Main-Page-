@@ -591,3 +591,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## Field F97 — one section of items per page
 - Main script `f97Pages(card, cl, w)` (called from `woDetail` when the order is not in the F85 «steps» view): a checklist with two or more sections (`g`; items without `g` are one more section) shows one section at a time — `#ci-card.f97-pg` hides `.ci[data-row]` / `.cisec` not marked `.f97-on`; `.f97-nav` bars above and below («القسم n من m • name», done / total, progress, «→ السابق» / «التالي ←», on the last section «✅ آخر قسم — للأسفل» scrolls to the actions). The page is kept in `D.f97` per order (`D.f97w`) across re-renders and starts on the first section with an unanswered item; «📄 عرض كل البنود في صفحة واحدة» = `localStorage f97_all` ('1'). The arrival card and the «تم الإجراء» bar are outside `#ci-card`, so they stay. Nothing is blocked: «التالي» works with unanswered items (the server's done checks are unchanged).
+
+## V296 — browser tab title
+- The platform's `<title>` and the brand `head()` (`document.title`) are «RakizoraFM» only (the words «منصة تحليل بلاغات الصيانة» were dropped from the tab). `APP.name` is unchanged.
