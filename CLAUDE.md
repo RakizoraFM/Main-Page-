@@ -677,3 +677,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V314 / field F114 — buildings database first in the schools group
 - V123 `GROUPS` `schools`: `v2-nav-school-db` now comes before `v2-nav-fm118-school`. Field F114 = version only.
+
+## V315 / field F115 — buildings database filters on top
+- `fm-v311-bld-db` render: `.fm311-bar` (search + buttons) and `.fm311-f` (filter chips) now come first, above `.fm311-k` cards and the charts; the count line and the table follow. Field F115 = version only.
