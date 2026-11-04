@@ -13604,3 +13604,108 @@ grant execute on function public.fm_source_save(jsonb), public.fm_sources_list()
   public.fm_sdb_act(bigint[], boolean, text), public.fm_sdb_undo(bigint), public.fm_sdb_lock(text, text, boolean), public.fm_sdb_cfg() to authenticated;
 revoke all on function public.fm_sdb_can(public.fm_sdb_changes), public.fm_sdb_rows(), public.fm_sdb_row(text) from public, anon, authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 89) contract price lists per building and the monthly contractor invoice by building-days (V319) ----------
+-- fm_rate_tables: one price list per region and start date. rows = [{s: clean | maint | ac, z: كبير | وسط | صغير,
+--   g: بنين | بنات | '' (one price for both), o: owner price, p: {contractor column: price}}] (prices before VAT, per building
+--   and month). map = {clean | maint | ac: {school-DB contractor value: column | ''}}, mix = the gender price a mixed building uses.
+-- fm_rate_annex: the building list behind a bill (V184 fm_bills): rows [{k, n, s, z, g, d, dm, p, a}], totals.
+create table if not exists public.fm_rate_tables (
+  id          uuid primary key default gen_random_uuid(),
+  region      text not null,
+  valid_from  date not null,
+  rows        jsonb not null default '[]',
+  cols        text[] not null default '{}',
+  map         jsonb not null default '{}',
+  mix         text not null default 'بنات',
+  vat_pct     numeric(5,2) not null default 15,
+  note        text,
+  by_id       uuid default auth.uid(),
+  by_name     text,
+  at          timestamptz not null default now(),
+  unique (region, valid_from)
+);
+create table if not exists public.fm_rate_annex (
+  bill_id     uuid primary key references public.fm_bills(id) on delete cascade,
+  month       text not null,
+  region      text,
+  contractor  text,
+  rows        jsonb not null default '[]',
+  totals      jsonb not null default '{}',
+  by_name     text,
+  at          timestamptz not null default now()
+);
+alter table public.fm_rate_tables enable row level security;
+alter table public.fm_rate_annex enable row level security;
+revoke all on public.fm_rate_tables, public.fm_rate_annex from anon, authenticated;
+
+create or replace function public.fm_rate_get(p_region text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r text := nullif(btrim(coalesce(p_region,'')),'');
+begin
+  if auth.uid() is null or not (public.fm_bill_can('read', r) or public.fm_bill_can('prep', r) or public.fm_bill_can('contract', r)) then raise exception 'not allowed'; end if;
+  return jsonb_build_object(
+    'can_edit', public.fm_bill_can('contract', r), 'can_prep', public.fm_bill_can('prep', r), 'mod', public.fm_mod('bill'),
+    'tables', coalesce((select jsonb_agg(to_jsonb(t) order by t.valid_from desc) from public.fm_rate_tables t where t.region = r), '[]'));
+end $$;
+
+create or replace function public.fm_rate_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare r text := nullif(btrim(coalesce(p->>'region','')),''); d date := nullif(p->>'valid_from','')::date; x jsonb; k text; v_id uuid;
+begin
+  if auth.uid() is null or not public.fm_bill_can('contract', r) then raise exception 'not allowed'; end if;
+  if not public.fm_mod('bill') then raise exception 'module disabled'; end if;
+  if r is null or d is null then raise exception 'region and date required'; end if;
+  if jsonb_typeof(p->'rows') <> 'array' or jsonb_array_length(p->'rows') = 0 or jsonb_array_length(p->'rows') > 500 then raise exception 'invalid rows'; end if;
+  for x in select * from jsonb_array_elements(p->'rows') loop
+    if coalesce(x->>'s','') not in ('clean','maint','ac') or coalesce(x->>'z','') not in ('كبير','وسط','صغير') or coalesce(x->>'g','') not in ('','بنين','بنات')
+       or jsonb_typeof(coalesce(x->'p','{}')) <> 'object' then raise exception 'invalid rows'; end if;
+    if coalesce(nullif(x->>'o','')::numeric, 0) < 0 then raise exception 'invalid price'; end if;
+    for k in select jsonb_object_keys(x->'p') loop
+      if coalesce(nullif(x->'p'->>k,'')::numeric, 0) < 0 or coalesce(nullif(x->'p'->>k,'')::numeric, 0) > 10000000 then raise exception 'invalid price'; end if;
+    end loop;
+  end loop;
+  if coalesce(p->>'mix','بنات') not in ('بنين','بنات') then raise exception 'invalid mix'; end if;
+  insert into public.fm_rate_tables (region, valid_from, rows, cols, map, mix, vat_pct, note, by_id, by_name, at)
+  values (r, d, p->'rows', coalesce((select array_agg(left(btrim(c),80)) from jsonb_array_elements_text(coalesce(p->'cols','[]')) c where btrim(c) <> ''), '{}'),
+          case when jsonb_typeof(p->'map') = 'object' then p->'map' else '{}' end, coalesce(p->>'mix','بنات'),
+          coalesce(nullif(p->>'vat_pct','')::numeric, 15), left(nullif(btrim(coalesce(p->>'note','')),''),500), auth.uid(), public.fm_me_name(), now())
+  on conflict (region, valid_from) do update set rows = excluded.rows, cols = excluded.cols, map = excluded.map, mix = excluded.mix,
+    vat_pct = excluded.vat_pct, note = excluded.note, by_id = excluded.by_id, by_name = excluded.by_name, at = now()
+  returning id into v_id;
+  return v_id;
+end $$;
+
+create or replace function public.fm_rate_del(p_id uuid) returns boolean language plpgsql security definer set search_path = public as $$
+declare t public.fm_rate_tables;
+begin
+  select * into t from public.fm_rate_tables where id = p_id;
+  if auth.uid() is null or t.id is null or not public.fm_bill_can('contract', t.region) then raise exception 'not allowed'; end if;
+  delete from public.fm_rate_tables where id = p_id; return true;
+end $$;
+
+-- the building annex of a bill (draft / returned only)
+create or replace function public.fm_rate_annex_save(p_bill uuid, p jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+declare bl public.fm_bills; c public.fm_contracts;
+begin
+  select * into bl from public.fm_bills where id = p_bill;
+  select * into c from public.fm_contracts where id = bl.contract_id;
+  if auth.uid() is null or bl.id is null or not public.fm_bill_can('prep', c.region) then raise exception 'not allowed'; end if;
+  if bl.status not in ('draft','returned') then raise exception 'invalid status'; end if;
+  if jsonb_typeof(p->'rows') <> 'array' or jsonb_array_length(p->'rows') > 12000 or length((p->'rows')::text) > 4000000 then raise exception 'invalid rows'; end if;
+  insert into public.fm_rate_annex (bill_id, month, region, contractor, rows, totals, by_name, at)
+  values (p_bill, bl.month, c.region, c.contractor_name, p->'rows', case when jsonb_typeof(p->'totals') = 'object' then p->'totals' else '{}' end, public.fm_me_name(), now())
+  on conflict (bill_id) do update set rows = excluded.rows, totals = excluded.totals, by_name = excluded.by_name, at = now(), month = excluded.month;
+  return true;
+end $$;
+
+create or replace function public.fm_rate_annex_get(p_bill uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare bl public.fm_bills; c public.fm_contracts;
+begin
+  select * into bl from public.fm_bills where id = p_bill;
+  select * into c from public.fm_contracts where id = bl.contract_id;
+  if auth.uid() is null or bl.id is null or not (public.fm_bill_can('read', c.region) or c.contractor_id = auth.uid()) then raise exception 'not allowed'; end if;
+  return (select to_jsonb(a) from public.fm_rate_annex a where a.bill_id = p_bill);
+end $$;
+
+revoke all on function public.fm_rate_get(text), public.fm_rate_save(jsonb), public.fm_rate_del(uuid), public.fm_rate_annex_save(uuid, jsonb), public.fm_rate_annex_get(uuid) from public, anon;
+grant execute on function public.fm_rate_get(text), public.fm_rate_save(jsonb), public.fm_rate_del(uuid), public.fm_rate_annex_save(uuid, jsonb), public.fm_rate_annex_get(uuid) to authenticated;
+notify pgrst, 'reload schema';
