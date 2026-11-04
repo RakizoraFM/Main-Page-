@@ -674,3 +674,9 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V313 / field F113 — contractor pies and multi-select filters
 - `fm-v311-bld-db`: `VIZ` = office bar list + three SVG donuts (`clean`, `contractor`, `ac`; top 7 + «أخرى», `PAL` colours, centre = schools; a slice or legend click toggles the value). Every `F.f[k]` is now an array (`arr()`); `fv(k, x)` returns `EMP` «—» for an empty value so «(فارغ)» can be filtered. Filter chips are buttons `[data-ms]` → popover `#fm313-ms` (`msOpen`: search, all / none, counts from `base(all, k)`, applied on «تطبيق», Enter or a click outside, Escape cancels; selecting every value = no filter). The popover measures its height and opens above the chip when there is no room below. Field F113 = dictionary only.
+
+## V314 / field F114 — buildings database first in the schools group
+- V123 `GROUPS` `schools`: `v2-nav-school-db` now comes before `v2-nav-fm118-school`. Field F114 = version only.
+
+## V315 / field F115 — buildings database filters on top
+- `fm-v311-bld-db` render: `.fm311-bar` (search + buttons) and `.fm311-f` (filter chips) now come first, above `.fm311-k` cards and the charts; the count line and the table follow. Field F115 = version only.
