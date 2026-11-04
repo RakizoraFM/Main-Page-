@@ -13085,3 +13085,253 @@ end $$;
 revoke all on function public.fm_wo_support_repair(uuid, int, text, numeric, text), public.fm_wo_support_list(uuid) from public, anon;
 grant execute on function public.fm_wo_support_repair(uuid, int, text, numeric, text), public.fm_wo_support_list(uuid) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 87) submit rules per template: items to complete and «before» / «after» photos (V306) ----------
+-- A template's design may carry form.rules {items: all | pct | crit, pct: 1–100, before: all | issues | none,
+-- after: all | fixed | none, na_note: true}; it is copied with the design into work_orders.form. A missing key (or any
+-- other value) = the company setting / the old rules, so existing templates and orders behave as before.
+--   items  all = every item needs a result · pct = at least pct % of the items · crit = only items whose text starts with ⭐
+--   before all = items ok / needs repair / fixed · issues = needs repair / fixed · none = no «before» photo required
+--   after  all = items ok / fixed · fixed = fixed only · none = no «after» photo required
+--   na_note an item «لا ينطبق» needs a written reason (its note)
+-- A photo rule replaces the company setting, the built-in item photo rules (V148 / V276 / V281) and the requirement of
+-- the template's named photo slots of that kind (any photo of the kind on the item counts). Materials, invoices, the
+-- arrival sign and the form's required fields are unchanged.
+create or replace function public.fm_wo_rule(f jsonb, k text) returns text language sql immutable as $$
+  select case when jsonb_typeof(f) = 'object' and jsonb_typeof(f->'rules') = 'object' then
+    case k when 'items'  then case when f->'rules'->>'items'  in ('all','pct','crit')    then f->'rules'->>'items'  end
+           when 'before' then case when f->'rules'->>'before' in ('all','issues','none') then f->'rules'->>'before' end
+           when 'after'  then case when f->'rules'->>'after'  in ('all','fixed','none')  then f->'rules'->>'after'  end
+    end end $$;
+create or replace function public.fm_wo_rule_ph(r text, kind text, res text) returns boolean language sql immutable as $$
+  select case when kind = 'before' then (r = 'all' and res in ('ok','fix','fixed')) or (r = 'issues' and res in ('fix','fixed'))
+              else (r = 'all' and res in ('ok','fixed')) or (r = 'fixed' and res = 'fixed') end $$;
+
+create or replace function public.fm_wo_act(p_id uuid, p_action text, p_note text default null, p_geo jsonb default null, p_data jsonb default null)
+returns text language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; me public.profiles; t public.profiles; nm text; isA boolean; isC boolean; ns text; msg text; it jsonb; i int;
+  rj jsonb; nrej int := 0; cl jsonb; rv jsonb; evt text; isR boolean;
+  ball boolean := coalesce((select value->>'before' from public.fm_settings where key = 'wo_photos'), 'all') <> 'issues';
+  note text := nullif(trim(coalesce(p_note,'')),'');
+  rb text;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not me.active then raise exception 'not allowed' using errcode = '42501'; end if;
+  select * into w from public.work_orders where id = p_id for update;
+  if w.id is null or not public.fm_wo_can_see(w.id) then raise exception 'work order not found'; end if;
+  nm := coalesce(me.full_name, me.email);
+  -- V306: the template's own «before» rule (form.rules.before) replaces the company setting and the built-in item rules
+  rb := public.fm_wo_rule(w.form, 'before');
+  isA := w.assignee = me.id;
+  -- V157: also the project / operations managers, and the area manager in his regions
+  isC := w.created_by = me.id or me.role = 'admin' or public.fm_posx(me.role, me.job_title) in ('project_manager','ops_manager')
+         or (public.fm_posx(me.role, me.job_title) = 'area_manager' and public.fm_region_ok(coalesce(w.region,'')))
+         -- V158: a deputy approves what his principal may
+         or exists (select 1 from public.fm_deputies d join public.profiles pr on pr.id = d.principal
+                     where d.deputy = me.id and d.active and now() between d.from_at and d.to_at
+                       and (pr.id = w.created_by or public.fm_posx(pr.role, pr.job_title) in ('project_manager','ops_manager')
+                            or (public.fm_posx(pr.role, pr.job_title) = 'area_manager'
+                                and (cardinality(pr.regions) = 0 or coalesce(w.region,'') = any(pr.regions)))));
+  -- V275: the approver (the school's engineer) may review / close / return, nothing else
+  isR := isC or w.approver = me.id;
+  ns := w.status;
+  if p_action = 'accept' and isA and w.status = 'assigned' then ns := 'accepted'; msg := '✅ قبل الأمر';
+  elsif p_action = 'reject' and isA and w.status = 'assigned' then
+    if note is null then raise exception 'reason required'; end if; ns := 'rejected'; msg := '⛔ رفض الأمر';
+  elsif p_action = 'start' and isA and w.status in ('accepted','returned') then ns := 'in_progress'; msg := '🛠️ بدأ التنفيذ';
+  elsif p_action = 'arrive' and isA and w.status in ('accepted','in_progress','returned') then msg := '📍 وصل للموقع';
+  elsif p_action = 'checklist' and isA and w.status in ('accepted','in_progress','returned') then
+    update public.work_orders set checklist = coalesce(p_data,'[]'::jsonb), updated_at = now() where id = w.id;
+    return w.status;
+  elsif p_action = 'done' and isA and w.status in ('accepted','in_progress','returned') then
+    -- V276: «after» photos are optional; «before» photos are required (every item with a result, or one for an order without items)
+    if (case when rb is null then ball else rb = 'all' end) and jsonb_array_length(case when jsonb_typeof(p_data) = 'array' then p_data else coalesce(w.checklist,'[]'::jsonb) end) = 0
+       and not exists (select 1 from public.wo_photos where wo_id = w.id and kind = 'before') then raise exception 'before photo required'; end if;
+    -- V148: a school order needs the three arrival photos; a repaired item needs materials and before / after photos,
+    -- an item that still needs repair needs a before photo
+    -- V276: only the school sign is required on arrival (entrance / fence / extra photos are optional)
+    if w.school is not null and not exists (select 1 from public.wo_photos where wo_id = w.id and kind = 'arrival' and tag = 'sign') then
+      raise exception 'arrival photos required'; end if;
+    for it, i in select e, (o - 1)::int from jsonb_array_elements(case when jsonb_typeof(p_data) = 'array' then p_data else w.checklist end) with ordinality as t(e, o) loop
+      if it->>'res' = 'fixed' and (jsonb_typeof(it->'materials') is distinct from 'array' or jsonb_array_length(it->'materials') = 0
+          or (rb is null and not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'before'))) then
+        raise exception 'item documentation required: %', i + 1; end if;
+      -- V149: a purchased material needs its unit price and an invoice photo on the item
+      if it->>'res' = 'fixed' and exists (select 1 from jsonb_array_elements(it->'materials') m where m->>'src' = 'buy') and (
+          exists (select 1 from jsonb_array_elements(it->'materials') m where m->>'src' = 'buy'
+                    and coalesce(nullif(regexp_replace(m->>'price', '[^0-9.]', '', 'g'), '')::numeric, 0) <= 0)
+          or not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'invoice')) then
+        raise exception 'invoice required: %', i + 1; end if;
+      if rb is null and (it->>'res' = 'fix' or (ball and it->>'res' = 'ok' and coalesce(it->>'k','grade') = 'grade'))
+         and not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'before') then
+        raise exception 'item documentation required: %', i + 1; end if;
+      if rb is not null and coalesce(it->>'k','grade') = 'grade' and public.fm_wo_rule_ph(rb, 'before', it->>'res')
+         and not exists (select 1 from public.wo_photos where wo_id = w.id and item = i and kind = 'before') then
+        raise exception 'item documentation required: %', i + 1; end if;
+    end loop;
+    if jsonb_typeof(p_data) = 'array' then update public.work_orders set checklist = p_data where id = w.id; end if;
+    ns := 'done'; msg := '📨 أبلغ: تم الإجراء — بانتظار الاعتماد';
+  -- V275: item-by-item review. Every item is approved unless listed in p_data.items with ok = false (a note is required);
+  -- any rejected item returns the order to the assignee, otherwise it closes like «close».
+  elsif p_action = 'review' and isR and w.status = 'done' then
+    rj := coalesce((select jsonb_object_agg(x->>'i', x) from jsonb_array_elements(case when jsonb_typeof(p_data->'items') = 'array' then p_data->'items' else '[]'::jsonb end) x
+                    where coalesce((x->>'ok')::boolean, true) = false), '{}'::jsonb);
+    cl := '[]'::jsonb;
+    for it, i in select e, (o - 1)::int from jsonb_array_elements(coalesce(w.checklist,'[]'::jsonb)) with ordinality as t(e, o) loop
+      if rj ? i::text then
+        if length(trim(coalesce(rj->i::text->>'note',''))) < 3 then raise exception 'item note required: %', i + 1; end if;
+        rv := jsonb_build_object('ok', false, 'note', trim(rj->i::text->>'note'), 'by', nm, 'at', now(), 'round', w.rv_round + 1);
+        nrej := nrej + 1;
+      else
+        rv := jsonb_build_object('ok', true, 'by', nm, 'at', now(), 'round', w.rv_round + 1)
+              || case when it->'rv'->>'ok' = 'false' then jsonb_build_object('prev', it->'rv'->>'note') else '{}'::jsonb end;
+      end if;
+      cl := cl || jsonb_build_array(it || jsonb_build_object('rv', rv));
+    end loop;
+    if nrej < (select count(*) from jsonb_object_keys(rj)) then raise exception 'unknown item'; end if;
+    if nrej > 0 then
+      update public.work_orders set checklist = cl, rv_round = w.rv_round + 1, ret_at = now() where id = w.id;
+      ns := 'returned'; evt := 'return';
+      msg := '↩️ لم يُعتمد ' || nrej || ' من ' || jsonb_array_length(cl) || ' بند — أُعيد للتصحيح';
+    else
+      if public.fm_wo_spend_rank(w.checklist) > greatest(public.fm_prank(public.fm_posx(me.role, me.job_title)),
+           coalesce((select max(public.fm_prank(public.fm_posx(pr.role, pr.job_title))) from public.fm_deputies d join public.profiles pr on pr.id = d.principal
+                      where d.deputy = me.id and d.active and now() between d.from_at and d.to_at), 0)) then
+        raise exception 'spend approval required: %', case public.fm_wo_spend_rank(w.checklist) when 6 then 'ops_manager' else 'area_manager' end;
+      end if;
+      update public.work_orders set checklist = cl, rv_round = w.rv_round + 1 where id = w.id;
+      ns := 'closed'; evt := 'close'; msg := '🔒 اعتُمدت كل البنود وأُغلق الأمر';
+    end if;
+  elsif p_action = 'close' and isR and w.status = 'done' then
+    -- V158: purchases above the limits set in the system need the area / operations manager (or a higher title)
+    if public.fm_wo_spend_rank(w.checklist) > greatest(public.fm_prank(public.fm_posx(me.role, me.job_title)),
+         coalesce((select max(public.fm_prank(public.fm_posx(pr.role, pr.job_title))) from public.fm_deputies d join public.profiles pr on pr.id = d.principal
+                    where d.deputy = me.id and d.active and now() between d.from_at and d.to_at), 0)) then
+      raise exception 'spend approval required: %', case public.fm_wo_spend_rank(w.checklist) when 6 then 'ops_manager' else 'area_manager' end;
+    end if;
+    ns := 'closed'; msg := '🔒 اعتمد الإنجاز وأغلق الأمر';
+  -- V158: the safety manager stops unsafe work (reason required) and lets it resume
+  elsif p_action = 'stop' and public.fm_posx(me.role, me.job_title) in ('hse_manager','sysadmin') and w.status not in ('closed','cancelled','stopped') then
+    if note is null then raise exception 'reason required'; end if;
+    update public.work_orders set stop_prev = w.status where id = w.id;
+    ns := 'stopped'; msg := '⛔ أوقف العمل لأسباب تتعلق بالسلامة';
+  elsif p_action = 'resume' and public.fm_posx(me.role, me.job_title) in ('hse_manager','sysadmin') and w.status = 'stopped' then
+    ns := coalesce(nullif(w.stop_prev,''), 'accepted'); msg := '▶️ سمح باستئناف العمل';
+  elsif p_action = 'return' and isR and w.status = 'done' then
+    if note is null then raise exception 'reason required'; end if; update public.work_orders set ret_at = now() where id = w.id; ns := 'returned'; msg := '↩️ أعاد الأمر للتصحيح';
+  elsif p_action = 'cancel' and isC and w.status not in ('closed','cancelled','stopped') then ns := 'cancelled'; msg := '🚫 ألغى الأمر';
+  elsif p_action = 'reassign' and isC and w.status in ('assigned','rejected','accepted','in_progress','returned') then
+    select * into t from public.profiles where id = public.fm_uuid_or_null(p_data->>'assignee');
+    if t.id is null or not public.fm_can_assign_to(t.id) then raise exception 'cannot assign to this user'; end if;
+    update public.work_orders set assignee = t.id, assignee_name = coalesce(t.full_name, t.email), accepted_at = null where id = w.id;
+    ns := 'assigned'; msg := '🔁 أعاد الإسناد إلى ' || coalesce(t.full_name, t.email);
+  elsif p_action = 'note' and note is not null then
+    insert into public.wo_events (wo_id, by_id, by_name, type, status, text, geo) values (w.id, me.id, nm, 'note', w.status, '✍️ ' || note, p_geo);
+    update public.work_orders set updated_at = now() where id = w.id;
+    return w.status;
+  else raise exception 'action not allowed'; end if;
+  update public.work_orders set status = ns, updated_at = now(),
+         accepted_at = case when ns = 'accepted' then now() else accepted_at end,
+         done_at     = case when ns = 'done' then now() else done_at end,
+         closed_at   = case when ns in ('closed','cancelled') then now() else closed_at end
+   where id = w.id;
+  insert into public.wo_events (wo_id, by_id, by_name, type, status, text, geo)
+  values (w.id, me.id, nm, coalesce(evt, p_action), ns, msg || coalesce(' — ' || note, ''), p_geo);
+  return ns;
+end $$;
+
+-- «after» photos: the template's rule first (plain items, also with named slots), else the V281 rule
+create or replace function public.fm_wo_after_check() returns trigger language plpgsql security definer set search_path = public as $$
+declare it jsonb; i int := -1; mode text; ra text;
+begin
+  if new.status <> 'done' or old.status = 'done' then return new; end if;
+  ra := public.fm_wo_rule(new.form, 'after');
+  if ra is not null then
+    if ra = 'none' then return new; end if;
+    for it in select value from jsonb_array_elements(coalesce(new.checklist,'[]'::jsonb)) loop
+      i := i + 1;
+      if jsonb_typeof(it) = 'object' and coalesce(it->>'k','') = '' and public.fm_wo_rule_ph(ra, 'after', it->>'res')
+         and not exists (select 1 from public.wo_photos p where p.wo_id = new.id and p.item = i and p.kind = 'after') then
+        raise exception 'item after photo required: %', i + 1; end if;
+    end loop;
+    return new;
+  end if;
+  if new.type = 'handover' then return new; end if;
+  if jsonb_typeof(new.form->'photos') = 'array' and jsonb_array_length(new.form->'photos') > 0 then return new; end if;
+  if exists (select 1 from jsonb_array_elements(coalesce(new.checklist,'[]'::jsonb)) x where x->>'k' = 'grade') then return new; end if;
+  mode := coalesce((select value->>'after' from public.fm_settings where key = 'wo_photos'), 'items');
+  if mode = 'none' then return new; end if;
+  for it in select value from jsonb_array_elements(coalesce(new.checklist,'[]'::jsonb)) loop
+    i := i + 1;
+    if coalesce(it->>'k','') = '' and coalesce(it->>'res','') in ('ok','fixed')
+       and not exists (select 1 from public.wo_photos p where p.wo_id = new.id and p.item = i and p.kind = 'after') then
+      raise exception 'item after photo required: %', i + 1;
+    end if;
+  end loop;
+  return new;
+end $$;
+
+-- named photo slots: a slot whose kind has a template photo rule is not required on its own (the rule decides)
+create or replace function public.fm_wo_form_check() returns trigger language plpgsql security definer set search_path = public as $$
+declare f jsonb; it jsonb; i int := -1; r text; h jsonb; s jsonb; rb text; ra text;
+begin
+  if new.status <> 'done' or old.status = 'done' or jsonb_typeof(new.form) is distinct from 'object' then return new; end if;
+  f := new.form; rb := public.fm_wo_rule(f, 'before'); ra := public.fm_wo_rule(f, 'after');
+  for h in select value from jsonb_array_elements(case when jsonb_typeof(f->'head') = 'array' then f->'head' else '[]'::jsonb end) loop
+    if coalesce((h->>'req')::boolean, false) and coalesce(trim(new.form_vals->>(h->>'id')),'') = '' then
+      raise exception 'form head required: %', coalesce(h->>'l', h->>'id'); end if;
+  end loop;
+  for it in select value from jsonb_array_elements(coalesce(new.checklist,'[]'::jsonb)) loop
+    i := i + 1;
+    if coalesce(it->>'k','') <> '' then continue; end if;
+    r := coalesce(it->>'res','');
+    if r = 'na' then continue; end if;
+    for h in select value from jsonb_array_elements(case when jsonb_typeof(f->'fields') = 'array' then f->'fields' else '[]'::jsonb end) loop
+      if coalesce((h->>'req')::boolean, false) and coalesce(trim(it->'fv'->>(h->>'id')),'') = '' then
+        raise exception 'form field required: % %', i + 1, coalesce(h->>'l', h->>'id'); end if;
+    end loop;
+    for s in select value from jsonb_array_elements(case when jsonb_typeof(f->'photos') = 'array' then f->'photos' else '[]'::jsonb end) loop
+      if (case when coalesce(s->>'k','before') = 'after' then ra else rb end) is not null then continue; end if;
+      if (s->>'req' = 'always' or (s->>'req' = 'issue' and r in ('fix','fixed')))
+         and not exists (select 1 from public.wo_photos p where p.wo_id = new.id and p.item = i and p.tag = s->>'id') then
+        raise exception 'form photo required: % %', i + 1, coalesce(s->>'l', s->>'id'); end if;
+    end loop;
+  end loop;
+  return new;
+end $$;
+
+-- item results: the template's rule first (all / pct / ⭐ only), then the company setting (V299); «لا ينطبق» reason
+create or replace function public.fm_wo_items_check()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare it jsonb; i int; ri text; n int := 0; got int := 0; need int; pct int; ok boolean; crit boolean;
+begin
+  if new.status <> 'done' or old.status = 'done' then return new; end if;
+  if jsonb_typeof(new.form) = 'object' and jsonb_typeof(new.form->'rules') = 'object' and coalesce((new.form->'rules'->>'na_note')::boolean, false) then
+    for it, i in select e, o::int from jsonb_array_elements(case when jsonb_typeof(new.checklist) = 'array' then new.checklist else '[]'::jsonb end) with ordinality as t(e, o) loop
+      if jsonb_typeof(it) = 'object' and coalesce(it->>'k','') in ('', 'grade')
+         and (it->>'res' = 'na' or (it->>'k' = 'grade' and it->>'lv' = '0')) and btrim(coalesce(it->>'note','')) = '' then
+        raise exception 'na reason required: %', i; end if;
+    end loop;
+  end if;
+  if jsonb_typeof(new.form) = 'object' and new.form->>'res' = 'false' then return new; end if;
+  ri := public.fm_wo_rule(new.form, 'items');
+  if ri is null and coalesce((select value->>'items' from public.fm_settings where key = 'wo_photos'), 'required') = 'optional' then return new; end if;
+  for it, i in select e, o::int from jsonb_array_elements(case when jsonb_typeof(new.checklist) = 'array' then new.checklist else '[]'::jsonb end) with ordinality as t(e, o) loop
+    if jsonb_typeof(it) <> 'object' or it->>'k' = 'qty' then continue; end if;
+    if it->>'k' = 'text' and not coalesce((it->>'req')::boolean, false) then continue; end if;
+    ok := case when it->>'k' = 'text' then btrim(coalesce(it->>'v', '')) <> ''
+               when it->>'k' = 'grade' then it->'lv' is not null and jsonb_typeof(it->'lv') <> 'null'
+               else coalesce(it->>'res', '') in ('ok', 'fix', 'fixed', 'na') or coalesce((it->>'done')::boolean, false) end;
+    crit := ltrim(coalesce(it->>'t', '')) like '⭐%';
+    n := n + 1; if ok then got := got + 1; end if;
+    if not ok and (ri is null or ri = 'all' or (ri = 'crit' and crit)) then raise exception 'item result required: %', i; end if;
+  end loop;
+  if ri = 'pct' then
+    pct := least(100, greatest(1, coalesce(nullif(regexp_replace(coalesce(new.form->'rules'->>'pct',''), '[^0-9]', '', 'g'), '')::int, 80)));
+    need := ceil(n * pct / 100.0);
+    if got < need then raise exception 'items min required: % %', got, need; end if;
+  end if;
+  return new;
+exception when invalid_text_representation then return new;
+end $$;
+notify pgrst, 'reload schema';
