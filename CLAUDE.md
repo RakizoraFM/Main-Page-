@@ -680,3 +680,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V315 / field F115 — buildings database filters on top
 - `fm-v311-bld-db` render: `.fm311-bar` (search + buttons) and `.fm311-f` (filter chips) now come first, above `.fm311-k` cards and the charts; the count line and the table follow. Field F115 = version only.
+
+## V316 / field F116 — charts count by schools or buildings
+- `fm-v311-bld-db` `VIZ`: each chart header has `.fm316-cm` «مدارس / مباني» (`[data-cm]`, state `F.cnt[k]` = 's' | 'b', saved in `localStorage fm316_cnt`). Buildings = distinct `__k` per value (a building whose schools have different values counts under each); the percentage and the donut centre use the distinct buildings of the shown rows (`nB`). Filtering by a slice is unchanged. Field F116 = dictionary only.
