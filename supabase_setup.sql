@@ -13709,3 +13709,64 @@ end $$;
 revoke all on function public.fm_rate_get(text), public.fm_rate_save(jsonb), public.fm_rate_del(uuid), public.fm_rate_annex_save(uuid, jsonb), public.fm_rate_annex_get(uuid) from public, anon;
 grant execute on function public.fm_rate_get(text), public.fm_rate_save(jsonb), public.fm_rate_del(uuid), public.fm_rate_annex_save(uuid, jsonb), public.fm_rate_annex_get(uuid) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 90) V323 — monthly building snapshot for contractor invoices ----------
+-- The invoice of a month is computed from a frozen copy of the buildings (size, gender, contractors, closed, office, zone)
+-- so later edits of the school DB (new sizes, closures, merges) do not change a past month. meta keeps the day each change
+-- takes effect inside the month ({eff:{key:day}}) and the last service day of buildings that left ({gone:{key:day}}).
+create table if not exists public.fm_rate_snaps (
+  region   text not null,
+  month    text not null check (month ~ '^\d{4}-\d{2}$'),
+  rows     jsonb not null default '[]',
+  meta     jsonb not null default '{}',
+  n        int not null default 0,
+  by_id    uuid,
+  by_name  text,
+  at       timestamptz not null default now(),
+  primary key (region, month)
+);
+alter table public.fm_rate_snaps enable row level security;
+revoke all on public.fm_rate_snaps from anon, authenticated;
+
+create or replace function public.fm_rate_snap_locked(r text, m text) returns boolean language sql stable security definer set search_path = public as $$
+  select exists(select 1 from public.fm_bills b join public.fm_contracts c on c.id = b.contract_id
+                where c.region = r and b.month = m and b.status in ('approved','paid'))
+$$;
+
+create or replace function public.fm_rate_snap_get(p_region text, p_months text[]) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not (public.fm_bill_can('read', p_region) or public.fm_bill_can('prep', p_region) or public.fm_bill_can('contract', p_region)) then raise exception 'not allowed'; end if;
+  return jsonb_build_object('can', public.fm_bill_can('prep', p_region) or public.fm_bill_can('contract', p_region),
+    'snaps', coalesce((select jsonb_agg(jsonb_build_object('month', s.month, 'rows', s.rows, 'meta', s.meta, 'n', s.n, 'by_name', s.by_name, 'at', s.at,
+      'locked', public.fm_rate_snap_locked(s.region, s.month))) from public.fm_rate_snaps s where s.region = p_region and s.month = any(coalesce(p_months, '{}'))), '[]'::jsonb));
+end $$;
+
+-- p_rows null keeps the stored buildings and only replaces meta.
+create or replace function public.fm_rate_snap_save(p_region text, p_month text, p_rows jsonb, p_meta jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare cur public.fm_rate_snaps;
+begin
+  if auth.uid() is null or not (public.fm_bill_can('prep', p_region) or public.fm_bill_can('contract', p_region)) then raise exception 'not allowed'; end if;
+  if not public.fm_mod('bill') then raise exception 'module disabled'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  if public.fm_rate_snap_locked(p_region, p_month) then raise exception 'snapshot locked'; end if;
+  select * into cur from public.fm_rate_snaps where region = p_region and month = p_month;
+  if p_rows is null and cur.region is null then raise exception 'no snapshot'; end if;
+  if p_rows is not null and (jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 12000 or length(p_rows::text) > 6000000) then raise exception 'invalid rows'; end if;
+  if p_meta is not null and (jsonb_typeof(p_meta) <> 'object' or length(p_meta::text) > 400000) then raise exception 'invalid rows'; end if;
+  insert into public.fm_rate_snaps (region, month, rows, meta, n, by_id, by_name, at)
+  values (p_region, p_month, coalesce(p_rows, cur.rows), coalesce(p_meta, cur.meta, '{}'), jsonb_array_length(coalesce(p_rows, cur.rows)), auth.uid(), public.fm_me_name(), now())
+  on conflict (region, month) do update set rows = excluded.rows, meta = excluded.meta, n = excluded.n, by_id = excluded.by_id, by_name = excluded.by_name, at = now();
+  return jsonb_build_object('ok', true, 'n', jsonb_array_length(coalesce(p_rows, cur.rows)));
+end $$;
+
+create or replace function public.fm_rate_snap_del(p_region text, p_month text) returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not (public.fm_bill_can('prep', p_region) or public.fm_bill_can('contract', p_region)) then raise exception 'not allowed'; end if;
+  if public.fm_rate_snap_locked(p_region, p_month) then raise exception 'snapshot locked'; end if;
+  delete from public.fm_rate_snaps where region = p_region and month = p_month;
+  return true;
+end $$;
+
+revoke all on function public.fm_rate_snap_locked(text, text), public.fm_rate_snap_get(text, text[]), public.fm_rate_snap_save(text, text, jsonb, jsonb), public.fm_rate_snap_del(text, text) from public, anon;
+grant execute on function public.fm_rate_snap_get(text, text[]), public.fm_rate_snap_save(text, text, jsonb, jsonb), public.fm_rate_snap_del(text, text) to authenticated;
+notify pgrst, 'reload schema';
