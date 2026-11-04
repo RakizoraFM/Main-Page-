@@ -13335,3 +13335,272 @@ begin
 exception when invalid_text_representation then return new;
 end $$;
 notify pgrst, 'reload schema';
+
+-- ---------- 88) online sources (Google Sheets) → school DB update requests with approval (V307) ----------
+-- A source (fm_sources) is a Google Sheet shared «anyone with the link» read by the platform of the system admin, which
+-- maps its columns to the school DB fields and sends the rows to fm_sdb_submit. Nothing is written to the school DB
+-- (app_kv fm_school_master_db_v1) on submit: each difference becomes a pending request in fm_sdb_changes — a new school,
+-- a changed field (an empty cell never clears a field), or (for a «full list» source) a school missing from the sheet.
+-- A request is approved by the people allowed for its field group in fm_settings.sdb_sync {groups: {contact, place, core:
+-- [job titles … | 'eng' = the building's engineer named in the school DB]}} (system admin always), then applied to the
+-- school DB at once; fm_settings.sdb_rev counts the applied changes so the admin's local copy is replaced by the cloud one.
+-- Locked fields (fm_sdb_locks) are never asked again. All tables: RLS on, no policies, no grants.
+create table if not exists public.fm_sources (
+  id uuid primary key default gen_random_uuid(),
+  name text not null, kind text not null default 'gsheet' check (kind in ('gsheet')),
+  url text not null, target text not null default 'schooldb' check (target in ('schooldb')),
+  map jsonb not null default '{}'::jsonb, full_list boolean not null default false,
+  every_h int not null default 6 check (every_h between 1 and 168), active boolean not null default true,
+  last_at timestamptz, last_ok boolean, last_err text, last_rows int, last_changes int,
+  by_id uuid, by_name text, at timestamptz not null default now()
+);
+create table if not exists public.fm_sdb_changes (
+  id bigserial primary key,
+  src uuid references public.fm_sources(id) on delete set null, src_name text,
+  bkey text not null, school text, kind text not null check (kind in ('new','change','missing')),
+  field text, old text, new text, row jsonb, grp text not null default 'core', eng text[] not null default '{}',
+  flag text, status text not null default 'pending' check (status in ('pending','approved','rejected','undone')),
+  dec_by uuid, dec_name text, dec_at timestamptz, note text, at timestamptz not null default now()
+);
+alter table public.fm_sdb_changes add column if not exists eng text[] not null default '{}';
+create index if not exists fm_sdb_changes_st on public.fm_sdb_changes (status, bkey);
+create table if not exists public.fm_sdb_locks (
+  bkey text not null, field text not null, by_name text, at timestamptz not null default now(), primary key (bkey, field)
+);
+alter table public.fm_sources enable row level security;
+alter table public.fm_sdb_changes enable row level security;
+alter table public.fm_sdb_locks enable row level security;
+revoke all on public.fm_sources, public.fm_sdb_changes, public.fm_sdb_locks from anon, authenticated;
+
+create or replace function public.fm_sdb_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('groups', coalesce((select value->'groups' from public.fm_settings where key = 'sdb_sync'),
+    '{"contact": ["sysadmin", "eng"], "place": ["sysadmin", "eng"], "core": ["sysadmin"]}'::jsonb)) $$;
+create or replace function public.fm_sdb_grp(f text) returns text language sql immutable as $$
+  select case when f in ('principal','principalPhone','guard','guardPhone','ownerSup','ownerSupPhone','ownerSupEmail',
+                         'supervisorPhone','engineerPhone','lightSupervisorPhone','lightEngineerPhone','supervisorEmail','engineerEmail') then 'contact'
+              when f in ('lat','lng','gender','size','office','address','district','students') then 'place'
+              else 'core' end $$;
+create or replace function public.fm_sdb_n(t text) returns text language sql immutable as $$
+  select btrim(regexp_replace(regexp_replace(translate(lower(btrim(coalesce(t,''))), 'أإآةى', 'اااهي'), '^(م\.|م |المهندس |مهندس )', ''), '\s+', ' ', 'g')) $$;
+create or replace function public.fm_sdb_admin() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin', false) $$;
+-- the school DB as an array (app_kv may hold an array or {schools: [...]})
+create or replace function public.fm_sdb_rows() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce((select case when jsonb_typeof(value) = 'array' then value when jsonb_typeof(value->'schools') = 'array' then value->'schools' end
+     from public.app_kv where key = 'fm_school_master_db_v1'), '[]'::jsonb) $$;
+create or replace function public.fm_sdb_row(p_key text) returns jsonb language sql stable security definer set search_path = public as $$
+  select x from jsonb_array_elements(public.fm_sdb_rows()) x where public.fm_bkey(x->>'buildingId', x->>'school') = p_key limit 1 $$;
+-- the building's engineers (maintenance / light services), normalised — kept on each request
+create or replace function public.fm_sdb_engs(r jsonb) returns text[] language sql immutable as $$
+  select coalesce(array(select public.fm_sdb_n(x) from unnest(array[r->>'engineer', r->>'lightEngineer']) x where btrim(coalesce(x,'')) <> ''), '{}') $$;
+-- may the caller decide this request?
+create or replace function public.fm_sdb_can(c public.fm_sdb_changes) returns boolean language plpgsql stable security definer set search_path = public as $$
+declare g jsonb; me public.profiles; nm text[];
+begin
+  if public.fm_sdb_admin() then return true; end if;
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not coalesce(me.active, false) then return false; end if;
+  g := coalesce(public.fm_sdb_cfg()->'groups'->c.grp, '[]'::jsonb);
+  if g ? public.fm_my_pos() then return true; end if;
+  if g ? 'eng' and cardinality(c.eng) > 0 then
+    nm := array(select public.fm_sdb_n(x) from unnest(public.fm_names() || coalesce(me.full_name, '')) x where btrim(x) <> '');
+    return c.eng && nm;
+  end if;
+  return false;
+end $$;
+
+create or replace function public.fm_source_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare v uuid := public.fm_uuid_or_null(p->>'id'); me public.profiles;
+begin
+  if not public.fm_sdb_admin() then raise exception 'not allowed'; end if;
+  select * into me from public.profiles where id = auth.uid();
+  if coalesce(p->>'delete','') = 'true' then delete from public.fm_sources where id = v; return v; end if;
+  if btrim(coalesce(p->>'name','')) = '' or coalesce(p->>'url','') !~ '^https://docs\.google\.com/spreadsheets/' then raise exception 'bad source'; end if;
+  if v is null then
+    insert into public.fm_sources (name, url, map, full_list, every_h, active, by_id, by_name)
+    values (left(btrim(p->>'name'),120), left(p->>'url',600), coalesce(p->'map','{}'), coalesce((p->>'full_list')::boolean,false),
+            least(168, greatest(1, coalesce((p->>'every_h')::int, 6))), coalesce((p->>'active')::boolean, true), me.id, coalesce(me.full_name, me.email))
+    returning id into v;
+  else
+    update public.fm_sources set name = left(btrim(p->>'name'),120), url = left(p->>'url',600), map = coalesce(p->'map', map),
+      full_list = coalesce((p->>'full_list')::boolean, full_list), every_h = least(168, greatest(1, coalesce((p->>'every_h')::int, every_h))),
+      active = coalesce((p->>'active')::boolean, active) where id = v;
+  end if;
+  return v;
+end $$;
+create or replace function public.fm_sources_list() returns jsonb language sql stable security definer set search_path = public as $$
+  select case when public.fm_sdb_admin() then coalesce((select jsonb_agg(to_jsonb(s) order by s.at) from public.fm_sources s), '[]') else '[]' end $$;
+
+-- the admin's platform sends the mapped rows of one fetch: [{field: value, …}] (buildingId / school identify the row)
+create or replace function public.fm_sdb_submit(p_src uuid, p_rows jsonb, p_err text default null) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s public.fm_sources; me public.profiles; db jsonb; r jsonb; k text; cur jsonb; f text; v text; o text; n_new int := 0; n_ch int := 0; n_miss int := 0;
+  seen text[] := '{}'; fl text; nm text; ids uuid[]; e record;
+begin
+  if not public.fm_sdb_admin() then raise exception 'not allowed'; end if;
+  select * into me from public.profiles where id = auth.uid();
+  select * into s from public.fm_sources where id = p_src for update;
+  if s.id is null then raise exception 'not found'; end if;
+  if p_err is not null then
+    update public.fm_sources set last_at = now(), last_ok = false, last_err = left(p_err, 300) where id = s.id;
+    return jsonb_build_object('ok', false);
+  end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 20000 then raise exception 'bad rows'; end if;
+  db := public.fm_sdb_rows();
+  for r in select x from jsonb_array_elements(p_rows) x loop
+    if jsonb_typeof(r) <> 'object' then continue; end if;
+    k := public.fm_bkey(r->>'buildingId', r->>'school');
+    if k = 'N:' or k = any(seen) then continue; end if;
+    seen := seen || k;
+    select x into cur from jsonb_array_elements(db) x where public.fm_bkey(x->>'buildingId', x->>'school') = k limit 1;
+    if cur is null then
+      if not exists (select 1 from public.fm_sdb_changes where bkey = k and kind = 'new' and status in ('pending','rejected')) then
+        insert into public.fm_sdb_changes (src, src_name, bkey, school, kind, row, grp, eng)
+        values (s.id, s.name, k, r->>'school', 'new', r, 'core', public.fm_sdb_engs(r)); n_new := n_new + 1;
+      else
+        update public.fm_sdb_changes set row = row || coalesce((select jsonb_object_agg(key, value) from jsonb_each(r) where btrim(coalesce(value #>> '{}', '')) <> ''), '{}'),
+          eng = public.fm_sdb_engs(row || r), at = now() where bkey = k and kind = 'new' and status = 'pending';
+      end if;
+      continue;
+    end if;
+    for f, v in select key, btrim(value) from jsonb_each_text(r) loop
+      if v = '' or f in ('buildingId') then continue; end if;
+      o := btrim(coalesce(cur->>f, ''));
+      if o = v or (f in ('lat','lng') and o ~ '^-?[0-9.]+$' and v ~ '^-?[0-9.]+$' and abs(o::numeric - v::numeric) < 0.00001) then continue; end if;
+      if exists (select 1 from public.fm_sdb_locks where bkey = k and field = f) then continue; end if;
+      if exists (select 1 from public.fm_sdb_changes where bkey = k and field = f and kind = 'change' and new = v and status = 'rejected') then continue; end if;
+      fl := case when f like '%Phone' and v !~ '^05[0-9]{8}$' then 'phone'
+                 when f = 'lat' and not (v ~ '^-?[0-9.]+$' and v::numeric between 16 and 33) then 'xy'
+                 when f = 'lng' and not (v ~ '^-?[0-9.]+$' and v::numeric between 34 and 56) then 'xy'
+                 when f like '%Email' and v !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then 'email' end;
+      update public.fm_sdb_changes set new = v, old = o, flag = fl, src = s.id, src_name = s.name, at = now()
+       where bkey = k and field = f and kind = 'change' and status = 'pending';
+      if not found then
+        insert into public.fm_sdb_changes (src, src_name, bkey, school, kind, field, old, new, grp, flag, eng)
+        values (s.id, s.name, k, coalesce(cur->>'school', r->>'school'), 'change', f, o, v, public.fm_sdb_grp(f), fl, public.fm_sdb_engs(cur));
+        n_ch := n_ch + 1;
+      end if;
+    end loop;
+  end loop;
+  -- a pending field change that the DB already has is no longer needed
+  delete from public.fm_sdb_changes c where c.status = 'pending' and c.kind = 'change'
+    and btrim(coalesce((select x->>c.field from jsonb_array_elements(db) x where public.fm_bkey(x->>'buildingId', x->>'school') = c.bkey limit 1), '')) = c.new;
+  -- «missing» only when the sheet looks complete (≥ 80 % of the DB), never from a partial or broken read
+  if s.full_list and cardinality(seen) >= greatest(1, ceil(jsonb_array_length(db) * 0.8)) then
+    for cur in select x from jsonb_array_elements(db) x where not (public.fm_bkey(x->>'buildingId', x->>'school') = any(seen)) loop
+      k := public.fm_bkey(cur->>'buildingId', cur->>'school');
+      if not exists (select 1 from public.fm_sdb_changes where bkey = k and kind = 'missing' and status in ('pending','rejected')) then
+        insert into public.fm_sdb_changes (src, src_name, bkey, school, kind, row, grp, eng) values (s.id, s.name, k, cur->>'school', 'missing', cur, 'core', public.fm_sdb_engs(cur));
+        n_miss := n_miss + 1;
+      end if;
+    end loop;
+  end if;
+  update public.fm_sources set last_at = now(), last_ok = true, last_err = null, last_rows = jsonb_array_length(p_rows),
+    last_changes = n_new + n_ch + n_miss where id = s.id;
+  -- push to the people who decide (system admins; the buildings' engineers when the group allows them)
+  if n_new + n_ch + n_miss > 0 then
+    begin
+      for e in select distinct p.id from public.profiles p where p.active and p.deleted_at is null and p.id <> me.id
+          and (p.role = 'admin' or public.fm_posx(p.role, p.job_title) = 'sysadmin'
+               or exists (select 1 from public.fm_sdb_changes c where c.status = 'pending' and c.at > now() - interval '1 minute'
+                            and (coalesce(public.fm_sdb_cfg()->'groups'->c.grp, '[]') ? public.fm_posx(p.role, p.job_title)
+                                 or (coalesce(public.fm_sdb_cfg()->'groups'->c.grp, '[]') ? 'eng'
+                                     and c.eng && array(select public.fm_sdb_n(x) from unnest(coalesce(p.person_names,'{}') || coalesce(p.full_name,'')) x)))))
+      loop perform public.fm_push_add(e.id, 'sdb', '🏫 طلبات تحديث قاعدة المدارس', (n_new + n_ch + n_miss) || ' تغيير من «' || s.name || '» بانتظار الاعتماد', 'sdb', 'sdb', false); end loop;
+    exception when others then null; end;
+  end if;
+  return jsonb_build_object('ok', true, 'new', n_new, 'change', n_ch, 'missing', n_miss);
+end $$;
+
+create or replace function public.fm_sdb_list(p_status text default 'pending', p_limit int default 3000) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare out jsonb;
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then return jsonb_build_object('rows', '[]'::jsonb); end if;
+  select coalesce(jsonb_agg(to_jsonb(c) - 'row' || jsonb_build_object('row', case when c.kind = 'new' then c.row end, 'can', public.fm_sdb_can(c)) order by c.school, c.bkey, c.id), '[]')
+    into out from (select * from public.fm_sdb_changes c
+                    where (p_status = 'all' or c.status = p_status) and (p_status = 'pending' or c.at > now() - interval '120 days')
+                    order by c.id desc limit least(greatest(coalesce(p_limit, 3000), 1), 5000)) c
+   where public.fm_sdb_admin() or public.fm_sdb_can(c);
+  return jsonb_build_object('rows', out, 'admin', public.fm_sdb_admin(), 'cfg', public.fm_sdb_cfg(),
+    'rev', coalesce((select value from public.fm_settings where key = 'sdb_rev'), '0'::jsonb),
+    'locks', case when public.fm_sdb_admin() then coalesce((select jsonb_agg(to_jsonb(l)) from public.fm_sdb_locks l), '[]') else '[]' end);
+end $$;
+
+-- approve (applied to the school DB at once) or reject (note required) several requests
+create or replace function public.fm_sdb_act(p_ids bigint[], p_ok boolean, p_note text default null) returns jsonb language plpgsql security definer set search_path = public as $$
+declare me public.profiles; c public.fm_sdb_changes; kv public.app_kv; arr jsonb; obj boolean; i int; out jsonb := '[]'; n int := 0; nr jsonb; reg text;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not coalesce(me.active, false) then raise exception 'not allowed'; end if;
+  if not p_ok and btrim(coalesce(p_note, '')) = '' then raise exception 'note required'; end if;
+  if cardinality(p_ids) > 2000 then raise exception 'too many'; end if;
+  if p_ok then
+    select * into kv from public.app_kv where key = 'fm_school_master_db_v1' for update;
+    obj := kv.key is not null and jsonb_typeof(kv.value) = 'object';
+    arr := coalesce(case when kv.key is null then '[]'::jsonb when obj then kv.value->'schools' else kv.value end, '[]'::jsonb);
+  end if;
+  for c in select * from public.fm_sdb_changes where id = any(p_ids) order by id for update loop
+    if c.status <> 'pending' then out := out || jsonb_build_object('id', c.id, 'ok', false, 'err', 'not pending'); continue; end if;
+    if not public.fm_sdb_can(c) then out := out || jsonb_build_object('id', c.id, 'ok', false, 'err', 'not allowed'); continue; end if;
+    if p_ok then
+      select o - 1 into i from jsonb_array_elements(arr) with ordinality t(x, o) where public.fm_bkey(x->>'buildingId', x->>'school') = c.bkey limit 1;
+      if c.kind = 'change' then
+        if i is null then out := out || jsonb_build_object('id', c.id, 'ok', false, 'err', 'school not found'); continue; end if;
+        arr := jsonb_set(arr, array[i::text, c.field], to_jsonb(c.new), true);
+      elsif c.kind = 'new' then
+        if i is not null then out := out || jsonb_build_object('id', c.id, 'ok', false, 'err', 'already exists'); continue; end if;
+        nr := c.row; reg := public.fm_sdb_n(nr->>'region');
+        nr := jsonb_set(nr, '{region}', to_jsonb(case when reg in ('القصيم','qassim') then 'qassim' when reg in ('الرياض','riyadh') then 'riyadh' else coalesce(nr->>'region','') end));
+        arr := arr || jsonb_build_array(nr);
+      else
+        if i is not null then arr := arr - i; end if;
+      end if;
+    end if;
+    update public.fm_sdb_changes set status = case when p_ok then 'approved' else 'rejected' end, dec_by = me.id,
+      dec_name = coalesce(me.full_name, me.email), dec_at = now(), note = nullif(btrim(coalesce(p_note,'')),'') where id = c.id;
+    out := out || jsonb_build_object('id', c.id, 'ok', true); n := n + 1;
+  end loop;
+  if p_ok and n > 0 then
+    if kv.key is null then insert into public.app_kv (key, value) values ('fm_school_master_db_v1', arr);
+    else update public.app_kv set value = case when obj then jsonb_set(kv.value, '{schools}', arr) else arr end, updated_at = now(), updated_by = me.id where key = kv.key; end if;
+    insert into public.fm_settings (key, value) values ('sdb_rev', to_jsonb(1)) on conflict (key) do update set value = to_jsonb(coalesce((public.fm_settings.value)::text::int, 0) + 1);
+  end if;
+  return out;
+end $$;
+
+-- undo an applied field change (system admin): the old value comes back when the field still holds the new one
+create or replace function public.fm_sdb_undo(p_id bigint) returns boolean language plpgsql security definer set search_path = public as $$
+declare c public.fm_sdb_changes; kv public.app_kv; arr jsonb; obj boolean; i int; me public.profiles;
+begin
+  if not public.fm_sdb_admin() then raise exception 'not allowed'; end if;
+  select * into me from public.profiles where id = auth.uid();
+  select * into c from public.fm_sdb_changes where id = p_id for update;
+  if c.id is null or c.status <> 'approved' or c.kind <> 'change' then raise exception 'cannot undo'; end if;
+  select * into kv from public.app_kv where key = 'fm_school_master_db_v1' for update;
+  obj := jsonb_typeof(kv.value) = 'object'; arr := case when obj then kv.value->'schools' else kv.value end;
+  select o - 1 into i from jsonb_array_elements(arr) with ordinality t(x, o) where public.fm_bkey(x->>'buildingId', x->>'school') = c.bkey limit 1;
+  if i is null or btrim(coalesce(arr->i->>c.field, '')) <> c.new then raise exception 'changed since'; end if;
+  arr := jsonb_set(arr, array[i::text, c.field], to_jsonb(coalesce(c.old, '')), true);
+  update public.app_kv set value = case when obj then jsonb_set(kv.value, '{schools}', arr) else arr end, updated_at = now(), updated_by = me.id where key = kv.key;
+  update public.fm_sdb_changes set status = 'undone', note = coalesce(note || ' — ', '') || '↩️ تراجع ' || coalesce(me.full_name, me.email) where id = c.id;
+  insert into public.fm_settings (key, value) values ('sdb_rev', to_jsonb(1)) on conflict (key) do update set value = to_jsonb(coalesce((public.fm_settings.value)::text::int, 0) + 1);
+  return true;
+end $$;
+
+create or replace function public.fm_sdb_lock(p_key text, p_field text, p_on boolean) returns boolean language plpgsql security definer set search_path = public as $$
+declare me public.profiles;
+begin
+  if not public.fm_sdb_admin() then raise exception 'not allowed'; end if;
+  select * into me from public.profiles where id = auth.uid();
+  if p_on then
+    insert into public.fm_sdb_locks (bkey, field, by_name) values (p_key, p_field, coalesce(me.full_name, me.email)) on conflict do nothing;
+    delete from public.fm_sdb_changes where bkey = p_key and field = p_field and status = 'pending';
+  else delete from public.fm_sdb_locks where bkey = p_key and field = p_field; end if;
+  return p_on;
+end $$;
+
+revoke all on function public.fm_source_save(jsonb), public.fm_sources_list(), public.fm_sdb_submit(uuid, jsonb, text), public.fm_sdb_list(text, int),
+  public.fm_sdb_act(bigint[], boolean, text), public.fm_sdb_undo(bigint), public.fm_sdb_lock(text, text, boolean), public.fm_sdb_cfg() from public, anon;
+grant execute on function public.fm_source_save(jsonb), public.fm_sources_list(), public.fm_sdb_submit(uuid, jsonb, text), public.fm_sdb_list(text, int),
+  public.fm_sdb_act(bigint[], boolean, text), public.fm_sdb_undo(bigint), public.fm_sdb_lock(text, text, boolean), public.fm_sdb_cfg() to authenticated;
+revoke all on function public.fm_sdb_can(public.fm_sdb_changes), public.fm_sdb_rows(), public.fm_sdb_row(text) from public, anon, authenticated;
+notify pgrst, 'reload schema';
