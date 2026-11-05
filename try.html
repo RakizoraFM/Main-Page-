@@ -43,16 +43,90 @@ input,textarea,select{font:600 14.5px Cairo,Tahoma,sans-serif;border:1px solid #
 html,body{overflow-x:hidden}
 footer{background:#0f172a;color:#94a3b8;padding:22px 0;font-size:13px;text-align:center}
 @media(max-width:640px){form .two{grid-template-columns:1fr}header a:not(.c){display:none}.hero{padding:36px 0 44px}}
+
+/* Modern RakizoraFM landing page */
+:root{--ink:#10233f;--mut:#5e6f85;--line:#dfe7ef;--pri:#0e8b8e;--pri2:#23b9a8;--bg:#f4f7fb;--ok:#15803d}
+body{background:#f4f7fb;color:var(--ink);line-height:1.75}
+.wrap{max-width:1240px}
+header{background:rgba(7,22,42,.96);border-bottom:1px solid rgba(255,255,255,.1);backdrop-filter:blur(12px)}
+header .wrap{min-height:70px;gap:8px}
+header b{font-size:19px;letter-spacing:.2px}
+header a{border-radius:999px;padding:7px 13px;transition:background .2s ease,color .2s ease}
+header a:not(.c):hover{background:rgba(255,255,255,.1)}
+header a.c{background:linear-gradient(110deg,#19b5a6,#0e8b8e);box-shadow:0 7px 18px rgba(14,139,142,.22)}
+.hero{position:relative;overflow:hidden;background:radial-gradient(circle at 12% 15%,rgba(28,191,174,.22),transparent 27%),linear-gradient(130deg,#07182c,#0d294b 58%,#123b59);padding:52px 0 48px}
+.hero:after{content:"";position:absolute;inset:auto -5% -180px 40%;height:280px;border-radius:50%;background:rgba(25,181,166,.08);filter:blur(10px);pointer-events:none}
+.hero-layout{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,.98fr);align-items:center;gap:38px}
+.hero-copy{min-width:0}
+.hero-brand{display:inline-flex;align-items:center;gap:9px;padding:6px 12px;border:1px solid rgba(153,227,222,.25);background:rgba(255,255,255,.07);color:#e2f5f5;border-radius:999px;font-size:13px;font-weight:900;margin-bottom:16px}
+.hero-brand em{font-style:normal;color:#5eead4}
+.hero h1{max-width:680px;font-size:clamp(30px,4vw,48px);line-height:1.3;letter-spacing:-.5px;margin:0 0 14px}
+.hero p{max-width:650px;color:#cbd8e7;font-size:clamp(15px,1.5vw,17px);line-height:1.9;margin:0 0 20px}
+.hero-actions{display:flex;flex-wrap:wrap;gap:8px;margin:2px -4px 0}
+.btn{border-radius:12px;padding:11px 19px;margin:0;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
+.btn:hover{transform:translateY(-2px)}
+.btn.p{background:linear-gradient(110deg,#27c6a9,#0f978d);color:#062b32;box-shadow:0 8px 22px rgba(35,185,168,.24)}
+.btn.s{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.24);color:#fff}
+.btn.w{background:#20b96b;color:#fff}
+.hero-visual{position:relative;min-height:360px;aspect-ratio:1.35;border:1px solid rgba(255,255,255,.17);border-radius:26px;overflow:hidden;box-shadow:0 28px 65px rgba(0,0,0,.32);background:#10294a}
+.hero-visual img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:70% center}
+.hero-visual:after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(3,15,31,.72),transparent 48%);pointer-events:none}
+.hero-caption{position:absolute;z-index:1;right:20px;bottom:18px;display:flex;align-items:center;gap:9px;color:#fff;font-weight:900;font-size:14px}
+.hero-caption i{width:9px;height:9px;border-radius:50%;background:#2dd4bf;box-shadow:0 0 0 5px rgba(45,212,191,.16)}
+.stats{grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:26px}
+.stats div{border-radius:13px;padding:10px 12px;background:rgba(255,255,255,.065);border-color:rgba(255,255,255,.12)}
+.stats b{font-size:20px;color:#fff}.stats span{font-size:11.5px;line-height:1.45;display:block}
+section{padding:58px 0}
+section h2{color:var(--ink);font-size:clamp(23px,3vw,32px);line-height:1.4}
+section .sub{max-width:820px;color:var(--mut);font-size:15px;line-height:1.8}
+.section-kicker{display:inline-block;color:#0c7b7d;background:#e2f5f3;border-radius:999px;padding:3px 11px;font-size:12px;font-weight:900;margin-bottom:8px}
+.solutions{background:#fff}
+.solutions .section-head{margin-bottom:22px}
+.solution-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.solution-card{overflow:hidden;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 10px 30px rgba(15,35,63,.06);transition:transform .2s ease,box-shadow .2s ease}
+.solution-card:hover{transform:translateY(-4px);box-shadow:0 18px 36px rgba(15,35,63,.12)}
+.solution-card .photo{height:180px;overflow:hidden;background:#dce8ee}
+.solution-card img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s ease}
+.solution-card:hover img{transform:scale(1.04)}
+.solution-card .copy{padding:15px 16px 17px}
+.solution-card h3{font-size:16px;margin:0 0 4px;color:#122b48}
+.solution-card p{font-size:13px;line-height:1.7;margin:0;color:var(--mut)}
+#parts .card,#plans .card,section .steps .card{border-radius:16px;box-shadow:0 8px 22px rgba(15,35,63,.045);transition:transform .18s ease,box-shadow .18s ease}
+#parts .card:hover,#plans .card:hover,section .steps .card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(15,35,63,.09)}
+#plans .card.hl{border-color:#0e8b8e;box-shadow:0 12px 32px rgba(14,139,142,.14)}
+.chip{background:#e4f6f4;color:#08777a}
+input,textarea,select{border-color:#cfd9e4}
+input:focus,textarea:focus,select:focus{outline:2px solid rgba(20,166,158,.22);border-color:#13a39a}
+footer{margin-top:18px}
+@media(max-width:980px){.hero-layout{grid-template-columns:minmax(0,1fr) minmax(0,.85fr);gap:22px}.hero-visual{min-height:300px}.solution-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){header .wrap{min-height:62px}header a:not(.c){display:none}.hero{padding:38px 0 34px}.hero-layout{grid-template-columns:1fr;gap:22px}.hero-visual{min-height:250px;aspect-ratio:1.55;grid-row:1}.hero-copy{grid-row:2}.hero h1{font-size:clamp(28px,7vw,38px)}.stats{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:20px}section{padding:42px 0}.solution-card .photo{height:160px}}
+@media(max-width:430px){.solution-grid{grid-template-columns:1fr}.solution-card .photo{height:190px}.hero-actions .btn{flex:1 1 100%;text-align:center}.hero-brand{margin-bottom:12px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+
 </style>
 </head>
 <body>
-<header><div class="wrap"><b>RakizoraFM</b><a href="#parts">الأجزاء</a><a href="#plans">الباقات</a><a href="#demo" data-demo-link>جرّب العرض</a><a class="c" href="#trial">اطلب تجربة</a></div></header>
-<div class="hero"><div class="wrap">
- <h1>إدارة صيانة المدارس والمباني<br>من البلاغ حتى المستخلص — في منصة واحدة</h1>
- <p>بلاغات بمؤشرات SLA، أوامر عمل وصيانة وقائية بقوالب معتمدة، مستودع وعهد وتوالف، مستخلصات المقاولين، وتطبيق ميداني للمشرفين والمقاولين يعمل بدون إنترنت — لكل شركة قاعدة بيانات مستقلة.</p>
- <a class="btn p" href="#trial">🚀 اطلب تجربة مجانية</a><a class="btn s" href="#demo" data-demo-link>🧪 ادخل نسخة العرض الآن</a>
- <div class="stats"><div><b>8</b><span>أجزاء تشتري منها ما تحتاج</span></div><div><b>13</b><span>مسمى وظيفي بصلاحيات جاهزة</span></div><div><b>📱</b><span>تطبيق ميداني بالخريطة والصور</span></div><div><b>🔒</b><span>قاعدة بيانات مستقلة لكل شركة</span></div></div>
+<header><div class="wrap"><b>RakizoraFM</b><a href="#solutions">الحلول</a><a href="#parts">الأجزاء</a><a href="#plans">الباقات</a><a href="#demo" data-demo-link>نسخة العرض</a><a class="c" href="#trial">اطلب تجربة</a></div></header>
+<div class="hero"><div class="wrap hero-layout">
+ <div class="hero-copy">
+  <div class="hero-brand"><span>RakizoraFM</span><em>×</em><span>Solvix</span></div>
+  <h1>إدارة صيانة المدارس والمباني<br>من البلاغ حتى المستخلص — في منصة واحدة</h1>
+  <p>اربط فرق الصيانة والخدمات الخفيفة، المشرفين، المستودعات، والمقاولين بلوحة تشغيل موحدة. تابع البلاغات ومؤشرات SLA وأوامر العمل والتكاليف من الميدان إلى الإدارة.</p>
+  <div class="hero-actions"><a class="btn p" href="#trial">🚀 اطلب تجربة مجانية</a><a class="btn s" href="#demo" data-demo-link>🧪 ادخل نسخة العرض الآن</a></div>
+  <div class="stats"><div><b>8</b><span>أجزاء تشغيلية قابلة للإضافة</span></div><div><b>13</b><span>مسمى وظيفي بصلاحيات جاهزة</span></div><div><b>📱</b><span>تطبيق ميداني بالخريطة والصور</span></div><div><b>🔒</b><span>قاعدة بيانات مستقلة لكل شركة</span></div></div>
+ </div>
+ <div class="hero-visual"><img src="assets/rakizora-solvix-hero.webp" alt="فريق Solvix يراجع لوحة RakizoraFM في بيئة مدرسية" fetchpriority="high"><div class="hero-caption"><i></i><span>منصة رقمية تدعم فرقك في الميدان</span></div></div>
 </div></div>
+
+<section id="solutions" class="solutions"><div class="wrap">
+ <div class="section-head"><span class="section-kicker">RakizoraFM × Solvix</span><h2>كل جوانب التشغيل في صورة واحدة</h2><p class="sub">شاهد كيف تنتقل العمليات من تنفيذ العمل في المدرسة إلى إدارة الأفراد والمخزون وقياس النتائج.</p></div>
+ <div class="solution-grid">
+  <article class="solution-card"><div class="photo"><img src="assets/login-maintenance.webp" alt="فني صيانة ينفذ أمر عمل باستخدام RakizoraFM" loading="lazy" decoding="async"></div><div class="copy"><h3>الصيانة والتشغيل</h3><p>بلاغات، أوامر عمل، صيانة وقائية، وتوثيق الإنجاز بالصور.</p></div></article>
+  <article class="solution-card"><div class="photo"><img src="assets/login-workforce.webp" alt="مشرف ينسق فرق الصيانة والخدمات في المدرسة" loading="lazy" decoding="async"></div><div class="copy"><h3>القوى العاملة والخدمات</h3><p>توزيع الفرق والمهام، متابعة المشرفين، وقياس التغطية الميدانية.</p></div></article>
+  <article class="solution-card"><div class="photo"><img src="assets/login-warehouse.webp" alt="إدارة المستودع وقطع الغيار باستخدام التتبع الرقمي" loading="lazy" decoding="async"></div><div class="copy"><h3>المستودعات وقطع الغيار</h3><p>الأصناف والعهد وحركة الصرف والاستلام ومتابعة الاحتياج.</p></div></article>
+  <article class="solution-card"><div class="photo"><img src="assets/login-kpis.webp" alt="مدير برنامج يراجع مؤشرات الأداء والتشغيل" loading="lazy" decoding="async"></div><div class="copy"><h3>مؤشرات الأداء KPIs</h3><p>مؤشرات SLA والإنجاز وجاهزية المدارس وتكاليف التشغيل.</p></div></article>
+ </div>
+</div></section>
 
 <section id="parts"><div class="wrap"><h2>اختر الأجزاء التي تحتاجها</h2><p class="sub">ابدأ بجزء واحد وأضف غيره لاحقاً بكود تفعيل — بياناتك لا تُفقد عند إيقاف جزء.</p>
  <div class="grid" id="parts-grid"></div></div></section>
