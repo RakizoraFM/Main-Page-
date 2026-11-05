@@ -13770,3 +13770,76 @@ end $$;
 revoke all on function public.fm_rate_snap_locked(text, text), public.fm_rate_snap_get(text, text[]), public.fm_rate_snap_save(text, text, jsonb, jsonb), public.fm_rate_snap_del(text, text) from public, anon;
 grant execute on function public.fm_rate_snap_get(text, text[]), public.fm_rate_snap_save(text, text, jsonb, jsonb), public.fm_rate_snap_del(text, text) to authenticated;
 notify pgrst, 'reload schema';
+
+
+-- ---------- 91) V325 — the tickets reset also empties the ticket tables added after V190 ----------
+-- Before, «تصفير البلاغات» cleared tickets / ticket_work / ticket_events / ticket_photos only, so the pre-deadline list,
+-- escalations, SLA pauses, close reviews, ticket audits, substitute assignments, breach causes, import receipts and the
+-- weekly ticket numbers stayed and still showed the old tickets. Tables that do not exist are skipped by fm_wipe.
+create or replace function public.fm_wipe_parts() returns jsonb language sql immutable as $$
+  select jsonb_build_object(
+    'tickets',    jsonb_build_array('fm_breach_reason_log','fm_breach_reasons','fm_tk_assign_log','fm_tk_assign','fm_sla_pauses',
+                                    'fm_tk_close_rev','fm_tk_audits','fm_close_review_events','fm_close_reviews','fm_sla_inbox231',
+                                    'fm_sla_watch','fm_sla_watch_meta','fm_sla_morning','fm_ticket_imports232','fm_weekly_sent','fm_weekly',
+                                    'ticket_photos','ticket_events','ticket_work','tickets'),
+    'schooldb',   jsonb_build_array(),
+    'wo',         jsonb_build_array('wo_audits','wo_photos','wo_events','fm_bill_wos','work_orders','wo_schedules'),
+    'wh_moves',   jsonb_build_array('wo_serials','wo_purchase_requests','wo_issue_requests','wo_custody_counts','wo_custody_moves','wo_custody','wo_stock_moves','wo_stock'),
+    'wh_catalog', jsonb_build_array('wo_material_photos','wo_supplier_prices','wo_suppliers','wo_materials','wo_stores'),
+    'eng',        jsonb_build_array('fm_eng_ratings','fm_eng_rate_links','fm_eng_audit','fm_eng_observations','fm_eng_logs','fm_eng_assignments'),
+    'portal',     jsonb_build_array('fm_school_requests','fm_school_links'),
+    'costs',      jsonb_build_array('fm_expenses','fm_budgets'),
+    'bill',       jsonb_build_array('fm_bill_wos','fm_bills','fm_contracts'),
+    'cc',         jsonb_build_array('fm_cc_entries','fm_cc_budget','fm_cc_staff','fm_cc_centers'),
+    'misc',       jsonb_build_array('fm_news','fm_push_queue','fm_activity')) $$;
+create or replace function public.fm_wipe_kv_match(p_part text, k text) returns boolean language sql immutable as $$
+  select case p_part when 'tickets' then k like 'fm_ref_date_%' or k like 'fm_rank_%' or k like 'fm265_ok_%'
+                     when 'schooldb' then k = 'fm_school_master_db_v1' else false end $$;
+create or replace function public.fm_wipe(p_parts text[], p_confirm text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare P jsonb := public.fm_wipe_parts(); k text; t text; n bigint; r jsonb := '{}'; parts text[] := '{}'; files int := 0; files_left boolean := false;
+  nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid());
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  if btrim(coalesce(p_confirm,'')) <> 'تصفير' then raise exception 'confirm required'; end if;
+  select coalesce(array_agg(distinct x), '{}') into parts from unnest(coalesce(p_parts,'{}')) x where P ? x;
+  if cardinality(parts) = 0 then raise exception 'no parts'; end if;
+  perform set_config('fm.wipe', '1', true);   -- V202: let fm_mod_guard allow these deletes (this transaction only)
+  -- the warehouse catalog cannot go without its moves
+  if 'wh_catalog' = any(parts) and not 'wh_moves' = any(parts) then parts := parts || 'wh_moves'::text; end if;
+  -- the order of the parts: what refers to others first
+  -- V325: follow-ups of tickets kept with other kinds in one table
+  if 'tickets' = any(parts) and to_regclass('public.fm_ops_escalations') is not null then
+    execute 'delete from public.fm_ops_escalations where kind = ''ticket'''; get diagnostics n = row_count; r := r || jsonb_build_object('fm_ops_escalations', n);
+  end if;
+  foreach k in array array['bill','wo','wh_moves','wh_catalog','eng','portal','costs','cc','tickets','schooldb','misc'] loop
+    if not k = any(parts) then continue; end if;
+    if k = 'cc' and to_regclass('public.fm_cc_centers') is not null then
+      if to_regclass('public.fm_contracts') is not null then update public.fm_contracts set cc_id = null where cc_id is not null; end if;
+      update public.fm_cc_centers set parent_id = null where parent_id is not null;
+    end if;
+    for t in select jsonb_array_elements_text(P->k) loop
+      if to_regclass('public.' || t) is not null then
+        execute format('delete from public.%I where true', t); get diagnostics n = row_count;   -- V203: Supabase (pg_safeupdate) refuses a DELETE without WHERE
+        r := r || jsonb_build_object(t, coalesce((r->>t)::bigint, 0) + n);
+      end if;
+    end loop;
+    if k in ('tickets','schooldb') then
+      delete from public.app_kv a where public.fm_wipe_kv_match(k, a.key); get diagnostics n = row_count;
+      r := r || jsonb_build_object('app_kv:' || k, n);
+    end if;
+  end loop;
+  -- the photo files of the emptied parts (newer projects refuse deletes from storage in SQL: they stay, unseen)
+  begin
+    if 'tickets' = any(parts) then delete from storage.objects where bucket_id = 'ticket-photos'; get diagnostics n = row_count; files := files + n; end if;
+    if 'wo' = any(parts) then delete from storage.objects where bucket_id = 'wo-photos'; get diagnostics n = row_count; files := files + n; end if;
+    if 'eng' = any(parts) then delete from storage.objects where bucket_id = 'school-engagement'; get diagnostics n = row_count; files := files + n; end if;
+  exception when others then files_left := true; end;
+  insert into public.fm_settings(key, value) values ('wipe', jsonb_build_object('at', now(), 'parts', to_jsonb(parts), 'by', nm))
+    on conflict (key) do update set value = excluded.value, updated_at = now();
+  insert into public.fm_audit_log(actor_name, action, target, details) values (nm, 'wipe', array_to_string(parts, ','), jsonb_build_object('rows', r, 'files', files));
+  return jsonb_build_object('parts', to_jsonb(parts), 'rows', r, 'files', files, 'files_left', files_left);
+end $$;
+revoke all on function public.fm_wipe_parts(), public.fm_wipe_kv_match(text, text) from public, anon, authenticated;
+revoke all on function public.fm_wipe(text[], text) from public, anon;
+grant execute on function public.fm_wipe(text[], text) to authenticated;
+notify pgrst, 'reload schema';
