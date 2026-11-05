@@ -8,6 +8,7 @@ rm -rf dist && mkdir -p dist
 cp index.html field.html start.html rate.html school.html supplier.html saas.html try.html dist/
 cp integrations.html dist/
 cp -r integrations dist/
+cp -r assets dist/
 cp sw.js manifest.webmanifest fci_template.xlsx ppm_template.xlsx dist/
 cp -r icons dist/
 # the Edge Function code (the settings cards copy it from the site)
