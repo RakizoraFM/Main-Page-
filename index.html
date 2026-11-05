@@ -12177,15 +12177,7 @@ async function exportSupervisorDailyPdf(){
   if(typeof html2canvas!=='function'||typeof jspdf==='undefined'||!jspdf.jsPDF){
    const w=window.open('','_blank');if(!w){showToast('يرجى السماح بفتح نافذة الطباعة','warning');return;}
    w.document.write(`<html dir="rtl"><head><meta charset="utf-8">${supervisorDailyExportStyles()}</head><body>${markup}
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);
    w.document.close();w.focus();w.print();return;
@@ -21132,15 +21124,7 @@ window.openKpiCalculationDetails=openKpiCalculationDetails;window.closeKpiCalcul
       'th,td{border:1px solid #cbd5e1;padding:7px;text-align:center}'+
       'th{font-weight:bold;background:#eef2ff}tfoot td{font-weight:bold;background:#e0e7ff}</style>'+
       '</head><body><h2>'+title+'</h2>'+clone.outerHTML+'
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>';
 
@@ -31386,15 +31370,7 @@ const ARR=[['sign','لوحة المدرسة'],['entrance','مدخل المدرس
 const ST={assigned:'بانتظار القبول',accepted:'مقبول',rejected:'مرفوض',in_progress:'قيد التنفيذ',done:'منفّذ — بانتظار الاعتماد',returned:'مُعاد للتصحيح',closed:'معتمد ومغلق',cancelled:'ملغى',stopped:'موقوف (سلامة)'};
 async function fmV149Pdf(list){if(!list.length)return;const win=window.open('','_blank');if(!win){toast('اسمح بالنوافذ المنبثقة لفتح التقرير','warning');return}
  win.document.write('<!doctype html><meta charset="utf-8"><title>تقرير</title><body style="font-family:Cairo,Tahoma,sans-serif;direction:rtl;padding:30px">⏳ جارٍ تجهيز التقرير…
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body>');
  const D=[];let i=0;for(const w of list){i++;try{win.document.body.textContent=`⏳ جارٍ تجهيز التقرير… ${fmt(i)} / ${fmt(list.length)}`}catch(e){}
@@ -31425,15 +31401,7 @@ async function fmV149Pdf(list){if(!list.length)return;const win=window.open('','
   .it{margin:6px 0;break-inside:avoid}.sig{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px;text-align:center;font-weight:800}.sig div{border-top:1px solid #0f172a;padding-top:6px;min-height:46px}.sig span{font-weight:600;color:#475569}
   footer{margin-top:10px;color:#94a3b8;font-size:10px;text-align:center}@media screen{body{background:#e2e8f0}.pg{background:#fff;max-width:800px;margin:12px auto;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1)}}`;
  const html=`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(window.fmV277ListName?fmV277ListName(list):list.length>1?'تقرير الحملة — '+(list[0].batch_title||''):'تقرير '+(list[0].code||''))}</title> <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap"><style>${css}${window.fmV151Css||''}</style></head><body>${D.map(o=>(window.fmV151Page&&fmV151Page(o,{esc,dt,img,logo}))||page(o)).join('')}${window.fmV152Agg?fmV152Agg(D,{esc,logo}):''} <script>(function(){var im=[].slice.call(document.images),n=0,once=0,go=function(){if(once++)return;setTimeout(function(){window.print()},400)};if(!im.length)return go();im.forEach(function(i){if(i.complete)n++;else i.onload=i.onerror=function(){if(++n>=im.length)go()}});if(n>=im.length)go();setTimeout(go,20000)})();<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`;
  win.document.open();win.document.write(html);win.document.close()}
@@ -32388,15 +32356,7 @@ function page(){let p=document.getElementById('fm162-page');if(!p){p=document.cr
 function print(){const w=window.open('','_blank');if(!w)return;const v=window.FM_APP_VERSION||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>دليل منصة RakizoraFM ${esc(v)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;color:#0f172a;margin:24px;line-height:1.8}h1{font-size:22px}h2{font-size:17px;border-bottom:2px solid #2563eb;padding-bottom:4px;margin-top:22px}.it{break-inside:avoid;margin:10px 0 14px}.it b{font-size:15px}.m{color:#475569;font-size:12.5px}ol{margin:4px 0}</style></head><body><h1>📘 دليل منصة RakizoraFM — الإصدار ${esc(v)}</h1>`
   +MANUAL.map(g=>({...g,items:g.items.filter(x=>sees(x,viewT()))})).filter(g=>g.items.length).map(g=>`<h2>${g.icon} ${esc(g.g)}</h2>`+g.items.map(x=>`<div class="it"><b>${esc(x.t)}</b> <span class="m">${x.v?'('+esc(x.v)+')':''}</span><div>${esc(x.what)}</div><div class="m">📍 ${esc(x.where)} · 👤 ${esc(x.who)}</div><ol>${x.how.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>${(x.tips||[]).map(t=>`<div class="m">💡 ${esc(t)}</div>`).join('')}</div>`).join('')).join('')+'
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>');
  w.document.close();setTimeout(()=>{try{w.print()}catch(e){}},600)}
@@ -33770,15 +33730,7 @@ function letter(o){const [a]=monRange(MON),ml=a.toLocaleDateString(GREG,{month:'
  <h2>الإجمالي</h2><table><tbody><tr><td>غرامات البلاغات</td><td>${money(o.pT)}</td></tr><tr><td>غرامات تأخير الأوامر</td><td>${money(o.pW)}</td></tr><tr><td>غرامات الإرجاع</td><td>${money(o.pR)}</td></tr>${o.cap?`<tr><td>السقف (${num(P.cap_pct)}% من ${money(o.monthly)})</td><td>${money(o.cap)}</td></tr>`:''}<tr class="tot"><td>الغرامة المستحقة</td><td>${money(o.pen)}</td></tr></tbody></table>
  <p class="m">يحق لكم الاعتراض كتابياً خلال 5 أيام عمل من تاريخ هذا الإشعار مع المستندات المؤيدة.</p>
  <div class="sg"><div>مدير المشروع</div><div>مدير العمليات</div><div>المقاول — للعلم والاستلام</div></div><script>setTimeout(()=>print(),600)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 function setDlg(){const ad=isAdmin(),d=document.createElement('dialog');d.className='fm171-dlg';const names=(DATA&&DATA.L||[]).filter(o=>o.k!=='—');
@@ -33910,15 +33862,7 @@ function render(){const p=page(),b=p.querySelector('.body'),x=p.querySelector('.
 function print(){const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة','warning');return}const ml=M.a.toLocaleDateString(GREG,{month:'long',year:'numeric'});
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقرير الصيانة الشهري — ${esc(ml)} — ${esc(REG?RN[REG]||REG:'كل المناطق')}</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet"><style>body{margin:0;padding:14px}${CSS}
  @media print{@page{size:A4;margin:12mm}body{padding:0}.rp .pg{border:0;border-radius:0;padding:0;margin:0;page-break-after:always}.rp .pg:last-child{page-break-after:auto}}</style></head><body>${html(M,notes())}<script>setTimeout(()=>print(),700)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 async function run(){if(busy)return;busy=true;const p=page();p.querySelector('.body').innerHTML='<div class="fm125-src">جارٍ تجهيز التقرير…</div>';
@@ -34101,15 +34045,7 @@ function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){t
  const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}.sg{display:flex;gap:40px;margin-top:40px}.sg div{flex:1;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}@page{size:A4;margin:12mm}</style></head><body>
  <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),300)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 /* shrink a photo to a JPEG data URL under 400k characters */
@@ -35021,15 +34957,7 @@ function print_(bl){const c=savedCt330(bl),w=window.open('','_blank');if(!w){toa
  <table><tbody><tr><th>العقد</th><td>${esc(c.code||'')} — ${esc(c.name)}</td><th>المقاول</th><td>${esc(c.contractor_name)}</td></tr><tr><th>المنطقة</th><td>${esc(rn(c.region))}</td><th>نطاق الفوترة</th><td>${esc(scope330(c))}</td></tr><tr><th>مدة العقد</th><td colspan="3">${c.start_date?dshow(c.start_date):'—'} ← ${c.end_date?dshow(c.end_date):'—'}</td></tr></tbody></table>
  ${linesTable(bl).replace(/class="fm103-t"/g,'')}${bl.note?`<p>ملاحظة: ${esc(bl.note)}</p>`:''}${histHtml(bl)}
  <div class="sg"><div>المقاول</div><div>مهندس المنطقة</div><div>مدير المشروع</div><div>المحاسب</div></div><script>setTimeout(()=>print(),300)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 window.fmV184Open=async id=>{await load();const bl=D.bl.find(x=>x.id===id);if(bl)billDlg(bl)};
@@ -35273,15 +35201,7 @@ function printRep(){const w=window.open('','_blank');if(!w){toast('اسمح با
  <div class="k">${me.revenue?`<div>الإيراد<b>${money(T.rev)}</b></div>`:''}<div>التكلفة<b>${money(T.cost)}</b></div>${me.revenue?`<div>الربح<b>${money(T.profit)}</b>${T.margin==null?'':num(T.margin,1)+'%'}</div>`:''}<div>التوقع لنهاية السنة<b>${money(cm?T.cost/cm*12:0)}</b></div></div>
  <h3>المراكز</h3><table><thead><tr><th>المركز</th>${me.revenue?'<th>الإيراد</th>':''}<th>التكلفة</th>${me.revenue?'<th>الربح</th>':''}<th>ميزانية الفترة</th><th>المستهلك</th></tr></thead><tbody>${crow}</tbody></table>
  <h3>الشهور</h3>${monthTable(A,F.c&&F.c!=='_none'?under(F.c):null).replace(/class="[^"]*"/g,'')}<script>setTimeout(()=>print(),300)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 /* permissions (system admin) in «الإعدادات» ← السحابة */
@@ -35931,15 +35851,7 @@ function exportReport(r){const X=window.XLSX;if(!X)return window.showToast?.('م
  add('المستحقات',[['المستخلص','المقاول','الحالة','المبلغ SAR','المسؤول','الموعد'],...(r.bills||[]).map(x=>[x.code,x.contractor_name,x.status,x.total,x.followup?.owner_name,D(x.followup?.due_at)])]);
  add('الفرق',[['الفريق','الحالة','مسؤول المعالجة','الموعد','الملاحظة'],...(r.teams||[]).map(x=>[x.name,x.status,x.owner_name,D(x.due_at),x.note])]);X.writeFile(wb,'Rakizora_Report_'+r.period.from+'_'+r.period.to+'.xlsx');}
 function printReport(r){const f=document.createElement('iframe');f.title='التقرير القابل للطباعة';f.style.cssText='position:fixed;width:1px;height:1px;bottom:0;left:0;border:0';document.body.appendChild(f);const doc=f.contentDocument;doc.open();doc.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>تقرير RakizoraFM</title><style>body{font-family:Tahoma,Arial,sans-serif;font-size:11px;color:#0f172a;line-height:1.6}table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #aaa;padding:6px;text-align:right;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}h3{break-after:avoid;margin-top:22px}.fm195-note{background:#eee;padding:10px}.fm195-wrap{overflow:visible}@page{size:A4 landscape;margin:12mm}@media print{button{display:none}}</style></head><body>'+reportSections(r)+'
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>');doc.close();setTimeout(()=>{f.contentWindow.focus();f.contentWindow.print()},400);f.contentWindow.onafterprint=()=>setTimeout(()=>f.remove(),500);setTimeout(()=>f.remove(),180000)}
 function dialog(title){const d=document.createElement('dialog');d.className='fm195-dialog';d.dataset.scope=scope();d.innerHTML='<button class="fm103-btn" data-close>إغلاق</button><h3>'+E(title)+'</h3><div data-body></div>';document.body.appendChild(d);d.querySelector('[data-close]').onclick=()=>d.close();d.addEventListener('close',()=>d.remove());d.showModal();return d}
@@ -36549,15 +36461,7 @@ function printAll(){const w=window.open('','_blank');if(!w){toast('اسمح با
  w.document.write(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>إجراءات المستودع وخارطة الطريق</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet"><style>body{font-family:Cairo,Tahoma,sans-serif;margin:18px;color:#0f172a}h1{font-size:20px;margin:0}h2{font-size:16px;margin:18px 0 8px;border-bottom:2px solid #1e3a8a;padding-bottom:4px;break-after:avoid}${css}.fm212-proc>summary .tg{display:none}.fm212-pb button{display:none}.fm212-st{width:150px}@page{size:A4;margin:12mm}</style></head><body>
   <h1>🗺️ إجراءات المستودع وخارطة الطريق${window.fmTenantName?.()?' — '+esc(window.fmTenantName()):''}</h1><div style="color:#64748b;font-size:12px">${new Date().toLocaleDateString('ar-SA-u-ca-gregory')}</div>
   <h2>1. الدورة</h2>${flowHtml()}<h2>2. الإجراءات بالتفصيل</h2>${procHtml().replace(/<details /g,'<details open ')}<h2>3. من يفعل ماذا</h2>${raciHtml()}<h2>4. المراجعة والفجوات</h2>${gapsHtml()}<h2>5. خارطة الطريق</h2>${rmHtml()}
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);
  w.document.close();setTimeout(()=>{try{w.focus();w.print()}catch(e){}},700)}
@@ -36677,15 +36581,7 @@ function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){t
  const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}.sg{display:flex;gap:40px;margin-top:40px}.sg div{flex:1;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}p{font-size:12.5px;line-height:1.9}.lb{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.lb div{border:1px dashed #94a3b8;border-radius:8px;padding:8px;text-align:center;break-inside:avoid}.lb svg{width:110px;height:110px}.lb b{display:block;font-size:13px}.lb small{display:block;font-size:11px}@page{size:A4;margin:12mm}</style></head><body>
  <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),400)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 function loadQR(){return window.qrcode?Promise.resolve():new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';s.onload=ok;s.onerror=()=>no(Error('تعذر تحميل مكتبة QR'));document.head.appendChild(s)})}
@@ -36902,15 +36798,7 @@ function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){t
  const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}.sg{display:flex;gap:40px;margin-top:40px}.sg div{flex:1;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}p{font-size:12.5px;line-height:1.9}img.inv{max-width:100%;max-height:420px;border:1px solid #cbd5e1;border-radius:6px;margin-top:8px}@page{size:A4;margin:12mm}</style></head><body>
  <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 function shrink(file,max,limit){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=()=>no(Error('تعذر قراءة الصورة'));r.onload=()=>{const im=new Image();im.onerror=()=>no(Error('صورة غير صالحة'));im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.width*k));c.height=Math.max(1,Math.round(im.height*k));c.getContext('2d').drawImage(im,0,0,c.width,c.height);let q=.82,u=c.toDataURL('image/jpeg',q);while(u.length>limit&&q>.3){q-=.08;u=c.toDataURL('image/jpeg',q)}if(u.length>limit)no(Error('الصورة كبيرة جداً'));else ok(u)};im.src=r.result};r.readAsDataURL(file)})}
@@ -37045,15 +36933,7 @@ function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){t
  const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}.sg{display:flex;gap:40px;margin-top:40px}.sg div{flex:1;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}p{font-size:12.5px;line-height:1.9}@page{size:A4;margin:12mm}</style></head><body>
  <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 function xlsx(name,rows){if(!rows.length){toast('لا توجد بيانات','warning');return}if(!window.XLSX){toast('مكتبة Excel غير محمّلة','warning');return}const wb=XLSX.utils.book_new();const ws=XLSX.utils.json_to_sheet(rows);ws['!views']=[{RTL:true}];XLSX.utils.book_append_sheet(wb,ws,name.slice(0,30));XLSX.writeFile(wb,name+'.xlsx')}
@@ -37300,15 +37180,7 @@ window.fmV219Labels=async(o)=>{o=o||{};try{await names(true)}catch(e){toast(emsg
    .q{width:${H-4}mm;height:${H-4}mm;flex:none}.q svg{width:100%;height:100%}.t{flex:1;min-width:0;line-height:1.25}.t b{display:block;font-size:${sz==='s'?7.5:9.5}pt;max-height:2.6em;overflow:hidden}.t span{display:block;font-size:${sz==='s'?6.5:7.5}pt;color:#334155}.t .bn{font-weight:800;font-size:${sz==='s'?8:10}pt;color:#0f172a}</style></head><body><div class="g">
    ${L.map(m=>{const b=(BIN.get(m.id)||{}).bin;return `<div class="l"><div class="q">${qrSvg(labelCode(m))}</div><div class="t"><b>${esc(m.name)}</b><span>${esc(m.code||'')}${m.ext_code?' • Logix '+esc(m.ext_code):''}${m.unit?' • '+esc(m.unit):''}</span>${b?`<span class="bn">📍 ${esc(b)}</span>`:''}<span>${esc(st.name||'')}</span></div></div>`}).join('')}
    </div><script>setTimeout(()=>print(),400)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()};
  await loadBins();draw()};
@@ -37398,15 +37270,7 @@ function render(){const p=page(),x=p.querySelector('.extra'),b=p.querySelector('
   ['أمناء المستودع',K.keepers.map(k=>({'أمين المستودع':k.k,'طلبات':k.n,'الوسيط (ساعة)':k.med==null?'':+k.med.toFixed(1),'% خلال 24 ساعة':k.in24==null?'':Math.round(k.in24)}))]]);
  x.querySelector('[data-pr]').onclick=()=>{const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}const co=(window.fmTenantName&&window.fmTenantName())||'';
   w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>مؤشرات المستودع</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:18px;color:#0f172a}${document.getElementById('fm-v219-wh-css').textContent}${document.getElementById('fm-v218-wh-css')?.textContent||''}.fm103-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px;margin:10px 0;page-break-inside:avoid}h4{margin:0 0 6px}@page{size:A4 landscape;margin:10mm}</style></head><body><h2>📈 مؤشرات المستودع</h2><div>${esc(co)} • ${F.store?esc(sto(F.store).name):'كل المستودعات'} • آخر ${F.months} أشهر • ${dshow(new Date().toISOString())}</div>${b.innerHTML}<script>setTimeout(()=>print(),500)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}}
 function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.body.classList.remove('v2-mobile-nav');try{window.v2SetActive?.(btn)}catch(e){}
@@ -37569,15 +37433,7 @@ function dlg(html,wide){const d=document.createElement('dialog');d.className='fm
 function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}.sg{display:flex;gap:30px;margin-top:40px;flex-wrap:wrap}.sg div{flex:1;min-width:150px;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}p{font-size:12.5px;line-height:1.9}img{max-width:100%;max-height:360px}@page{size:A4;margin:12mm}</style></head><body>
  <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 let MATS=null,STORES=null,NAT=0;
@@ -37782,15 +37638,7 @@ function dlg(html,wide){const d=document.createElement('dialog');d.className='fm
 function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}td.best{background:#dcfce7;font-weight:800}.sg{display:flex;gap:30px;margin-top:40px;flex-wrap:wrap}.sg div{flex:1;min-width:150px;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}p{font-size:12.5px;line-height:1.9}img{max-width:100%;max-height:340px}@page{size:A4;margin:12mm}</style></head><body>
  <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 function shrink(file){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=()=>no(Error('تعذر قراءة الصورة'));r.onload=()=>{const im=new Image();im.onerror=()=>no(Error('صورة غير صالحة'));im.onload=()=>{const k=Math.min(1,1100/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);let q=.8,u=c.toDataURL('image/jpeg',q);while(u.length>400000&&q>.3){q-=.1;u=c.toDataURL('image/jpeg',q)}u.length>400000?no(Error('الصورة كبيرة جداً')):ok(u)};im.src=r.result};r.readAsDataURL(file)})}
@@ -38293,15 +38141,7 @@ async function docRender(reload){const {B,X}=body('fm224-docs');if(reload||!DD){
  B.querySelectorAll('[data-fl]').forEach(b=>b.onclick=async()=>{const w=window.open('','_blank');const dc=DD.L.find(x=>x.id===b.dataset.fl)||{};
   try{const u=await rpc('fm_doc_file_get',{p_id:b.dataset.fl});if(!u)throw Error('لا يوجد ملف');const bl=await (await fetch(u)).blob();const url=URL.createObjectURL(bl);if(!w){window.open(url,'_blank');return}
    const img=/^data:image\//.test(u);w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(dc.title||'ملف')}</title><style>body{margin:0;font-family:Cairo,Tahoma,sans-serif;background:#0f172a}header{display:flex;gap:12px;align-items:center;padding:8px 12px;background:#fff}header b{flex:1}a{font-weight:800}iframe{border:0;width:100%;height:calc(100vh - 44px);background:#fff}img{display:block;max-width:100%;margin:0 auto}</style></head><body><header><b>${esc(dc.code||'')} — ${esc(dc.title||'')}</b><a href="${url}" download="${esc(dc.file_name||(img?'file.jpg':'file.pdf'))}">⬇️ تنزيل</a></header>${img?`<img src="${url}" alt="">`:`<iframe src="${url}"></iframe>`}
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
   catch(e){if(w)w.close();toast(emsg(e),'error')}});
@@ -38510,15 +38350,7 @@ async function calRender(reload){const p=document.getElementById('fm225-ppmcal')
   d.querySelectorAll('[data-w]').forEach(tr=>tr.onclick=()=>{d.close();window.fmV145OpenWorkOrders?.();setTimeout(()=>{try{window.fmV145X.detail(tr.dataset.w)}catch(e){}},900)})});
  X.querySelector('[data-pr]').onclick=()=>{const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}const co=(window.fmTenantName&&fmTenantName())||'';
   w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقويم الصيانة الوقائية ${CAL.y}</title><style>@page{size:A3 landscape;margin:10mm}body{font-family:Cairo,Tahoma,sans-serif;color:#0f172a}h1{font-size:20px;margin:0}.s{color:#475569;font-size:12px;margin:2px 0 10px}${document.getElementById('fm-v225-css').textContent.replace(/@media[^{]*\{[\s\S]*\}\s*$/,'')}.fm225-cal td:first-child,.fm225-cal th:first-child{position:static}.fm225-cal thead th{position:static}</style></head><body><h1>📅 تقويم الصيانة الوقائية ${CAL.y}</h1><div class="s">${esc(co)}${co?' • ':''}${CAL.reg?'منطقة '+esc(rn(CAL.reg))+' • ':''}${CAL.view==='school'?'حسب المدرسة':'حسب الحملة'} • منفّذ ${T.ok} • مخطط ${T.plan} • طُبع ${new Date().toLocaleDateString(GREG)}</div><div class="fm225-lg"><span class="fm225-s ok">✅ منفّذ ومعتمد</span><span class="fm225-s wait">📨 بانتظار الاعتماد</span><span class="fm225-s late">⛔ متأخر</span><span class="fm225-s open">⏳ جارٍ</span><span class="fm225-s plan">🗓️ مخطط</span></div>${calTable(L,true)}<script>setTimeout(()=>print(),500)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()};
  X.querySelector('[data-xl]').onclick=()=>xlsx('تقويم الصيانة الوقائية '+CAL.y,[['التقويم',L.map(r=>{const o={[CAL.view==='school'?'المدرسة':'الحملة']:r.label};r.m.forEach((x,i)=>{o[MON[i]]=[x.ok&&'منفذ '+x.ok,x.wait&&'اعتماد '+x.wait,x.late&&'متأخر '+x.late,x.open&&'جار '+x.open,x.plan&&'مخطط '+x.plan].filter(Boolean).join('، ')});return o})],
@@ -40178,28 +40010,12 @@ table{width:100%;border-collapse:collapse;margin:4px 0}th,td{border:1px solid #c
 .sign{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px;text-align:center;break-inside:avoid}.bar{position:sticky;top:0;background:#fff;padding:6px 0;text-align:left}@media print{.bar{display:none}}`;
 async function file(id){id=S(id);if(!id)return;const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}
  w.document.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملف البلاغ '+esc(id)+'</title></head><body style="font-family:Tahoma;padding:20px">⏳ جارِ تجميع ملف البلاغ…
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>');
  let F;try{F=await gather(id)}catch(e){F={id,region:reg(),r:row(id),m:state.columnsMap||{},miss:['all']}}
  w.document.open();w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملف البلاغ ${esc(id)}</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet"><style>${CSS}</style></head><body><div class="bar"><button onclick="print()">🖨️ طباعة / PDF</button></div>${html(F)}
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close();return F}
 window.fmV257File=file;window.fmV257Gather=gather;window.fmV257Html=html;
@@ -40304,15 +40120,7 @@ function print(d,month){const w=window.open('','_blank');if(!w){toast('اسمح 
   <button onclick="print()">🖨️ طباعة / PDF</button><h1>⚖️ مطابقة العهدة الشهرية — ${esc(d.name)}</h1><div>${esc(window.fmTenantName?.()||'')} • ${esc(fmtM(month))} • طُبع ${esc(dt(new Date()))}</div>
   ${d.recon?`<p><b>${d.recon.status==='ok'?'✅ مطابق':'⚠️ فروقات'}</b> — ${esc(d.recon.by||'')} ${esc(dt(d.recon.at))}${d.recon.note?' — '+esc(d.recon.note):''}</p>`:'<p>لم تُعتمد بعد</p>'}
   ${linesTable(d.lines||[]).replace(/class="[^"]*"/g,'')}<div class="s"><div>صاحب العهدة<br><br>..................</div><div>أمين المستودع<br><br>..................</div><div>المهندس المباشر<br><br>..................</div></div>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 window.fmV259Recon=list;window.fmV259Detail=detail;
@@ -40527,15 +40335,7 @@ async function open(tab){tab=tab||'inv';let L=[],V=[],FS='new';const w=dlg(`<h3>
   w.querySelectorAll('[data-pd]').forEach(x=>x.onclick=()=>{const r=prompt('مرجع الدفع (رقم الحوالة):');if(r!=null)act(+x.dataset.pd,'paid','',r)});
   w.querySelectorAll('[data-ph]').forEach(x=>x.onclick=async()=>{try{const d=await rpc('fm_supplier_inv_photo',{p_id:V[+x.dataset.ph].id});if(!d)return;const win=window.open('','_blank');if(!win){toast('اسمح بالنوافذ المنبثقة','warning');return}
    win.document.write(`<!doctype html><meta charset="utf-8"><title>${esc(V[+x.dataset.ph].code)}</title><body style="margin:0">${/^data:application\/pdf/.test(d)?`<iframe src="${d}" style="border:0;width:100vw;height:100vh"></iframe>`:`<img src="${d}" style="max-width:100%">`}
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body>`);win.document.close()}catch(e){alert(ERR(e))}})};
  const load=async()=>{try{[L,V]=await Promise.all([rpc('fm_supplier_links_list',{}),rpc('fm_supplier_inv_list',{p_days:365})]);L=L||[];V=V||[];draw()}catch(e){q('[data-b]').innerHTML=`<div class="fm103-card" style="color:#991b1b">${esc(ERR(e))}</div>`}};
@@ -42107,29 +41907,13 @@ function reportHtml(D){const F=norm(D[0].w.form),O=F.out,logo=window.FM_BRAND?.l
   .sig{display:grid;gap:16px;margin-top:24px;text-align:center;font-weight:800}.sig div{border-top:1px solid #0f172a;padding-top:6px;min-height:46px}footer{margin-top:10px;color:#94a3b8;font-size:10px;text-align:center}
   @media screen{body{background:#e2e8f0}.pg{background:#fff;max-width:${O.orient==='l'?1100:800}px;margin:12px auto;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1)}}`;
  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(window.fmV277ListName?fmV277ListName(D.map(x=>x.w)):(O.title||D[0].w.title))}</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap"><style>${css}</style></head><body>${D.map(page).join('')}
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`}
 window.fmV282Html=reportHtml;
 async function fmV282Pdf(list){list=(list||[]).filter(w=>w&&w.form);if(!list.length)return;const win=window.open('','_blank');if(!win){toast('اسمح بالنوافذ المنبثقة لفتح التقرير','warning');return}
  win.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:Cairo,Tahoma,sans-serif;direction:rtl;padding:30px">⏳ جارٍ تجهيز التقرير…
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body>');
  const D=[];for(const w of list){let ph=[];try{ph=await C.api.woPhotos(w.id)}catch(e){}D.push({w,ph})}
@@ -42805,15 +42589,7 @@ function print(R){const w=window.open('','_blank');if(!w){toast('اسمح بال
   <h1>🗓️ خطة الصيانة الوقائية — ${esc(monLabel(ST.m))}</h1><p>${esc(tn)}${ST.sup?' • المشرف: '+esc(ST.sup):''}${ST.eng?' • المهندس: '+esc(ST.eng):''} • ${fmt(R.length)} زيارة</p>
   <table><thead><tr>${Object.keys(rowX(R[0]||{w:{},d:ST.m+'-01',s:'plan',sup:'',eng:''})).map(k=>`<th>${k}</th>`).join('')}</tr></thead><tbody>${R.map(r=>`<tr>${Object.values(rowX(r)).map(v=>`<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>
   ${""}<script>setTimeout(()=>print(),300)<\/script>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);w.document.close()}
 window.fmV287Plan=async function(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.body.classList.remove('v2-mobile-nav');
@@ -44691,15 +44467,7 @@ function printInv(t,R,col){const L=R.L.filter(x=>x.col===col&&inSc(x)),LN=lines(
 <tr class="t"><td colspan="7">الإجمالي قبل الضريبة</td><td>${money(net)}</td><td></td></tr><tr class="t"><td colspan="7">ضريبة القيمة المضافة ${fmt(vat)}%</td><td>${money(v)}</td><td>${money(net)} × ${fmt(vat)}%</td></tr><tr class="t"><td colspan="7">الإجمالي مع الضريبة</td><td>${money(net+v)}</td><td></td></tr></tbody></table>
 <div class="sg"><div>مُعِدّ الفاتورة</div><div>المراجعة</div><div>الاعتماد</div></div>
 <div class="pb"></div><h1>ملحق المباني (${L.length})</h1><table><thead><tr><th>#</th><th>المبنى</th><th>التسلسل</th><th>النطاق</th><th>الحجم</th><th>الجنس</th><th>الأيام</th><th>المبلغ</th></tr></thead><tbody>${an}</tbody></table>
-<script id="fm-v331-integration">
-(function(){
- const nav=document.querySelector('nav.v2-nav');if(!nav)return;
- const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
- b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
- b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
- window.fmV123Rebuild?.();
-})();
-</script>
+
 
 </body></html>`);
  w.document.close();setTimeout(()=>{try{w.focus();w.print()}catch(e){}},400)}
