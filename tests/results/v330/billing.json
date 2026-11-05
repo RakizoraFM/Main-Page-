@@ -1,0 +1,102 @@
+[
+  {
+    "name": "same contractor has separate Al Rass and Buraidah boys contracts",
+    "pass": true
+  },
+  {
+    "name": "direct deductions outside cap; KPI and other penalties split cap proportionally",
+    "pass": true
+  },
+  {
+    "name": "same month second area is independent and does not overwrite first",
+    "pass": true
+  },
+  {
+    "name": "out-of-scope building annex is refused",
+    "pass": true
+  },
+  {
+    "name": "valid annex saves and scope snapshot is stable",
+    "pass": true
+  },
+  {
+    "name": "billed contractor scope cannot be reassigned",
+    "pass": true
+  },
+  {
+    "name": "stale invoice revision is refused",
+    "pass": true
+  },
+  {
+    "name": "excessive deductions are refused instead of creating a negative payment",
+    "pass": true
+  },
+  {
+    "name": "nonfinite and missing-description amounts are refused",
+    "pass": true
+  },
+  {
+    "name": "engineer cannot prepare or alter contractor invoices",
+    "pass": true
+  },
+  {
+    "name": "legacy internal functions cannot bypass the new validations",
+    "pass": true
+  },
+  {
+    "name": "invoice and annex are one transaction on a failed scoped export",
+    "pass": true
+  },
+  {
+    "name": "correct scope includes only its work orders",
+    "pass": true
+  },
+  {
+    "name": "service templates accept monthly or six-month cycles and self-operated building assignment",
+    "pass": true
+  },
+  {
+    "name": "recurrence alone never creates chargeable service lines",
+    "pass": true
+  },
+  {
+    "name": "recorded service requires valid building, quantity and evidence",
+    "pass": true
+  },
+  {
+    "name": "service is billed once using frozen quantity and unit price",
+    "pass": true
+  },
+  {
+    "name": "billed service cannot be edited or priced differently in invoice",
+    "pass": true
+  },
+  {
+    "name": "cancelling draft releases service for corrected invoice but keeps history",
+    "pass": true
+  },
+  {
+    "name": "monthly reporting keeps saved bills and service records separate",
+    "pass": true
+  },
+  {
+    "name": "service dates in the future are not chargeable",
+    "pass": true
+  },
+  {
+    "name": "out-of-scope material cannot be inserted by calling invoice RPC directly",
+    "pass": true
+  },
+  {
+    "name": "section 92 can be applied again without changing saved invoice totals",
+    "pass": true
+  },
+  {
+    "name": "client formula preview matches server capped totals",
+    "pass": true
+  },
+  {
+    "name": "all inline app scripts parse",
+    "pass": true
+  }
+]

@@ -1,0 +1,1 @@
+V330 local QA: 25 SQL/calculation cases and 9 isolated browser cases passed. See billing.json and browser.json. No live Supabase, deployment, payment, WhatsApp, or external platform integration was exercised. Test-generated screenshots, PDFs and XLSX files are excluded.

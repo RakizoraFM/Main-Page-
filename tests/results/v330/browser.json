@@ -1,0 +1,72 @@
+{
+  "results": [
+    {
+      "name": "monthly page shows separate forecast and invoiced balances",
+      "pass": true
+    },
+    {
+      "name": "monthly and six-month recurrence boundaries",
+      "pass": true
+    },
+    {
+      "name": "service template dialog exposes cycle, unit price and billing scope",
+      "pass": true
+    },
+    {
+      "name": "invoice Excel contains quantity and net payment formulas with matching cached totals",
+      "pass": "ROUND(F2*G2,2)",
+      "detail": {
+        "names": [
+          "المستخلصات",
+          "البنود",
+          "تعليمات"
+        ],
+        "total": {
+          "t": "n",
+          "f": "P2+R2-T2",
+          "v": 920,
+          "z": "#,##0.00;[Red](#,##0.00);-"
+        },
+        "variance": {
+          "t": "n",
+          "f": "ROUND(U2-V2,2)",
+          "v": 0,
+          "z": "#,##0.00;[Red](#,##0.00);-"
+        },
+        "detail": {
+          "t": "n",
+          "f": "ROUND(F2*G2,2)",
+          "v": 1000,
+          "z": "#,##0.00;[Red](#,##0.00);-"
+        }
+      }
+    },
+    {
+      "name": "Excel downloads from monthly page",
+      "pass": true
+    },
+    {
+      "name": "monthly print contains both billing scopes and net total",
+      "pass": true
+    },
+    {
+      "name": "single invoice print shows scope and separated applied deductions",
+      "pass": true
+    },
+    {
+      "name": "mobile page contains wide tables inside scroll containers",
+      "pass": true,
+      "detail": {
+        "viewport": 390,
+        "body": 390,
+        "page": 390
+      }
+    },
+    {
+      "name": "no uncaught runtime errors",
+      "pass": true,
+      "detail": []
+    }
+  ],
+  "errors": []
+}
