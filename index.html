@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V325">
+<meta name="fm-version" content="V326">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V325',date:'2026-11-04',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V326',date:'2026-11-04',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V326',d:'2026-11-05',t:'من أين تأتي البلاغات بعد التصفير',i:['بطاقة «🧹 البلاغات المحفوظة على هذا الجهاز» تعرض بجانب عدد بلاغات الجهاز عددها في السحابة (الرياض / القصيم) وتاريخ آخر تصفير وأجزاءه، فيتضح إن كانت البلاغات ما زالت في السحابة أم نسخة محلية قديمة.']},
 {v:'V325',d:'2026-11-05',t:'تصفير البلاغات يشمل كل جداولها',i:['«تصفير البلاغات» يحذف الآن أيضاً: قائمة قبل تجاوز المهلة، تصعيدات البلاغات، إيقاف المهلة، مراجعة إغلاق الطارئ، تدقيق البلاغات، الإسناد البديل، أسباب الاختراق، إيصالات الاستيراد وأرقام الملخص الأسبوعي (القسم 91 من supabase_setup.sql).','على كل جهاز تُحذف مع البلاغات متابعات المتأخرات والبيانات المحلية المرتبطة بها.','بطاقة «🧹 البلاغات المحفوظة على هذا الجهاز» في الإعدادات ← السحابة: حذف النسخة المحلية من جهاز ما زال يعرض بلاغات قديمة.']},
 {v:'V324',d:'2026-11-05',t:'مزامنة قاعدة المباني بين أجهزة مدير النظام',i:['جهاز مدير النظام كان يحتفظ بنسخته المحلية من قاعدة المباني والإعدادات المشتركة ولا يأخذ نسخة السحابة، فيظهر في الجوال أرقام قديمة. الآن يأخذ النسخة الأحدث من السحابة بنفسه.','لا يرفع جهاز نسخة أقدم فوق نسخة أحدث على السحابة؛ تُحمّل الأحدث بدلها وتُحفظ نسخته ويمكن استرجاعها ورفعها («↩️ استرجاع نسخة هذا الجهاز»).']},
 {v:'V323',d:'2026-11-04',t:'فواتير المقاولين: تثبيت مباني كل شهر وتغيّرات المباني',i:['«📸 تثبيت مباني الشهر»: فاتورة الشهر تُحسب من لقطة محفوظة للمباني (الحجم، الجنس، الإغلاق، المقاول)، فتعديل قاعدة المباني لاحقاً لا يغيّر فواتير الأشهر السابقة. تُثبَّت تلقائياً عند إصدار المستخلص، ولا تُغيَّر بعد اعتماده.','تبويب «🔀 تغيّرات المباني»: الجديد، ما خرج (إغلاق / حذف / دمج في مبنى آخر)، وما تغيّر حجمه أو جنسه أو مقاوله مقارنة بالشهر السابق، مع أثره على فاتورة كل مقاول.','يوم السريان لكل تغيير داخل الشهر (قبله بالحجم أو المقاول القديم وبعده بالجديد)، وآخر يوم خدمة لكل مبنى خرج؛ تظهر الفترتان في الملحق وExcel والطباعة (القسم 90 من supabase_setup.sql).']},
@@ -44393,8 +44394,18 @@ window.fmV325ClearDevice=clearDevice;
  const c=document.createElement('div');c.id='fm325-card';c.className='fm122-card';c.style.marginTop='14px';
  const n=(window.FM41&&FM41.datasets?Object.values(FM41.datasets).reduce((a,d)=>a+((d&&d.rows&&d.rows.length)||0),0):0)||((window.state&&state.rawTickets&&state.rawTickets.length)||0);
  c.innerHTML='<h4 style="margin:0 0 6px">🧹 البلاغات المحفوظة على هذا الجهاز</h4><div style="font-size:13px;color:#475569;margin-bottom:8px">على هذا الجهاز الآن '+n.toLocaleString('en-US')+' بلاغ محفوظ. إن بقيت بلاغات تظهر بعد «تصفير بيانات المنصة»، احذف النسخة المحلية؛ تُعاد قراءة البلاغات من السحابة فقط.</div><button type="button" class="fm103-btn">🧹 حذف البلاغات المحفوظة على هذا الجهاز</button>';
- c.querySelector('button').onclick=clearDevice;pane.appendChild(c)});
-if(sessionStorage.getItem('fm325_cleared')){sessionStorage.removeItem('fm325_cleared');setTimeout(()=>{try{(window.showToast||alert)('🧹 حُذفت نسخة البلاغات المحلية من هذا الجهاز','success')}catch(e){}},2500)}
+ c.querySelector('button').onclick=clearDevice;pane.appendChild(c);
+ c.insertAdjacentHTML('beforeend','<div data-cloud style="margin-top:8px;font-size:13px;color:#334155">☁️ جارٍ عدّ البلاغات في السحابة…</div>');cloudCount().then(t=>{const e=c.querySelector('[data-cloud]');if(!e)return;e.innerHTML=t})});
+/* V326: where do the tickets come from — the cloud counts next to the device count */
+async function cloudCount(){try{const C=window.FMCloud;if(!C||!C.engClient||!(C.state&&C.state.on))return '☁️ السحابة غير متصلة — البلاغات الظاهرة من هذا الجهاز فقط.';
+  const db=await C.engClient(),q=r=>{let x=db.from('tickets').select('id',{count:'exact',head:true});if(r)x=x.eq('region',r);return x};
+  const [all,ry,qs]=await Promise.all([q(),q('riyadh'),q('qassim')]);if(all.error)throw Error(all.error.message);
+  const n=all.count||0,w=await db.from('fm_settings').select('value').eq('key','wipe').maybeSingle().then(r=>r.data&&r.data.value).catch(()=>null);
+  const last=w&&w.at?' • آخر تصفير: '+new Date(w.at).toLocaleString('ar-SA-u-ca-gregory',{dateStyle:'medium',timeStyle:'short'})+' ('+((w.parts||[]).join('، ')||'—')+')':' • لم يُسجَّل تصفير';
+  return n?`☁️ في السحابة الآن <b>${n.toLocaleString('en-US')}</b> بلاغ (الرياض ${(ry.count||0).toLocaleString('en-US')} • القصيم ${(qs.count||0).toLocaleString('en-US')})${last}. حذفها من هذا الجهاز لن يكفي — ستُقرأ من السحابة مرة أخرى؛ استخدم «تصفير بيانات المنصة» مع «البلاغات».`
+   :`☁️ لا توجد بلاغات في السحابة${last}. ما يظهر على هذا الجهاز نسخة قديمة محلية — احذفها بالزر أعلاه.`}catch(e){return '☁️ تعذّر عدّ البلاغات في السحابة: '+String(e.message||e)}}
+window.fmV326CloudCount=cloudCount;
+if(sessionStorage.getItem('fm325_cleared')){sessionStorage.removeItem('fm325_cleared');setTimeout(async()=>{let t='';try{t=(await cloudCount()).replace(/<[^>]+>/g,'')}catch(e){}try{(window.showToast||alert)('🧹 حُذفت نسخة البلاغات المحلية من هذا الجهاز. '+t,'success')}catch(e){}},4000)}
 })();</script>
 <script id="fm-v228-i18n">
 /* V228: English interface — dictionary (Arabic → English) and the translator (text nodes, placeholder / title, alert / confirm). Data stays as entered. */
