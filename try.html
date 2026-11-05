@@ -170,6 +170,11 @@ header a{font-size:13px}
 #faq{background:#fff}
 .faq-list{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .faq-list details{border:1px solid var(--line);background:#fff;border-radius:14px;padding:14px 16px}
+#trial .service-select{min-width:0;margin:0;padding:11px 13px;border:1px solid #dce5ee;border-radius:14px;background:#fff}
+#trial .service-select legend{padding:0 5px;color:#234260;font-size:13px;font-weight:900}
+#trial .service-choices{display:flex;flex-wrap:wrap;gap:7px}
+#trial .service-choices label{display:flex;align-items:center;gap:7px;border:1px solid #dce5ee;border-radius:999px;padding:6px 10px;background:#f8fafc;color:#234260;font-size:12px;font-weight:800;cursor:pointer}
+#trial .service-choices input{width:auto;margin:0;accent-color:#0e8b8e}
 .faq-list summary{cursor:pointer;list-style:none;font-weight:900;color:#173453;position:relative;padding-inline-end:32px;min-height:28px}
 .faq-list summary::-webkit-details-marker{display:none}
 .faq-list summary:after{content:"+";position:absolute;left:0;right:auto;top:0;width:20px;text-align:center;color:var(--pri);font-size:19px;line-height:1}
@@ -190,9 +195,9 @@ section .section-kicker{letter-spacing:.1px}
  <div class="hero-copy">
   <div class="hero-brand"><span>RakizoraFM</span><em>×</em><span>Solvix</span></div>
   <h1>حوكمة إدارة المرافق<br>بمنظومة متكاملة للمباني</h1>
-  <p>مهمتنا ضبط الأداء والالتزام التشغيلي من التخطيط إلى التنفيذ. يشمل نطاقنا حصر الأصول، والصيانة والتشغيل، والخدمات الخفيفة ومنها النظافة، وتوفير العمالة واللوجستيات، بدعم من Solvix وRakizoraFM.</p>
+  <p>مهمتنا ضبط الأداء والالتزام التشغيلي من التخطيط إلى التنفيذ. يشمل نطاقنا حصر الأصول، والصيانة والتشغيل، والخدمات الخفيفة، وتوفير العمالة واللوجستيات، بدعم من Solvix وRakizoraFM.</p>
   <div class="hero-actions"><a class="btn p" href="#trial">🚀 اطلب عرضًا لخدماتنا</a><a class="btn s" href="#demo" data-demo-link>🧪 جرّب النسخة التفاعلية</a></div>
-  <div class="stats"><div><b>🧭</b><span>حوكمة وأداء</span></div><div><b>🏷️</b><span>حصر الأصول</span></div><div><b>🛠️</b><span>الصيانة والتشغيل</span></div><div><b>🧹</b><span>الخدمات الخفيفة ومنها النظافة</span></div></div>
+  <div class="stats"><div><b>🧭</b><span>حوكمة وأداء</span></div><div><b>🏷️</b><span>حصر الأصول</span></div><div><b>🛠️</b><span>الصيانة والتشغيل</span></div><div><b>🧹</b><span>الخدمات الخفيفة</span></div></div>
  </div>
  <div class="hero-visual"><img src="assets/rakizora-solvix-hero.webp" alt="فريق Solvix يراجع لوحة RakizoraFM في مبنى تشغيلي" fetchpriority="high"><div class="hero-caption"><i></i><span>صورة توضيحية لمنظومة العمل</span></div></div>
 </div></div>
@@ -202,25 +207,24 @@ section .section-kicker{letter-spacing:.1px}
  <div class="scope-grid">
   <article class="scope-card"><span class="scope-icon">🧭</span><h3>حوكمة إدارة المرافق</h3><p>تنظيم نطاق العمل والإجراءات والمسؤوليات، ومتابعة الالتزام عبر مؤشرات KPIs وSLA والتدقيق والتقارير.</p></article>
   <article class="scope-card"><span class="scope-icon">🛠️</span><h3>الصيانة والتشغيل</h3><p>تنسيق أعمال الصيانة الوقائية والتصحيحية ومتابعة جاهزية الأصول وجودة التنفيذ في المباني.</p></article>
-  <article class="scope-card"><span class="scope-icon">🧹</span><h3>الخدمات الخفيفة</h3><p>تشمل النظافة والخدمات المساندة للمواقع، وتُدار ضمن نطاق الخدمات الخفيفة ومعايير الجودة المتفق عليها.</p></article>
+  <article class="scope-card"><span class="scope-icon">🧹</span><h3>الخدمات الخفيفة</h3><p>تنفيذ الخدمات اليومية والمساندة للمواقع وفق نطاق المشروع ومستويات الخدمة ومعايير الجودة المتفق عليها.</p></article>
   <article class="scope-card"><span class="scope-icon">🏷️</span><h3>حصر الأصول</h3><p>حصر ميداني للأصول والتحقق من بياناتها ومواقعها وحالتها وترميزها وإعداد سجل رقمي من خلال Solvix.</p></article>
   <article class="scope-card"><span class="scope-icon">👷</span><h3>توفير العمالة واللوجستيات</h3><p>توفير القوى العاملة والموارد اللازمة، مع دعم التوريد والمستودعات وقطع الغيار والنقل الميداني حسب نطاق المشروع.</p></article>
  </div>
 </div></section>
 
 <section id="solutions" class="solutions"><div class="wrap">
- <div class="section-head"><span class="section-kicker">RakizoraFM × Solvix</span><h2>كل جوانب التشغيل في صورة واحدة</h2><p class="sub">شاهد كيف تنتقل العمليات من تنفيذ العمل في المبنى إلى إدارة الأفراد والمخزون وقياس النتائج.</p></div>
+ <div class="section-head"><span class="section-kicker">RakizoraFM</span><h2>مميزات منصة RakizoraFM لإدارة التشغيل</h2><p class="sub">منصة لمتابعة أعمال المرافق والفرق والمخزون وقياس الأداء التشغيلي في المباني.</p></div>
  <div class="solution-grid">
   <article class="solution-card"><div class="photo"><img src="assets/login-maintenance.webp" alt="فني صيانة ينفذ أمر عمل باستخدام RakizoraFM" loading="lazy" decoding="async"></div><div class="copy"><h3>الصيانة والتشغيل</h3><p>بلاغات، أوامر عمل، صيانة وقائية، وتوثيق الإنجاز بالصور.</p></div></article>
   <article class="solution-card"><div class="photo"><img src="assets/login-workforce.webp" alt="مشرف ينسق فرق الصيانة والخدمات في مبنى تشغيلي" loading="lazy" decoding="async"></div><div class="copy"><h3>القوى العاملة والخدمات</h3><p>توزيع الفرق والمهام، متابعة المشرفين، وقياس التغطية الميدانية.</p></div></article>
   <article class="solution-card"><div class="photo"><img src="assets/login-warehouse.webp" alt="إدارة المستودع وقطع الغيار باستخدام التتبع الرقمي" loading="lazy" decoding="async"></div><div class="copy"><h3>المستودعات وقطع الغيار</h3><p>الأصناف والعهد وحركة الصرف والاستلام ومتابعة الاحتياج.</p></div></article>
   <article class="solution-card"><div class="photo"><img src="assets/login-kpis.webp" alt="مدير برنامج يراجع مؤشرات الأداء والتشغيل" loading="lazy" decoding="async"></div><div class="copy"><h3>مؤشرات الأداء KPIs</h3><p>مؤشرات SLA والإنجاز وجاهزية المباني وتكاليف التشغيل.</p></div></article>
-  <article class="solution-card"><div class="photo"><img src="assets/login-warehouse.webp" alt="تسجيل أصول المرافق والتحقق منها ميدانياً" loading="lazy" decoding="async"></div><div class="copy"><span class="section-kicker">Solvix</span><h3>حصر الأصول وإدارتها</h3><p>مسح ميداني للأصول، التحقق من بياناتها ومواقعها وحالتها، ترميزها بـ QR أو باركود، وتسليم سجل رقمي وتقارير جاهزة للربط مع أعمال الصيانة.</p></div></article>
  </div>
 </div></section>
 
 <section id="solvix" class="solvix-section"><div class="wrap">
- <div class="solvix-head"><span class="section-kicker">Solvix | حصر الأصول</span><h2>منصة متخصصة لحصر الأصول والتحقق منها</h2><p class="sub">تساعد Solvix فرق الحصر على جمع بيانات الأصول ميدانياً، توثيق مواقعها وحالتها، ترميزها، ثم تسليم سجل رقمي منظم وتقارير واضحة.</p></div>
+ <div class="solvix-head"><span class="section-kicker">Solvix</span><h2>مميزات منصة Solvix لحصر الأصول</h2><p class="sub">تساعد Solvix فرق الحصر على جمع بيانات الأصول ميدانياً، توثيق مواقعها وحالتها، ترميزها، ثم تسليم سجل رقمي منظم وتقارير واضحة.</p></div>
  <div class="solvix-features">
   <article class="solvix-feature"><span>01</span><h3>حصر ميداني موحد</h3><p>تسجيل تعريف الأصل وفئته ووصفه وموقعه وحالته، مع الصور والبيانات المطلوبة لكل نطاق.</p></article>
   <article class="solvix-feature"><span>02</span><h3>تحقق وترميز</h3><p>مراجعة البيانات ميدانياً، رصد النواقص والتكرار، وربط الأصل بملصق QR أو باركود لتسهيل الرجوع إليه.</p></article>
@@ -262,9 +266,16 @@ section .section-kicker{letter-spacing:.1px}
   <details><summary>كيف أعرف الباقة المناسبة؟</summary><p>اختر الأجزاء التي تحتاجها وأرسل طلب العرض، وسنساعدك في تحديد الباقة حسب عدد المباني ونطاق التشغيل.</p></details>
  </div></div></section>
 
-<section id="trial"><div class="wrap" style="max-width:760px"><h2>🚀 اطلب تجربة</h2><p class="sub">نتواصل معك خلال يوم عمل.</p>
+<section id="trial"><div class="wrap" style="max-width:760px"><h2>🚀 اطلب تجربة أو عرض خدمات</h2><p class="sub">اختر ما يهمك من الخدمات، وسنتواصل معك خلال يوم عمل.</p>
  <div class="card"><form id="f" autocomplete="on">
   <div class="required-grid"><label>الاسم *<input name="name" required maxlength="120" autocomplete="name"></label><label>الجهة / الشركة *<input name="company" required maxlength="200" autocomplete="organization"></label><label>الجوال (واتساب) *<input name="phone" required inputmode="tel" dir="ltr" placeholder="05xxxxxxxx" autocomplete="tel"></label></div>
+  <fieldset class="service-select"><legend>الخدمات أو الحلول التي تهمك (اختياري)</legend><div class="service-choices" id="service-choices">
+   <label><input type="checkbox" value="حوكمة إدارة المرافق — RakizoraFM">حوكمة إدارة المرافق — RakizoraFM</label>
+   <label><input type="checkbox" value="حصر الأصول — Solvix">حصر الأصول — Solvix</label>
+   <label><input type="checkbox" value="الصيانة والتشغيل">الصيانة والتشغيل</label>
+   <label><input type="checkbox" value="الخدمات الخفيفة">الخدمات الخفيفة</label>
+   <label><input type="checkbox" value="توفير العمالة واللوجستيات">توفير العمالة واللوجستيات</label>
+  </div></fieldset>
   <details id="extra-fields"><summary>تفاصيل إضافية تساعدنا على تجهيز العرض (اختياري)</summary>
    <div class="extra-grid"><label>البريد<input name="email" type="email" dir="ltr" autocomplete="email"></label><label>المدينة<input name="city" maxlength="80"></label><label>عدد المباني / المواقع تقريبًا<input name="schools" inputmode="numeric"></label></div>
    <label>الأجزاء التي تهمك<div class="mods" id="mods"></div></label>
@@ -309,10 +320,10 @@ const money=v=>(+v||0).toLocaleString('en-US')+' ر.س';
   :'<div class="card">تواصل معنا لعرض سعر يناسب عدد مبانيكم.</div>';
  document.querySelectorAll('[data-plan]').forEach(a=>a.onclick=()=>{const x=plans.find(p=>p.k===a.dataset.plan);if(x&&Array.isArray(x.modules)){$('#extra-fields').open=true;document.querySelectorAll('#mods input').forEach(c=>c.checked=x.modules.includes(c.value));}const m=$('[name=message]');if(x&&!S(m.value))m.value='مهتم بباقة '+x.name})})();
 $('#f').onsubmit=async e=>{e.preventDefault();const f=e.target,b=f.querySelector('[type=submit]'),v=n=>S(f.elements[n].value);
- const ph=v('phone').replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c));
+ const ph=v('phone').replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c)); const serviceChoices=[...f.querySelectorAll('#service-choices input:checked')].map(c=>c.value);
  if(!v('name')||!v('company')||!/^\+?[0-9 ]{9,16}$/.test(ph)){$('#m').innerHTML='<div class="msg err">اكتب الاسم والجهة ورقم جوال صحيح</div>';return}
  b.disabled=true;b.textContent='جارٍ الإرسال…';
- try{await API.call('saas_lead_new',{p:{name:v('name'),company:v('company'),phone:ph.replace(/\s/g,''),email:v('email'),city:v('city'),schools:v('schools'),message:v('message'),hp:v('hp'),modules:[...document.querySelectorAll('#mods input:checked')].map(c=>c.value)}});
+ try{await API.call('saas_lead_new',{p:{name:v('name'),company:v('company'),phone:ph.replace(/\s/g,''),email:v('email'),city:v('city'),schools:v('schools'),message:[v('message'),serviceChoices.length?'الخدمات المطلوبة: '+serviceChoices.join('، '):''].filter(Boolean).join('\\n'),hp:v('hp'),modules:[...document.querySelectorAll('#mods input:checked')].map(c=>c.value)}});
   f.reset();$('#m').innerHTML='<div class="msg ok">✅ وصل طلبك — نتواصل معك خلال يوم عمل.</div>'}
  catch(err){$('#m').innerHTML=`<div class="msg err">${/too many/.test(err.message)?'تم إرسال طلبك من قبل — سنتواصل معك قريباً':/invalid phone/.test(err.message)?'رقم الجوال غير صحيح':'تعذر الإرسال — حاول مرة أخرى أو تواصل بالواتساب'}</div>`}
  b.disabled=false;b.textContent='إرسال الطلب'};
