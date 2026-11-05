@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V332">
+<meta name="fm-version" content="V336">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25656,10 +25656,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V332',date:'2026-11-05',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V336',date:'2026-11-06',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V336',d:'2026-11-06',t:'سجل تاريخ المباني والتسويات المالية',i:['تسجيل التغييرات بالتاريخ والوصف ضمن ملف المبنى','اعتماد الأثر المالي قبل إضافته إلى فاتورة المقاول']},
 {v:'V332',d:'2026-11-05',t:'روابط منصات قابلة للتخصيص',i:['إضافة وتعديل روابط المنصات ومعرّف المصدر من الواجهة','جلب CSV أو JSON من رابط متوافق ومعاينته قبل الاعتماد المحلي']},
 {v:'V331',d:'2026-11-05',t:'مركز مراجعة تكامل البلاغات والمستودع',i:['استيراد CSV وJSON وكشف التكرار والتعارض والتحديثات القديمة','مراجعة محلية مستقلة مع نسخ جلسة وتقرير فحص؛ الربط المباشر لم يفعّل']},
 {v:'V330',d:'2026-11-05',t:'فواتير مستقلة لكل نطاق وخصومات مفصّلة',i:['فصل نطاقات المقاول بالمكتب والقطاع والجنس','خصومات مباشرة وخصومات KPI منفصلة مع السقف التعاقدي','حفظ المستخلص وملحق المباني معاً دون تغيير الفواتير السابقة']},
@@ -32355,10 +32356,7 @@ function page(){let p=document.getElementById('fm162-page');if(!p){p=document.cr
  document.body.appendChild(p);p.querySelector('[data-print]').onclick=print}return p}
 function print(){const w=window.open('','_blank');if(!w)return;const v=window.FM_APP_VERSION||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>دليل منصة RakizoraFM ${esc(v)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;color:#0f172a;margin:24px;line-height:1.8}h1{font-size:22px}h2{font-size:17px;border-bottom:2px solid #2563eb;padding-bottom:4px;margin-top:22px}.it{break-inside:avoid;margin:10px 0 14px}.it b{font-size:15px}.m{color:#475569;font-size:12.5px}ol{margin:4px 0}</style></head><body><h1>📘 دليل منصة RakizoraFM — الإصدار ${esc(v)}</h1>`
-  +MANUAL.map(g=>({...g,items:g.items.filter(x=>sees(x,viewT()))})).filter(g=>g.items.length).map(g=>`<h2>${g.icon} ${esc(g.g)}</h2>`+g.items.map(x=>`<div class="it"><b>${esc(x.t)}</b> <span class="m">${x.v?'('+esc(x.v)+')':''}</span><div>${esc(x.what)}</div><div class="m">📍 ${esc(x.where)} · 👤 ${esc(x.who)}</div><ol>${x.how.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>${(x.tips||[]).map(t=>`<div class="m">💡 ${esc(t)}</div>`).join('')}</div>`).join('')).join('')+'
-
-
-</body></html>');
+  +MANUAL.map(g=>({...g,items:g.items.filter(x=>sees(x,viewT()))})).filter(g=>g.items.length).map(g=>`<h2>${g.icon} ${esc(g.g)}</h2>`+g.items.map(x=>`<div class="it"><b>${esc(x.t)}</b> <span class="m">${x.v?'('+esc(x.v)+')':''}</span><div>${esc(x.what)}</div><div class="m">📍 ${esc(x.where)} · 👤 ${esc(x.who)}</div><ol>${x.how.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>${(x.tips||[]).map(t=>`<div class="m">💡 ${esc(t)}</div>`).join('')}</div>`).join('')).join('')+'\n</body></html>');
  w.document.close();setTimeout(()=>{try{w.print()}catch(e){}},600)}
 function missing(){const known=new Set(MANUAL.flatMap(g=>g.items.map(x=>x.id)));return [...document.querySelectorAll('nav.v2-nav .v2-nav-btn[id]')].filter(b=>b.id!=='fm-v38-clear-all-nav'&&!known.has(b.id)).map(b=>(b.querySelector('.v2-nav-label')?.textContent||b.title||b.id).trim())}
 function render(){const p=page(),body=p.querySelector('.body'),s=q.trim().toLowerCase(),T=viewT(),admin=myTitle()==='sysadmin';
@@ -35850,10 +35848,7 @@ function exportReport(r){const X=window.XLSX;if(!X)return window.showToast?.('م
  add('المواد',[['الطلب','المدرسة','الحالة','المسؤول','موعد المتابعة'],...(r.parts||[]).map(x=>[x.code||x.id,x.school,x.status,x.followup?.owner_name,D(x.followup?.due_at)])]);
  add('المستحقات',[['المستخلص','المقاول','الحالة','المبلغ SAR','المسؤول','الموعد'],...(r.bills||[]).map(x=>[x.code,x.contractor_name,x.status,x.total,x.followup?.owner_name,D(x.followup?.due_at)])]);
  add('الفرق',[['الفريق','الحالة','مسؤول المعالجة','الموعد','الملاحظة'],...(r.teams||[]).map(x=>[x.name,x.status,x.owner_name,D(x.due_at),x.note])]);X.writeFile(wb,'Rakizora_Report_'+r.period.from+'_'+r.period.to+'.xlsx');}
-function printReport(r){const f=document.createElement('iframe');f.title='التقرير القابل للطباعة';f.style.cssText='position:fixed;width:1px;height:1px;bottom:0;left:0;border:0';document.body.appendChild(f);const doc=f.contentDocument;doc.open();doc.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>تقرير RakizoraFM</title><style>body{font-family:Tahoma,Arial,sans-serif;font-size:11px;color:#0f172a;line-height:1.6}table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #aaa;padding:6px;text-align:right;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}h3{break-after:avoid;margin-top:22px}.fm195-note{background:#eee;padding:10px}.fm195-wrap{overflow:visible}@page{size:A4 landscape;margin:12mm}@media print{button{display:none}}</style></head><body>'+reportSections(r)+'
-
-
-</body></html>');doc.close();setTimeout(()=>{f.contentWindow.focus();f.contentWindow.print()},400);f.contentWindow.onafterprint=()=>setTimeout(()=>f.remove(),500);setTimeout(()=>f.remove(),180000)}
+function printReport(r){const f=document.createElement('iframe');f.title='التقرير القابل للطباعة';f.style.cssText='position:fixed;width:1px;height:1px;bottom:0;left:0;border:0';document.body.appendChild(f);const doc=f.contentDocument;doc.open();doc.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>تقرير RakizoraFM</title><style>body{font-family:Tahoma,Arial,sans-serif;font-size:11px;color:#0f172a;line-height:1.6}table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #aaa;padding:6px;text-align:right;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}h3{break-after:avoid;margin-top:22px}.fm195-note{background:#eee;padding:10px}.fm195-wrap{overflow:visible}@page{size:A4 landscape;margin:12mm}@media print{button{display:none}}</style></head><body>'+reportSections(r)+'\n</body></html>');doc.close();setTimeout(()=>{f.contentWindow.focus();f.contentWindow.print()},400);f.contentWindow.onafterprint=()=>setTimeout(()=>f.remove(),500);setTimeout(()=>f.remove(),180000)}
 function dialog(title){const d=document.createElement('dialog');d.className='fm195-dialog';d.dataset.scope=scope();d.innerHTML='<button class="fm103-btn" data-close>إغلاق</button><h3>'+E(title)+'</h3><div data-body></div>';document.body.appendChild(d);d.querySelector('[data-close]').onclick=()=>d.close();d.addEventListener('close',()=>d.remove());d.showModal();return d}
 async function escalate(kind,key){if(!fresh())return;const old=data.inbox?.find(x=>x.kind===kind&&x.source_key===key),a=M.alerts(data,F.near).find(x=>x.kind===kind&&x.key===key)||{kind,key,region:region(),title:key},d=dialog('متابعة / تصعيد '+a.title),b=d.querySelector('[data-body]'),sc=scope(),rg=region();b.textContent='جارٍ فحص الصلاحية…';try{const people=await rpc('fm195_people',{r:rg,k:kind});if(sc!==scope()||rg!==region()||!d.isConnected)return d.close();b.innerHTML=`<form><label>مسؤول التصعيد<select name="recipient" required><option value="">اختر المسؤول</option>${people.map(x=>`<option value="${E(x.id)}">${E(x.name)}</option>`).join('')}</select></label><label>موعد المتابعة (توقيت الرياض)<input name="due" type="datetime-local" required value="${old?.due_at?new Date(M.ts(old.due_at)+3*36e5).toISOString().slice(0,16):new Date(Date.now()+4*36e5).toISOString().slice(0,16)}"></label><label>الحالة<select name="status">${Object.entries(ST).filter(([k])=>old||k==='open').map(([k,s])=>`<option value="${k}">${s}</option>`).join('')}</select></label><label>السبب والإجراء المطلوب<textarea name="note" required maxlength="4000">${E(old?.note)}</textarea></label><p>هذا موعد متابعة مستقل؛ لا يغير الموعد الأصلي أو SLA أو حالة المصدر. التصعيد لا يرسل بريداً أو واتساب.</p><p data-error></p><button class="fm103-btn primary">حفظ</button></form>`;const form=b.querySelector('form');form.elements.recipient.value=old?.recipient||'';form.elements.status.value=old?.status||'open';form.onsubmit=async e=>{e.preventDefault();if(!fresh()||sc!==scope()||rg!==region())return d.close();const btn=form.querySelector('button');btn.disabled=true;try{const res=await rpc('fm195_escalate',{p:{kind,source_key:key,region:rg,recipient:form.elements.recipient.value,due_at:new Date(form.elements.due.value+':00+03:00').toISOString(),status:form.elements.status.value,note:form.elements.note.value.trim(),revision:old?.revision||0}});if(sc!==scope()||rg!==region())return d.close();d.close();window.showToast?.(res.push_queued?'حُفظ التصعيد وأضيف إشعار إلى قائمة الإرسال؛ التسليم غير مؤكد.':'حُفظت المتابعة داخل المنصة.');await load('alerts')}catch(e){b.querySelector('[data-error]').textContent=e.message;btn.disabled=false}}}catch(e){b.textContent='التصعيد للمديرين المخولين وعلى مصادر موجودة بالسحابة فقط. '+e.message}}
 function openSource(kind,key){if(!fresh())return;if(kind==='ticket')return window.fmV135Open?.(key,region());if(kind==='wo'){window.fmV145OpenWorkOrders?.();Promise.resolve(window.fmV145X?.load()).then(()=>window.fmV145X?.detail(key));return}const nav={parts:'v2-nav-fm193-parts',bill:'v2-nav-fm194-claims',team:'v2-nav-fm192-ready'}[kind];document.getElementById(nav)?.click()}
@@ -40009,10 +40004,7 @@ table{width:100%;border-collapse:collapse;margin:4px 0}th,td{border:1px solid #c
 .ph{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.ph figure{margin:0;break-inside:avoid}.ph img{width:100%;height:150px;object-fit:cover;border-radius:6px;border:1px solid #cbd5e1}.ph figcaption{font-size:10px;color:#475569}
 .sign{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px;text-align:center;break-inside:avoid}.bar{position:sticky;top:0;background:#fff;padding:6px 0;text-align:left}@media print{.bar{display:none}}`;
 async function file(id){id=S(id);if(!id)return;const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}
- w.document.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملف البلاغ '+esc(id)+'</title></head><body style="font-family:Tahoma;padding:20px">⏳ جارِ تجميع ملف البلاغ…
-
-
-</body></html>');
+ w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملف البلاغ ${esc(id)}</title></head><body style="font-family:Tahoma;padding:20px">⏳ جارِ تجميع ملف البلاغ…</body></html>`);
  let F;try{F=await gather(id)}catch(e){F={id,region:reg(),r:row(id),m:state.columnsMap||{},miss:['all']}}
  w.document.open();w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملف البلاغ ${esc(id)}</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet"><style>${CSS}</style></head><body><div class="bar"><button onclick="print()">🖨️ طباعة / PDF</button></div>${html(F)}
 
@@ -41912,10 +41904,7 @@ function reportHtml(D){const F=norm(D[0].w.form),O=F.out,logo=window.FM_BRAND?.l
 </body></html>`}
 window.fmV282Html=reportHtml;
 async function fmV282Pdf(list){list=(list||[]).filter(w=>w&&w.form);if(!list.length)return;const win=window.open('','_blank');if(!win){toast('اسمح بالنوافذ المنبثقة لفتح التقرير','warning');return}
- win.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:Cairo,Tahoma,sans-serif;direction:rtl;padding:30px">⏳ جارٍ تجهيز التقرير…
-
-
-</body>');
+ win.document.write(`<!doctype html><meta charset="utf-8"><body style="font-family:Cairo,Tahoma,sans-serif;direction:rtl;padding:30px">⏳ جارٍ تجهيز التقرير…</body>`);
  const D=[];for(const w of list){let ph=[];try{ph=await C.api.woPhotos(w.id)}catch(e){}D.push({w,ph})}
  /* orders of different designs: one report per design, in order */
  const html=reportHtml(D);win.document.open();win.document.write(html);win.document.close()}
