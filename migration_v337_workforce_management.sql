@@ -6,7 +6,7 @@ begin;
 alter table public.fm_people334
   add column if not exists department text not null default '' check(length(department)<=160),
   add column if not exists specialty text not null default '' check(length(specialty)<=160),
-  add column if not exists employment_type text not null default 'contractor'
+  add column if not exists employment_type text not null default 'other'
     check(employment_type in ('permanent','fixed_term','daily','outsourced','other')),
   add column if not exists start_date date,
   add column if not exists contract_end_date date,
@@ -128,7 +128,7 @@ begin
  idv:=(basev->>'id')::uuid;
  update public.fm_people334 set department=left(btrim(coalesce(p->>'department','')),160),
   specialty=left(btrim(coalesce(p->>'specialty','')),160),
-  employment_type=coalesce(nullif(p->>'employment_type',''),'outsourced'),
+  employment_type=coalesce(nullif(p->>'employment_type',''),'other'),
   start_date=nullif(p->>'start_date','')::date,
   contract_end_date=nullif(p->>'contract_end_date','')::date,
   exit_date=case when coalesce((p->>'active')::boolean,true) then null else nullif(p->>'exit_date','')::date end
