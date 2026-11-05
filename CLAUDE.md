@@ -720,3 +720,6 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V326 — cloud ticket count in the device card
 - `fm-v325-device-clear`: `#fm325-card` adds `[data-cloud]` = `window.fmV326CloudCount()` (head counts of `tickets` total / riyadh / qassim through `FMCloud.engClient()`, RLS decides, plus `fm_settings.wipe` {at, parts}): cloud > 0 → the reset did not remove them (clearing the device would only reload them); 0 → the device holds an old local copy. The toast after a device clear repeats the cloud count.
+
+## V327 — the cloud ticket check without a timeout
+- `fmV326CloudCount` no longer runs an exact `count` over all tickets (on the real project it passed the statement timeout and PostgREST answered an empty «Error»): per region it reads one `ticket_id` (`limit(1)`) to know whether tickets exist, then a `count:'planned'` head request for an approximate number (null → just «نعم»). Errors show `message` / `details` / `hint` / `code`, else «انتهت مهلة الاستعلام».
