@@ -12176,7 +12176,18 @@ async function exportSupervisorDailyPdf(){
   if(!pages.length)throw new Error('No supervisor report pages');
   if(typeof html2canvas!=='function'||typeof jspdf==='undefined'||!jspdf.jsPDF){
    const w=window.open('','_blank');if(!w){showToast('يرجى السماح بفتح نافذة الطباعة','warning');return;}
-   w.document.write(`<html dir="rtl"><head><meta charset="utf-8">${supervisorDailyExportStyles()}</head><body>${markup}</body></html>`);
+   w.document.write(`<html dir="rtl"><head><meta charset="utf-8">${supervisorDailyExportStyles()}</head><body>${markup}
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);
    w.document.close();w.focus();w.print();return;
   }
   const pdf=new jspdf.jsPDF({unit:'mm',format:'a4',orientation:'landscape',compress:true});
@@ -21120,7 +21131,18 @@ window.openKpiCalculationDetails=openKpiCalculationDetails;window.closeKpiCalcul
       '<style>body{font-family:Arial;direction:rtl}table{border-collapse:collapse;width:100%}'+
       'th,td{border:1px solid #cbd5e1;padding:7px;text-align:center}'+
       'th{font-weight:bold;background:#eef2ff}tfoot td{font-weight:bold;background:#e0e7ff}</style>'+
-      '</head><body><h2>'+title+'</h2>'+clone.outerHTML+'</body></html>';
+      '</head><body><h2>'+title+'</h2>'+clone.outerHTML+'
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>';
 
     const blob=new Blob(['\ufeff',workbook],{type:'application/vnd.ms-excel;charset=utf-8;'});
     const url=URL.createObjectURL(blob);
@@ -27288,8 +27310,9 @@ const GROUPS=[
   /* V237: reached through the tabs of the merged items above (buttons hidden) */
   'v2-nav-fm135-work','v2-nav-fm103-alerts','v2-nav-risk','v2-nav-fm118-breach','v2-nav-fm194-quality','v2-nav-school-analysis','v2-nav-fm122-risk','v2-nav-fm231-sla','v2-nav-fm123-weekfu']},
  {k:'maint',icon:'🧰',t:'الصيانة والجودة',ids:['v2-nav-fm175-req','v2-nav-fm158-qa','v2-nav-fm176-capex']},
- {k:'schools',icon:'🏫',t:'المدارس',ids:['v2-nav-school-db','v2-nav-fm118-school','v2-nav-fm131-map','v2-nav-fm131-cost','v2-nav-fm125-contacts','v2-nav-fm224-docs','v2-nav-fm224-meters']},
- {k:'staff',icon:'👷',t:'الكادر والمقاولون',ids:['v2-nav-fm246-badges','v2-nav-fm249-ideas','v2-nav-fm264-ot','v2-nav-fm233-workforce','v2-nav-fm192-ready','v2-nav-fm235-deputy','v2-nav-fm224-att','v2-nav-fm224-veh','v2-nav-staff','v2-nav-staff-performance','v2-nav-eng','v2-nav-fm124-visits','v2-nav-fm124-load','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-contractors','v2-nav-fm122-score','v2-nav-fm177-pen']},
+ {k:'schools',icon:'🏫',t:'المدارس',ids:['v2-nav-school-db','v2-nav-fm118-school','v2-nav-fm131-map','v2-nav-fm131-cost','v2-nav-fm125-contacts','v2-nav-fm224-docs','v2-nav-fm224-meters','v2-nav-eng']},
+ {k:'staff',icon:'👷',t:'الكادر',ids:['v2-nav-fm246-badges','v2-nav-fm249-ideas','v2-nav-fm264-ot','v2-nav-fm233-workforce','v2-nav-fm192-ready','v2-nav-fm235-deputy','v2-nav-fm224-att','v2-nav-fm224-veh','v2-nav-staff','v2-nav-staff-performance','v2-nav-fm124-visits','v2-nav-fm124-load','v2-nav-workforce','v2-nav-bulk-assignment','v2-nav-fm122-score','v2-nav-fm177-pen']},
+ {k:'contractors',icon:'🏗️',t:'المقاولون',ids:['v2-nav-contractors']},
  {k:'wh',icon:'📦',t:'المستودعات وقطع الغيار',ids:['v2-nav-fm212-whmap','v2-nav-fm180-items','v2-nav-fm173-stock','v2-nav-fm219-whkpi','v2-nav-fm180-custody','v2-nav-fm215-tools','v2-nav-fm193-parts','v2-nav-fm180-po','v2-nav-fm180-rep']},
  {k:'fin',icon:'💹',t:'المالية والتكاليف',ids:['v2-nav-fm330-sub','v2-nav-fm186-cc','v2-nav-fm171-costs','v2-nav-fm184-bills','v2-nav-fm319-rates','v2-nav-fm194-claims']},
  {k:'analysis',icon:'📊',t:'التحليل والمقارنات',ids:['v2-nav-fm226-ai','v2-nav-fm195-exec','v2-nav-charts','v2-nav-period','v2-nav-fm103-periods','v2-nav-compare','v2-nav-fm131-season','v2-nav-pivot','v2-nav-saved']},
@@ -31362,7 +31385,18 @@ const RN={ok:'سليم',fix:'يحتاج إصلاح',fixed:'تم الإصلاح',
 const ARR=[['sign','لوحة المدرسة'],['entrance','مدخل المدرسة'],['fence','سور المدرسة']];
 const ST={assigned:'بانتظار القبول',accepted:'مقبول',rejected:'مرفوض',in_progress:'قيد التنفيذ',done:'منفّذ — بانتظار الاعتماد',returned:'مُعاد للتصحيح',closed:'معتمد ومغلق',cancelled:'ملغى',stopped:'موقوف (سلامة)'};
 async function fmV149Pdf(list){if(!list.length)return;const win=window.open('','_blank');if(!win){toast('اسمح بالنوافذ المنبثقة لفتح التقرير','warning');return}
- win.document.write('<!doctype html><meta charset="utf-8"><title>تقرير</title><body style="font-family:Cairo,Tahoma,sans-serif;direction:rtl;padding:30px">⏳ جارٍ تجهيز التقرير…</body>');
+ win.document.write('<!doctype html><meta charset="utf-8"><title>تقرير</title><body style="font-family:Cairo,Tahoma,sans-serif;direction:rtl;padding:30px">⏳ جارٍ تجهيز التقرير…
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body>');
  const D=[];let i=0;for(const w of list){i++;try{win.document.body.textContent=`⏳ جارٍ تجهيز التقرير… ${fmt(i)} / ${fmt(list.length)}`}catch(e){}
   let ph=[],ev=[];try{[ph,ev]=await Promise.all([C.api.woPhotos(w.id),C.api.woEvents(w.id)])}catch(e){}D.push({w,ph,ev})}
  const logo=window.FM_BRAND?.logo||'',img=(p,cap)=>`<figure><img src="${esc(p.d)}" alt=""><figcaption>${esc(cap)}</figcaption></figure>`,dt=v=>v?X.dts(v):'—';
@@ -31390,7 +31424,18 @@ async function fmV149Pdf(list){if(!list.length)return;const win=window.open('','
   figure img{width:100%;height:120px;object-fit:cover;display:block}.g3 figure img{height:140px}figcaption{font-size:11px;text-align:center;background:#f8fafc;padding:2px}.miss div{height:120px;display:grid;place-items:center;color:#94a3b8;font-size:30px}
   .it{margin:6px 0;break-inside:avoid}.sig{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px;text-align:center;font-weight:800}.sig div{border-top:1px solid #0f172a;padding-top:6px;min-height:46px}.sig span{font-weight:600;color:#475569}
   footer{margin-top:10px;color:#94a3b8;font-size:10px;text-align:center}@media screen{body{background:#e2e8f0}.pg{background:#fff;max-width:800px;margin:12px auto;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1)}}`;
- const html=`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(window.fmV277ListName?fmV277ListName(list):list.length>1?'تقرير الحملة — '+(list[0].batch_title||''):'تقرير '+(list[0].code||''))}</title> <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap"><style>${css}${window.fmV151Css||''}</style></head><body>${D.map(o=>(window.fmV151Page&&fmV151Page(o,{esc,dt,img,logo}))||page(o)).join('')}${window.fmV152Agg?fmV152Agg(D,{esc,logo}):''} <script>(function(){var im=[].slice.call(document.images),n=0,once=0,go=function(){if(once++)return;setTimeout(function(){window.print()},400)};if(!im.length)return go();im.forEach(function(i){if(i.complete)n++;else i.onload=i.onerror=function(){if(++n>=im.length)go()}});if(n>=im.length)go();setTimeout(go,20000)})();<\/script></body></html>`;
+ const html=`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(window.fmV277ListName?fmV277ListName(list):list.length>1?'تقرير الحملة — '+(list[0].batch_title||''):'تقرير '+(list[0].code||''))}</title> <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap"><style>${css}${window.fmV151Css||''}</style></head><body>${D.map(o=>(window.fmV151Page&&fmV151Page(o,{esc,dt,img,logo}))||page(o)).join('')}${window.fmV152Agg?fmV152Agg(D,{esc,logo}):''} <script>(function(){var im=[].slice.call(document.images),n=0,once=0,go=function(){if(once++)return;setTimeout(function(){window.print()},400)};if(!im.length)return go();im.forEach(function(i){if(i.complete)n++;else i.onload=i.onerror=function(){if(++n>=im.length)go()}});if(n>=im.length)go();setTimeout(go,20000)})();<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`;
  win.document.open();win.document.write(html);win.document.close()}
 window.fmV149Pdf=fmV149Pdf;
 })();
@@ -32297,7 +32342,7 @@ const MANUAL=[
  {id:'v2-nav-fm168-novaro',t:'جرد الأصول (Solvix)',where:'البيانات والإعداد ← «📦 جرد الأصول (Solvix)»',what:'يفتح Solvix: تطبيق مستقل لجرد أصول المدارس (المدارس، الغرف، الأصول بالصور والموقع، وتقارير Excel) بقاعدة بيانات وحسابات خاصة به، منفصلة عن المنصة.',how:['اضغط الزر ليفتح Solvix في تبويب جديد.','ادخل بحساب Solvix (البريد وكلمة المرور الخاصين بـ Solvix، وليس حساب المنصة).','الفنيون يدخلون Solvix برقمهم الوظيفي وكلمة مرور يحددها مدير Solvix.'],who:'مدير النظام، مدير الإدارة، مدير المشروع، مدير العمليات، مدير المنطقة، مهندس المنطقة، مدير الأمن والسلامة، مدير الجودة',tips:['صلاحيات Solvix تُدار من داخله (Users)، ولا ترتبط بصلاحيات المنصة.'],v:'V169'},
  {id:'v2-nav-school-db',t:'قاعدة بيانات المباني',where:'البيانات والإعداد ← «قاعدة بيانات المدارس»',what:'كل مدرسة ورقمها ومكتبها ونوع المبنى وحجمه والمرحلة والملكية والحي والزون وعدد الفصول ومقاولو الصيانة والنظافة والتكييف ومشرفوها ومهندسها والإحداثيات ومدير المدرسة والحارس والاستشاري (قالب «بيانات المبنى» المعتمد)، والنسخ الاحتياطي.',how:['«تحميل نموذج Excel» = ملف بيانات المبنى المعتمد؛ املأه وارفعه من «استيراد Excel» وراجع المعاينة ثم «✅ اعتماد وحفظ». الاستيراد لا يمسح عموداً غير موجود في الملف.','آخر 4 أعمدة: «اسم مدير المدرسة» و«جوال مدير المدرسة» و«اسم الحارس» و«جوال الحارس» — تظهر للمشرف والفني في خريطة تطبيق الميدان بزر اتصال وواتساب.','عمودا «نوع المبنى» و«حجم المبنى» يقبلان: بنين / بنات / بنين وبنات، وكبير / وسط / صغير؛ ويمكن تعديلهما من الجدول مباشرة.','«نسخة احتياطية» أسبوعياً (يُنبَّه بعد أسبوع بدونها).'],who:'مدير النظام',tips:['هذه القاعدة مصدر إسناد التواصل وأوامر الحملات والمسؤولين، وفلتري «نوع المبنى» و«حجم المبنى» في لوحة القيادة، وخريطة المدارس في تطبيق الميدان.','V309: القالب المعتمد هو ملف بيانات المبنى (ورقتا «مبانى مدرسية» و«مبانى ادارية»)؛ الاستيراد يعرض معاينة بالتغييرات قبل الحفظ، والخلية الفارغة لا تمسح القيمة الحالية إلا باختيارك.','«⬇️ تصدير بقالب بيانات المبنى» يصدّر القاعدة بنفس أعمدة الملف المعتمد.','V310: خيار «🗑️ استبدال القاعدة بالكامل بهذا الملف» في المعاينة يحذف القديم كله ويعتمد الملف (بعد نسخة احتياطية وتأكيد بكتابة «استبدال»).','V311: الصفحة تعرض بطاقات وفلاتر وجدولاً مجمّعاً حسب المبنى؛ التعديل المباشر من «✏️ تعديل الجدول».','V312: البطاقات والرسوم تفاعلية (اضغط للفلترة)، كل بطاقة بعدد المباني والمدارس، ترتيب وفلتر لكل عمود، وطريقة حساب المبنى من الإعدادات ← البيانات.','V313: رسوم دائرية لمقاولي النظافة والصيانة والتكييف، وكل فلتر يقبل اختيار أكثر من قيمة.','V315: البحث والفلاتر أعلى الصفحة.','V316: في كل رسم زر «مدارس / مباني» لطريقة الاحتساب.','V318: فلتر حجم المبنى، وزر «📐 الأحجام» في كل رسم لتوزيع العدد على كبير / وسط / صغير.'],v:'V318'},
  {id:'v2-nav-fm125-contacts',t:'جهات الاتصال',where:'البيانات والإعداد ← «جهات الاتصال»',what:'جوال وبريد كل مشرف ومهندس ومقاول والإدارة، مع آخر رسالة لكل شخص.',how:['تُعبّأ من قاعدة المدارس أو يدوياً أو باستيراد Excel.'],who:'المديرون',v:'V127'},
- {id:'v2-nav-workforce',t:'إدارة القوى العاملة',where:'البيانات والإعداد ← «إدارة القوى العاملة»',what:'الفنيون والقوى العاملة لكل مقاول ومنطقة.',how:['أضف أو استورد ثم راجع التوزيع.'],who:'مدير النظام'},
+ {id:'v2-nav-workforce',t:'إدارة القوى العاملة',where:'الرئيسية التشغيلية ← «القوى العاملة» أو قائمة «توزيع أعداد القوى العاملة».',what:'تسجيل قوام المجموعات والعدد المخطط حسب المنطقة والفئة وجهة العمل والتخصص والمسؤول المباشر.',how:['أضف مجموعة واختر فرق الصيانة أو الخدمات الخفيفة أو الطقم الإداري أو الخدمات المساندة.','أدخل العدد المخطط إذا كان معتمداً، ثم القوام المسجل للمجموعة.','راجع العجز أو الزيادة حسب الاختيار. العدد المسجل لا يثبت الحضور اليومي أو التوفر.'],who:'مدير النظام ومديرو المشروع والعمليات ومدير المنطقة ضمن نطاقه',v:'V333'},
  {id:'v2-nav-bulk-assignment',t:'الإسناد الجماعي للمناطق',where:'البيانات والإعداد ← «الإسناد الجماعي للمناطق»',what:'تعديل مسؤولي مجموعة مدارس دفعة واحدة.',how:['حدد المدارس ثم المسؤول الجديد.'],who:'مدير النظام'},
  {id:'v2-nav-quality',t:'جودة البيانات',where:'البيانات والإعداد ← «جودة البيانات»',what:'البلاغات بلا مدرسة أو تاريخ أو تصنيف، والمدارس غير المطابقة لقاعدة المدارس.',how:['صحّح المصدر (الملف أو القاعدة) ثم أعد الرفع.'],who:'مدير النظام'},
  {id:'v2-nav-refresh',t:'تحديث البيانات والجرافات',where:'البيانات والإعداد ← «تحديث البيانات والجرافات»',what:'إعادة حساب كل المؤشرات والرسوم.',how:['استخدمه بعد تعديل قاعدة المدارس أو الإعدادات.'],who:'المديرون'}
@@ -32342,7 +32387,18 @@ function page(){let p=document.getElementById('fm162-page');if(!p){p=document.cr
  document.body.appendChild(p);p.querySelector('[data-print]').onclick=print}return p}
 function print(){const w=window.open('','_blank');if(!w)return;const v=window.FM_APP_VERSION||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>دليل منصة RakizoraFM ${esc(v)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;color:#0f172a;margin:24px;line-height:1.8}h1{font-size:22px}h2{font-size:17px;border-bottom:2px solid #2563eb;padding-bottom:4px;margin-top:22px}.it{break-inside:avoid;margin:10px 0 14px}.it b{font-size:15px}.m{color:#475569;font-size:12.5px}ol{margin:4px 0}</style></head><body><h1>📘 دليل منصة RakizoraFM — الإصدار ${esc(v)}</h1>`
-  +MANUAL.map(g=>({...g,items:g.items.filter(x=>sees(x,viewT()))})).filter(g=>g.items.length).map(g=>`<h2>${g.icon} ${esc(g.g)}</h2>`+g.items.map(x=>`<div class="it"><b>${esc(x.t)}</b> <span class="m">${x.v?'('+esc(x.v)+')':''}</span><div>${esc(x.what)}</div><div class="m">📍 ${esc(x.where)} · 👤 ${esc(x.who)}</div><ol>${x.how.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>${(x.tips||[]).map(t=>`<div class="m">💡 ${esc(t)}</div>`).join('')}</div>`).join('')).join('')+'</body></html>');
+  +MANUAL.map(g=>({...g,items:g.items.filter(x=>sees(x,viewT()))})).filter(g=>g.items.length).map(g=>`<h2>${g.icon} ${esc(g.g)}</h2>`+g.items.map(x=>`<div class="it"><b>${esc(x.t)}</b> <span class="m">${x.v?'('+esc(x.v)+')':''}</span><div>${esc(x.what)}</div><div class="m">📍 ${esc(x.where)} · 👤 ${esc(x.who)}</div><ol>${x.how.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>${(x.tips||[]).map(t=>`<div class="m">💡 ${esc(t)}</div>`).join('')}</div>`).join('')).join('')+'
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>');
  w.document.close();setTimeout(()=>{try{w.print()}catch(e){}},600)}
 function missing(){const known=new Set(MANUAL.flatMap(g=>g.items.map(x=>x.id)));return [...document.querySelectorAll('nav.v2-nav .v2-nav-btn[id]')].filter(b=>b.id!=='fm-v38-clear-all-nav'&&!known.has(b.id)).map(b=>(b.querySelector('.v2-nav-label')?.textContent||b.title||b.id).trim())}
 function render(){const p=page(),body=p.querySelector('.body'),s=q.trim().toLowerCase(),T=viewT(),admin=myTitle()==='sysadmin';
@@ -33713,7 +33769,18 @@ function letter(o){const [a]=monRange(MON),ml=a.toLocaleDateString(GREG,{month:'
  <h2>3) أوامر أُعيدت للتصحيح (${num(o.ret.length)})</h2>${T(['#','الأمر','المدرسة','مرات الإرجاع','الغرامة'],o.ret.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.code)} — ${esc(x.title)}</td><td>${esc(x.school||'')}</td><td>${num(x.n)}</td><td>${money(x.fee)}</td></tr>`))}
  <h2>الإجمالي</h2><table><tbody><tr><td>غرامات البلاغات</td><td>${money(o.pT)}</td></tr><tr><td>غرامات تأخير الأوامر</td><td>${money(o.pW)}</td></tr><tr><td>غرامات الإرجاع</td><td>${money(o.pR)}</td></tr>${o.cap?`<tr><td>السقف (${num(P.cap_pct)}% من ${money(o.monthly)})</td><td>${money(o.cap)}</td></tr>`:''}<tr class="tot"><td>الغرامة المستحقة</td><td>${money(o.pen)}</td></tr></tbody></table>
  <p class="m">يحق لكم الاعتراض كتابياً خلال 5 أيام عمل من تاريخ هذا الإشعار مع المستندات المؤيدة.</p>
- <div class="sg"><div>مدير المشروع</div><div>مدير العمليات</div><div>المقاول — للعلم والاستلام</div></div><script>setTimeout(()=>print(),600)<\/script></body></html>`);w.document.close()}
+ <div class="sg"><div>مدير المشروع</div><div>مدير العمليات</div><div>المقاول — للعلم والاستلام</div></div><script>setTimeout(()=>print(),600)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 function setDlg(){const ad=isAdmin(),d=document.createElement('dialog');d.className='fm171-dlg';const names=(DATA&&DATA.L||[]).filter(o=>o.k!=='—');
  d.innerHTML=`<div class="in"><h3>⚙️ بنود الغرامات والعقود</h3><div class="fm125-src">${ad?'تُحفظ للجميع.':'للاطلاع — يعدّلها مدير النظام.'}</div>
   <b>غرامة البلاغ المتجاوز للمهلة (ر.س)</b><div class="fm171-two">${['طارئ','عالي','متوسط'].map(k=>`<label class="f">${k}<input data-b="${k}" inputmode="decimal" value="${esc((P.breach||{})[k]??'')}" ${ad?'':'disabled'}></label>`).join('')}</div>
@@ -33842,7 +33909,18 @@ function render(){const p=page(),b=p.querySelector('.body'),x=p.querySelector('.
  let t=null;b.querySelectorAll('[data-n]').forEach(i=>i.oninput=()=>{clearTimeout(t);t=setTimeout(()=>{const o={};b.querySelectorAll('[data-n]').forEach(j=>o[j.dataset.n]=j.value);saveNotes(o);b.querySelector('[data-prev]').innerHTML=html(M,o)},400)})}
 function print(){const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة','warning');return}const ml=M.a.toLocaleDateString(GREG,{month:'long',year:'numeric'});
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقرير الصيانة الشهري — ${esc(ml)} — ${esc(REG?RN[REG]||REG:'كل المناطق')}</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet"><style>body{margin:0;padding:14px}${CSS}
- @media print{@page{size:A4;margin:12mm}body{padding:0}.rp .pg{border:0;border-radius:0;padding:0;margin:0;page-break-after:always}.rp .pg:last-child{page-break-after:auto}}</style></head><body>${html(M,notes())}<script>setTimeout(()=>print(),700)<\/script></body></html>`);w.document.close()}
+ @media print{@page{size:A4;margin:12mm}body{padding:0}.rp .pg{border:0;border-radius:0;padding:0;margin:0;page-break-after:always}.rp .pg:last-child{page-break-after:auto}}</style></head><body>${html(M,notes())}<script>setTimeout(()=>print(),700)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 async function run(){if(busy)return;busy=true;const p=page();p.querySelector('.body').innerHTML='<div class="fm125-src">جارٍ تجهيز التقرير…</div>';
  try{if(!MON){const r=window.state&&state.detectedMaxDate?new Date(state.detectedMaxDate):new Date();MON=monthKey(r)}M=await collect();render()}catch(e){p.querySelector('.body').innerHTML=`<div class="fm103-card fm103-empty">${esc(e.message)}</div>`}busy=false}
 function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.getElementById('fm116-page')?.classList.remove('open');document.body.classList.remove('v2-mobile-nav');
@@ -34022,7 +34100,18 @@ async function xl(sheets,name){try{try{await window.fmEnsureLibraries?.()}catch(
 function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}
  const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}.sg{display:flex;gap:40px;margin-top:40px}.sg div{flex:1;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}@page{size:A4;margin:12mm}</style></head><body>
- <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),300)<\/script></body></html>`);w.document.close()}
+ <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),300)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 /* shrink a photo to a JPEG data URL under 400k characters */
 function shrink(file){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=()=>no(Error('تعذر قراءة الصورة'));r.onload=()=>{const im=new Image();im.onerror=()=>no(Error('صورة غير صالحة'));im.onload=()=>{
  let w=im.width,h=im.height,mx=1100;if(Math.max(w,h)>mx){const k=mx/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k)}
@@ -34931,7 +35020,18 @@ function print_(bl){const c=savedCt330(bl),w=window.open('','_blank');if(!w){toa
  <div class="hd"><div><h1>مستخلص أعمال صيانة رقم ${esc(bl.code)}</h1><div class="m">${esc(co)}</div></div><div style="text-align:left"><b>${esc(mshow(bl.month))}</b><div class="m">${esc((ST[bl.status]||['',''])[1])}</div></div></div>
  <table><tbody><tr><th>العقد</th><td>${esc(c.code||'')} — ${esc(c.name)}</td><th>المقاول</th><td>${esc(c.contractor_name)}</td></tr><tr><th>المنطقة</th><td>${esc(rn(c.region))}</td><th>نطاق الفوترة</th><td>${esc(scope330(c))}</td></tr><tr><th>مدة العقد</th><td colspan="3">${c.start_date?dshow(c.start_date):'—'} ← ${c.end_date?dshow(c.end_date):'—'}</td></tr></tbody></table>
  ${linesTable(bl).replace(/class="fm103-t"/g,'')}${bl.note?`<p>ملاحظة: ${esc(bl.note)}</p>`:''}${histHtml(bl)}
- <div class="sg"><div>المقاول</div><div>مهندس المنطقة</div><div>مدير المشروع</div><div>المحاسب</div></div><script>setTimeout(()=>print(),300)<\/script></body></html>`);w.document.close()}
+ <div class="sg"><div>المقاول</div><div>مهندس المنطقة</div><div>مدير المشروع</div><div>المحاسب</div></div><script>setTimeout(()=>print(),300)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 window.fmV184Open=async id=>{await load();const bl=D.bl.find(x=>x.id===id);if(bl)billDlg(bl)};
 window.fmV184Print=id=>{const bl=D&&D.bl.find(r=>r.id===id);if(bl)print_(bl)};
 async function excel(){const bills=D.bl.filter(r=>(!F.month||r.month===F.month)&&(!F.ct||r.contract_id===F.ct)&&(!F.region||ctOf(r.contract_id).region===F.region)&&(!F.area||ctOf(r.contract_id).billing_scope_key===F.area)&&(!F.st||r.status===F.st));if(window.FM330Subcontracts)await window.FM330Subcontracts.exportBills(bills,D.ct)}
@@ -35172,7 +35272,18 @@ function printRep(){const w=window.open('','_blank');if(!w){toast('اسمح با
  <h1>تقرير مركز التكلفة — ${Y}${F.c?' — '+esc(F.c==='_none'?'غير موزع':ctr(F.c).name):''}</h1><div style="color:#475569">${esc(co)} • حتى ${MN[Math.max(cm,1)-1]} • طُبع ${new Date().toLocaleDateString(GREG)}</div>
  <div class="k">${me.revenue?`<div>الإيراد<b>${money(T.rev)}</b></div>`:''}<div>التكلفة<b>${money(T.cost)}</b></div>${me.revenue?`<div>الربح<b>${money(T.profit)}</b>${T.margin==null?'':num(T.margin,1)+'%'}</div>`:''}<div>التوقع لنهاية السنة<b>${money(cm?T.cost/cm*12:0)}</b></div></div>
  <h3>المراكز</h3><table><thead><tr><th>المركز</th>${me.revenue?'<th>الإيراد</th>':''}<th>التكلفة</th>${me.revenue?'<th>الربح</th>':''}<th>ميزانية الفترة</th><th>المستهلك</th></tr></thead><tbody>${crow}</tbody></table>
- <h3>الشهور</h3>${monthTable(A,F.c&&F.c!=='_none'?under(F.c):null).replace(/class="[^"]*"/g,'')}<script>setTimeout(()=>print(),300)<\/script></body></html>`);w.document.close()}
+ <h3>الشهور</h3>${monthTable(A,F.c&&F.c!=='_none'?under(F.c):null).replace(/class="[^"]*"/g,'')}<script>setTimeout(()=>print(),300)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 /* permissions (system admin) in «الإعدادات» ← السحابة */
 (window.fmHubExtras=window.fmHubExtras||[]).push(function(tab,pane){if(tab!=='cloud'||!isAdmin())return;const box=document.createElement('div');box.className='fm122-card';box.style.marginTop='14px';pane.appendChild(box);
  (async()=>{let P={};try{const db=await C.engClient();const r=await db.from('fm_settings').select('value').eq('key','cc_perms').limit(1);P=((r.data||[])[0]||{}).value||{}}catch(e){}
@@ -35819,7 +35930,18 @@ function exportReport(r){const X=window.XLSX;if(!X)return window.showToast?.('م
  add('المواد',[['الطلب','المدرسة','الحالة','المسؤول','موعد المتابعة'],...(r.parts||[]).map(x=>[x.code||x.id,x.school,x.status,x.followup?.owner_name,D(x.followup?.due_at)])]);
  add('المستحقات',[['المستخلص','المقاول','الحالة','المبلغ SAR','المسؤول','الموعد'],...(r.bills||[]).map(x=>[x.code,x.contractor_name,x.status,x.total,x.followup?.owner_name,D(x.followup?.due_at)])]);
  add('الفرق',[['الفريق','الحالة','مسؤول المعالجة','الموعد','الملاحظة'],...(r.teams||[]).map(x=>[x.name,x.status,x.owner_name,D(x.due_at),x.note])]);X.writeFile(wb,'Rakizora_Report_'+r.period.from+'_'+r.period.to+'.xlsx');}
-function printReport(r){const f=document.createElement('iframe');f.title='التقرير القابل للطباعة';f.style.cssText='position:fixed;width:1px;height:1px;bottom:0;left:0;border:0';document.body.appendChild(f);const doc=f.contentDocument;doc.open();doc.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>تقرير RakizoraFM</title><style>body{font-family:Tahoma,Arial,sans-serif;font-size:11px;color:#0f172a;line-height:1.6}table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #aaa;padding:6px;text-align:right;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}h3{break-after:avoid;margin-top:22px}.fm195-note{background:#eee;padding:10px}.fm195-wrap{overflow:visible}@page{size:A4 landscape;margin:12mm}@media print{button{display:none}}</style></head><body>'+reportSections(r)+'</body></html>');doc.close();setTimeout(()=>{f.contentWindow.focus();f.contentWindow.print()},400);f.contentWindow.onafterprint=()=>setTimeout(()=>f.remove(),500);setTimeout(()=>f.remove(),180000)}
+function printReport(r){const f=document.createElement('iframe');f.title='التقرير القابل للطباعة';f.style.cssText='position:fixed;width:1px;height:1px;bottom:0;left:0;border:0';document.body.appendChild(f);const doc=f.contentDocument;doc.open();doc.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>تقرير RakizoraFM</title><style>body{font-family:Tahoma,Arial,sans-serif;font-size:11px;color:#0f172a;line-height:1.6}table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #aaa;padding:6px;text-align:right;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}h3{break-after:avoid;margin-top:22px}.fm195-note{background:#eee;padding:10px}.fm195-wrap{overflow:visible}@page{size:A4 landscape;margin:12mm}@media print{button{display:none}}</style></head><body>'+reportSections(r)+'
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>');doc.close();setTimeout(()=>{f.contentWindow.focus();f.contentWindow.print()},400);f.contentWindow.onafterprint=()=>setTimeout(()=>f.remove(),500);setTimeout(()=>f.remove(),180000)}
 function dialog(title){const d=document.createElement('dialog');d.className='fm195-dialog';d.dataset.scope=scope();d.innerHTML='<button class="fm103-btn" data-close>إغلاق</button><h3>'+E(title)+'</h3><div data-body></div>';document.body.appendChild(d);d.querySelector('[data-close]').onclick=()=>d.close();d.addEventListener('close',()=>d.remove());d.showModal();return d}
 async function escalate(kind,key){if(!fresh())return;const old=data.inbox?.find(x=>x.kind===kind&&x.source_key===key),a=M.alerts(data,F.near).find(x=>x.kind===kind&&x.key===key)||{kind,key,region:region(),title:key},d=dialog('متابعة / تصعيد '+a.title),b=d.querySelector('[data-body]'),sc=scope(),rg=region();b.textContent='جارٍ فحص الصلاحية…';try{const people=await rpc('fm195_people',{r:rg,k:kind});if(sc!==scope()||rg!==region()||!d.isConnected)return d.close();b.innerHTML=`<form><label>مسؤول التصعيد<select name="recipient" required><option value="">اختر المسؤول</option>${people.map(x=>`<option value="${E(x.id)}">${E(x.name)}</option>`).join('')}</select></label><label>موعد المتابعة (توقيت الرياض)<input name="due" type="datetime-local" required value="${old?.due_at?new Date(M.ts(old.due_at)+3*36e5).toISOString().slice(0,16):new Date(Date.now()+4*36e5).toISOString().slice(0,16)}"></label><label>الحالة<select name="status">${Object.entries(ST).filter(([k])=>old||k==='open').map(([k,s])=>`<option value="${k}">${s}</option>`).join('')}</select></label><label>السبب والإجراء المطلوب<textarea name="note" required maxlength="4000">${E(old?.note)}</textarea></label><p>هذا موعد متابعة مستقل؛ لا يغير الموعد الأصلي أو SLA أو حالة المصدر. التصعيد لا يرسل بريداً أو واتساب.</p><p data-error></p><button class="fm103-btn primary">حفظ</button></form>`;const form=b.querySelector('form');form.elements.recipient.value=old?.recipient||'';form.elements.status.value=old?.status||'open';form.onsubmit=async e=>{e.preventDefault();if(!fresh()||sc!==scope()||rg!==region())return d.close();const btn=form.querySelector('button');btn.disabled=true;try{const res=await rpc('fm195_escalate',{p:{kind,source_key:key,region:rg,recipient:form.elements.recipient.value,due_at:new Date(form.elements.due.value+':00+03:00').toISOString(),status:form.elements.status.value,note:form.elements.note.value.trim(),revision:old?.revision||0}});if(sc!==scope()||rg!==region())return d.close();d.close();window.showToast?.(res.push_queued?'حُفظ التصعيد وأضيف إشعار إلى قائمة الإرسال؛ التسليم غير مؤكد.':'حُفظت المتابعة داخل المنصة.');await load('alerts')}catch(e){b.querySelector('[data-error]').textContent=e.message;btn.disabled=false}}}catch(e){b.textContent='التصعيد للمديرين المخولين وعلى مصادر موجودة بالسحابة فقط. '+e.message}}
 function openSource(kind,key){if(!fresh())return;if(kind==='ticket')return window.fmV135Open?.(key,region());if(kind==='wo'){window.fmV145OpenWorkOrders?.();Promise.resolve(window.fmV145X?.load()).then(()=>window.fmV145X?.detail(key));return}const nav={parts:'v2-nav-fm193-parts',bill:'v2-nav-fm194-claims',team:'v2-nav-fm192-ready'}[kind];document.getElementById(nav)?.click()}
@@ -36426,7 +36548,18 @@ function printAll(){const w=window.open('','_blank');if(!w){toast('اسمح با
  const css=document.getElementById('fm-v212-wh-map-css').textContent;
  w.document.write(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>إجراءات المستودع وخارطة الطريق</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet"><style>body{font-family:Cairo,Tahoma,sans-serif;margin:18px;color:#0f172a}h1{font-size:20px;margin:0}h2{font-size:16px;margin:18px 0 8px;border-bottom:2px solid #1e3a8a;padding-bottom:4px;break-after:avoid}${css}.fm212-proc>summary .tg{display:none}.fm212-pb button{display:none}.fm212-st{width:150px}@page{size:A4;margin:12mm}</style></head><body>
   <h1>🗺️ إجراءات المستودع وخارطة الطريق${window.fmTenantName?.()?' — '+esc(window.fmTenantName()):''}</h1><div style="color:#64748b;font-size:12px">${new Date().toLocaleDateString('ar-SA-u-ca-gregory')}</div>
-  <h2>1. الدورة</h2>${flowHtml()}<h2>2. الإجراءات بالتفصيل</h2>${procHtml().replace(/<details /g,'<details open ')}<h2>3. من يفعل ماذا</h2>${raciHtml()}<h2>4. المراجعة والفجوات</h2>${gapsHtml()}<h2>5. خارطة الطريق</h2>${rmHtml()}</body></html>`);
+  <h2>1. الدورة</h2>${flowHtml()}<h2>2. الإجراءات بالتفصيل</h2>${procHtml().replace(/<details /g,'<details open ')}<h2>3. من يفعل ماذا</h2>${raciHtml()}<h2>4. المراجعة والفجوات</h2>${gapsHtml()}<h2>5. خارطة الطريق</h2>${rmHtml()}
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);
  w.document.close();setTimeout(()=>{try{w.focus();w.print()}catch(e){}},700)}
 function openPage(btn,open){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.body.classList.remove('v2-mobile-nav');
  try{window.v2SetActive?.(btn)}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;render(open)}
@@ -36543,7 +36676,18 @@ function dlg(html,wide){const d=document.createElement('dialog');d.className='fm
 function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}
  const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}.sg{display:flex;gap:40px;margin-top:40px}.sg div{flex:1;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}p{font-size:12.5px;line-height:1.9}.lb{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.lb div{border:1px dashed #94a3b8;border-radius:8px;padding:8px;text-align:center;break-inside:avoid}.lb svg{width:110px;height:110px}.lb b{display:block;font-size:13px}.lb small{display:block;font-size:11px}@page{size:A4;margin:12mm}</style></head><body>
- <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),400)<\/script></body></html>`);w.document.close()}
+ <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),400)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 function loadQR(){return window.qrcode?Promise.resolve():new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';s.onload=ok;s.onerror=()=>no(Error('تعذر تحميل مكتبة QR'));document.head.appendChild(s)})}
 function mkThumb(file){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=()=>no(Error('تعذر قراءة الصورة'));r.onload=()=>{const im=new Image();im.onerror=()=>no(Error('صورة غير صالحة'));im.onload=()=>{const k=Math.min(1,320/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.width*k));c.height=Math.max(1,Math.round(im.height*k));c.getContext('2d').drawImage(im,0,0,c.width,c.height);let q=.8,u=c.toDataURL('image/jpeg',q);while(u.length>58000&&q>.3){q-=.1;u=c.toDataURL('image/jpeg',q)}ok(u)};im.src=r.result};r.readAsDataURL(file)})}
 
@@ -36757,7 +36901,18 @@ function dlg(html,wide){const d=document.createElement('dialog');d.className='fm
 function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}
  const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}.sg{display:flex;gap:40px;margin-top:40px}.sg div{flex:1;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}p{font-size:12.5px;line-height:1.9}img.inv{max-width:100%;max-height:420px;border:1px solid #cbd5e1;border-radius:6px;margin-top:8px}@page{size:A4;margin:12mm}</style></head><body>
- <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script></body></html>`);w.document.close()}
+ <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 function shrink(file,max,limit){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=()=>no(Error('تعذر قراءة الصورة'));r.onload=()=>{const im=new Image();im.onerror=()=>no(Error('صورة غير صالحة'));im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.width*k));c.height=Math.max(1,Math.round(im.height*k));c.getContext('2d').drawImage(im,0,0,c.width,c.height);let q=.82,u=c.toDataURL('image/jpeg',q);while(u.length>limit&&q>.3){q-=.08;u=c.toDataURL('image/jpeg',q)}if(u.length>limit)no(Error('الصورة كبيرة جداً'));else ok(u)};im.src=r.result};r.readAsDataURL(file)})}
 let MATS=null,STORES=null;
 async function names(force){if(MATS&&STORES&&!force)return;const d=await db();const [a,b]=await Promise.all([d.from('wo_materials').select('id,name,unit,code,ext_code,price'),d.from('wo_stores').select('id,name,region')]);MATS=new Map((a.data||[]).map(m=>[m.id,m]));STORES=new Map((b.data||[]).map(s=>[s.id,s]))}
@@ -36889,7 +37044,18 @@ function dlg(html,wide){const d=document.createElement('dialog');d.className='fm
 function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}
  const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}.sg{display:flex;gap:40px;margin-top:40px}.sg div{flex:1;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}p{font-size:12.5px;line-height:1.9}@page{size:A4;margin:12mm}</style></head><body>
- <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script></body></html>`);w.document.close()}
+ <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 function xlsx(name,rows){if(!rows.length){toast('لا توجد بيانات','warning');return}if(!window.XLSX){toast('مكتبة Excel غير محمّلة','warning');return}const wb=XLSX.utils.book_new();const ws=XLSX.utils.json_to_sheet(rows);ws['!views']=[{RTL:true}];XLSX.utils.book_append_sheet(wb,ws,name.slice(0,30));XLSX.writeFile(wb,name+'.xlsx')}
 let MATS=null,STORES=null,NAT=0;
 async function names(force){if(MATS&&STORES&&!force&&Date.now()-NAT<120000)return;const d=await db();const [a,b]=await Promise.all([d.from('wo_materials').select('id,name,unit,code,ext_code,price'),d.from('wo_stores').select('id,name,region,active')]);
@@ -37133,7 +37299,18 @@ window.fmV219Labels=async(o)=>{o=o||{};try{await names(true)}catch(e){toast(emsg
    .g{display:flex;flex-wrap:wrap;gap:2mm}.l{width:${W}mm;height:${H}mm;border:0.3mm dashed #94a3b8;box-sizing:border-box;padding:1.5mm;display:flex;gap:1.5mm;align-items:center;overflow:hidden;page-break-inside:avoid}
    .q{width:${H-4}mm;height:${H-4}mm;flex:none}.q svg{width:100%;height:100%}.t{flex:1;min-width:0;line-height:1.25}.t b{display:block;font-size:${sz==='s'?7.5:9.5}pt;max-height:2.6em;overflow:hidden}.t span{display:block;font-size:${sz==='s'?6.5:7.5}pt;color:#334155}.t .bn{font-weight:800;font-size:${sz==='s'?8:10}pt;color:#0f172a}</style></head><body><div class="g">
    ${L.map(m=>{const b=(BIN.get(m.id)||{}).bin;return `<div class="l"><div class="q">${qrSvg(labelCode(m))}</div><div class="t"><b>${esc(m.name)}</b><span>${esc(m.code||'')}${m.ext_code?' • Logix '+esc(m.ext_code):''}${m.unit?' • '+esc(m.unit):''}</span>${b?`<span class="bn">📍 ${esc(b)}</span>`:''}<span>${esc(st.name||'')}</span></div></div>`}).join('')}
-   </div><script>setTimeout(()=>print(),400)<\/script></body></html>`);w.document.close()};
+   </div><script>setTimeout(()=>print(),400)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()};
  await loadBins();draw()};
 
 /* (25) warehouse indicators page */
@@ -37220,7 +37397,18 @@ function render(){const p=page(),x=p.querySelector('.extra'),b=p.querySelector('
   ['المستودعات',K.sts.map(r=>({'المستودع':r.s.name,'القيمة':Math.round(r.v),'أصناف برصيد':r.items,'تحت الحد':r.below,'سالبة':r.neg,'الاستهلاك':Math.round(r.c),'الدوران':r.turn==null?'':+r.turn.toFixed(2),'زمن الصرف الوسيط (ساعة)':r.ih==null?'':+r.ih.toFixed(1),'% خلال 24 ساعة':r.in24==null?'':Math.round(r.in24)}))],
   ['أمناء المستودع',K.keepers.map(k=>({'أمين المستودع':k.k,'طلبات':k.n,'الوسيط (ساعة)':k.med==null?'':+k.med.toFixed(1),'% خلال 24 ساعة':k.in24==null?'':Math.round(k.in24)}))]]);
  x.querySelector('[data-pr]').onclick=()=>{const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}const co=(window.fmTenantName&&window.fmTenantName())||'';
-  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>مؤشرات المستودع</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:18px;color:#0f172a}${document.getElementById('fm-v219-wh-css').textContent}${document.getElementById('fm-v218-wh-css')?.textContent||''}.fm103-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px;margin:10px 0;page-break-inside:avoid}h4{margin:0 0 6px}@page{size:A4 landscape;margin:10mm}</style></head><body><h2>📈 مؤشرات المستودع</h2><div>${esc(co)} • ${F.store?esc(sto(F.store).name):'كل المستودعات'} • آخر ${F.months} أشهر • ${dshow(new Date().toISOString())}</div>${b.innerHTML}<script>setTimeout(()=>print(),500)<\/script></body></html>`);w.document.close()}}
+  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>مؤشرات المستودع</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:18px;color:#0f172a}${document.getElementById('fm-v219-wh-css').textContent}${document.getElementById('fm-v218-wh-css')?.textContent||''}.fm103-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px;margin:10px 0;page-break-inside:avoid}h4{margin:0 0 6px}@page{size:A4 landscape;margin:10mm}</style></head><body><h2>📈 مؤشرات المستودع</h2><div>${esc(co)} • ${F.store?esc(sto(F.store).name):'كل المستودعات'} • آخر ${F.months} أشهر • ${dshow(new Date().toISOString())}</div>${b.innerHTML}<script>setTimeout(()=>print(),500)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}}
 function openPage(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.body.classList.remove('v2-mobile-nav');try{window.v2SetActive?.(btn)}catch(e){}
  const p=page();p.classList.add('open');p.scrollTop=0;if(D&&Date.now()-LOADED<60000)render();else refresh()}
 window.fmV219Kpi=()=>openPage(document.getElementById('v2-nav-fm219-whkpi'));
@@ -37380,7 +37568,18 @@ async function rpc(fn,args){const d=await db();const r=await d.rpc(fn,args);if(r
 function dlg(html,wide){const d=document.createElement('dialog');d.className='fm171-dlg'+(wide?' fm180-dlg-wide':'');d.innerHTML=html;document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();d.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>d.close());return d}
 function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}.sg{display:flex;gap:30px;margin-top:40px;flex-wrap:wrap}.sg div{flex:1;min-width:150px;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}p{font-size:12.5px;line-height:1.9}img{max-width:100%;max-height:360px}@page{size:A4;margin:12mm}</style></head><body>
- <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script></body></html>`);w.document.close()}
+ <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 let MATS=null,STORES=null,NAT=0;
 async function names(force){if(MATS&&STORES&&!force&&Date.now()-NAT<120000)return;const d=await db();const [a,b]=await Promise.all([d.from('wo_materials').select('id,name,unit,code,price,category,active,approved_at'),d.from('wo_stores').select('id,name,region,active,keeper,is_default')]);
  MATS=new Map((a.data||[]).map(m=>[m.id,m]));STORES=new Map((b.data||[]).map(s=>[s.id,s]));NAT=Date.now()}
@@ -37582,7 +37781,18 @@ async function rpc(fn,args){const d=await db();const r=await d.rpc(fn,args);if(r
 function dlg(html,wide){const d=document.createElement('dialog');d.className='fm171-dlg'+(wide?' fm180-dlg-wide':'');d.innerHTML=html;document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();d.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>d.close());return d}
 function printDoc(title,sub,html,sign){const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}const co=(window.fmTenantName&&window.fmTenantName())||'';
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:24px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.s{color:#475569;font-size:12.5px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}th,td{border:1px solid #cbd5e1;padding:5px 6px;text-align:right}th{background:#f1f5f9}td.best{background:#dcfce7;font-weight:800}.sg{display:flex;gap:30px;margin-top:40px;flex-wrap:wrap}.sg div{flex:1;min-width:150px;border-top:1px solid #0f172a;padding-top:6px;font-size:12.5px}p{font-size:12.5px;line-height:1.9}img{max-width:100%;max-height:340px}@page{size:A4;margin:12mm}</style></head><body>
- <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script></body></html>`);w.document.close()}
+ <h1>${esc(title)}</h1><div class="s">${esc(co)}${co?' • ':''}${esc(sub||'')} • طُبع ${dshow(new Date().toISOString())}</div>${html}${sign?`<div class="sg">${sign.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:''}<script>setTimeout(()=>print(),500)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 function shrink(file){return new Promise((ok,no)=>{const r=new FileReader();r.onerror=()=>no(Error('تعذر قراءة الصورة'));r.onload=()=>{const im=new Image();im.onerror=()=>no(Error('صورة غير صالحة'));im.onload=()=>{const k=Math.min(1,1100/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);let q=.8,u=c.toDataURL('image/jpeg',q);while(u.length>400000&&q>.3){q-=.1;u=c.toDataURL('image/jpeg',q)}u.length>400000?no(Error('الصورة كبيرة جداً')):ok(u)};im.src=r.result};r.readAsDataURL(file)})}
 let MATS=null,STORES=null,SUPS=null,NAT=0;
 async function names(force){if(MATS&&!force&&Date.now()-NAT<120000)return;const d=await db();const [a,b,c]=await Promise.all([d.from('wo_materials').select('id,name,unit,code,price,active,approved_at'),d.from('wo_stores').select('id,name,region,active,keeper'),d.from('wo_suppliers').select('id,name,phone,email,active').order('name')]);
@@ -38082,7 +38292,18 @@ async function docRender(reload){const {B,X}=body('fm224-docs');if(reload||!DD){
  B.querySelectorAll('[data-ar]').forEach(b=>b.onclick=async()=>{if(!confirm('أرشفة الوثيقة؟ لن تظهر ولن يصل عنها تنبيه.'))return;try{await rpc('fm_doc_archive',{p_id:b.dataset.ar});toast('أُرشفت');docRender(true)}catch(e){toast(emsg(e),'error')}});
  B.querySelectorAll('[data-fl]').forEach(b=>b.onclick=async()=>{const w=window.open('','_blank');const dc=DD.L.find(x=>x.id===b.dataset.fl)||{};
   try{const u=await rpc('fm_doc_file_get',{p_id:b.dataset.fl});if(!u)throw Error('لا يوجد ملف');const bl=await (await fetch(u)).blob();const url=URL.createObjectURL(bl);if(!w){window.open(url,'_blank');return}
-   const img=/^data:image\//.test(u);w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(dc.title||'ملف')}</title><style>body{margin:0;font-family:Cairo,Tahoma,sans-serif;background:#0f172a}header{display:flex;gap:12px;align-items:center;padding:8px 12px;background:#fff}header b{flex:1}a{font-weight:800}iframe{border:0;width:100%;height:calc(100vh - 44px);background:#fff}img{display:block;max-width:100%;margin:0 auto}</style></head><body><header><b>${esc(dc.code||'')} — ${esc(dc.title||'')}</b><a href="${url}" download="${esc(dc.file_name||(img?'file.jpg':'file.pdf'))}">⬇️ تنزيل</a></header>${img?`<img src="${url}" alt="">`:`<iframe src="${url}"></iframe>`}</body></html>`);w.document.close()}
+   const img=/^data:image\//.test(u);w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(dc.title||'ملف')}</title><style>body{margin:0;font-family:Cairo,Tahoma,sans-serif;background:#0f172a}header{display:flex;gap:12px;align-items:center;padding:8px 12px;background:#fff}header b{flex:1}a{font-weight:800}iframe{border:0;width:100%;height:calc(100vh - 44px);background:#fff}img{display:block;max-width:100%;margin:0 auto}</style></head><body><header><b>${esc(dc.code||'')} — ${esc(dc.title||'')}</b><a href="${url}" download="${esc(dc.file_name||(img?'file.jpg':'file.pdf'))}">⬇️ تنزيل</a></header>${img?`<img src="${url}" alt="">`:`<iframe src="${url}"></iframe>`}
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
   catch(e){if(w)w.close();toast(emsg(e),'error')}});
  X.querySelector('[data-xl]').onclick=()=>xlsx('الوثائق والشهادات',[['الوثائق',DD.L.map(d=>({'الرمز':d.code,'العنوان':d.title,'النوع':DK[d.kind]||d.kind,'تخص':DS[d.scope],'المدرسة / السيارة':d.scope==='building'?d.school_name:d.scope==='vehicle'?vp(d.vehicle_id):'','المنطقة':rn(d.region),'الرقم':d.number||'','الجهة':d.issuer||'','الإصدار':d.issue_date||'','الانتهاء':d.expiry_date||'','الأيام المتبقية':dLeft(d)??'','ملف':d.has_file?'نعم':''}))]])}
 function docDlg(dc){dc=dc||{scope:'building',remind_days:30};const SDB=schoolDb().filter(r=>S(r.school));let file=undefined,fname='';
@@ -38105,7 +38326,7 @@ function docDlg(dc){dc=dc||{scope:'building',remind_days:30};const SDB=schoolDb(
 window.fmV224Docs=()=>openP('v2-nav-fm224-docs','fm224-docs','📄 الوثائق والشهادات','شهادات الدفاع المدني والعقود والضمانات والتراخيص لكل مبنى أو الشركة أو السيارة، مع تنبيه قبل الانتهاء',docRender);
 
 /* ---------- meters ---------- */
-let MD=null;const MF={k:'',flag:false,sel:'',q:''};
+let MD=null;const MF={k:'',flag:false,sel:''};
 function mtCalc(){const M=MD.meters||[],R=MD.reads||[],SDB=schoolDb(),size=new Map(SDB.map(r=>[bkey(r.buildingId,r.school),S(r.size)]));
  const rows=M.map(m=>{const rd=R.filter(r=>r.meter_id===m.id).sort((a,b)=>a.month<b.month?-1:1);const use=[];for(let i=1;i<rd.length;i++){if(rd[i].reset)continue;use.push({m:rd[i].month,u:+rd[i].reading-+rd[i-1].reading,a:rd[i].amount!=null?+rd[i].amount:null})}
   const last=use[use.length-1]||null,prev=use.slice(-7,-1),avg=prev.length?prev.reduce((t,x)=>t+x.u,0)/prev.length:null;return {m,rd,use,last,avg,chg:last&&avg?((last.u-avg)/avg*100):null,size:size.get(m.bkey)||''}});
@@ -38113,34 +38334,26 @@ function mtCalc(){const M=MD.meters||[],R=MD.reads||[],SDB=schoolDb(),size=new M
  for(const r of rows){const peers=rows.filter(x=>x.m.kind===r.m.kind&&x.size===r.size&&x.last&&r.last&&x.last.m===r.last.m).map(x=>x.last.u);r.peer=peers.length>=3?med(peers):null;r.spike=r.chg!=null&&r.chg>50;r.high=r.peer!=null&&r.last&&r.last.u>r.peer*1.5}
  return rows}
 async function mtRender(reload){const {B,X}=body('fm224-meters');if(reload||!MD){B.innerHTML='<div class="fm125-src">جارٍ التحميل…</div>';try{MD=await rpc('fm_meters_list',{p_months:13})}catch(e){fail(B,e);return}}
- const R=mtCalc();let L=R.filter(r=>(!MF.k||r.m.kind===MF.k)&&(!MF.flag||r.spike||r.high)&&(!MF.q||mtNorm([r.m.school_name,r.m.school_code,mtSchool(r.m).buildingId].join(' ')).includes(mtNorm(MF.q))));
+ const R=mtCalc();let L=R.filter(r=>(!MF.k||r.m.kind===MF.k)&&(!MF.flag||r.spike||r.high));
  X.innerHTML=`${MD.edit?'<button class="fm103-btn primary" type="button" data-nm>➕ عداد</button>':''}<button class="fm103-btn" type="button" data-xl>⬇️ Excel</button>`;
  const mo=new Date();const cm=mo.getFullYear()+'-'+String(mo.getMonth()+1).padStart(2,'0');
  const miss=R.filter(r=>!r.rd.some(x=>x.month===cm)).length,lastSum=k=>R.filter(r=>r.m.kind===k&&r.last).reduce((t,r)=>t+(r.last.a||0),0);
  B.innerHTML=`<div class="fm224-kp"><div><b>${num(R.length)}</b><small>عداد</small></div><div class="${miss?'o':''}"><b>${num(miss)}</b><small>بلا قراءة لهذا الشهر</small></div><div class="${R.filter(r=>r.spike).length?'r':''}"><b>${num(R.filter(r=>r.spike).length)}</b><small>قفزة > 50% عن متوسطه</small></div><div class="${R.filter(r=>r.high).length?'r':''}"><b>${num(R.filter(r=>r.high).length)}</b><small>أعلى بـ 50% من مدارس بحجمه</small></div><div><b>${num(lastSum('elec'),0)}</b><small>فواتير الكهرباء (آخر شهر)</small></div><div><b>${num(lastSum('water'),0)}</b><small>فواتير المياه (آخر شهر)</small></div></div>
-  <div class="fm103-card"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><input data-f="q" aria-label="بحث باسم المدرسة أو الرقم الوزاري" placeholder="بحث باسم المدرسة أو الرقم الوزاري" value="${esc(MF.q)}"><select data-f="k"><option value="">الكهرباء والمياه</option><option value="elec" ${MF.k==='elec'?'selected':''}>⚡ الكهرباء</option><option value="water" ${MF.k==='water'?'selected':''}>💧 المياه</option></select><label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" data-f="flag" ${MF.flag?'checked':''} style="width:auto"> المرتفع فقط</label></div>
-  ${L.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>المدرسة</th><th>العداد</th><th>آخر شهر</th><th>الاستهلاك</th><th>متوسط 6 أشهر</th><th>التغير</th><th>مدارس بحجمه (الوسيط)</th><th>الفاتورة</th><th>آخر 12 شهراً</th><th></th></tr></thead><tbody>${L.map(r=>{const mx=Math.max(1,...r.use.slice(-12).map(x=>x.u));return `<tr><td><b>${esc(r.m.school_name)}</b><div class="fm125-src">${esc(r.m.school_code||mtSchool(r.m).buildingId||'')} • ${esc(rn(r.m.region))} • ${esc(r.m.office??mtSchool(r.m).office??'')}${r.size?' • '+esc(r.size):''}</div></td><td>${r.m.kind==='elec'?'⚡':'💧'} ${esc(r.m.number||'')}</td><td>${r.last?esc(r.last.m):'—'}</td><td>${r.last?num(r.last.u,0):'—'}</td><td>${r.avg!=null?num(r.avg,0):'—'}</td>
+  <div class="fm103-card"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><select data-f="k"><option value="">الكهرباء والمياه</option><option value="elec" ${MF.k==='elec'?'selected':''}>⚡ الكهرباء</option><option value="water" ${MF.k==='water'?'selected':''}>💧 المياه</option></select><label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" data-f="flag" ${MF.flag?'checked':''} style="width:auto"> المرتفع فقط</label></div>
+  ${L.length?`<div class="fm103-tw"><table class="fm103-t"><thead><tr><th>المدرسة</th><th>العداد</th><th>آخر شهر</th><th>الاستهلاك</th><th>متوسط 6 أشهر</th><th>التغير</th><th>مدارس بحجمه (الوسيط)</th><th>الفاتورة</th><th>آخر 12 شهراً</th><th></th></tr></thead><tbody>${L.map(r=>{const mx=Math.max(1,...r.use.slice(-12).map(x=>x.u));return `<tr><td><b>${esc(r.m.school_name)}</b><div class="fm125-src">${esc(rn(r.m.region))}${r.size?' • '+esc(r.size):''}</div></td><td>${r.m.kind==='elec'?'⚡':'💧'} ${esc(r.m.number||'')}</td><td>${r.last?esc(r.last.m):'—'}</td><td>${r.last?num(r.last.u,0):'—'}</td><td>${r.avg!=null?num(r.avg,0):'—'}</td>
    <td>${r.chg!=null?`<span class="fm224-ch ${r.spike?'r':r.chg<-20?'g':''}">${r.chg>0?'+':''}${num(r.chg,0)}%</span>`:'—'}</td><td>${r.peer!=null?num(r.peer,0)+(r.high?' <span class="fm224-ch r">مرتفع</span>':''):'—'}</td><td>${r.last&&r.last.a!=null?num(r.last.a,0):'—'}</td>
    <td><div class="fm224-bars">${r.use.slice(-12).map(x=>`<i class="${r.avg&&x.u>r.avg*1.5?'hi':''}" style="height:${Math.max(2,Math.round(Math.max(0,x.u)/mx*44))}px" title="${x.m}: ${num(x.u,0)}"></i>`).join('')}</div></td>
    <td>${MD.edit?`<button type="button" class="fm122-mini primary" data-rd="${esc(r.m.id)}">➕ قراءة</button>`:''}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="fm103-empty">لا توجد عدادات — أضفها هنا أو من تطبيق الميدان «⚡ العدادات»</div>'}
   <div class="fm125-src" style="margin-top:6px">الاستهلاك = قراءة الشهر − قراءة الشهر السابق (العداد الجديد / المصفَّر يبدأ من جديد). المقارنة بمدارس بنفس «حجم المبنى» في قاعدة المدارس وبنفس النوع، عند وجود 3 مدارس على الأقل.</div></div>`;
  B.querySelectorAll('[data-f]').forEach(e=>e.onchange=()=>{MF[e.dataset.f]=e.type==='checkbox'?e.checked:e.value;mtRender()});
  B.querySelectorAll('[data-rd]').forEach(b=>b.onclick=()=>mreadDlg(R.find(r=>r.m.id===b.dataset.rd)));const nm=X.querySelector('[data-nm]');if(nm)nm.onclick=meterDlg;
- X.querySelector('[data-xl]').onclick=()=>xlsx('الكهرباء والمياه',[['الملخص',R.map(r=>({'المدرسة':r.m.school_name,'الرقم الوزاري':r.m.school_code||mtSchool(r.m).buildingId||'','المنطقة':rn(r.m.region),'مكتب التعليم':r.m.office??mtSchool(r.m).office??'','الحجم':r.size,'النوع':r.m.kind==='elec'?'كهرباء':'مياه','رقم العداد':r.m.number||'','آخر شهر':r.last?r.last.m:'','الاستهلاك':r.last?r.last.u:'','متوسط 6 أشهر':r.avg!=null?Math.round(r.avg):'','التغير %':r.chg!=null?Math.round(r.chg):'','وسيط مدارس بحجمه':r.peer!=null?Math.round(r.peer):'','الفاتورة':r.last&&r.last.a!=null?r.last.a:''}))],
+ X.querySelector('[data-xl]').onclick=()=>xlsx('الكهرباء والمياه',[['الملخص',R.map(r=>({'المدرسة':r.m.school_name,'المنطقة':rn(r.m.region),'الحجم':r.size,'النوع':r.m.kind==='elec'?'كهرباء':'مياه','رقم العداد':r.m.number||'','آخر شهر':r.last?r.last.m:'','الاستهلاك':r.last?r.last.u:'','متوسط 6 أشهر':r.avg!=null?Math.round(r.avg):'','التغير %':r.chg!=null?Math.round(r.chg):'','وسيط مدارس بحجمه':r.peer!=null?Math.round(r.peer):'','الفاتورة':r.last&&r.last.a!=null?r.last.a:''}))],
   ['القراءات',R.flatMap(r=>r.rd.map(x=>({'المدرسة':r.m.school_name,'النوع':r.m.kind==='elec'?'كهرباء':'مياه','رقم العداد':r.m.number||'','الشهر':x.month,'القراءة':+x.reading,'عداد جديد':x.reset?'نعم':'','المبلغ':x.amount??'','بواسطة':x.by_name||''})))]])}
-const mtNorm=v=>S(v).replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c))).replace(/^S-/i,'').toLowerCase();
-function mtSchool(m){return schoolDb().find(r=>bkey(r.buildingId,r.school)===m.bkey)||{}}
-function meterDlg(){const SDB=schoolDb().filter(r=>S(r.school));const label=r=>S(r.school)+' — '+S(r.buildingId)+' — '+rn(r.region)+' — '+S(r.office);
- const d=dlg(`<div class="in"><h3>➕ عداد جديد</h3><label class="f">بحث المدرسة بالاسم أو الرقم الوزاري<input data-k="sc" list="fm224-ml" autocomplete="off" placeholder="اكتب اسم المدرسة أو الرقم الوزاري"><datalist id="fm224-ml"></datalist></label>
- <div class="fm171-two"><label class="f">المنطقة<input data-k="region" maxlength="120" placeholder="اسم المنطقة"></label><label class="f">مكتب التعليم<input data-k="office" maxlength="200" placeholder="اسم مكتب التعليم"></label></div>
- <div class="fm171-two"><label class="f">النوع<select data-k="kd"><option value="elec">⚡ كهرباء</option><option value="water">💧 مياه</option></select></label><label class="f">رقم العداد<input data-k="no" maxlength="60"></label></div><label class="f">رقم الحساب<input data-k="ac" maxlength="60"></label></div>
- <div class="ft"><button class="fm103-btn primary" type="button" data-save>💾 حفظ</button><button class="fm103-btn" type="button" data-x>إلغاء</button></div>`);
- const q=k=>d.querySelector(`[data-k=${k}]`);let selected=null;
- const resolve=()=>{const n=mtNorm(q('sc').value);const exact=SDB.filter(r=>mtNorm(label(r))===n||mtNorm(r.buildingId)===n||mtNorm(r.school)===n);return exact.length===1?exact[0]:null};
- const search=()=>{const n=mtNorm(q('sc').value);d.querySelector('#fm224-ml').innerHTML=SDB.filter(r=>!n||mtNorm(label(r)).includes(n)).slice(0,100).map(r=>`<option value="${esc(label(r))}"></option>`).join('');const r=resolve();if(r!==selected){selected=r;q('region').value=r?(r.region||''):'';q('office').value=r?(r.office||''):''}};
- q('sc').oninput=search;q('sc').onchange=search;search();
- d.querySelector('[data-save]').onclick=async ev=>{const g=k=>S(q(k).value);const r=resolve();if(!r){toast('اختر مدرسة محددة من نتائج البحث بالاسم أو الرقم الوزاري','warning');return}
- const bt=ev.currentTarget;bt.disabled=true;try{await rpc('fm_meter_save',{p:{bkey:bkey(r.buildingId,r.school),school_name:r.school,region:g('region')||null,office:g('office'),school_code:S(r.buildingId),kind:g('kd'),number:g('no'),account_no:g('ac')}});toast('أُضيف العداد');d.close();mtRender(true)}catch(e){toast(emsg(e),'error');bt.disabled=false}}}
+function meterDlg(){const SDB=schoolDb().filter(r=>S(r.school));const d=dlg(`<div class="in"><h3>➕ عداد جديد</h3><label class="f">المدرسة<input data-k="sc" list="fm224-ml" placeholder="اكتب اسم المدرسة"><datalist id="fm224-ml">${SDB.slice(0,3000).map(r=>`<option value="${esc(r.school)}">`).join('')}</datalist></label>
+  <div class="fm171-two"><label class="f">النوع<select data-k="kd"><option value="elec">⚡ كهرباء</option><option value="water">💧 مياه</option></select></label><label class="f">رقم العداد<input data-k="no" maxlength="60"></label></div><label class="f">رقم الحساب<input data-k="ac" maxlength="60"></label></div>
+  <div class="ft"><button class="fm103-btn primary" type="button" data-save>💾 حفظ</button><button class="fm103-btn" type="button" data-x>إلغاء</button></div>`);
+ d.querySelector('[data-save]').onclick=async ev=>{const g=k=>S(d.querySelector(`[data-k=${k}]`).value);const n=g('sc'),r=SDB.find(x=>S(x.school)===n);if(!r){toast('اختر المدرسة من القائمة','warning');return}
+  const bt=ev.currentTarget;bt.disabled=true;try{await rpc('fm_meter_save',{p:{bkey:bkey(r.buildingId,n),school_name:n,region:r.region||null,kind:g('kd'),number:g('no'),account_no:g('ac')}});toast('أُضيف العداد');d.close();mtRender(true)}catch(e){toast(emsg(e),'error');bt.disabled=false}}}
 function mreadDlg(r){const mo=new Date();const cm=mo.getFullYear()+'-'+String(mo.getMonth()+1).padStart(2,'0');let ph=null;const pv=r.rd.filter(x=>x.month<cm).pop();
  const d=dlg(`<div class="in"><h3>➕ قراءة — ${esc(r.m.school_name)} ${r.m.kind==='elec'?'⚡':'💧'}</h3>${pv?`<div class="fm125-src">آخر قراءة ${esc(pv.month)}: ${num(pv.reading,0)}</div>`:''}
   <div class="fm171-two"><label class="f">الشهر<input type="month" data-k="mo" value="${cm}" max="${cm}"></label><label class="f">القراءة<input data-k="rd" inputmode="decimal"></label></div>
@@ -38296,7 +38509,18 @@ async function calRender(reload){const p=document.getElementById('fm225-ppmcal')
   document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();d.querySelector('[data-x]').onclick=()=>d.close();
   d.querySelectorAll('[data-w]').forEach(tr=>tr.onclick=()=>{d.close();window.fmV145OpenWorkOrders?.();setTimeout(()=>{try{window.fmV145X.detail(tr.dataset.w)}catch(e){}},900)})});
  X.querySelector('[data-pr]').onclick=()=>{const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}const co=(window.fmTenantName&&fmTenantName())||'';
-  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقويم الصيانة الوقائية ${CAL.y}</title><style>@page{size:A3 landscape;margin:10mm}body{font-family:Cairo,Tahoma,sans-serif;color:#0f172a}h1{font-size:20px;margin:0}.s{color:#475569;font-size:12px;margin:2px 0 10px}${document.getElementById('fm-v225-css').textContent.replace(/@media[^{]*\{[\s\S]*\}\s*$/,'')}.fm225-cal td:first-child,.fm225-cal th:first-child{position:static}.fm225-cal thead th{position:static}</style></head><body><h1>📅 تقويم الصيانة الوقائية ${CAL.y}</h1><div class="s">${esc(co)}${co?' • ':''}${CAL.reg?'منطقة '+esc(rn(CAL.reg))+' • ':''}${CAL.view==='school'?'حسب المدرسة':'حسب الحملة'} • منفّذ ${T.ok} • مخطط ${T.plan} • طُبع ${new Date().toLocaleDateString(GREG)}</div><div class="fm225-lg"><span class="fm225-s ok">✅ منفّذ ومعتمد</span><span class="fm225-s wait">📨 بانتظار الاعتماد</span><span class="fm225-s late">⛔ متأخر</span><span class="fm225-s open">⏳ جارٍ</span><span class="fm225-s plan">🗓️ مخطط</span></div>${calTable(L,true)}<script>setTimeout(()=>print(),500)<\/script></body></html>`);w.document.close()};
+  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقويم الصيانة الوقائية ${CAL.y}</title><style>@page{size:A3 landscape;margin:10mm}body{font-family:Cairo,Tahoma,sans-serif;color:#0f172a}h1{font-size:20px;margin:0}.s{color:#475569;font-size:12px;margin:2px 0 10px}${document.getElementById('fm-v225-css').textContent.replace(/@media[^{]*\{[\s\S]*\}\s*$/,'')}.fm225-cal td:first-child,.fm225-cal th:first-child{position:static}.fm225-cal thead th{position:static}</style></head><body><h1>📅 تقويم الصيانة الوقائية ${CAL.y}</h1><div class="s">${esc(co)}${co?' • ':''}${CAL.reg?'منطقة '+esc(rn(CAL.reg))+' • ':''}${CAL.view==='school'?'حسب المدرسة':'حسب الحملة'} • منفّذ ${T.ok} • مخطط ${T.plan} • طُبع ${new Date().toLocaleDateString(GREG)}</div><div class="fm225-lg"><span class="fm225-s ok">✅ منفّذ ومعتمد</span><span class="fm225-s wait">📨 بانتظار الاعتماد</span><span class="fm225-s late">⛔ متأخر</span><span class="fm225-s open">⏳ جارٍ</span><span class="fm225-s plan">🗓️ مخطط</span></div>${calTable(L,true)}<script>setTimeout(()=>print(),500)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()};
  X.querySelector('[data-xl]').onclick=()=>xlsx('تقويم الصيانة الوقائية '+CAL.y,[['التقويم',L.map(r=>{const o={[CAL.view==='school'?'المدرسة':'الحملة']:r.label};r.m.forEach((x,i)=>{o[MON[i]]=[x.ok&&'منفذ '+x.ok,x.wait&&'اعتماد '+x.wait,x.late&&'متأخر '+x.late,x.open&&'جار '+x.open,x.plan&&'مخطط '+x.plan].filter(Boolean).join('، ')});return o})],
   ['الأوامر',L.flatMap(r=>r.m.flatMap((x,i)=>x.wo.map(w=>({'الحملة / المدرسة':r.label,'الشهر':MON[i],'الأمر':w.code||'','المدرسة':w.school||'','المنفذ':w.assignee_name||'','الحالة':w.status}))))]])}
 window.fmV225PpmCal=()=>openP('v2-nav-fm225-ppmcal','fm225-ppmcal','📅 تقويم الصيانة الوقائية','خطة سنوية لكل حملة ومدرسة: ما نُفّذ وما هو مخطط — للطباعة والمشاركة مع العميل',calRender);
@@ -39953,9 +40177,31 @@ table{width:100%;border-collapse:collapse;margin:4px 0}th,td{border:1px solid #c
 .ph{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.ph figure{margin:0;break-inside:avoid}.ph img{width:100%;height:150px;object-fit:cover;border-radius:6px;border:1px solid #cbd5e1}.ph figcaption{font-size:10px;color:#475569}
 .sign{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px;text-align:center;break-inside:avoid}.bar{position:sticky;top:0;background:#fff;padding:6px 0;text-align:left}@media print{.bar{display:none}}`;
 async function file(id){id=S(id);if(!id)return;const w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة للطباعة','warning');return}
- w.document.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملف البلاغ '+esc(id)+'</title></head><body style="font-family:Tahoma;padding:20px">⏳ جارِ تجميع ملف البلاغ…</body></html>');
+ w.document.write('<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملف البلاغ '+esc(id)+'</title></head><body style="font-family:Tahoma;padding:20px">⏳ جارِ تجميع ملف البلاغ…
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>');
  let F;try{F=await gather(id)}catch(e){F={id,region:reg(),r:row(id),m:state.columnsMap||{},miss:['all']}}
- w.document.open();w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملف البلاغ ${esc(id)}</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet"><style>${CSS}</style></head><body><div class="bar"><button onclick="print()">🖨️ طباعة / PDF</button></div>${html(F)}</body></html>`);w.document.close();return F}
+ w.document.open();w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملف البلاغ ${esc(id)}</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet"><style>${CSS}</style></head><body><div class="bar"><button onclick="print()">🖨️ طباعة / PDF</button></div>${html(F)}
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close();return F}
 window.fmV257File=file;window.fmV257Gather=gather;window.fmV257Html=html;
 window.fmV257Decorate=function(b){const t=b.querySelector('#fm244-t');if(!t)return;t.querySelectorAll('tbody tr[data-id]').forEach(tr=>{const ac=tr.querySelector('.fm244-acts');if(!ac||ac.querySelector('[data-f257]'))return;
  const bt=document.createElement('button');bt.className='fm244-btn';bt.dataset.f257=tr.dataset.id;bt.title='ملف البلاغ الكامل للطباعة';bt.textContent='📄';bt.onclick=()=>file(tr.dataset.id);ac.append(bt)})};
@@ -40057,7 +40303,18 @@ function print(d,month){const w=window.open('','_blank');if(!w){toast('اسمح 
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>مطابقة عهدة ${esc(d.name)}</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:Cairo,Tahoma,sans-serif;font-size:11px;color:#0f172a}h1{font-size:17px;color:#1e3a8a;margin:0 0 4px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:3px 4px;text-align:right}th{background:#f1f5f9}small{color:#64748b}.s{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px;text-align:center}@media print{button{display:none}}</style></head><body>
   <button onclick="print()">🖨️ طباعة / PDF</button><h1>⚖️ مطابقة العهدة الشهرية — ${esc(d.name)}</h1><div>${esc(window.fmTenantName?.()||'')} • ${esc(fmtM(month))} • طُبع ${esc(dt(new Date()))}</div>
   ${d.recon?`<p><b>${d.recon.status==='ok'?'✅ مطابق':'⚠️ فروقات'}</b> — ${esc(d.recon.by||'')} ${esc(dt(d.recon.at))}${d.recon.note?' — '+esc(d.recon.note):''}</p>`:'<p>لم تُعتمد بعد</p>'}
-  ${linesTable(d.lines||[]).replace(/class="[^"]*"/g,'')}<div class="s"><div>صاحب العهدة<br><br>..................</div><div>أمين المستودع<br><br>..................</div><div>المهندس المباشر<br><br>..................</div></div></body></html>`);w.document.close()}
+  ${linesTable(d.lines||[]).replace(/class="[^"]*"/g,'')}<div class="s"><div>صاحب العهدة<br><br>..................</div><div>أمين المستودع<br><br>..................</div><div>المهندس المباشر<br><br>..................</div></div>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 window.fmV259Recon=list;window.fmV259Detail=detail;
 })();
 </script>
@@ -40269,7 +40526,18 @@ async function open(tab){tab=tab||'inv';let L=[],V=[],FS='new';const w=dlg(`<h3>
   w.querySelectorAll('[data-rj]').forEach(x=>x.onclick=()=>{const r=prompt('سبب الرفض (يظهر للمورد):');if(r)act(+x.dataset.rj,'reject',r)});
   w.querySelectorAll('[data-pd]').forEach(x=>x.onclick=()=>{const r=prompt('مرجع الدفع (رقم الحوالة):');if(r!=null)act(+x.dataset.pd,'paid','',r)});
   w.querySelectorAll('[data-ph]').forEach(x=>x.onclick=async()=>{try{const d=await rpc('fm_supplier_inv_photo',{p_id:V[+x.dataset.ph].id});if(!d)return;const win=window.open('','_blank');if(!win){toast('اسمح بالنوافذ المنبثقة','warning');return}
-   win.document.write(`<!doctype html><meta charset="utf-8"><title>${esc(V[+x.dataset.ph].code)}</title><body style="margin:0">${/^data:application\/pdf/.test(d)?`<iframe src="${d}" style="border:0;width:100vw;height:100vh"></iframe>`:`<img src="${d}" style="max-width:100%">`}</body>`);win.document.close()}catch(e){alert(ERR(e))}})};
+   win.document.write(`<!doctype html><meta charset="utf-8"><title>${esc(V[+x.dataset.ph].code)}</title><body style="margin:0">${/^data:application\/pdf/.test(d)?`<iframe src="${d}" style="border:0;width:100vw;height:100vh"></iframe>`:`<img src="${d}" style="max-width:100%">`}
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body>`);win.document.close()}catch(e){alert(ERR(e))}})};
  const load=async()=>{try{[L,V]=await Promise.all([rpc('fm_supplier_links_list',{}),rpc('fm_supplier_inv_list',{p_days:365})]);L=L||[];V=V||[];draw()}catch(e){q('[data-b]').innerHTML=`<div class="fm103-card" style="color:#991b1b">${esc(ERR(e))}</div>`}};
  w.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{tab=b.dataset.t;draw()});load();return w}
 function xl(V){if(!window.XLSX)return;const rows=V.map(v=>({'الرمز':v.code,'المورد':v.supplier,'رقم الفاتورة':v.no,'التاريخ':S(v.date),'المبلغ':+v.amount,'الضريبة':v.vat==null?'':+v.vat,'طلب الشراء':v.po||'','قيمة الطلب':v.po_total==null?'':+v.po_total,'الحالة':(IST[v.status]||[v.status])[0],'الرد':v.response||'','مرجع الدفع':v.pay_ref||'','وصلت':S(v.at).slice(0,10)}));
@@ -41838,10 +42106,32 @@ function reportHtml(D){const F=norm(D[0].w.form),O=F.out,logo=window.FM_BRAND?.l
   figure img{width:100%;height:130px;object-fit:cover;display:block}figcaption{font-size:11px;text-align:center;background:#f8fafc;padding:2px}.it{margin:6px 0;break-inside:avoid}
   .sig{display:grid;gap:16px;margin-top:24px;text-align:center;font-weight:800}.sig div{border-top:1px solid #0f172a;padding-top:6px;min-height:46px}footer{margin-top:10px;color:#94a3b8;font-size:10px;text-align:center}
   @media screen{body{background:#e2e8f0}.pg{background:#fff;max-width:${O.orient==='l'?1100:800}px;margin:12px auto;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1)}}`;
- return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(window.fmV277ListName?fmV277ListName(D.map(x=>x.w)):(O.title||D[0].w.title))}</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap"><style>${css}</style></head><body>${D.map(page).join('')}</body></html>`}
+ return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(window.fmV277ListName?fmV277ListName(D.map(x=>x.w)):(O.title||D[0].w.title))}</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap"><style>${css}</style></head><body>${D.map(page).join('')}
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`}
 window.fmV282Html=reportHtml;
 async function fmV282Pdf(list){list=(list||[]).filter(w=>w&&w.form);if(!list.length)return;const win=window.open('','_blank');if(!win){toast('اسمح بالنوافذ المنبثقة لفتح التقرير','warning');return}
- win.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:Cairo,Tahoma,sans-serif;direction:rtl;padding:30px">⏳ جارٍ تجهيز التقرير…</body>');
+ win.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:Cairo,Tahoma,sans-serif;direction:rtl;padding:30px">⏳ جارٍ تجهيز التقرير…
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body>');
  const D=[];for(const w of list){let ph=[];try{ph=await C.api.woPhotos(w.id)}catch(e){}D.push({w,ph})}
  /* orders of different designs: one report per design, in order */
  const html=reportHtml(D);win.document.open();win.document.write(html);win.document.close()}
@@ -42514,7 +42804,18 @@ function print(R){const w=window.open('','_blank');if(!w){toast('اسمح بال
  w.document.write(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>خطة الصيانة الوقائية ${ST.m}</title><style>body{font-family:Cairo,Tahoma,sans-serif;margin:16px;color:#0f172a}h1{font-size:18px;margin:0}p{margin:4px 0 10px;color:#475569}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:right}th{background:#eef2ff}@page{size:A4 landscape;margin:10mm}</style></head><body>
   <h1>🗓️ خطة الصيانة الوقائية — ${esc(monLabel(ST.m))}</h1><p>${esc(tn)}${ST.sup?' • المشرف: '+esc(ST.sup):''}${ST.eng?' • المهندس: '+esc(ST.eng):''} • ${fmt(R.length)} زيارة</p>
   <table><thead><tr>${Object.keys(rowX(R[0]||{w:{},d:ST.m+'-01',s:'plan',sup:'',eng:''})).map(k=>`<th>${k}</th>`).join('')}</tr></thead><tbody>${R.map(r=>`<tr>${Object.values(rowX(r)).map(v=>`<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>
-  ${""}<script>setTimeout(()=>print(),300)<\/script></body></html>`);w.document.close()}
+  ${""}<script>setTimeout(()=>print(),300)<\/script>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);w.document.close()}
 window.fmV287Plan=async function(btn){window.fmV103ClosePages?.();try{window.fmV92CloseContractorAnalysis?.()}catch(e){}document.body.classList.remove('v2-mobile-nav');
  try{window.v2SetActive?.(btn||document.getElementById('v2-nav-fm287-plan'))}catch(e){}const p=page();p.classList.add('open');p.scrollTop=0;await render()};
 
@@ -44090,7 +44391,7 @@ const can=(k,r)=>{if(!cloudOn())return k!=='bill';const p=pos(),adm=me().role===
   read:['dept_manager','project_manager','ops_manager','accountant','qa_manager'].includes(p)||(['area_manager','area_engineer'].includes(p)&&regOk(r))})[k]};
 const canSee=()=>!cloudOn()||can('read','qassim')||can('prep','qassim')||can('contract','qassim')||['area_manager','area_engineer'].includes(pos());
 async function rpc(fn,args){const db=await C.engClient();const r=await db.rpc(fn,args);if(r.error)throw Error(r.error.message);return r.data}
-const emsg=e=>{const m=String(e&&e.message||e);return /does not exist|schema cache|Could not find/i.test(m)?'شغّل القسمين 89 و90 من supabase_setup.sql المحدَّث (البيانات محفوظة على هذا الجهاز حتى ذلك).':/snapshot locked/.test(m)?'يوجد مستخلص معتمد أو مدفوع لهذا الشهر — لا يمكن تغيير لقطة مبانيه':
+const emsg=e=>{const m=String(e&&e.message||e);return /does not exist|schema cache|Could not find/i.test(m)?'شغّل ترحيل V336 الخاص بسجل تاريخ المباني والتسويات المالية في قاعدة Supabase.':/snapshot locked/.test(m)?'يوجد مستخلص معتمد أو مدفوع لهذا الشهر — لا يمكن تغيير لقطة مبانيه':
  /not allowed/.test(m)?'لا تملك صلاحية هذا الإجراء':/module disabled/.test(m)?'جزء «المستخلصات» غير مفعّل في اشتراككم':/invalid status/.test(m)?'المستخلص مقدَّم أو معتمد — لا يمكن تعديله':
  /bill exists/.test(m)?'يوجد مستخلص لهذا العقد في هذا الشهر':/invalid rows|invalid price/.test(m)?'بيانات الأسعار غير صحيحة (نطاق / حجم / جنس / سعر)':m};
 const nz=v=>{const t=S(v);if(/كبير/.test(t))return 'كبير';if(/وسط|متوسط/.test(t))return 'وسط';if(/صغير/.test(t))return 'صغير';return ''};
@@ -44101,7 +44402,7 @@ const noC=v=>!S(v)||/لا\s*يوجد|بدون\s*عقد|^-+$|^—$/.test(S(v));
 
 /* ---------- state ---------- */
 const SCK='fm321_sc';
-const ST={sc:(()=>{const v=lsGet(SCK,null);return Array.isArray(v)&&v.length?v:['clean','maint','ac']})(),region:'qassim',month:lastMonth(),tab:'inv',col:'',T:[],tid:'',canEdit:!cloudOn(),canPrep:!cloudOn(),local:!cloudOn(),err:'',q:'',onlyBad:false,draft:null};
+const ST={sc:(()=>{const v=lsGet(SCK,null);return Array.isArray(v)&&v.length?v:['clean','maint','ac']})(),region:'qassim',month:lastMonth(),tab:'inv',col:'',T:[],tid:'',canEdit:!cloudOn(),canPrep:!cloudOn(),local:!cloudOn(),err:'',q:'',onlyBad:false,draft:null,history:[]};
 const LK=r=>'fm319_rates:'+r,DK=(r,m)=>'fm319_days:'+r+':'+m;
 async function load(){ST.err='';ST.draft=null;
  if(cloudOn()){try{const d=await rpc('fm_rate_get',{p_region:ST.region});ST.T=d.tables||[];ST.canEdit=!!d.can_edit;ST.canPrep=!!d.can_prep;ST.local=false;return}
@@ -44128,6 +44429,8 @@ async function loadSnaps(ms){ms=[...new Set(ms)].filter(m=>!(m in ST.snaps));if(
  ms.forEach(m=>ST.snaps[m]=lsGet(SNK(ST.region,m),null))}
 const snapOf=m=>ST.snaps[m]||null;
 const metaOf=m=>{const s=snapOf(m),v=(s&&s.meta)||lsGet(MTK(ST.region,m),{});return {eff:Object.assign({},v.eff||{}),gone:Object.assign({},v.gone||{})}};
+async function loadHistory(m){ST.history=[];if(cloudOn()){try{ST.history=await rpc('fm_building_history336_get',{p_region:ST.region,p_building_key:null,p_month:m})||[];return}catch(e){if(!/does not exist|schema cache|Could not find/i.test(String(e.message)))throw e}}
+ ST.history=lsGet('fm336_history:'+ST.region,[]).filter(x=>!x.invoice_month||x.invoice_month===m)}
 const baseB=m=>{const s=snapOf(m);return s&&Array.isArray(s.rows)?s.rows:buildings()};
 const ATTR=b=>[b.size,b.gender,b.closed?1:0,...Object.keys(SCF).map(k=>S(b.ctr&&b.ctr[k]))].join('|');
 function diff(P,B){const pk=new Map(P.map(b=>[b.key,b])),bk=new Map(B.map(b=>[b.key,b])),sid=new Map();B.forEach(b=>(b.sids||[]).forEach(i=>sid.set(i,b)));
@@ -44186,6 +44489,7 @@ function rowFor(t,s,z,g){const R=(t.rows||[]).filter(r=>r.s===s&&r.z===z);if(s!=
 /* ---------- the month: every billed building × scope ---------- */
 function compute(t,m){const B=baseB(m),D=dim(m),days=lsGet(DK(ST.region,m),{});const L=[],issues={unmapped:{},nosize:[],nogender:[],noprice:[],mixed:[],nocontract:0};
  const PS=snapOf(pm(m)),PK=new Map(((PS&&PS.rows)||[]).map(b=>[b.key,b])),MT=metaOf(m),U=[],BK=new Set(B.map(b=>b.key));
+ (ST.history||[]).filter(x=>x.status==='approved'&&x.financial_impact==='base'&&x.invoice_month===m&&x.event_date).forEach(x=>{const day=+String(x.event_date).slice(8,10);if(day<1||day>D)return;if(x.event_type==='exit')MT.gone[x.building_key]=day;else MT.eff[x.building_key]=day});
  B.forEach(b=>{const e=+MT.eff[b.key]||1,o=PK.get(b.key);if(o&&e>1&&e<=D&&ATTR(o)!==ATTR(b)){U.push({b:o,from:1,to:e-1,dk:b.key+'#a',part:'a'});U.push({b,from:e,to:D,dk:b.key,part:'n'})}else U.push({b,from:1,to:D,dk:b.key,part:''})});
  Object.entries(MT.gone).forEach(([k,l])=>{l=Math.min(D,+l||0);const o=PK.get(k);if(l>0&&o&&!BK.has(k))U.push({b:o,from:1,to:l,dk:k+'#g',part:'g'})});
  U.forEach(u=>{const b=u.b,len=u.to-u.from+1;for(const s of Object.keys(SCF)){const v=b.ctr[s];if(noC(v)){if(s==='maint')issues.nocontract++;continue}
@@ -44196,11 +44500,12 @@ function compute(t,m){const B=baseB(m),D=dim(m),days=lsGet(DK(ST.region,m),{});c
   if(!b.size)issues.nosize.push(b.name);else if(s==='clean'&&!b.gender)issues.nogender.push(b.name);else if(!self&&isNaN(p))issues.noprice.push(b.name+' — '+SC[s]+' — '+col);
   const g=s==='clean'?(b.gender==='mix'?(t.mix||'بنات'):b.gender):'';
   L.push({b,s,col,v,dk,d,D,z:b.size,g,gm:b.gender==='mix',p:isNaN(p)?0:p,o:isNaN(o)?0:o,ok:!isNaN(p)&&!!b.size&&(s!=='clean'||!!b.gender),self,f:r4(d/D),part:u.part,from:u.from,to:u.to,len})}});
+ (ST.history||[]).filter(x=>x.status==='approved'&&x.financial_impact==='adjustment'&&x.invoice_month===m&&Number.isFinite(+x.adjustment_amount)).forEach(x=>{const b=B.find(y=>y.key===x.building_key)||PK.get(x.building_key)||{key:x.building_key,name:x.building_name||x.building_key,seq:'',id:'',schools:1,office:'',zone:'',size:'تسوية',gender:'',ctr:{},mixed:{},closed:false};L.push({b,s:x.scope||'maint',col:x.contractor,v:x.contractor,dk:'adj:'+x.id,d:1,D:1,z:'تسوية مالية',g:'',gm:false,p:+x.adjustment_amount,o:0,ok:true,self:false,f:1,part:'adj',from:1,to:1,len:1,adjText:x.description,adjId:x.id})});
  return {L,issues,D}}
-function lines(L){const m=new Map();L.forEach(x=>{if(!x.ok)return;const k=x.s+'|'+x.z+'|'+x.g+'|'+x.p;let o=m.get(k);if(!o){o={s:x.s,z:x.z,g:x.g,p:x.p,o:x.o,n:0,q:0,mix:0};m.set(k,o)}o.n++;o.q+=x.d/x.D;if(x.gm)o.mix++});
+function lines(L){const m=new Map();L.forEach(x=>{if(!x.ok)return;const k=x.s+'|'+x.z+'|'+x.g+'|'+x.p+'|'+(x.adjId||'');let o=m.get(k);if(!o){o={s:x.s,z:x.z,g:x.g,p:x.p,o:x.o,n:0,q:0,mix:0,adjText:x.adjText||'',adjId:x.adjId||''};m.set(k,o)}if(!x.adjId)o.n++;o.q+=x.d/x.D;if(x.gm)o.mix++});
  const A=[...m.values()];A.forEach(o=>{o.q=r4(o.q);o.a=r2(o.q*o.p);o.oa=r2(o.q*o.o)});
  A.sort((a,b)=>Object.keys(SC).indexOf(a.s)-Object.keys(SC).indexOf(b.s)||SZ.indexOf(a.z)-SZ.indexOf(b.z)||S(a.g).localeCompare(S(b.g)));return A}
-const how=(o,D)=>{const full=Math.abs(o.q-o.n)<1e-9;return (full?o.n+' مبنى × شهر كامل':'مجموع (أيام الخدمة ÷ '+D+') لـ '+o.n+' مبنى = '+fmt(o.q)+' شهر')+' × '+money(o.p)+' = '+money(o.a)};
+const how=(o,D)=>o.adjText?('تسوية مالية معتمدة: '+o.adjText+' = '+money(o.a)):(()=>{const full=Math.abs(o.q-o.n)<1e-9;return (full?o.n+' مبنى × شهر كامل':'مجموع (أيام الخدمة ÷ '+D+') لـ '+o.n+' مبنى = '+fmt(o.q)+' شهر')+' × '+money(o.p)+' = '+money(o.a)})();
 function methodBox(t,LN,net,v,vat,D,own){const sz=[...new Set(LN.map(o=>SC[o.s]))].join('، ')||'—';
  return `<details class="fm321-how" open><summary>🧮 طريقة الحساب</summary><ol>
 <li>المباني: كل مبنى في قاعدة المباني يُحسب <b>مرة واحدة</b> مهما كان عدد مدارسه، ويُنسب للمقاول المكتوب في عمود مقاول النطاق (حسب «🔗 ربط المقاولين»).</li>
@@ -44216,7 +44521,7 @@ const vatOf=t=>+((t&&t.vat_pct)??15);
 function page(){let p=document.getElementById('fm319-page');if(p)return p;p=document.createElement('section');p.id='fm319-page';p.className='fm103-page';
  p.innerHTML=`<div class="fm103-wrap"><div class="fm103-head"><div><h2>🧮 فواتير المقاولين حسب المباني</h2><p class="sub">جدول أسعار العقد (الحجم × الجنس × النطاق) × مباني قاعدة البيانات × أيام الخدمة = فاتورة كل مقاول الشهرية قبل الضريبة، ثم الضريبة منفصلة</p></div><div class="fm103-actions"><span class="extra"></span><button class="fm103-btn" type="button" data-rf>🔄</button><button class="fm103-btn" type="button" onclick="fmV103ClosePages?.()">إغلاق</button></div></div><div class="body"></div></div>`;
  document.body.appendChild(p);p.querySelector('[data-rf]').onclick=()=>refresh();return p}
-async function refresh(){const p=page();p.querySelector('.body').innerHTML='<div class="fm125-src">جارٍ التحميل…</div>';ST.snaps={};await load();try{await loadSnaps([ST.month,pm(ST.month)])}catch(e){}render()}
+async function refresh(){const p=page();p.querySelector('.body').innerHTML='<div class="fm125-src">جارٍ التحميل…</div>';ST.snaps={};await load();try{await loadSnaps([ST.month,pm(ST.month)]);await loadHistory(ST.month)}catch(e){ST.history=[];ST.err=emsg(e)}render()}
 function render(){const p=page(),b=p.querySelector('.body');
  const TABS=[['inv','🧾 فاتورة الشهر'],['all','📊 كل المقاولين'],['chg','🔀 تغيّرات المباني'],['rates','💲 جدول الأسعار'],['map','🔗 ربط المقاولين']];
  let h=`<div class="fm319-tabs">${TABS.map(([k,l])=>`<button type="button" data-tab="${k}" class="${ST.tab===k?'on':''}">${l}</button>`).join('')}</div>`;
@@ -44230,14 +44535,14 @@ function render(){const p=page(),b=p.querySelector('.body');
  b.querySelectorAll('[data-tab]').forEach(x=>x.onclick=()=>{ST.tab=x.dataset.tab;render()});
  b.querySelector('[data-reg]').onchange=async e=>{ST.region=e.target.value;ST.col='';ST.bf=fGet();await refresh()};
  if(ST.tab==='inv'||ST.tab==='all'){bindF(b);bindSc(b);bindSnap(b)}if(ST.tab==='chg')bindSc(b);
- const mo=b.querySelector('[data-mon]');if(mo)mo.onchange=async e=>{ST.month=e.target.value;await loadSnaps([ST.month,pm(ST.month)]);render()};
+ const mo=b.querySelector('[data-mon]');if(mo)mo.onchange=async e=>{ST.month=e.target.value;await loadSnaps([ST.month,pm(ST.month)]);try{await loadHistory(ST.month)}catch(er){ST.history=[];ST.err=emsg(er)}render()};
  ({inv:vInv,all:vAll,chg:vChg,rates:vRates,map:vMap})[ST.tab](box)}
 
 /* ---------- invoice of one contractor ---------- */
 function vInv(box){const t=tableFor(ST.month);if(!t){box.innerHTML=`<div class="fm319-note">لا يوجد جدول أسعار ساري في ${esc(mshow(ST.month))} لمنطقة ${esc(RN[ST.region])}. أضفه من تبويب «💲 جدول الأسعار».</div>`;return}
  const cols=t.cols||[];if(!cols.length){box.innerHTML='<div class="fm319-note">جدول الأسعار بلا أعمدة مقاولين.</div>';return}
  if(!cols.includes(ST.col))ST.col=cols[0];const R=compute(t,ST.month),L=R.L.filter(x=>x.col===ST.col&&inSc(x)),LN=lines(L),vat=vatOf(t);
- const net=LN.reduce((a,o)=>a+o.a,0),own=LN.reduce((a,o)=>a+o.oa,0),bld=new Set(L.map(x=>x.b.key)).size,bd=L.reduce((a,x)=>a+x.d,0),v=r2(net*vat/100);
+ const net=LN.reduce((a,o)=>a+o.a,0),own=LN.reduce((a,o)=>a+o.oa,0),bld=new Set(L.filter(x=>!x.adjId).map(x=>x.b.key)).size,bd=L.filter(x=>!x.adjId).reduce((a,x)=>a+x.d,0),v=r2(net*vat/100);
  const bad=L.filter(x=>!x.ok);
  let h=`<div class="fm319-bar"><label>المقاول <select data-col>${cols.map(c=>`<option${c===ST.col?' selected':''}>${esc(c)}</option>`).join('')}</select></label>
   ${fOn()?`<span class="fm319-chip bad">🔎 ${esc(fTxt())}</span>`:''}<span class="fm319-chip">جدول الأسعار من ${esc(t.valid_from)}</span><span class="fm319-chip">${R.D} يوماً</span><span style="flex:1"></span>
@@ -44249,7 +44554,7 @@ function vInv(box){const t=tableFor(ST.month);if(!t){box.innerHTML=`<div class="
  h+='<div class="fm319-note"><b>كشف قيمة الخدمات قبل الخصومات.</b> نطاق الفوترة الحالي: '+esc(fTxt()||'كامل المنطقة')+'. تُسجّل الخصومات المباشرة وKPI منفصلة داخل المستخلص؛ الطباعة النهائية من مستخلصات المقاولين.</div>';h+=methodBox(t,LN,net,v,vat,R.D,own);
  h+=`<h4 class="fm319-h">بنود الفاتورة — ${esc(scTxt())}</h4><div class="fm319-tw"><table class="fm319-t"><thead><tr><th>النطاق</th><th>الحجم</th><th>الجنس</th><th>المباني</th><th>الكمية (شهر)</th><th>السعر الشهري</th><th>المبلغ</th><th>طريقة الحساب</th><th>سعر المالك</th><th>قيمة المالك</th></tr></thead><tbody>`;
  for(const s of Object.keys(SC)){const A=LN.filter(o=>o.s===s);if(!A.length)continue;
-  A.forEach(o=>{h+=`<tr><td>${SC[s]}</td><td>${o.z}</td><td>${o.g||'—'}${o.mix?` <span class="fm319-chip">${o.mix} مختلط</span>`:''}</td><td class="n">${o.n}</td><td class="n">${fmt(o.q)}</td><td class="n">${money(o.p)}</td><td class="n">${money(o.a)}</td><td class="fm321-m">${esc(how(o,R.D))}</td><td class="n">${money(o.o)}</td><td class="n">${money(o.oa)}</td></tr>`});
+  A.forEach(o=>{h+=`<tr><td>${o.adjText?'تسوية مالية':SC[s]}</td><td>${o.z}</td><td>${o.adjText?'—':o.g||'—'}${o.mix?` <span class="fm319-chip">${o.mix} مختلط</span>`:''}</td><td class="n">${o.adjText?'—':o.n}</td><td class="n">${fmt(o.q)}</td><td class="n">${money(o.p)}</td><td class="n">${money(o.a)}</td><td class="fm321-m">${esc(how(o,R.D))}</td><td class="n">${money(o.o)}</td><td class="n">${money(o.oa)}</td></tr>`});
   h+=`<tr class="sub"><td colspan="3">إجمالي ${SC[s]}</td><td class="n">${A.reduce((a,o)=>a+o.n,0)}</td><td></td><td></td><td class="n">${money(A.reduce((a,o)=>a+o.a,0))}</td><td class="fm321-m">${esc(A.map(o=>fmt(o.a)).join(' + '))}</td><td></td><td class="n">${money(A.reduce((a,o)=>a+o.oa,0))}</td></tr>`}
  h+=`<tr class="sub"><td colspan="6">الإجمالي قبل الضريبة</td><td class="n">${money(net)}</td><td class="fm321-m">مجموع النطاقات</td><td></td><td class="n">${money(own)}</td></tr><tr class="sub"><td colspan="6">الضريبة ${fmt(vat)}%</td><td class="n">${money(v)}</td><td class="fm321-m">${money(net)} × ${fmt(vat)}%</td><td colspan="2"></td></tr><tr class="sub"><td colspan="6">الإجمالي مع الضريبة</td><td class="n">${money(net+v)}</td><td class="fm321-m">${money(net)} + ${money(v)}</td><td colspan="2"></td></tr></tbody></table></div>`;
  const Q=nk(ST.q),AL=L.filter(x=>(!ST.onlyBad||!x.ok||x.d<x.D)&&(!Q||nk(x.b.name+' '+x.b.seq+' '+x.b.id+' '+x.v+' '+x.b.office).includes(Q)));
@@ -44304,8 +44609,11 @@ function vChg(box){const m=ST.month,p=pm(m),D=dim(m),PS=snapOf(p),cur=baseB(m),c
  h+=sec('➕ مبانٍ جديدة',d.add.map(b=>row(b,esc([b.size,b.gender==='mix'?'مختلط':b.gender,...Object.keys(SCF).map(k=>S(b.ctr&&b.ctr[k])).filter(Boolean)].filter(Boolean).join(' • ')),'<small>من أول الشهر — عدّل أيام الخدمة في ملحق الفاتورة إن بدأ لاحقاً</small>')),'');
  if(!d.add.length&&!d.gone.length&&!d.chg.length)h+='<div class="fm319-note">✅ لا يوجد تغيير في المباني عن الشهر السابق.</div>';
  if(ed&&(d.chg.some(x=>x.bill)||d.gone.length))h+=`<div class="fm319-bar"><button type="button" class="fm103-btn primary" data-msave>💾 حفظ أيام السريان</button>${cs?'':'<small>تُحفظ على هذا الجهاز حتى تثبيت مباني الشهر.</small>'}</div>`;
- h+='<div class="fm319-note">«دُمجت في» = مدارس المبنى صارت ضمن مبنى آخر في الشهر الحالي. مبنى خرج ولم يُحدَّد له آخر يوم خدمة لا يُحسب في فاتورة هذا الشهر.</div>';
+ const hist=(ST.history||[]).filter(x=>x.invoice_month===m||!x.invoice_month);
+ if(hist.length)h+=`<h4 class="fm319-h">📚 سجل تغييرات الشهر وأثرها المالي</h4><div class="fm319-tw"><table class="fm319-t"><thead><tr><th>التاريخ</th><th>المبنى</th><th>وصف التغيير</th><th>الأثر المالي</th><th>المبلغ قبل الضريبة</th><th>الحالة</th><th></th></tr></thead><tbody>${hist.map(x=>`<tr><td>${esc(x.event_date||'')}</td><td>${esc(x.building_name||x.building_key)}</td><td>${esc(x.description||'')}</td><td>${esc(x.financial_impact==='base'?'تعديل أساس الاحتساب':x.financial_impact==='adjustment'?'تسوية على الفاتورة':'لا يوجد')}</td><td class="n">${x.financial_impact==='adjustment'?money(x.adjustment_amount):'—'}</td><td>${esc(x.status==='approved'?'معتمد':x.status==='rejected'?'مرفوض':'بانتظار الاعتماد')}</td><td>${x.status==='pending'&&ST.canPrep?`<button type="button" class="fm103-btn" data-hreview="${esc(x.id)}" data-decision="approved">اعتماد</button> <button type="button" class="fm103-btn" data-hreview="${esc(x.id)}" data-decision="rejected">رفض</button>`:''}</td></tr>`).join('')}</tbody></table></div>`;
+ h+='<div class="fm319-note">«دُمجت في» = مدارس المبنى صارت ضمن مبنى آخر في الشهر الحالي. مبنى خرج ولم يُحدَّد له آخر يوم خدمة لا يُحسب في فاتورة هذا الشهر. التغيير الأساسي المعتمد يطبّق من تاريخ السريان، والتسوية المعتمدة فقط تدخل إجمالي الفاتورة.</div>';
  box.innerHTML=h;
+ box.querySelectorAll('[data-hreview]').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;try{if(!ST.local)await rpc('fm_building_history336_review',{p_id:btn.dataset.hreview,p_decision:btn.dataset.decision,p_note:''});else{const all=lsGet('fm336_history:'+ST.region,[]),q=all.find(x=>x.id===btn.dataset.hreview);if(q){q.status=btn.dataset.decision;q.reviewed_at=new Date().toISOString();lsSet('fm336_history:'+ST.region,all)}}await loadHistory(m);render()}catch(e){alert(emsg(e));btn.disabled=false}});
  const ms=box.querySelector('[data-msave]');if(ms)ms.onclick=async()=>{const M2={eff:{},gone:{}};box.querySelectorAll('[data-eff]').forEach(i=>{const v=Math.round(num(i.value));if(v>1&&v<=D)M2.eff[i.dataset.eff]=v});
   box.querySelectorAll('[data-gone]').forEach(i=>{const v=Math.round(num(i.value));if(v>0&&v<=D)M2.gone[i.dataset.gone]=v});
   ms.disabled=true;try{lsSet(MTK(ST.region,m),M2);if(cs)await saveSnap(m,null,M2);toast('💾 حُفظت أيام السريان')}catch(e){alert(emsg(e))}render()}}
@@ -44382,7 +44690,18 @@ function printInv(t,R,col){const L=R.L.filter(x=>x.col===col&&inSc(x)),LN=lines(
 <table><thead><tr><th>#</th><th>النطاق</th><th>الحجم</th><th>الجنس</th><th>المباني</th><th>الكمية (شهر)</th><th>السعر الشهري</th><th>المبلغ</th><th>طريقة الحساب</th></tr></thead><tbody>${rows}
 <tr class="t"><td colspan="7">الإجمالي قبل الضريبة</td><td>${money(net)}</td><td></td></tr><tr class="t"><td colspan="7">ضريبة القيمة المضافة ${fmt(vat)}%</td><td>${money(v)}</td><td>${money(net)} × ${fmt(vat)}%</td></tr><tr class="t"><td colspan="7">الإجمالي مع الضريبة</td><td>${money(net+v)}</td><td></td></tr></tbody></table>
 <div class="sg"><div>مُعِدّ الفاتورة</div><div>المراجعة</div><div>الاعتماد</div></div>
-<div class="pb"></div><h1>ملحق المباني (${L.length})</h1><table><thead><tr><th>#</th><th>المبنى</th><th>التسلسل</th><th>النطاق</th><th>الحجم</th><th>الجنس</th><th>الأيام</th><th>المبلغ</th></tr></thead><tbody>${an}</tbody></table></body></html>`);
+<div class="pb"></div><h1>ملحق المباني (${L.length})</h1><table><thead><tr><th>#</th><th>المبنى</th><th>التسلسل</th><th>النطاق</th><th>الحجم</th><th>الجنس</th><th>الأيام</th><th>المبلغ</th></tr></thead><tbody>${an}</tbody></table>
+<script id="fm-v331-integration">
+(function(){
+ const nav=document.querySelector('nav.v2-nav');if(!nav)return;
+ const b=document.createElement('button');b.id='v2-nav-fm331-integration';b.className='v2-nav-btn';
+ b.innerHTML='<i class="fas fa-link"></i><span class="v2-nav-label">مركز التكامل · مراجعة الملفات</span>';
+ b.onclick=()=>window.open('integrations.html','_blank','noopener');nav.appendChild(b);
+ window.fmV123Rebuild?.();
+})();
+</script>
+
+</body></html>`);
  w.document.close();setTimeout(()=>{try{w.focus();w.print()}catch(e){}},400)}
 async function toBill(t,R,col,btn){const L=R.L.filter(x=>x.col===col&&inSc(x)),LN=lines(L);if(!LN.length)return alert('لا توجد بنود محسوبة لهذا المقاول');
  const bad=L.filter(x=>!x.ok).length;if(bad&&!confirm(bad+' مبنى بلا حجم / جنس / سعر لن يدخل المستخلص. متابعة؟'))return;
@@ -44412,6 +44731,7 @@ function nav(){const n=document.querySelector('nav.v2-nav');if(!n)return;let b=d
  b=document.createElement('button');b.id='v2-nav-fm319-rates';b.type='button';b.className='v2-nav-btn';b.title='فواتير المقاولين حسب المباني';b.innerHTML='<i class="fas fa-calculator"></i><span class="v2-nav-label">🧮 فواتير المقاولين حسب المباني</span>';b.onclick=()=>openPage(b);
  const after=document.getElementById('v2-nav-fm184-bills');if(after&&after.parentNode)after.after(b);else n.appendChild(b)}
 setInterval(()=>{try{nav()}catch(e){}},3000);nav();
+document.addEventListener('fm336-history-updated',()=>{if(document.getElementById('fm319-page')?.classList.contains('open'))refresh()});
 if(window.FM_MODS&&window.FM_MODS.bill&&!window.FM_MODS.bill.ids.includes('v2-nav-fm319-rates'))window.FM_MODS.bill.ids.push('v2-nav-fm319-rates');
 })();
 </script>
@@ -44730,7 +45050,7 @@ function stock(a,stores,mats,f){const allowed=new Map(stores.filter(s=>s.active&
  for(const s of a){const store=allowed.get(s.store_id);if(!store)continue;const m=M.get(s.material_id)||{},qty=N(s.qty);if(!Number.isFinite(qty))throw Error('كمية مخزون غير صالحة');const price=finite(s.avg_cost)&&N(s.avg_cost)>=0?N(s.avg_cost):finite(m.price)&&N(m.price)>=0?N(m.price):null;if(qty>0){available.add(s.material_id);if(price==null)unknown++;else value+=qty*price;if(!finite(s.avg_cost)&&price!=null)fallback++}const x={...s,name:m.name||s.material_id,store:store.name,region:store.region,price};rows.push(x);if(qty<0)negative.push(x);if(finite(s.min_qty)&&N(s.min_qty)>0&&qty<N(s.min_qty))low.push(x)}
  return {value,unknown,fallback,available:available.size,low,negative,rows};
 }
-function workforce(a,f){const rows=scoped(a,f,true).filter(x=>x.active),trade={},region={},contractor={};let total=0;for(const x of rows){if(!Number.isInteger(N(x.headcount))||N(x.headcount)<0)throw Error('عدد عمالة غير صالح');const n=N(x.headcount);total+=n;for(const[k,map]of [['trade',trade],['region',region],['contractor',contractor]])map[x[k]||'غير محدد']=(map[x[k]||'غير محدد']||0)+n}return{total,rows,trade,region,contractor}}
+function workforce(a,f){const rows=scoped(a,f,true).filter(x=>x.active),trade={},region={},contractor={},category={};let total=0,planned=0,plannedActual=0,plannedGroups=0;for(const x of rows){if(!Number.isInteger(N(x.headcount))||N(x.headcount)<0)throw Error('عدد القوى العاملة المسجل غير صالح');const n=N(x.headcount),p=x.planned_headcount==null||x.planned_headcount===''?null:Number(x.planned_headcount),c=x.category||'maintenance';if(p!==null&&(!Number.isInteger(p)||p<0))throw Error('العدد المخطط غير صالح');total+=n;if(p!==null){planned+=p;plannedActual+=n;plannedGroups++}for(const[k,map]of [['trade',trade],['region',region],['contractor',contractor],['category',category]])map[x[k]||'غير محدد']=(map[x[k]||'غير محدد']||0)+n}return{total,planned,plannedActual,plannedGroups,gap:plannedGroups?planned-plannedActual:null,rows,trade,region,contractor,category}}
 root.FM233Model={day,tickets,orders,stock,workforce,scoped};
 if(typeof document==='undefined')return;
 const C=root.FMCloud,E=v=>S(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),num=v=>Number(v).toLocaleString('en-US',{maximumFractionDigits:2}),RN={riyadh:'الرياض',qassim:'القصيم'};
@@ -44764,7 +45084,7 @@ async function refresh(){const startScope=identity();if(loading&&lastScope===sta
    tasks.push(loadSource('stock',async()=>{const [rows,stores,mats,transfers]=await Promise.all([pages('wo_stock','store_id,material_id,qty,min_qty,avg_cost,updated_at',['store_id','material_id']),pages('wo_stores','id,name,region,active',['id']),pages('wo_materials','id,name,price',['id']),pages('wo_stock_transfers','id,code,from_region,to_region,status,value',['id'])]);return{rows,stores,mats,transfers}},t));
    tasks.push(loadSource('requests',async()=>{const [rows,stores]=await Promise.all([pages('wo_issue_requests','id,code,store_id,status,holder,holder_name,at',['id']),pages('wo_stores','id,region',['id'])]);const map=new Map(stores.map(x=>[x.id,x.region]));return rows.map(x=>({...x,region:map.get(x.store_id)||null}))},t));
   }else{data.stock={error:'وحدة المستودعات غير مفعلة'};data.requests={error:'وحدة المستودعات غير مفعلة'}}
-  tasks.push(loadSource('workforce',async()=>{const allowed=await Promise.all(regions().map(r=>rpc('fm233_read',{r})));if(!allowed.some(Boolean))throw Error('لا تتوفر صلاحية عرض أعداد العمالة');return pages('fm_workforce233','id,region,contractor,trade,supervisor,headcount,active,note,revision,updated_at',['id'])},t));
+  tasks.push(loadSource('workforce',async()=>{const allowed=await Promise.all(regions().map(r=>rpc('fm233_read',{r})));if(!allowed.some(Boolean))throw Error('لا تتوفر صلاحية عرض أعداد العمالة');return pages('fm_workforce233','id,region,category,contractor,trade,supervisor,planned_headcount,headcount,active,note,revision,updated_at',['id'])},t));
   if(mod('tickets'))tasks.push(loadSource('inbox',()=>rpc('fm_sla231_list',{p_all:false,p_offset:0}),t));else data.inbox={error:'وحدة الإشعارات المرتبطة بالبلاغات غير مفعلة'};
  }else for(const k of ['orders','stock','requests','workforce','inbox'])data[k]={error:'يتطلب اتصالاً بالسحابة وحساباً مخوّلاً'};
  await Promise.allSettled(tasks);if(t!==token||identity()!==startScope)return;loading=false;version++;render();}
@@ -44774,13 +45094,13 @@ const error=k=>data[k]?.error?`<p class="fm233-unavailable">غير متاح: ${E
 const fresh=k=>{const v=data[k]?.value,rows=Array.isArray(v)?v:v?.rows||[],dates=rows.map(x=>x.uploaded_at||x.updated_at).filter(Boolean).map(x=>+new Date(x)).filter(Number.isFinite),latest=dates.length?Math.max(...dates):null;return `<small class="fm233-muted">${sourceNames[k]} · ${data[k]?.at?'وقت القراءة '+at(data[k].at):'لم تنجح القراءة'}${latest?' · آخر تعديل بالمصدر '+at(latest):''}</small>`};
 const btn=(label,action,cls='')=>`<button type="button" class="fm233-btn ${cls}" data-action="${E(action)}">${E(label)}</button>`;
 function card(label,value,action,tone,sub=''){return `<button type="button" class="fm233-kpi ${tone||''}" data-action="${action}"><span>${E(label)}</span><strong>${value==null?'—':num(value)}</strong><small>${E(sub)}</small></button>`}
-function bars(entries){const a=Object.entries(entries).sort((x,y)=>y[1]-x[1]),max=Math.max(1,...a.map(x=>x[1]));return a.slice(0,7).map(([k,n])=>`<div class="fm233-bar"><div><span>${E(RN[k]||k)}</span><b>${num(n)}</b></div><div class="fm233-track"><i style="width:${n/max*100}%"></i></div></div>`).join('')+(a.length>7?'<small>أول ٧؛ التفاصيل تعرض الجميع.</small>':'')||'<p>لا توجد أعداد مسجلة ضمن الاختيار.</p>'}
+function bars(entries,labels={}){const a=Object.entries(entries).sort((x,y)=>y[1]-x[1]),max=Math.max(1,...a.map(x=>x[1]));return a.slice(0,7).map(([k,n])=>`<div class="fm233-bar"><div><span>${E(labels[k]||RN[k]||k)}</span><b>${num(n)}</b></div><div class="fm233-track"><i style="width:${n/max*100}%"></i></div></div>`).join('')+(a.length>7?'<small>أول ٧؛ التفاصيل تعرض الجميع.</small>':'')||'<p>لا توجد أعداد مسجلة ضمن الاختيار.</p>'}
 function render(){if(!host)return;let g;try{g=get()}catch(e){host.innerHTML='<p role="alert">تعذر حساب المؤشرات: '+E(e.message)+'</p>';return}
  const contractors=[...new Set([...(data.tickets?.value?.rows||[]),...(data.workforce?.value||[])].filter(x=>!F.region||x.region===F.region).map(x=>S(x.contractor)).filter(Boolean))].sort();
  const blocks={
  attention:()=>{const items=[];if(g.tickets?.breached.length)items.push(['danger',`${num(g.tickets.breached.length)} بلاغ تجاوز المهلة`,'tickets-breached']);if(g.tickets?.near.length)items.push(['warn',`${num(g.tickets.near.length)} بلاغ تنتهي مهلته خلال ٣ ساعات`,'tickets-near']);if(g.orders?.approve.length)items.push(['warn',`${num(g.orders.approve.length)} أمر من إنشائي ينتظر الاعتماد`,'orders-approve']);if(g.orders?.accept.length)items.push(['info',`${num(g.orders.accept.length)} أمر ينتظر إجراءً مني`,'orders-accept']);if(g.orders?.late.length)items.push(['danger',`${num(g.orders.late.length)} أمر عمل متأخر`,'orders-late']);if(g.stock?.low.length)items.push(['warn',`${num(g.stock.low.length)} رصيد صنف / مستودع تحت الحد`,'stock-low']);if(g.stock?.negative.length)items.push(['danger',`${num(g.stock.negative.length)} رصيد مخزون سالب يحتاج مراجعة`,'stock-negative']);const req=(data.requests?.value||[]).filter(x=>(!F.region||x.region===F.region)&&['requested','partial'].includes(x.status));if(req.length)items.push(['info',`${num(req.length)} طلب مواد جديد أو جزئي ضمن نطاقك`,'requests']);
  const unavailable=Object.keys(sourceNames).filter(k=>data[k]?.error);return `<div class="fm233-attention">${items.sort((a,b)=>({danger:0,warn:1,info:2}[a[0]]-({danger:0,warn:1,info:2}[b[0]]))).map(([tone,text,action])=>`<button class="fm233-alert ${tone}" data-action="${action}"><span>${E(text)}</span><b>←</b></button>`).join('')||(loading?'<p>جارٍ قراءة مصادر المتابعة…</p>':'<p>لا توجد إجراءات مستحقة في المصادر المتاحة ضمن نطاقك.</p>')}</div>${unavailable.length?`<p class="fm233-muted">مصادر غير متاحة: ${unavailable.map(k=>E(sourceNames[k])).join('، ')}. لا يعني ذلك عدم وجود إجراءات بها.</p>`:''}${g.tickets?.unknown.length?`<p class="fm233-unavailable">${num(g.tickets.unknown.length)} بلاغ مفتوح بلا تاريخ أو مهلة قابلة للحساب؛ لا يدخل عدد المخترق أو القريب.</p>`:''}`},
- workforce:()=>`${g.workforce?`<div class="fm233-total"><strong>${num(g.workforce.total)}</strong><span>فرد مسجل ضمن الاختيار</span></div><p class="fm233-muted">أعداد توزيع مسجلة؛ لا تمثل إثبات حضور. لا تُحسب من حسابات الدخول.</p><div class="fm233-columns"><div><h4>حسب التخصص</h4>${bars(g.workforce.trade)}</div><div><h4>حسب المنطقة</h4>${bars(g.workforce.region)}</div></div>${btn('عرض التوزيع وإدارته','workforce')}`:error('workforce')}${fresh('workforce')}`,
+ workforce:()=>`${g.workforce?`<div class="fm233-total"><strong>${num(g.workforce.total)}</strong><span>فرد ضمن القوام المسجل</span></div>${g.workforce.plannedGroups?`<p class="fm233-muted">المخطط للمجموعات التي لها خطة: <b>${num(g.workforce.planned)}</b> مقابل قوام مسجل <b>${num(g.workforce.plannedActual)}</b> · ${g.workforce.gap>0?`عجز مسجل: <b>${num(g.workforce.gap)}</b>`:g.workforce.gap<0?`زيادة عن المخطط: <b>${num(Math.abs(g.workforce.gap))}</b>`:'مطابق للمخطط'}</p>`:'<p class="fm233-muted">لم يُدخل العدد المخطط بعد.</p>'}<p class="fm233-muted">القوام المسجل لا يثبت الحضور أو التوفر اليومي، ولا يُستنتج من حسابات الدخول.</p><div class="fm233-columns"><div><h4>حسب الفئة</h4>${bars(g.workforce.category,{maintenance:'فرق الصيانة',light_services:'الخدمات الخفيفة',administrative:'الطقم الإداري',support:'الخدمات المساندة'})}</div><div><h4>حسب المنطقة</h4>${bars(g.workforce.region)}</div></div>${btn('عرض التوزيع وإدارته','workforce')}`:error('workforce')}${fresh('workforce')}`,
  stock:()=>`${g.stock?`<div class="fm233-columns"><div><strong class="fm233-number">${num(g.stock.available)}</strong><span>صنف متوفر</span></div><div><strong class="fm233-number">${num(g.stock.value)} <small>ر.س</small></strong><span>${g.stock.unknown?'قيمة جزئية للأسعار المعروفة':'قيمة المخزون المسجلة'}</span></div></div><p class="fm233-muted">للمستودعات النشطة: متوسط تكلفة المخزون؛ ${g.stock.fallback?num(g.stock.fallback)+' رصيد بالتكلفة المرجعية للصنف.':'دون إضافة تحويلات في الطريق.'} ${g.stock.unknown?num(g.stock.unknown)+' رصيد دون سعر.':''} الأرصدة السالبة منفصلة عن قيمة الموجود.</p><div class="fm233-actions">${btn('الأرصدة والتكلفة','stock')}${btn('تحت الحد الأدنى ('+g.stock.low.length+')','stock-low')}${btn('تحويلات في الطريق','transfers')}</div>`:error('stock')}${fresh('stock')}`,
  orders:()=>`${g.orders?`<div class="fm233-columns">${card('مستحق اليوم',g.orders.today.length,'orders-today','teal')}${card('متأخر',g.orders.late.length,'orders-late','red')}</div><p class="fm233-muted">حسب موعد الاستحقاق بتوقيت الرياض. المنجز بانتظار الاعتماد مفصول عن العمل المتأخر. أُنشئ اليوم: ${num(g.orders.created.length)}.</p>${g.orders.today.slice(0,4).map(w=>`<button class="fm233-row" data-wo="${E(w.id)}"><span>${E(w.code||w.title)}<small>${E(w.school||w.title)}</small></span><b>${E(at(w.due_at))}</b></button>`).join('')||'<p>لا توجد أوامر نشطة مستحقة اليوم.</p>'}`:error('orders')}${fresh('orders')}`,
  inbox:()=>`${data.inbox?.value?`<p><b>${num(data.inbox.value.unread||0)}</b> تنبيه تصعيد غير مقروء على حسابك، عبر المناطق المخوّلة.</p>${(data.inbox.value.items||[]).filter(x=>!x.read_at).slice(0,5).map(x=>`<button class="fm233-row" data-action="inbox"><span>${E(x.title)}<small>${E(x.body)}</small></span></button>`).join('')||'<p>لا توجد تنبيهات غير مقروءة في أحدث صفحة.</p>'}${btn('فتح إشعارات حسابي','inbox')}<p class="fm233-muted">تنبيهات التصعيد من مركز الحساب؛ باقي التنبيهات التشغيلية ضمن «ما يحتاج تدخلي».</p>`:error('inbox')}${fresh('inbox')}`};
@@ -44801,10 +45121,10 @@ function customize(){const d=dialog('تخصيص الرئيسية'),b=d.querySele
  function rows(a,items,hidden,kind){return a.map((k,i)=>`<div class="fm233-row"><label><input type="checkbox" data-${kind==='section'?'visible':'kpi-visible'}="${k}" ${!hidden.includes(k)?'checked':''}> ${items.find(x=>x[0]===k)[1]}</label><span><button class="fm233-btn" data-up="${i}" data-kind="${kind}" ${i===0?'disabled':''}>↑</button><button class="fm233-btn" data-down="${i}" data-kind="${kind}" ${i===a.length-1?'disabled':''}>↓</button></span></div>`).join('')}
  function draw(){b.innerHTML='<h3>المؤشرات السريعة</h3>'+rows(kl,kpis,kpiHidden,'kpi')+'<h3>أقسام الرئيسية</h3>'+rows(list,sections,sectionHidden,'section')+btn('حفظ التخصيص','save','primary');b.querySelectorAll('[data-visible]').forEach(x=>x.onchange=()=>{sectionHidden=x.checked?sectionHidden.filter(k=>k!==x.dataset.visible):[...new Set([...sectionHidden,x.dataset.visible])]});b.querySelectorAll('[data-kpi-visible]').forEach(x=>x.onchange=()=>{kpiHidden=x.checked?kpiHidden.filter(k=>k!==x.dataset.kpiVisible):[...new Set([...kpiHidden,x.dataset.kpiVisible])]});for(const kind of ['up','down'])b.querySelectorAll('[data-'+kind+']').forEach(x=>x.onclick=()=>{const a=x.dataset.kind==='kpi'?kl:list,i=N(x.dataset[kind]),j=i+(kind==='up'?-1:1);[a[i],a[j]]=[a[j],a[i]];draw()});b.querySelector('[data-action=save]').onclick=()=>{prefs.order=list;prefs.kpiOrder=kl;prefs.hidden=sectionHidden;prefs.kpiHidden=kpiHidden;savePrefs();d.close();render()}}draw()}
 
-async function workforcePage(){const d=dialog('توزيع أعداد القوى العاملة'),b=d.querySelector('[data-content]'),sc=scope();let allowed=false;try{allowed=signed()&&(await Promise.all(regions().map(r=>rpc('fm233_manage',{r})))).some(Boolean)}catch{}if(scope()!==sc){d.close();return}
- const list=data.workforce?.value||[];b.innerHTML='<p>مجموعة واحدة لكل منطقة ومقاول وتخصص ومشرف. لا تكرر نفس الأفراد في مجموعات مختلفة. الأعداد لا تثبت الحضور.</p>'+(allowed?btn('إضافة توزيع','new','primary'):'')+(data.workforce?.error?error('workforce'):'')+'<div class="fm233-scroll"><table><thead><tr><th>المنطقة</th><th>المقاول</th><th>التخصص</th><th>المشرف</th><th>العدد</th><th>الحالة</th><th>آخر تعديل</th><th></th></tr></thead><tbody>'+root.FM233Model.scoped(list,F,true).map(x=>`<tr><td>${E(RN[x.region])}</td><td>${E(x.contractor)}</td><td>${E(x.trade)}</td><td>${E(x.supervisor)}</td><td>${num(x.headcount)}</td><td>${x.active?'نشط':'غير نشط'}</td><td>${E(at(x.updated_at))}</td><td>${allowed?'<button class="fm233-btn" data-edit="'+E(x.id)+'">تعديل</button>':''}</td></tr>`).join('')+'</tbody></table></div>';
+async function workforcePage(){const d=dialog('القوى العاملة — التخطيط والتوزيع'),b=d.querySelector('[data-content]'),sc=scope();let allowed=false;try{allowed=signed()&&(await Promise.all(regions().map(r=>rpc('fm233_manage',{r})))).some(Boolean)}catch{}if(scope()!==sc){d.close();return}
+ const list=data.workforce?.value||[],rows=root.FM233Model.scoped(list,F,true),active=rows.filter(x=>x.active),model=root.FM233Model.workforce(rows,{region:'',contractor:''}),catLabel={maintenance:'فرق الصيانة',light_services:'الخدمات الخفيفة',administrative:'الطقم الإداري',support:'الخدمات المساندة'};b.innerHTML=`<p>سجل المجموعات حسب المنطقة والفئة وجهة العمل والتخصص والمسؤول المباشر. العدد المسجل هو القوام الموزع، ولا يثبت الحضور اليومي أو التوفر. لم تُدخل أعداد مخططة لـ ${num(active.filter(x=>x.planned_headcount==null).length)} مجموعة.</p>${model.plannedGroups?`<div class="fm233-total"><strong>${num(model.plannedActual)}</strong><span>قوام المجموعات المخطط لها</span><strong>${num(model.planned)}</strong><span>مخطط</span><strong>${num(Math.max(0,model.gap))}</strong><span>عجز</span><strong>${num(Math.max(0,-model.gap))}</strong><span>زيادة</span></div>`:''}`+(allowed?btn('إضافة مجموعة','new','primary'):'')+(data.workforce?.error?error('workforce'):'')+'<div class="fm233-scroll"><table><thead><tr><th>المنطقة</th><th>الفئة</th><th>المقاول / جهة العمل</th><th>التخصص / الوظيفة</th><th>المشرف / المسؤول المباشر</th><th>المخطط</th><th>القوام المسجل</th><th>الفارق</th><th>الحالة</th><th>آخر تعديل</th><th></th></tr></thead><tbody>'+rows.map(x=>{const p=x.planned_headcount==null?null:Number(x.planned_headcount),gap=p==null?null:p-Number(x.headcount||0);return `<tr><td>${E(RN[x.region])}</td><td>${E(catLabel[x.category||'maintenance']||x.category)}</td><td>${E(x.contractor)}</td><td>${E(x.trade)}</td><td>${E(x.supervisor||'—')}</td><td>${p==null?'غير محدد':num(p)}</td><td>${num(x.headcount)}</td><td>${gap==null?'—':gap>0?'عجز '+num(gap):gap<0?'زيادة '+num(Math.abs(gap)):'مطابق'}</td><td>${x.active?'نشط':'غير نشط'}</td><td>${E(at(x.updated_at))}</td><td>${allowed?'<button class="fm233-btn" data-edit="'+E(x.id)+'">تعديل</button>':''}</td></tr>`}).join('')+'</tbody></table></div>';
  b.querySelector('[data-action=new]')?.addEventListener('click',()=>editor(null));b.querySelectorAll('[data-edit]').forEach(x=>x.onclick=()=>editor(list.find(r=>r.id===x.dataset.edit)));
- function editor(item){if(scope()!==sc)return d.close();const x=item||{region:F.region||regions()[0],contractor:F.contractor,trade:'',supervisor:'',headcount:0,active:true,note:''},e=dialog(item?'تعديل توزيع':'إضافة توزيع'),pane=e.querySelector('[data-content]');pane.innerHTML=`<form><div class="fm233-form"><label>المنطقة<select name="region">${regions().map(r=>`<option value="${r}">${RN[r]}</option>`).join('')}</select></label>${[['contractor','المقاول'],['trade','التخصص'],['supervisor','المشرف']].map(([k,t])=>`<label>${t}<input name="${k}" value="${E(x[k])}" ${k!=='supervisor'?'required':''} maxlength="160"></label>`).join('')}<label>عدد الأفراد<input name="headcount" type="number" min="0" max="100000" step="1" required value="${x.headcount}"></label><label><input type="checkbox" name="active" ${x.active?'checked':''}> نشط</label></div><label>مصدر العدد / سبب التحديث<textarea name="note" required maxlength="2000">${E(x.note)}</textarea></label><p data-error role="alert"></p><button type="submit" class="fm233-btn primary">حفظ</button></form>`;const form=pane.querySelector('form');form.elements.region.value=x.region;form.onsubmit=async event=>{event.preventDefault();if(scope()!==sc){e.close();d.close();return}const v=Object.fromEntries(new FormData(form));v.active=form.elements.active.checked;v.id=x.id;v.revision=x.revision;const save=form.querySelector('[type=submit]');save.disabled=true;try{await rpc('fm_workforce233_save',{p:v});if(scope()!==sc){e.close();d.close();return}e.close();d.close();await refresh();await workforcePage()}catch(err){pane.querySelector('[data-error]').textContent='تعذر الحفظ: '+err.message;save.disabled=false}}}}
+ function editor(item){if(scope()!==sc)return d.close();const x=item||{region:F.region||regions()[0],category:'maintenance',contractor:F.contractor,trade:'',supervisor:'',planned_headcount:'',headcount:0,active:true,note:''},e=dialog(item?'تعديل مجموعة':'إضافة مجموعة'),pane=e.querySelector('[data-content]');pane.innerHTML=`<form><div class="fm233-form"><label>المنطقة<select name="region">${regions().map(r=>`<option value="${r}">${RN[r]}</option>`).join('')}</select></label><label>الفئة<select name="category"><option value="maintenance">فرق الصيانة</option><option value="light_services">الخدمات الخفيفة</option><option value="administrative">الطقم الإداري</option><option value="support">الخدمات المساندة</option></select></label>${[['contractor','المقاول / جهة العمل'],['trade','التخصص / الوظيفة'],['supervisor','المشرف / المسؤول المباشر']].map(([k,t])=>`<label>${t}<input name="${k}" value="${E(x[k])}" ${k!=='supervisor'?'required':''} maxlength="160"></label>`).join('')}<label>العدد المخطط<input name="planned_headcount" type="number" min="0" max="100000" step="1" placeholder="اتركه فارغاً إذا لم يُعتمد بعد" value="${x.planned_headcount??''}"></label><label>القوام المسجل<input name="headcount" type="number" min="0" max="100000" step="1" required value="${x.headcount}"></label><label><input type="checkbox" name="active" ${x.active?'checked':''}> المجموعة نشطة</label></div><label>مصدر العدد / سبب التحديث<textarea name="note" required maxlength="2000">${E(x.note)}</textarea></label><p class="fm233-muted">القوام المسجل لا يعني الحضور اليومي. لا تُدخل العدد المخطط كتقدير غير معتمد.</p><p data-error role="alert"></p><button type="submit" class="fm233-btn primary">حفظ</button></form>`;const form=pane.querySelector('form');form.elements.region.value=x.region;form.elements.category.value=x.category||'maintenance';form.onsubmit=async event=>{event.preventDefault();if(scope()!==sc){e.close();d.close();return}const v=Object.fromEntries(new FormData(form));v.active=form.elements.active.checked;v.id=x.id;v.revision=x.revision;v.planned_headcount=v.planned_headcount===''?null:Number(v.planned_headcount);const save=form.querySelector('[type=submit]');save.disabled=true;try{await rpc('fm_workforce233_save',{p:v});if(scope()!==sc){e.close();d.close();return}e.close();d.close();await refresh();await workforcePage()}catch(err){pane.querySelector('[data-error]').textContent='تعذر الحفظ: '+err.message;save.disabled=false}}}}
 function action(key){if(key==='refresh')return refresh();if(key==='analysis')return analysis();if(key==='customize')return customize();if(key==='workforce')return workforcePage();if(key==='inbox')return root.fmV231Sla?.('mine');const g=get(),[kind,which]=key.split('-');if((['tickets','orders','stock'].includes(kind)&&!g[kind])||(key==='transfers'&&!g.stock)){const d=dialog('المصدر غير متاح');d.querySelector('[data-content]').innerHTML=error(key==='transfers'?'stock':kind);return d}if(kind==='tickets'){const a=g.tickets?.[which]||[];return tableDialog('البلاغات — '+({open:'المفتوحة',breached:'المخترقة',near:'القريبة'}[which]||''),['رقم البلاغ','المنطقة','المدرسة','الحالة','موعد المهلة'],a.map(t=>[t.ticket_id,RN[t.region],t.school,t.effective,at(t.deadline)]))}if(kind==='orders'){const a=g.orders?.[which]||[];return tableDialog('أوامر العمل',['الرقم','العنوان','المدرسة','المسؤول','الاستحقاق','الحالة'],a.map(w=>[w.code,w.title,w.school,w.assignee_name,at(w.due_at),w.status]),i=>openWo(a[i].id))}if(kind==='stock'){const a=which?g.stock?.[which]:g.stock?.rows;return tableDialog('رصيد المستودعات',['الصنف','المستودع','الكمية','الحد الأدنى','تكلفة الوحدة'],(a||[]).map(x=>[x.name,x.store,x.qty,x.min_qty,x.price==null?'غير مسعّر':num(x.price)]))}if(key==='transfers'){const a=(data.stock?.value?.transfers||[]).filter(x=>x.status==='transit'&&(!F.region||x.from_region===F.region||x.to_region===F.region));return tableDialog('التحويلات في الطريق — غير مضافة لرصيد المستلم',['الرقم','من','إلى','القيمة'],a.map(x=>[x.code,RN[x.from_region],RN[x.to_region],num(x.value)]))}if(key==='requests'){if(!data.requests?.value){const d=dialog('المصدر غير متاح');d.querySelector('[data-content]').innerHTML=error('requests');return d}const a=(data.requests?.value||[]).filter(x=>(!F.region||x.region===F.region)&&['requested','partial'].includes(x.status));return tableDialog('طلبات المواد ضمن صلاحياتك',['الرقم','المنطقة','صاحب الطلب','الحالة'],a.map(x=>[x.code,RN[x.region],x.holder_name,x.status]))}}
 function closePages(){root.fmV103ClosePages?.();root.fmV92CloseContractorAnalysis?.();for(const id of ['fm157-portal','fm158-qa','eng-page']){const p=document.getElementById(id);if(p)p.hidden=true}document.body.classList.remove('v2-mobile-nav');}
 function home(){closePages();mode='home';document.body.classList.add('fm233-home-mode');host.hidden=false;root.v2SetActive?.(document.getElementById('v2-nav-solution'));render();root.scrollTo?.(0,0);if(!loading)refresh()}
@@ -44895,6 +45215,10 @@ root.FM330Subcontracts={open,load,forecast,due,buildWorkbook,exportBills,printBi
  window.fmV123Rebuild?.();
 })();
 </script>
+
+<script src="workforce_v334.js"></script>
+<script src="workforce_v335.js"></script>
+<script src="building_history_v336.js"></script>
 
 </body>
 </html>
