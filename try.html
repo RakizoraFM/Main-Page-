@@ -103,19 +103,80 @@ footer{margin-top:18px}
 @media(max-width:430px){.solution-grid{grid-template-columns:1fr}.solution-card .photo{height:190px}.hero-actions .btn{flex:1 1 100%;text-align:center}.hero-brand{margin-bottom:12px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
 
+
+/* Conversion and content hierarchy refinements */
+:root{--ink:#10233f;--mut:#607187;--line:#dce5ee;--pri:#0e8b8e;--pri2:#25b9a8;--bg:#f4f7fb}
+header b{flex:0}
+.site-brand{display:flex;align-items:center;gap:10px;margin-inline-end:auto}
+.site-brand b{font-size:19px}
+.site-brand small{display:inline-flex;align-items:center;border:1px solid rgba(94,234,212,.3);border-radius:999px;padding:3px 9px;color:#a8e7df;font-size:11px;font-weight:800;white-space:nowrap}
+header .wrap{gap:6px}
+header a{font-size:13px}
+.hero-layout{grid-template-columns:minmax(0,1fr) minmax(0,.95fr);gap:44px}
+.hero h1{max-width:620px;font-size:clamp(32px,4.1vw,50px)}
+.hero p{max-width:610px}
+.hero-brand{margin-bottom:14px}
+.stats{grid-template-columns:repeat(2,minmax(0,1fr));max-width:620px}
+.stats div{display:flex;align-items:center;gap:9px;min-height:54px}
+.stats b{font-size:18px;line-height:1;flex:none}
+.stats span{font-size:12px}
+.hero-visual{min-height:390px;aspect-ratio:1.28}
+.solutions{padding-top:56px;padding-bottom:48px}
+.solution-grid{gap:16px}
+.solution-card{border-color:#e0e8ef;box-shadow:0 8px 24px rgba(15,35,63,.055)}
+.solution-card .photo{height:190px}
+.solution-card .copy{padding:16px 17px 18px}
+.solution-card h3{font-size:16px}
+.workflow-section{background:linear-gradient(180deg,#f1f7f8,#f8fafc)}
+.workflow-layout{display:grid;grid-template-columns:.78fr 1.22fr;align-items:center;gap:36px}
+.workflow-copy h2{margin-top:0}
+.workflow-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.workflow-card{position:relative;padding:17px 17px 16px 54px;background:#fff;border:1px solid var(--line);border-radius:16px;min-height:108px;box-shadow:0 5px 18px rgba(15,35,63,.045)}
+.workflow-card .num{position:absolute;left:15px;top:15px;display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:#e1f4f2;color:#0b7a7d;font-size:12px;font-weight:900}
+.workflow-card b{display:block;color:#142f4d;font-size:14px}
+.workflow-card span:last-child{display:block;color:var(--mut);font-size:12px;line-height:1.65;margin-top:4px}
+.steps .card{padding:22px 18px 18px}
+.steps .card:before{top:-12px;width:29px;height:29px}
+#plans{background:#fff}
+#plans .card{padding:20px}
+#plans .card.hl{transform:translateY(-3px)}
+#trial{background:linear-gradient(180deg,#f2f7f8,#eaf2f5)}
+#trial .card{border-radius:20px;box-shadow:0 14px 34px rgba(15,35,63,.08);padding:22px}
+#trial form{gap:13px}
+#trial .required-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+#trial details{border:1px solid #dce5ee;border-radius:14px;background:#f8fafc;padding:10px 12px}
+#trial summary{cursor:pointer;font-weight:900;font-size:13px;color:#234260}
+#trial details[open] summary{margin-bottom:10px}
+#trial .extra-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#trial .privacy-note{margin:0;color:#64748b;font-size:11.5px}
+#faq{background:#fff}
+.faq-list{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.faq-list details{border:1px solid var(--line);background:#fff;border-radius:14px;padding:14px 16px}
+.faq-list summary{cursor:pointer;list-style:none;font-weight:900;color:#173453;position:relative;padding-inline-end:24px}
+.faq-list summary::-webkit-details-marker{display:none}
+.faq-list summary:after{content:"+";position:absolute;right:0;top:0;color:var(--pri);font-size:19px;line-height:1}
+.faq-list details[open] summary:after{content:"−"}
+.faq-list p{color:var(--mut);font-size:13px;line-height:1.8;margin:8px 0 0}
+section .section-head{margin-bottom:24px}
+section .section-kicker{letter-spacing:.1px}
+@media(max-width:980px){.hero-layout{grid-template-columns:minmax(0,1fr) minmax(0,.85fr);gap:24px}.hero-visual{min-height:320px}.workflow-layout{grid-template-columns:1fr;gap:18px}.solution-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.site-brand{margin-inline-end:auto}.site-brand small{display:none}header .wrap{min-height:62px}.hero-layout{grid-template-columns:1fr;gap:18px}.hero-visual{min-height:250px;aspect-ratio:1.55;grid-row:1}.hero-copy{grid-row:2}.hero h1{font-size:clamp(28px,7vw,38px)}.solution-card .photo{height:165px}.workflow-grid{grid-template-columns:1fr 1fr}.faq-list{grid-template-columns:1fr}#trial .required-grid{grid-template-columns:1fr 1fr}#trial .required-grid label:first-child{grid-column:1/-1}}
+@media(max-width:430px){.site-brand b{font-size:17px}.solution-grid{grid-template-columns:1fr}.solution-card .photo{height:190px}.hero-actions .btn{flex:1 1 100%;text-align:center}.workflow-grid{grid-template-columns:1fr}#trial .required-grid,#trial .extra-grid{grid-template-columns:1fr}#trial .required-grid label:first-child{grid-column:auto}#trial .card{padding:16px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+
 </style>
 </head>
 <body>
-<header><div class="wrap"><b>RakizoraFM</b><a href="#solutions">الحلول</a><a href="#parts">الأجزاء</a><a href="#plans">الباقات</a><a href="#demo" data-demo-link>نسخة العرض</a><a class="c" href="#trial">اطلب تجربة</a></div></header>
+<header><div class="wrap"><div class="site-brand"><b>RakizoraFM</b><small>حلول التشغيل من Solvix</small></div><a href="#solutions">الحلول</a><a href="#parts">الأجزاء</a><a href="#plans">الباقات</a><a href="#faq">الأسئلة</a><a href="#demo" data-demo-link>نسخة العرض</a><a class="c" href="#trial">اطلب عرضًا</a></div></header>
 <div class="hero"><div class="wrap hero-layout">
  <div class="hero-copy">
   <div class="hero-brand"><span>RakizoraFM</span><em>×</em><span>Solvix</span></div>
-  <h1>إدارة صيانة المدارس والمباني<br>من البلاغ حتى المستخلص — في منصة واحدة</h1>
-  <p>اربط فرق الصيانة والخدمات الخفيفة، المشرفين، المستودعات، والمقاولين بلوحة تشغيل موحدة. تابع البلاغات ومؤشرات SLA وأوامر العمل والتكاليف من الميدان إلى الإدارة.</p>
-  <div class="hero-actions"><a class="btn p" href="#trial">🚀 اطلب تجربة مجانية</a><a class="btn s" href="#demo" data-demo-link>🧪 ادخل نسخة العرض الآن</a></div>
-  <div class="stats"><div><b>8</b><span>أجزاء تشغيلية قابلة للإضافة</span></div><div><b>13</b><span>مسمى وظيفي بصلاحيات جاهزة</span></div><div><b>📱</b><span>تطبيق ميداني بالخريطة والصور</span></div><div><b>🔒</b><span>قاعدة بيانات مستقلة لكل شركة</span></div></div>
+  <h1>شغّل فرقك ومبانيك بكفاءة<br>من منصة واحدة</h1>
+  <p>تابع البلاغات والصيانة الوقائية، توزيع فرق التشغيل والخدمات، حركة المستودع، ومؤشرات الأداء من الميدان إلى الإدارة.</p>
+  <div class="hero-actions"><a class="btn p" href="#trial">🚀 اطلب عرضًا للمنصة</a><a class="btn s" href="#demo" data-demo-link>🧪 جرّب النسخة التفاعلية</a></div>
+  <div class="stats"><div><b>🛠️</b><span>بلاغات وصيانة وقائية</span></div><div><b>👥</b><span>فرق ومهام ميدانية</span></div><div><b>📦</b><span>مستودعات وعهد</span></div><div><b>📊</b><span>SLA وتقارير تشغيلية</span></div></div>
  </div>
- <div class="hero-visual"><img src="assets/rakizora-solvix-hero.webp" alt="فريق Solvix يراجع لوحة RakizoraFM في بيئة مدرسية" fetchpriority="high"><div class="hero-caption"><i></i><span>منصة رقمية تدعم فرقك في الميدان</span></div></div>
+ <div class="hero-visual"><img src="assets/rakizora-solvix-hero.webp" alt="فريق Solvix يراجع لوحة RakizoraFM في بيئة مدرسية" fetchpriority="high"><div class="hero-caption"><i></i><span>صورة توضيحية لمنظومة العمل</span></div></div>
 </div></div>
 
 <section id="solutions" class="solutions"><div class="wrap">
@@ -128,29 +189,50 @@ footer{margin-top:18px}
  </div>
 </div></section>
 
+<section class="workflow-section"><div class="wrap workflow-layout">
+ <div class="workflow-copy"><span class="section-kicker">مسار العمل</span><h2>من البلاغ إلى تقرير قابل للمتابعة</h2><p class="sub">تظهر حالة العمل ومسؤوليته وخطواته بوضوح للفريق والإدارة، مع توثيق التنفيذ والنتيجة.</p></div>
+ <div class="workflow-grid" aria-label="مسار توضيحي لسير العمل">
+  <div class="workflow-card"><span class="num">01</span><b>تسجيل البلاغ</b><span>المبنى، التخصص، الأولوية، والصور.</span></div>
+  <div class="workflow-card"><span class="num">02</span><b>إسناد ومتابعة</b><span>تحديد المسؤول ومتابعة مهلة SLA.</span></div>
+  <div class="workflow-card"><span class="num">03</span><b>تنفيذ ميداني</b><span>تحديث الحالة وتوثيق الإنجاز.</span></div>
+  <div class="workflow-card"><span class="num">04</span><b>مراجعة وتقارير</b><span>عرض النتائج والمهام المفتوحة للإدارة.</span></div>
+ </div>
+</div></section>
 <section id="parts"><div class="wrap"><h2>اختر الأجزاء التي تحتاجها</h2><p class="sub">ابدأ بجزء واحد وأضف غيره لاحقاً بكود تفعيل — بياناتك لا تُفقد عند إيقاف جزء.</p>
  <div class="grid" id="parts-grid"></div></div></section>
 
 <section id="plans" style="background:#fff"><div class="wrap"><h2>الباقات</h2><p class="sub">حسب عدد المدارس والأجزاء — وأي جزء غير مشمول يُضاف بسعره.</p><div class="grid plans" id="plans-grid"><div class="card">جارٍ التحميل…</div></div></div></section>
 
-<section><div class="wrap"><h2>كيف نبدأ معكم؟</h2><p class="sub">أسبوع واحد غالباً من الطلب حتى أول أمر عمل.</p><div class="grid steps">
- <div class="card"><h3>طلب التجربة</h3><p>املأ النموذج أو تواصل بالواتساب، ونرتب معكم عرضاً سريعاً على نسخة العرض.</p></div>
- <div class="card"><h3>تجهيز شركتكم</h3><p>نجهز لكم قاعدة بيانات مستقلة ورابط دخول خاص باسم شركتكم وشعارها.</p></div>
- <div class="card"><h3>خطوات البداية</h3><p>معالج داخل المنصة: رفع المدارس، إضافة الفريق، المستودعات، والأصناف — خطوة بخطوة.</p></div>
- <div class="card"><h3>التشغيل</h3><p>المشرفون على تطبيق الميدان، والإدارة على لوحة المؤشرات والتقارير الشهرية.</p></div></div></div></section>
+<section><div class="wrap"><span class="section-kicker">بداية واضحة</span><h2>كيف تبدأ مع RakizoraFM؟</h2><p class="sub">نرتب خطوات الإعداد مع فريقك من أول طلب العرض إلى بدء التشغيل.</p><div class="grid steps">
+ <div class="card"><h3>اطلب العرض</h3><p>شارك بيانات التواصل ونحدد معك احتياج المشروع والأجزاء المناسبة.</p></div>
+ <div class="card"><h3>هيّئ بيئة شركتك</h3><p>تُجهّز مساحة العمل والصلاحيات ورابط الدخول الخاص بالشركة.</p></div>
+ <div class="card"><h3>أضف المباني والفريق</h3><p>ارفع بيانات المباني، أضف المستخدمين، واضبط المناطق والتخصصات.</p></div>
+ <div class="card"><h3>ابدأ المتابعة</h3><p>تابع الأعمال الميدانية والمخزون والتقارير من لوحات الإدارة.</p></div></div></div></section>
 
 <section id="demo" style="background:#fff"><div class="wrap"><h2>🧪 جرّب نسخة العرض</h2><p class="sub">بيانات وهمية بالكامل لمدارس وبلاغات وأوامر عمل ومستودع — اختر أي دور (مدير مشروع، مهندس، مشرف، أمين مستودع…) وشاهد المنصة كما يراها.</p>
  <a class="btn p" id="demo-go" href="#trial">🧪 ادخل نسخة العرض</a><span id="demo-none" style="color:var(--mut);font-weight:700" hidden>نسخة العرض تُفعَّل قريباً — اطلب عرضاً مباشراً من النموذج.</span></div></section>
 
+<section id="faq"><div class="wrap"><span class="section-kicker">معلومات قبل البدء</span><h2>أسئلة متكررة</h2><p class="sub">إجابات سريعة عن إعداد المنصة وتشغيلها.</p>
+ <div class="faq-list">
+  <details><summary>هل يجب الاشتراك في جميع الأجزاء؟</summary><p>لا. يمكنك البدء بالأجزاء التي تحتاجها ثم إضافة أجزاء أخرى لاحقًا حسب نطاق التشغيل.</p></details>
+  <details><summary>هل تناسب المنصة أكثر من منطقة أو مشروع؟</summary><p>تدعم المنصة تنظيم المباني والفرق حسب المناطق والأدوار والصلاحيات، وفق إعداد بيئة شركتك.</p></details>
+  <details><summary>هل يوجد تطبيق للفرق الميدانية؟</summary><p>تتضمن المنصة تطبيقًا ميدانيًا للمشرفين والمقاولين، مع متابعة المهام ورفع الصور حسب الصلاحيات.</p></details>
+  <details><summary>كيف أجرب المنصة؟</summary><p>يمكنك فتح نسخة العرض التفاعلية من الصفحة، أو إرسال طلب عرض لنتواصل معك خلال يوم عمل.</p></details>
+  <details><summary>هل يمكن إضافة بيانات المباني والفريق عند البداية؟</summary><p>نعم، تتضمن خطوات الإعداد رفع بيانات المباني وإضافة المستخدمين وضبط الأدوار ومناطق العمل.</p></details>
+  <details><summary>كيف أعرف الباقة المناسبة؟</summary><p>اختر الأجزاء التي تحتاجها وأرسل طلب العرض، وسنساعدك في تحديد الباقة حسب عدد المباني ونطاق التشغيل.</p></details>
+ </div></div></section>
+
 <section id="trial"><div class="wrap" style="max-width:760px"><h2>🚀 اطلب تجربة</h2><p class="sub">نتواصل معك خلال يوم عمل.</p>
  <div class="card"><form id="f" autocomplete="on">
-  <div class="two"><label>الاسم *<input name="name" required maxlength="120" autocomplete="name"></label><label>الجهة / الشركة *<input name="company" required maxlength="200" autocomplete="organization"></label></div>
-  <div class="two"><label>الجوال (واتساب) *<input name="phone" required inputmode="tel" dir="ltr" placeholder="05xxxxxxxx" autocomplete="tel"></label><label>البريد<input name="email" type="email" dir="ltr" autocomplete="email"></label></div>
-  <div class="two"><label>المدينة<input name="city" maxlength="80"></label><label>عدد المدارس / المباني تقريباً<input name="schools" inputmode="numeric"></label></div>
-  <label>الأجزاء التي تهمك<div class="mods" id="mods"></div></label>
-  <label>ملاحظة<textarea name="message" rows="3" maxlength="1000"></textarea></label>
+  <div class="required-grid"><label>الاسم *<input name="name" required maxlength="120" autocomplete="name"></label><label>الجهة / الشركة *<input name="company" required maxlength="200" autocomplete="organization"></label><label>الجوال (واتساب) *<input name="phone" required inputmode="tel" dir="ltr" placeholder="05xxxxxxxx" autocomplete="tel"></label></div>
+  <details id="extra-fields"><summary>تفاصيل إضافية تساعدنا على تجهيز العرض (اختياري)</summary>
+   <div class="extra-grid"><label>البريد<input name="email" type="email" dir="ltr" autocomplete="email"></label><label>المدينة<input name="city" maxlength="80"></label><label>عدد المدارس / المباني تقريباً<input name="schools" inputmode="numeric"></label></div>
+   <label>الأجزاء التي تهمك<div class="mods" id="mods"></div></label>
+   <label>ملاحظة<textarea name="message" rows="3" maxlength="1000"></textarea></label>
+  </details>
   <div class="hp" aria-hidden="true"><label>اترك هذا الحقل فارغاً<input name="hp" tabindex="-1" autocomplete="off"></label></div>
-  <div id="m"></div><button class="btn p" type="submit" style="margin:0">إرسال الطلب</button>
+  <div id="m"></div><button class="btn p" type="submit" style="margin:0">إرسال طلب العرض</button>
+  <p class="privacy-note">سنستخدم بياناتك لمتابعة طلب العرض والتواصل معك بشأن المنصة.</p>
   <a class="btn w" id="wa" href="#" target="_blank" rel="noopener" hidden style="margin:0;text-align:center">💬 تواصل بالواتساب</a>
  </form></div></div></section>
 <footer>RakizoraFM • إدارة المرافق والأصول الذكية • <a href="start.html">دخول العملاء</a></footer>
@@ -185,7 +267,7 @@ const money=v=>(+v||0).toLocaleString('en-US')+' ر.س';
   <a class="btn p" href="#trial" data-plan="${esc(x.k)}" style="margin-top:auto;text-align:center">اطلب هذه الباقة</a></div>`}).join('')
   +(adds.some(a=>+a.base||+a.per_school)?`<div class="card"><h3>➕ أجزاء إضافية</h3><ul>${adds.filter(a=>+a.base||+a.per_school).map(a=>`<li>${esc(PN[a.k]||a.k)}: ${+a.base?money(a.base):''}${+a.per_school?` ${+a.base?'+ ':''}${money(a.per_school)} لكل مدرسة`:''} شهرياً</li>`).join('')}</ul></div>`:'')
   :'<div class="card">تواصل معنا لعرض سعر يناسب عدد مدارسكم.</div>';
- document.querySelectorAll('[data-plan]').forEach(a=>a.onclick=()=>{const x=plans.find(p=>p.k===a.dataset.plan);if(x&&Array.isArray(x.modules))document.querySelectorAll('#mods input').forEach(c=>c.checked=x.modules.includes(c.value));const m=$('[name=message]');if(x&&!S(m.value))m.value='مهتم بباقة '+x.name})})();
+ document.querySelectorAll('[data-plan]').forEach(a=>a.onclick=()=>{const x=plans.find(p=>p.k===a.dataset.plan);if(x&&Array.isArray(x.modules)){$('#extra-fields').open=true;document.querySelectorAll('#mods input').forEach(c=>c.checked=x.modules.includes(c.value));}const m=$('[name=message]');if(x&&!S(m.value))m.value='مهتم بباقة '+x.name})})();
 $('#f').onsubmit=async e=>{e.preventDefault();const f=e.target,b=f.querySelector('[type=submit]'),v=n=>S(f.elements[n].value);
  const ph=v('phone').replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c));
  if(!v('name')||!v('company')||!/^\+?[0-9 ]{9,16}$/.test(ph)){$('#m').innerHTML='<div class="msg err">اكتب الاسم والجهة ورقم جوال صحيح</div>';return}
