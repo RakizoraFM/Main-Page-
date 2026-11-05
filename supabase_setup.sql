@@ -7653,8 +7653,6 @@ begin
   return coalesce((select array_agg(bkey) from public.fm_my_schools()), '{}');
 end $$;
 -- p {id?, bkey, school_name, region, kind, number, account_no, notes, active}
-alter table public.fm_meters add column if not exists office text;
-alter table public.fm_meters add column if not exists school_code text;
 create or replace function public.fm_meter_save(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
 declare k text[] := public.fm_meter_keys(true); m public.fm_meters; b text := coalesce(nullif(p->>'bkey',''), '');
 begin
@@ -7663,12 +7661,11 @@ begin
   if b = '' or (k is not null and not b = any(k)) then raise exception 'not allowed'; end if;
   if m.id is null then
     if p->>'kind' not in ('elec','water') or btrim(coalesce(p->>'school_name','')) = '' then raise exception 'invalid meter'; end if;
-    insert into public.fm_meters (bkey, school_name, region, kind, number, account_no, notes, office, school_code)
-    values (b, left(btrim(p->>'school_name'),200), nullif(p->>'region',''), p->>'kind', left(nullif(p->>'number',''),60), left(nullif(p->>'account_no',''),60), left(nullif(p->>'notes',''),300), left(nullif(p->>'office',''),200), left(nullif(p->>'school_code',''),80))
+    insert into public.fm_meters (bkey, school_name, region, kind, number, account_no, notes)
+    values (b, left(btrim(p->>'school_name'),200), nullif(p->>'region',''), p->>'kind', left(nullif(p->>'number',''),60), left(nullif(p->>'account_no',''),60), left(nullif(p->>'notes',''),300))
     returning * into m;
   else
     update public.fm_meters set number = left(nullif(p->>'number',''),60), account_no = left(nullif(p->>'account_no',''),60), notes = left(nullif(p->>'notes',''),300),
-      office = case when p ? 'office' then left(nullif(p->>'office',''),200) else office end, school_code = case when p ? 'school_code' then left(nullif(p->>'school_code',''),80) else school_code end,
       active = coalesce((p->>'active')::boolean, active) where id = m.id returning * into m;
   end if;
   return jsonb_build_object('id', m.id);
@@ -8631,7 +8628,15 @@ create table if not exists public.fm_workforce233(
  active boolean not null default true,note text not null default '',revision int not null default 1,
  updated_at timestamptz not null default now(),updated_by uuid default auth.uid()
 );
-create unique index if not exists fm_workforce233_group on public.fm_workforce233(region,lower(btrim(contractor)),lower(btrim(trade)),lower(btrim(supervisor))) where active;
+-- V333: classify every workforce group and optionally record its approved plan.
+alter table public.fm_workforce233 add column if not exists category text not null default 'maintenance';
+alter table public.fm_workforce233 add column if not exists planned_headcount int;
+alter table public.fm_workforce233 drop constraint if exists fm_workforce233_category_check;
+alter table public.fm_workforce233 add constraint fm_workforce233_category_check check(category in('maintenance','light_services','administrative','support'));
+alter table public.fm_workforce233 drop constraint if exists fm_workforce233_planned_headcount_check;
+alter table public.fm_workforce233 add constraint fm_workforce233_planned_headcount_check check(planned_headcount is null or planned_headcount between 0 and 100000);
+drop index if exists public.fm_workforce233_group;
+create unique index fm_workforce233_group on public.fm_workforce233(region,category,lower(btrim(contractor)),lower(btrim(trade)),lower(btrim(supervisor))) where active;
 create table if not exists public.fm_workforce_events233(id uuid primary key default gen_random_uuid(),group_id uuid not null,at timestamptz not null default now(),by_id uuid not null default auth.uid(),region text not null,old_value jsonb,new_value jsonb);
 alter table public.fm_workforce233 enable row level security;
 alter table public.fm_workforce_events233 enable row level security;
@@ -8641,19 +8646,21 @@ drop policy if exists p_workforce_events233 on public.fm_workforce_events233;
 create policy p_workforce_events233 on public.fm_workforce_events233 for select to authenticated using(public.fm233_read(region));
 revoke insert,update,delete on public.fm_workforce233,public.fm_workforce_events233 from anon,authenticated;
 create or replace function public.fm_workforce233_save(p jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
-declare v public.fm_workforce233;old public.fm_workforce233;k uuid:=nullif(p->>'id','')::uuid;r text:=p->>'region';
+declare v public.fm_workforce233;old public.fm_workforce233;k uuid:=nullif(p->>'id','')::uuid;r text:=p->>'region';c text:=coalesce(nullif(p->>'category',''),'maintenance');planned int:=nullif(p->>'planned_headcount','')::int;
 begin
  if not public.fm233_manage(r) then raise exception 'not allowed';end if;
  if btrim(coalesce(p->>'note',''))='' or length(p->>'note')>2000 then raise exception 'note required';end if;
+ if c not in('maintenance','light_services','administrative','support') then raise exception 'invalid workforce category';end if;
  if coalesce(p->>'headcount','')!~'^\d{1,6}$' then raise exception 'invalid headcount';end if;
+ if planned is not null and (planned<0 or planned>100000) then raise exception 'invalid planned headcount';end if;
  if k is not null then
   select * into old from public.fm_workforce233 where id=k for update;
   if not found or not public.fm233_manage(old.region) then raise exception 'not allowed';end if;
   if old.revision is distinct from (p->>'revision')::int then raise exception 'stale revision';end if;
  end if;
- insert into public.fm_workforce233(id,region,contractor,trade,supervisor,headcount,active,note,revision,updated_at,updated_by)
- values(coalesce(k,gen_random_uuid()),r,btrim(p->>'contractor'),btrim(p->>'trade'),btrim(coalesce(p->>'supervisor','')),(p->>'headcount')::int,coalesce((p->>'active')::boolean,true),btrim(p->>'note'),coalesce(old.revision,0)+1,now(),auth.uid())
- on conflict(id) do update set region=excluded.region,contractor=excluded.contractor,trade=excluded.trade,supervisor=excluded.supervisor,headcount=excluded.headcount,active=excluded.active,note=excluded.note,revision=excluded.revision,updated_at=excluded.updated_at,updated_by=excluded.updated_by returning * into v;
+ insert into public.fm_workforce233(id,region,category,contractor,trade,supervisor,planned_headcount,headcount,active,note,revision,updated_at,updated_by)
+ values(coalesce(k,gen_random_uuid()),r,c,btrim(p->>'contractor'),btrim(p->>'trade'),btrim(coalesce(p->>'supervisor','')),planned,(p->>'headcount')::int,coalesce((p->>'active')::boolean,true),btrim(p->>'note'),coalesce(old.revision,0)+1,now(),auth.uid())
+ on conflict(id) do update set region=excluded.region,category=excluded.category,contractor=excluded.contractor,trade=excluded.trade,supervisor=excluded.supervisor,planned_headcount=excluded.planned_headcount,headcount=excluded.headcount,active=excluded.active,note=excluded.note,revision=excluded.revision,updated_at=excluded.updated_at,updated_by=excluded.updated_by returning * into v;
  insert into public.fm_workforce_events233(group_id,region,old_value,new_value) values(v.id,r,case when old.id is not null then to_jsonb(old) end,to_jsonb(v));
  return to_jsonb(v);
 end $$;
@@ -14103,3 +14110,351 @@ revoke all on function public.fm_billing_scope330(jsonb),public.fm_contract_save
 grant execute on function public.fm_billing_scope330(jsonb),public.fm_contract_save(jsonb),public.fm_bill_save(jsonb),public.fm_bill_build(uuid,text,uuid),public.fm_rate_annex_save(uuid,jsonb),public.fm_rate_bill330(jsonb,jsonb) to authenticated;
 notify pgrst,'reload schema';
 commit;
+-- V334: individual workforce, teams, and building coverage.
+-- Run once on a database that already has V333 installed.
+begin;
+
+create table if not exists public.fm_teams334(
+ id uuid primary key default gen_random_uuid(), region text not null check(region in('riyadh','qassim')),
+ name text not null check(length(btrim(name)) between 1 and 160), category text not null check(category in('maintenance','light_services','administrative','support')),
+ supervisor text not null default '' check(length(supervisor)<=160), planned_headcount int check(planned_headcount is null or planned_headcount between 0 and 100000),
+ active boolean not null default true, note text not null default '' check(length(note)<=2000), revision int not null default 1,
+ updated_at timestamptz not null default now(), updated_by uuid default auth.uid());
+create unique index if not exists fm_teams334_active_name on public.fm_teams334(region,lower(btrim(name))) where active;
+
+create table if not exists public.fm_people334(
+ id uuid primary key default gen_random_uuid(), region text not null check(region in('riyadh','qassim')),
+ employee_code text not null default '' check(length(employee_code)<=80), full_name text not null check(length(btrim(full_name)) between 1 and 160),
+ employer text not null check(length(btrim(employer)) between 1 and 160), job_title text not null check(length(btrim(job_title)) between 1 and 160),
+ phone text not null default '' check(length(phone)<=40), team_id uuid references public.fm_teams334(id), direct_manager text not null default '' check(length(direct_manager)<=160),
+ active boolean not null default true, note text not null default '' check(length(note)<=2000), revision int not null default 1,
+ updated_at timestamptz not null default now(), updated_by uuid default auth.uid());
+create unique index if not exists fm_people334_code on public.fm_people334(region,lower(btrim(employer)),lower(btrim(employee_code))) where employee_code<>'' and active;
+
+create table if not exists public.fm_coverage334(
+ id uuid primary key default gen_random_uuid(), region text not null check(region in('riyadh','qassim')),
+ team_id uuid not null references public.fm_teams334(id), building_code text not null check(length(btrim(building_code)) between 1 and 100),
+ building_name text not null check(length(btrim(building_name)) between 1 and 200), education_office text not null default '' check(length(education_office)<=160),
+ service text not null check(service in('maintenance','light_services','administrative','support')), active boolean not null default true,
+ note text not null default '' check(length(note)<=2000), revision int not null default 1,
+ updated_at timestamptz not null default now(), updated_by uuid default auth.uid());
+create unique index if not exists fm_coverage334_active_assignment on public.fm_coverage334(region,team_id,lower(btrim(building_code)),service) where active;
+
+create table if not exists public.fm_workforce_events334(
+ id uuid primary key default gen_random_uuid(), entity_type text not null, entity_id uuid not null,
+ region text not null, old_value jsonb, new_value jsonb, at timestamptz not null default now(), by_id uuid not null default auth.uid());
+
+alter table public.fm_teams334 enable row level security;
+alter table public.fm_people334 enable row level security;
+alter table public.fm_coverage334 enable row level security;
+alter table public.fm_workforce_events334 enable row level security;
+drop policy if exists p_fm_teams334_read on public.fm_teams334;
+create policy p_fm_teams334_read on public.fm_teams334 for select to authenticated using(public.fm233_read(region));
+drop policy if exists p_fm_people334_read on public.fm_people334;
+create policy p_fm_people334_read on public.fm_people334 for select to authenticated using(public.fm233_read(region));
+drop policy if exists p_fm_coverage334_read on public.fm_coverage334;
+create policy p_fm_coverage334_read on public.fm_coverage334 for select to authenticated using(public.fm233_read(region));
+drop policy if exists p_fm_workforce_events334_read on public.fm_workforce_events334;
+create policy p_fm_workforce_events334_read on public.fm_workforce_events334 for select to authenticated using(public.fm233_read(region));
+revoke insert,update,delete on public.fm_teams334,public.fm_people334,public.fm_coverage334,public.fm_workforce_events334 from anon,authenticated;
+
+create or replace function public.fm_workforce334_data(r text) returns jsonb
+ language plpgsql security definer set search_path=public as $$
+begin
+ if not public.fm233_read(r) then raise exception 'not allowed'; end if;
+ return jsonb_build_object(
+  'teams',coalesce((select jsonb_agg(to_jsonb(t) order by t.name) from public.fm_teams334 t where t.region=r),'[]'::jsonb),
+  'people',coalesce((select jsonb_agg(to_jsonb(p) order by p.full_name) from public.fm_people334 p where p.region=r),'[]'::jsonb),
+  'coverage',coalesce((select jsonb_agg(to_jsonb(c) order by c.building_name) from public.fm_coverage334 c where c.region=r),'[]'::jsonb));
+end $$;
+
+create or replace function public.fm_workforce334_save(p jsonb) returns jsonb
+ language plpgsql security definer set search_path=public as $$
+declare k text:=p->>'kind'; r text:=p->>'region'; idv uuid:=nullif(p->>'id','')::uuid;
+ oldv jsonb; newv jsonb; rev int; tid uuid;
+begin
+ if not public.fm233_manage(r) then raise exception 'not allowed'; end if;
+ if k='team' then
+  if btrim(coalesce(p->>'name',''))='' or p->>'category' not in('maintenance','light_services','administrative','support') then raise exception 'بيانات الفريق غير مكتملة'; end if;
+  if idv is not null then select to_jsonb(t),t.revision into oldv,rev from public.fm_teams334 t where t.id=idv and t.region=r for update; if oldv is null then raise exception 'not allowed'; end if; if rev is distinct from (p->>'revision')::int then raise exception 'تغير السجل؛ حدّث الصفحة ثم أعد المحاولة'; end if; end if;
+  insert into public.fm_teams334(id,region,name,category,supervisor,planned_headcount,active,note,revision,updated_at,updated_by)
+  values(coalesce(idv,gen_random_uuid()),r,btrim(p->>'name'),p->>'category',btrim(coalesce(p->>'supervisor','')),nullif(p->>'planned_headcount','')::int,coalesce((p->>'active')::boolean,true),btrim(coalesce(p->>'note','')),coalesce(rev,0)+1,now(),auth.uid())
+  on conflict(id) do update set name=excluded.name,category=excluded.category,supervisor=excluded.supervisor,planned_headcount=excluded.planned_headcount,active=excluded.active,note=excluded.note,revision=excluded.revision,updated_at=excluded.updated_at,updated_by=excluded.updated_by returning to_jsonb(fm_teams334.*) into newv;
+ elsif k='person' then
+  tid:=nullif(p->>'team_id','')::uuid;
+  if tid is not null and not exists(select 1 from public.fm_teams334 t where t.id=tid and t.region=r and t.active) then raise exception 'اختر فريقاً نشطاً من المنطقة نفسها'; end if;
+  if btrim(coalesce(p->>'full_name',''))='' or btrim(coalesce(p->>'employer',''))='' or btrim(coalesce(p->>'job_title',''))='' then raise exception 'الاسم وجهة العمل والمسمى الوظيفي مطلوبة'; end if;
+  oldv:=null;rev:=null;if idv is not null then select to_jsonb(x),x.revision into oldv,rev from public.fm_people334 x where x.id=idv and x.region=r for update; if oldv is null then raise exception 'not allowed'; end if; if rev is distinct from (p->>'revision')::int then raise exception 'تغير السجل؛ حدّث الصفحة ثم أعد المحاولة'; end if; end if;
+  insert into public.fm_people334(id,region,employee_code,full_name,employer,job_title,phone,team_id,direct_manager,active,note,revision,updated_at,updated_by)
+  values(coalesce(idv,gen_random_uuid()),r,btrim(coalesce(p->>'employee_code','')),btrim(p->>'full_name'),btrim(p->>'employer'),btrim(p->>'job_title'),btrim(coalesce(p->>'phone','')),tid,btrim(coalesce(p->>'direct_manager','')),coalesce((p->>'active')::boolean,true),btrim(coalesce(p->>'note','')),coalesce(rev,0)+1,now(),auth.uid())
+  on conflict(id) do update set employee_code=excluded.employee_code,full_name=excluded.full_name,employer=excluded.employer,job_title=excluded.job_title,phone=excluded.phone,team_id=excluded.team_id,direct_manager=excluded.direct_manager,active=excluded.active,note=excluded.note,revision=excluded.revision,updated_at=excluded.updated_at,updated_by=excluded.updated_by returning to_jsonb(fm_people334.*) into newv;
+ elsif k='coverage' then
+  tid:=nullif(p->>'team_id','')::uuid;
+  if not exists(select 1 from public.fm_teams334 t where t.id=tid and t.region=r and t.active) then raise exception 'اختر فريقاً نشطاً من المنطقة نفسها'; end if;
+  if btrim(coalesce(p->>'building_code',''))='' or btrim(coalesce(p->>'building_name',''))='' or p->>'service' not in('maintenance','light_services','administrative','support') then raise exception 'بيانات تغطية المبنى غير مكتملة'; end if;
+  oldv:=null;rev:=null;if idv is not null then select to_jsonb(x),x.revision into oldv,rev from public.fm_coverage334 x where x.id=idv and x.region=r for update; if oldv is null then raise exception 'not allowed'; end if; if rev is distinct from (p->>'revision')::int then raise exception 'تغير السجل؛ حدّث الصفحة ثم أعد المحاولة'; end if; end if;
+  insert into public.fm_coverage334(id,region,team_id,building_code,building_name,education_office,service,active,note,revision,updated_at,updated_by)
+  values(coalesce(idv,gen_random_uuid()),r,tid,btrim(p->>'building_code'),btrim(p->>'building_name'),btrim(coalesce(p->>'education_office','')),p->>'service',coalesce((p->>'active')::boolean,true),btrim(coalesce(p->>'note','')),coalesce(rev,0)+1,now(),auth.uid())
+  on conflict(id) do update set team_id=excluded.team_id,building_code=excluded.building_code,building_name=excluded.building_name,education_office=excluded.education_office,service=excluded.service,active=excluded.active,note=excluded.note,revision=excluded.revision,updated_at=excluded.updated_at,updated_by=excluded.updated_by returning to_jsonb(fm_coverage334.*) into newv;
+ else raise exception 'نوع سجل غير معروف'; end if;
+ insert into public.fm_workforce_events334(entity_type,entity_id,region,old_value,new_value) values(k,coalesce(idv,(newv->>'id')::uuid),r,oldv,newv);
+ return newv;
+end $$;
+revoke all on function public.fm_workforce334_data(text),public.fm_workforce334_save(jsonb) from public,anon;
+grant execute on function public.fm_workforce334_data(text),public.fm_workforce334_save(jsonb) to authenticated;
+notify pgrst,'reload schema';
+commit;
+-- V335: workforce availability, attendance, role mapping, and workload indicators.
+-- Run after V333 and V334. Daily headcount is never inferred from missing attendance.
+begin;
+
+create table if not exists public.fm_person_roles335(
+ person_id uuid primary key references public.fm_people334(id) on delete cascade,
+ region text not null check(region in('riyadh','qassim')),
+ job_family text not null default 'other' check(job_family in('engineer','supervisor','technician','call_center','report_preparer','accountant','admin','support','other')),
+ profile_id uuid references public.profiles(id) on delete set null,
+ revision int not null default 1, updated_at timestamptz not null default now(), updated_by uuid default auth.uid());
+create unique index if not exists fm_person_roles335_profile on public.fm_person_roles335(region,profile_id) where profile_id is not null;
+
+create table if not exists public.fm_attendance335(
+ id uuid primary key default gen_random_uuid(), region text not null check(region in('riyadh','qassim')),
+ person_id uuid not null references public.fm_people334(id), work_date date not null,
+ status text not null check(status in('present','absent','leave','remote','substitute')),
+ check_in timestamptz, check_out timestamptz,
+ site_code text not null default '' check(length(site_code)<=100), latitude double precision, longitude double precision,
+ substitute_person_id uuid references public.fm_people334(id) on delete set null,
+ note text not null default '' check(length(note)<=1000),
+ approval_state text not null default 'pending' check(approval_state in('pending','approved','rejected')),
+ entered_by uuid not null default auth.uid(), reviewed_by uuid references public.profiles(id), reviewed_at timestamptz,
+ revision int not null default 1, updated_at timestamptz not null default now(),
+ unique(person_id,work_date),
+ check(check_in is null or check_out is null or check_out>=check_in),
+ check(latitude is null or latitude between -90 and 90), check(longitude is null or longitude between -180 and 180));
+create index if not exists fm_attendance335_date_region on public.fm_attendance335(region,work_date,approval_state);
+
+alter table public.fm_person_roles335 enable row level security;
+alter table public.fm_attendance335 enable row level security;
+drop policy if exists p_fm_person_roles335_read on public.fm_person_roles335;
+create policy p_fm_person_roles335_read on public.fm_person_roles335 for select to authenticated using(public.fm233_read(region));
+drop policy if exists p_fm_attendance335_read on public.fm_attendance335;
+create policy p_fm_attendance335_read on public.fm_attendance335 for select to authenticated using(public.fm233_read(region));
+revoke insert,update,delete on public.fm_person_roles335,public.fm_attendance335 from anon,authenticated;
+
+create or replace function public.fm_workforce335_data(r text,d date) returns jsonb
+ language plpgsql security definer set search_path=public as $$
+begin
+ if not public.fm233_read(r) then raise exception 'not allowed'; end if;
+ return jsonb_build_object(
+  'people',coalesce((select jsonb_agg(jsonb_build_object('person',to_jsonb(p),'team_name',t.name,'job_family',coalesce(m.job_family,'other'),'role_revision',m.revision,'profile_id',m.profile_id,'profile_name',pr.full_name) order by p.full_name)
+    from public.fm_people334 p left join public.fm_teams334 t on t.id=p.team_id left join public.fm_person_roles335 m on m.person_id=p.id left join public.profiles pr on pr.id=m.profile_id where p.region=r),'[]'::jsonb),
+  'teams',coalesce((select jsonb_agg(to_jsonb(t) order by t.name) from public.fm_teams334 t where t.region=r),'[]'::jsonb),
+  'coverage',coalesce((select jsonb_agg(to_jsonb(c) order by c.building_name) from public.fm_coverage334 c where c.region=r),'[]'::jsonb),
+  'attendance',coalesce((select jsonb_agg(to_jsonb(a) order by p.full_name) from public.fm_attendance335 a join public.fm_people334 p on p.id=a.person_id where a.region=r and a.work_date=d),'[]'::jsonb),
+  'workload',coalesce((select jsonb_agg(jsonb_build_object('profile_id',m.profile_id,'open_orders',coalesce(w.open_orders,0),'overdue_orders',coalesce(w.overdue_orders,0),'closed_30d',coalesce(w.closed_30d,0),'open_tickets',coalesce(y.open_tickets,0)) order by pr.full_name)
+    from public.fm_person_roles335 m join public.profiles pr on pr.id=m.profile_id
+    left join (select x.assignee,count(*) filter(where x.status not in('closed','cancelled','rejected','done'))::int open_orders,
+      count(*) filter(where x.status not in('closed','cancelled','rejected','done') and x.due_at<now())::int overdue_orders,
+      count(*) filter(where x.status in('closed','done') and coalesce(x.closed_at,x.done_at)>=now()-interval '30 days')::int closed_30d
+      from public.work_orders x where x.region=r group by x.assignee) w on w.assignee=m.profile_id
+    left join (select p.id as profile_id,count(*)::int open_tickets from public.profiles p join public.tickets t on t.region=r and
+      (lower(btrim(coalesce(t.engineer,'')))=lower(btrim(coalesce(p.full_name,''))) or lower(btrim(coalesce(t.supervisor,'')))=lower(btrim(coalesce(p.full_name,''))))
+      where coalesce(t.status,'') not in('مغلق','تم حله','ملغى','closed','resolved','cancelled','canceled') group by p.id) y on y.profile_id=m.profile_id
+    where m.region=r and m.profile_id is not null),'[]'::jsonb),
+  'accounts',coalesce((select jsonb_agg(jsonb_build_object('id',a.id,'full_name',a.full_name,'job_title',a.job_title,'role',a.role) order by a.full_name)
+    from public.fm_wo_assignable() a where cardinality(coalesce(a.regions,'{}'))=0 or r=any(a.regions)),'[]'::jsonb),
+  'work_date',d);
+end $$;
+
+create or replace function public.fm_workforce335_role_save(p jsonb) returns jsonb
+ language plpgsql security definer set search_path=public as $$
+declare r text:=p->>'region'; pid uuid:=(p->>'person_id')::uuid; prof uuid:=nullif(p->>'profile_id','')::uuid; fam text:=coalesce(nullif(p->>'job_family',''),'other'); old public.fm_person_roles335; v public.fm_person_roles335;
+begin
+ if not public.fm233_manage(r) or not exists(select 1 from public.fm_people334 x where x.id=pid and x.region=r) then raise exception 'not allowed'; end if;
+ if fam not in('engineer','supervisor','technician','call_center','report_preparer','accountant','admin','support','other') then raise exception 'invalid job family'; end if;
+ if prof is not null and not exists(select 1 from public.fm_wo_assignable() x where x.id=prof and (cardinality(coalesce(x.regions,'{}'))=0 or r=any(x.regions))) then raise exception 'الحساب المختار خارج نطاق الإسناد'; end if;
+ select * into old from public.fm_person_roles335 where person_id=pid for update;
+ if old.person_id is not null and old.revision is distinct from (p->>'revision')::int then raise exception 'تغير السجل؛ حدّث الصفحة ثم أعد المحاولة'; end if;
+ insert into public.fm_person_roles335(person_id,region,job_family,profile_id,revision,updated_at,updated_by)
+ values(pid,r,fam,prof,coalesce(old.revision,0)+1,now(),auth.uid())
+ on conflict(person_id) do update set region=excluded.region,job_family=excluded.job_family,profile_id=excluded.profile_id,revision=excluded.revision,updated_at=excluded.updated_at,updated_by=excluded.updated_by returning * into v;
+ return to_jsonb(v);
+end $$;
+
+create or replace function public.fm_workforce335_attendance_save(p jsonb) returns jsonb
+ language plpgsql security definer set search_path=public as $$
+declare r text:=p->>'region'; pid uuid:=(p->>'person_id')::uuid; d date:=(p->>'work_date')::date; st text:=p->>'status'; subid uuid:=nullif(p->>'substitute_person_id','')::uuid; old public.fm_attendance335; v public.fm_attendance335; lat double precision:=nullif(p->>'latitude','')::double precision; lon double precision:=nullif(p->>'longitude','')::double precision;
+begin
+ if not public.fm233_manage(r) or not exists(select 1 from public.fm_people334 x where x.id=pid and x.region=r and x.active) then raise exception 'not allowed'; end if;
+ if st not in('present','absent','leave','remote','substitute') then raise exception 'حالة الحضور غير صحيحة'; end if;
+ if subid is not null and not exists(select 1 from public.fm_people334 x where x.id=subid and x.region=r and x.active) then raise exception 'البديل يجب أن يكون فرداً نشطاً في المنطقة نفسها'; end if;
+ if (lat is null)<>(lon is null) then raise exception 'إحداثيات الموقع غير مكتملة'; end if;
+ select * into old from public.fm_attendance335 where person_id=pid and work_date=d for update;
+ if old.id is not null and old.revision is distinct from (p->>'revision')::int then raise exception 'تغير سجل الحضور؛ حدّث الصفحة ثم أعد المحاولة'; end if;
+ insert into public.fm_attendance335(region,person_id,work_date,status,check_in,check_out,site_code,latitude,longitude,substitute_person_id,note,approval_state,entered_by,revision,updated_at)
+ values(r,pid,d,st,nullif(p->>'check_in','')::timestamptz,nullif(p->>'check_out','')::timestamptz,btrim(coalesce(p->>'site_code','')),lat,lon,subid,btrim(coalesce(p->>'note','')),'pending',auth.uid(),coalesce(old.revision,0)+1,now())
+ on conflict(person_id,work_date) do update set status=excluded.status,check_in=excluded.check_in,check_out=excluded.check_out,site_code=excluded.site_code,latitude=excluded.latitude,longitude=excluded.longitude,substitute_person_id=excluded.substitute_person_id,note=excluded.note,approval_state='pending',entered_by=auth.uid(),reviewed_by=null,reviewed_at=null,revision=excluded.revision,updated_at=now() returning * into v;
+ return to_jsonb(v);
+end $$;
+
+create or replace function public.fm_workforce335_attendance_review(i uuid,approved boolean) returns jsonb
+ language plpgsql security definer set search_path=public as $$
+declare v public.fm_attendance335;
+begin
+ select * into v from public.fm_attendance335 where id=i for update;
+ if v.id is null or not public.fm233_manage(v.region) then raise exception 'not allowed to review this attendance'; end if;
+ update public.fm_attendance335 set approval_state=case when approved then 'approved' else 'rejected' end,reviewed_by=auth.uid(),reviewed_at=now(),updated_at=now(),revision=revision+1 where id=i returning * into v;
+ return to_jsonb(v);
+end $$;
+
+create or replace function public.fm_workforce335_import_people(p jsonb) returns jsonb
+ language plpgsql security definer set search_path=public as $$
+declare rowv jsonb; saved jsonb; pid uuid; person_rev int; role_rev int; n int:=0; idx int:=0; r text; emp text; code text;
+begin
+ if jsonb_typeof(p->'rows')<>'array' then raise exception 'ملف الاستيراد غير صالح'; end if;
+ if jsonb_array_length(p->'rows')>5000 then raise exception 'ملف الاستيراد تجاوز 5000 صف'; end if;
+ for rowv in select value from jsonb_array_elements(p->'rows') loop
+  idx:=idx+1;r:=rowv->>'region';emp:=btrim(coalesce(rowv->>'employer',''));code:=btrim(coalesce(rowv->>'employee_code',''));
+  if not public.fm233_manage(r) then raise exception 'الصف %: لا توجد صلاحية للمنطقة',idx; end if;
+  if emp='' or code='' or btrim(coalesce(rowv->>'full_name',''))='' or btrim(coalesce(rowv->>'job_title',''))='' then raise exception 'الصف %: الرقم الوظيفي والاسم وجهة العمل والمسمى مطلوبة',idx; end if;
+  select x.id,x.revision into pid,person_rev from public.fm_people334 x where x.region=r and lower(btrim(x.employer))=lower(emp) and lower(btrim(x.employee_code))=lower(code) for update;
+  begin
+   saved:=public.fm_workforce334_save(jsonb_build_object('kind','person','region',r,'id',pid,'revision',person_rev,'employee_code',code,'full_name',btrim(rowv->>'full_name'),'employer',emp,'job_title',btrim(rowv->>'job_title'),'phone',coalesce(rowv->>'phone',''),'direct_manager',coalesce(rowv->>'direct_manager',''),'team_id',nullif(rowv->>'team_id',''),'active',true,'note','استيراد جماعي V335'));
+   pid:=(saved->>'id')::uuid;
+   select m.revision into role_rev from public.fm_person_roles335 m where m.person_id=pid;
+   perform public.fm_workforce335_role_save(jsonb_build_object('person_id',pid,'region',r,'job_family',coalesce(nullif(rowv->>'job_family',''),'other'),'profile_id',nullif(rowv->>'profile_id',''),'revision',role_rev));
+  exception when others then raise exception 'الصف %: %',idx,sqlerrm; end;
+  n:=n+1;
+ end loop;
+ return jsonb_build_object('saved',n,'atomic',true);
+end $$;
+
+revoke all on function public.fm_workforce335_data(text,date),public.fm_workforce335_role_save(jsonb),public.fm_workforce335_attendance_save(jsonb),public.fm_workforce335_attendance_review(uuid,boolean),public.fm_workforce335_import_people(jsonb) from public,anon;
+grant execute on function public.fm_workforce335_data(text,date),public.fm_workforce335_role_save(jsonb),public.fm_workforce335_attendance_save(jsonb),public.fm_workforce335_attendance_review(uuid,boolean),public.fm_workforce335_import_people(jsonb) to authenticated;
+notify pgrst,'reload schema';
+commit;
+-- V336: permanent building change history with approval-gated invoice adjustments.
+-- Financial adjustment amounts are signed and entered before VAT.
+create table if not exists public.fm_building_history336 (
+  id uuid primary key default gen_random_uuid(),
+  region text not null check (region in ('riyadh','qassim')),
+  building_key text not null,
+  building_name text not null default '',
+  invoice_month text check (invoice_month is null or invoice_month ~ '^\d{4}-\d{2}$'),
+  event_date date not null,
+  event_type text not null default 'general',
+  description text not null,
+  old_values jsonb not null default '{}',
+  new_values jsonb not null default '{}',
+  financial_impact text not null default 'none' check (financial_impact in ('none','base','adjustment')),
+  adjustment_amount numeric(14,2),
+  scope text check (scope is null or scope in ('clean','maint','ac')),
+  contractor text,
+  status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  created_by uuid,
+  created_by_name text,
+  created_at timestamptz not null default now(),
+  reviewed_by uuid,
+  reviewed_by_name text,
+  reviewed_at timestamptz,
+  review_note text
+);
+create index if not exists fm_building_history336_lookup
+  on public.fm_building_history336(region, building_key, event_date desc);
+create index if not exists fm_building_history336_invoice
+  on public.fm_building_history336(region, invoice_month, status)
+  where financial_impact in ('base','adjustment');
+alter table public.fm_building_history336 enable row level security;
+revoke all on public.fm_building_history336 from anon, authenticated;
+
+create or replace function public.fm_building_history336_get(p_region text, p_building_key text default null, p_month text default null)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not (public.fm_bill_can('read',p_region) or public.fm_bill_can('prep',p_region) or public.fm_bill_can('contract',p_region)) then raise exception 'not allowed'; end if;
+  return coalesce((select jsonb_agg(to_jsonb(h) order by h.event_date desc,h.created_at desc)
+    from public.fm_building_history336 h where h.region=p_region
+      and (p_building_key is null or h.building_key=p_building_key)
+      and (p_month is null or h.invoice_month=p_month or h.invoice_month is null)), '[]'::jsonb);
+end $$;
+
+create or replace function public.fm_building_history336_add(p_event jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare r text; k text; mn text; d date; typ text; impact text; amt numeric; sid uuid;
+begin
+  if auth.uid() is null then raise exception 'not allowed'; end if;
+  r:=p_event->>'region'; k:=left(trim(coalesce(p_event->>'building_key','')),220);
+  mn:=nullif(p_event->>'invoice_month',''); d:=nullif(p_event->>'event_date','')::date;
+  typ:=left(trim(coalesce(p_event->>'event_type','general')),40);
+  impact:=coalesce(p_event->>'financial_impact','none');
+  if r is null or r not in ('riyadh','qassim') or k='' or d is null or length(trim(coalesce(p_event->>'description','')))<3 then raise exception 'invalid event'; end if;
+  if mn is not null and mn !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  if not (public.fm_bill_can('read',r) or public.fm_bill_can('prep',r) or public.fm_bill_can('contract',r)) then raise exception 'not allowed'; end if;
+  if impact not in ('none','base','adjustment') then raise exception 'invalid impact'; end if;
+  if impact='base' and mn is null then raise exception 'invalid month'; end if;
+  if impact in ('base','adjustment') and to_char(d,'YYYY-MM')<>mn then raise exception 'invalid month'; end if;
+  if impact='adjustment' then
+    if not public.fm_bill_can('prep',r) or mn is null then raise exception 'not allowed'; end if;
+    amt:=nullif(p_event->>'adjustment_amount','')::numeric;
+    if amt is null or abs(amt)>10000000 or coalesce(p_event->>'scope','') not in ('clean','maint','ac') or length(trim(coalesce(p_event->>'contractor','')))=0 then raise exception 'invalid adjustment'; end if;
+  end if;
+  insert into public.fm_building_history336(region,building_key,building_name,invoice_month,event_date,event_type,description,old_values,new_values,financial_impact,adjustment_amount,scope,contractor,created_by,created_by_name)
+  values(r,k,left(coalesce(p_event->>'building_name',''),300),mn,d,typ,left(trim(p_event->>'description'),2000),coalesce(p_event->'old_values','{}'),coalesce(p_event->'new_values','{}'),impact,amt,nullif(p_event->>'scope',''),nullif(left(trim(coalesce(p_event->>'contractor','')),240),''),auth.uid(),public.fm_me_name()) returning id into sid;
+  return jsonb_build_object('ok',true,'id',sid,'status','pending');
+end $$;
+
+create or replace function public.fm_building_history336_review(p_id uuid,p_decision text,p_note text default '')
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare h public.fm_building_history336;
+begin
+  if auth.uid() is null or p_decision not in ('approved','rejected') then raise exception 'not allowed'; end if;
+  select * into h from public.fm_building_history336 where id=p_id for update;
+  if h.id is null or not public.fm_bill_can('prep',h.region) then raise exception 'not allowed'; end if;
+  if h.status <> 'pending' then raise exception 'invalid status'; end if;
+  if p_decision='approved' and h.invoice_month is not null and public.fm_rate_snap_locked(h.region,h.invoice_month) then raise exception 'snapshot locked'; end if;
+  update public.fm_building_history336 set status=p_decision,reviewed_by=auth.uid(),reviewed_by_name=public.fm_me_name(),reviewed_at=now(),review_note=left(coalesce(p_note,''),1000) where id=p_id;
+  return jsonb_build_object('ok',true,'status',p_decision);
+end $$;
+
+revoke all on function public.fm_building_history336_get(text,text,text), public.fm_building_history336_add(jsonb), public.fm_building_history336_review(uuid,text,text) from public, anon;
+grant execute on function public.fm_building_history336_get(text,text,text), public.fm_building_history336_add(jsonb), public.fm_building_history336_review(uuid,text,text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- V336 workforce classification: separate company staff from subcontractor personnel.
+alter table public.fm_people334 add column if not exists person_type text not null default 'staff'
+  check (person_type in ('staff','contractor'));
+
+create or replace function public.fm_workforce334_save(p jsonb) returns jsonb
+ language plpgsql security definer set search_path=public as $$
+declare k text:=p->>'kind'; r text:=p->>'region'; idv uuid:=nullif(p->>'id','')::uuid;
+ oldv jsonb; newv jsonb; rev int; tid uuid; ptype text;
+begin
+ if not public.fm233_manage(r) then raise exception 'not allowed'; end if;
+ if k='team' then
+  if btrim(coalesce(p->>'name',''))='' or p->>'category' not in('maintenance','light_services','administrative','support') then raise exception 'بيانات الفريق غير مكتملة'; end if;
+  if idv is not null then select to_jsonb(t),t.revision into oldv,rev from public.fm_teams334 t where t.id=idv and t.region=r for update; if oldv is null then raise exception 'not allowed'; end if; if rev is distinct from (p->>'revision')::int then raise exception 'تغير السجل؛ حدّث الصفحة ثم أعد المحاولة'; end if; end if;
+  insert into public.fm_teams334(id,region,name,category,supervisor,planned_headcount,active,note,revision,updated_at,updated_by)
+  values(coalesce(idv,gen_random_uuid()),r,btrim(p->>'name'),p->>'category',btrim(coalesce(p->>'supervisor','')),nullif(p->>'planned_headcount','')::int,coalesce((p->>'active')::boolean,true),btrim(coalesce(p->>'note','')),coalesce(rev,0)+1,now(),auth.uid())
+  on conflict(id) do update set name=excluded.name,category=excluded.category,supervisor=excluded.supervisor,planned_headcount=excluded.planned_headcount,active=excluded.active,note=excluded.note,revision=excluded.revision,updated_at=excluded.updated_at,updated_by=excluded.updated_by returning to_jsonb(fm_teams334.*) into newv;
+ elsif k='person' then
+  tid:=nullif(p->>'team_id','')::uuid; ptype:=coalesce(nullif(p->>'person_type',''),'staff');
+  if ptype not in ('staff','contractor') then raise exception 'تصنيف الفرد غير صحيح'; end if;
+  if tid is not null and not exists(select 1 from public.fm_teams334 t where t.id=tid and t.region=r and t.active) then raise exception 'اختر فريقاً نشطاً من المنطقة نفسها'; end if;
+  if btrim(coalesce(p->>'full_name',''))='' or btrim(coalesce(p->>'employer',''))='' or btrim(coalesce(p->>'job_title',''))='' then raise exception 'الاسم وجهة العمل والمسمى الوظيفي مطلوبة'; end if;
+  oldv:=null;rev:=null;if idv is not null then select to_jsonb(x),x.revision into oldv,rev from public.fm_people334 x where x.id=idv and x.region=r for update; if oldv is null then raise exception 'not allowed'; end if; if rev is distinct from (p->>'revision')::int then raise exception 'تغير السجل؛ حدّث الصفحة ثم أعد المحاولة'; end if; end if;
+  insert into public.fm_people334(id,region,employee_code,full_name,employer,job_title,phone,team_id,direct_manager,active,note,revision,updated_at,updated_by,person_type)
+  values(coalesce(idv,gen_random_uuid()),r,btrim(coalesce(p->>'employee_code','')),btrim(p->>'full_name'),btrim(p->>'employer'),btrim(p->>'job_title'),btrim(coalesce(p->>'phone','')),tid,btrim(coalesce(p->>'direct_manager','')),coalesce((p->>'active')::boolean,true),btrim(coalesce(p->>'note','')),coalesce(rev,0)+1,now(),auth.uid(),ptype)
+  on conflict(id) do update set employee_code=excluded.employee_code,full_name=excluded.full_name,employer=excluded.employer,job_title=excluded.job_title,phone=excluded.phone,team_id=excluded.team_id,direct_manager=excluded.direct_manager,active=excluded.active,note=excluded.note,person_type=excluded.person_type,revision=excluded.revision,updated_at=excluded.updated_at,updated_by=excluded.updated_by returning to_jsonb(fm_people334.*) into newv;
+ elsif k='coverage' then
+  tid:=nullif(p->>'team_id','')::uuid;
+  if not exists(select 1 from public.fm_teams334 t where t.id=tid and t.region=r and t.active) then raise exception 'اختر فريقاً نشطاً من المنطقة نفسها'; end if;
+  if btrim(coalesce(p->>'building_code',''))='' or btrim(coalesce(p->>'building_name',''))='' or p->>'service' not in('maintenance','light_services','administrative','support') then raise exception 'بيانات تغطية المبنى غير مكتملة'; end if;
+  oldv:=null;rev:=null;if idv is not null then select to_jsonb(x),x.revision into oldv,rev from public.fm_coverage334 x where x.id=idv and x.region=r for update; if oldv is null then raise exception 'not allowed'; end if; if rev is distinct from (p->>'revision')::int then raise exception 'تغير السجل؛ حدّث الصفحة ثم أعد المحاولة'; end if; end if;
+  insert into public.fm_coverage334(id,region,team_id,building_code,building_name,education_office,service,active,note,revision,updated_at,updated_by)
+  values(coalesce(idv,gen_random_uuid()),r,tid,btrim(p->>'building_code'),btrim(p->>'building_name'),btrim(coalesce(p->>'education_office','')),p->>'service',coalesce((p->>'active')::boolean,true),btrim(coalesce(p->>'note','')),coalesce(rev,0)+1,now(),auth.uid())
+  on conflict(id) do update set team_id=excluded.team_id,building_code=excluded.building_code,building_name=excluded.building_name,education_office=excluded.education_office,service=excluded.service,active=excluded.active,note=excluded.note,revision=excluded.revision,updated_at=excluded.updated_at,updated_by=excluded.updated_by returning to_jsonb(fm_coverage334.*) into newv;
+ else raise exception 'نوع سجل غير معروف'; end if;
+ insert into public.fm_workforce_events334(entity_type,entity_id,region,old_value,new_value) values(k,coalesce(idv,(newv->>'id')::uuid),r,oldv,newv);
+ return newv;
+end $$;
+revoke all on function public.fm_workforce334_save(jsonb) from public,anon;
+grant execute on function public.fm_workforce334_save(jsonb) to authenticated;
+notify pgrst, 'reload schema';
