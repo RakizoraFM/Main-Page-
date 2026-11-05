@@ -224,7 +224,31 @@ begin
  return outv;
 end $$;
 
-revoke all on function public.fm_workforce337_data(text),public.fm_workforce337_person_save(jsonb),public.fm_workforce337_plan_save(jsonb),public.fm_workforce337_leave_save(jsonb),public.fm_workforce337_leave_review(uuid,text,uuid,text),public.fm_workforce337_qualification_save(jsonb),public.fm_workforce337_move(jsonb) from public,anon;
-grant execute on function public.fm_workforce337_data(text),public.fm_workforce337_person_save(jsonb),public.fm_workforce337_plan_save(jsonb),public.fm_workforce337_leave_save(jsonb),public.fm_workforce337_leave_review(uuid,text,uuid,text),public.fm_workforce337_qualification_save(jsonb),public.fm_workforce337_move(jsonb) to authenticated;
+create or replace function public.fm_workforce337_import_people(p jsonb) returns jsonb
+language plpgsql security definer set search_path=public as $
+declare rowv jsonb; saved jsonb; pid uuid; person_rev int; role_rev int; n int:=0; idx int:=0; r text; emp text; code text; emp_type text;
+begin
+ if auth.uid() is null or jsonb_typeof(p->'rows')<>'array' then raise exception 'ملف الاستيراد غير صالح'; end if;
+ if jsonb_array_length(p->'rows')>5000 then raise exception 'ملف الاستيراد تجاوز 5000 صف'; end if;
+ for rowv in select value from jsonb_array_elements(p->'rows') loop
+  idx:=idx+1;r:=rowv->>'region';emp:=btrim(coalesce(rowv->>'employer',''));code:=btrim(coalesce(rowv->>'employee_code',''));
+  emp_type:=coalesce(nullif(rowv->>'employment_type',''),'other');
+  if not public.fm233_manage(r) then raise exception 'الصف %: لا توجد صلاحية للمنطقة',idx; end if;
+  if emp='' or code='' or btrim(coalesce(rowv->>'full_name',''))='' or btrim(coalesce(rowv->>'job_title',''))='' then raise exception 'الصف %: الرقم الوظيفي والاسم وجهة العمل والمسمى مطلوبة',idx; end if;
+  if coalesce(rowv->>'person_type','staff') not in('staff','contractor') or emp_type not in('permanent','fixed_term','daily','outsourced','other') then raise exception 'الصف %: تصنيف الفرد أو نوع التعاقد غير صحيح',idx; end if;
+  select x.id,x.revision into pid,person_rev from public.fm_people334 x where x.region=r and lower(btrim(x.employer))=lower(emp) and lower(btrim(x.employee_code))=lower(code) for update;
+  begin
+   saved:=public.fm_workforce337_person_save(jsonb_build_object('kind','person','region',r,'id',pid,'revision',person_rev,'employee_code',code,'full_name',btrim(rowv->>'full_name'),'person_type',coalesce(nullif(rowv->>'person_type',''),'staff'),'employer',emp,'department',coalesce(rowv->>'department',''),'job_title',btrim(rowv->>'job_title'),'specialty',coalesce(rowv->>'specialty',''),'employment_type',emp_type,'start_date',nullif(rowv->>'start_date',''),'contract_end_date',nullif(rowv->>'contract_end_date',''),'phone',coalesce(rowv->>'phone',''),'direct_manager',coalesce(rowv->>'direct_manager',''),'team_id',nullif(rowv->>'team_id',''),'active',true,'note','استيراد جماعي V337','change_reason','استيراد جماعي'));
+   pid:=(saved->>'id')::uuid;
+   select m.revision into role_rev from public.fm_person_roles335 m where m.person_id=pid;
+   perform public.fm_workforce335_role_save(jsonb_build_object('person_id',pid,'region',r,'job_family',coalesce(nullif(rowv->>'job_family',''),'other'),'profile_id',nullif(rowv->>'profile_id',''),'revision',role_rev));
+  exception when others then raise exception 'الصف %: %',idx,sqlerrm; end;
+  n:=n+1;
+ end loop;
+ return jsonb_build_object('saved',n,'atomic',true);
+end $;
+
+revoke all on function public.fm_workforce337_data(text),public.fm_workforce337_person_save(jsonb),public.fm_workforce337_plan_save(jsonb),public.fm_workforce337_leave_save(jsonb),public.fm_workforce337_leave_review(uuid,text,uuid,text),public.fm_workforce337_qualification_save(jsonb),public.fm_workforce337_move(jsonb),public.fm_workforce337_import_people(jsonb) from public,anon;
+grant execute on function public.fm_workforce337_data(text),public.fm_workforce337_person_save(jsonb),public.fm_workforce337_plan_save(jsonb),public.fm_workforce337_leave_save(jsonb),public.fm_workforce337_leave_review(uuid,text,uuid,text),public.fm_workforce337_qualification_save(jsonb),public.fm_workforce337_move(jsonb),public.fm_workforce337_import_people(jsonb) to authenticated;
 notify pgrst,'reload schema';
 commit;
