@@ -731,3 +731,15 @@ GitHub Pages publishes the `main` branch. Every merge to `main` goes live within
 
 ## V329 — «delete all tickets» in the register
 - `fm-v329-tk-wipe`: V244 render calls `window.fmV329Decorate(b)` (last in the decorate chain): a red `[data-f329]` «🗑️ مسح كل البلاغات» in `.fm244-bar`, system admin only (role admin + title sysadmin; without the cloud always shown — the device is the only copy). `window.fmV329WipeTickets(btn)`: confirm (what is / is not deleted, count shown now) → prompt «مسح» → optional backup (`fm_wipe_plan` + `fm_wipe_backup_page` in pages of 500, fallback `fm_wipe_backup`) → `fm_wipe(['tickets'], 'تصفير')` (V190 / section 91 tables) → `fm190_clear` / `fm190_wipe_seen` / `__fm190Block`, `__fm328Hard()` (≤ 4 s) and reload; other devices follow through `wipeGate`. No SQL.
+
+## V330 — scoped invoices and subcontract service templates (field F125)
+Section 92 of the single `supabase_setup.sql`. Canonical office/zone/gender/building scope locks after first invoice. Direct deductions are outside the shared KPI/legacy penalty cap (0 means uncapped); overflow allocates proportionally. New bills freeze scope and calculation settings; historical bills are not backfilled. V319 scoped invoice + building annex save atomically. Internal pre330 RPCs are revoked.
+`fm-v330-subcontracts` manages recurring monthly / six-month / on-demand service templates, actual service entries with evidence, optimistic revisions, cancellation audit and one-invoice allocation. Forecast never becomes a payable charge by schedule alone. Monthly stages stay separate; unknown demand and unissued building-price charges are not forecast. Excel exports have formulas and server comparison; PDF uses browser print. No production deployment or SQL execution was performed.
+Local checks: `node tests/integration/billing330.mjs`; browser fixture checks `node tests/integration/browser330.cjs` (isolated UI, no live Supabase). Install PGlite and Playwright externally; no node_modules in deliverables.
+
+
+## V331 — integration file review
+`integrations.html` + `integrations/core.js` / `ui.js`: standalone memory-only staging. No canonical ticket, stock, billing or SQL mutations. Export a session before closing. Tests: `node tests/integration/integration331.cjs`. See docs/V331-INTEGRATION.md for limitations and validation.
+
+## V332 — configurable platform links
+`integrations/connections.js`: browser-local connection profiles (name, stable source, kind, HTTPS website and optional data URL). Read-only CSV/JSON fetch with CORS, no credentials, no redirects, 5 MiB, 20 s. No production data writes or automatic sync. Test `node tests/integration/connections332.cjs`.

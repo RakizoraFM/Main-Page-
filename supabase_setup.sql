@@ -13843,3 +13843,260 @@ revoke all on function public.fm_wipe_parts(), public.fm_wipe_kv_match(text, tex
 revoke all on function public.fm_wipe(text[], text) from public, anon;
 grant execute on function public.fm_wipe(text[], text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 92) V330 — scoped contractor invoices and separate direct / KPI deductions ----------
+begin;
+alter table public.fm_contracts add column if not exists billing_scope jsonb not null default '{}';
+alter table public.fm_contracts add column if not exists billing_scope_key text not null default 'all';
+alter table public.fm_bills add column if not exists scope_snapshot330 jsonb;
+alter table public.fm_bills add column if not exists totals_snapshot330 jsonb;
+alter table public.fm_bills add column if not exists direct_deductions numeric(14,2);
+alter table public.fm_bills add column if not exists kpi_deductions numeric(14,2);
+alter table public.fm_bills add column if not exists legacy_penalties numeric(14,2);
+-- V330 service templates and accepted service quantities for subcontractors in self-operated buildings.
+alter table public.fm_contracts add column if not exists service_template330 jsonb not null default '{}';
+create table if not exists public.fm_service_entries330(
+ id uuid primary key default gen_random_uuid(),contract_id uuid not null references public.fm_contracts(id),
+ building_key text not null,building_name text not null,service_date date not null,quantity numeric(14,3) not null check(quantity>0),
+ unit_price numeric(14,2) not null check(unit_price>=0),evidence text not null check(length(btrim(evidence))>0),
+ bill_id uuid references public.fm_bills(id),cancelled boolean not null default false,revision int not null default 1,at timestamptz not null default now(),by_id uuid default auth.uid()
+);
+create table if not exists public.fm_service_events330(id uuid primary key default gen_random_uuid(),contract_id uuid not null,entry_id uuid not null,at timestamptz not null default now(),by_id uuid default auth.uid(),old_value jsonb,new_value jsonb);
+alter table public.fm_service_entries330 enable row level security;
+alter table public.fm_service_events330 enable row level security;
+drop policy if exists p_service330 on public.fm_service_entries330;
+create policy p_service330 on public.fm_service_entries330 for select to authenticated using(exists(select 1 from public.fm_contracts c where c.id=contract_id and (public.fm_bill_can('read',c.region) or c.contractor_id=auth.uid())));
+drop policy if exists p_service_event330 on public.fm_service_events330;
+create policy p_service_event330 on public.fm_service_events330 for select to authenticated using(exists(select 1 from public.fm_contracts c where c.id=contract_id and public.fm_bill_can('read',c.region)));
+revoke insert,update,delete on public.fm_service_entries330,public.fm_service_events330 from anon,authenticated;
+create or replace function public.fm_service_template330(p jsonb) returns jsonb language plpgsql immutable as $$
+declare price numeric;cycle int;x jsonb;
+begin
+ if p is null or p='{}'::jsonb then return '{}'::jsonb;end if;
+ if jsonb_typeof(p)<>'object' or coalesce(p->>'kind','') not in('monthly','six_monthly','demand') then raise exception 'invalid service template';end if;
+ price:=(p->>'price')::numeric;cycle:=case p->>'kind' when 'monthly' then 1 when 'six_monthly' then 6 else 0 end;
+ if price is null or price::text in('NaN','Infinity','-Infinity') or price<0 or price>100000000 then raise exception 'invalid service price';end if;
+ if (p->>'first_month')!~'^\d{4}-(0[1-9]|1[0-2])$' or p->>'first_month' is null then raise exception 'first service month required';end if;
+ if jsonb_typeof(p->'buildings') is distinct from 'array' or jsonb_array_length(p->'buildings') not between 1 and 12000 then raise exception 'service buildings required';end if;
+ if exists(select 1 from jsonb_array_elements(p->'buildings') b where btrim(coalesce(b->>'key',''))='' or btrim(coalesce(b->>'name',''))='') then raise exception 'invalid service building';end if;
+ if exists(select 1 from jsonb_array_elements(p->'buildings') b group by b->>'key' having count(*)>1) then raise exception 'duplicate service building';end if;
+ return jsonb_build_object('kind',p->>'kind','cycle_months',cycle,'price',round(price,2),'first_month',p->>'first_month','service',left(coalesce(p->>'service','خدمة مقاول باطن'),160),'unit',left(coalesce(p->>'unit','زيارة'),40),'operator',left(coalesce(p->>'operator','تشغيل ذاتي'),160),'buildings',p->'buildings');
+end $$;
+create or replace function public.fm_service_entry330_save(p jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
+declare c public.fm_contracts;old public.fm_service_entries330;v public.fm_service_entries330;k uuid:=nullif(p->>'id','')::uuid;b jsonb;q numeric;price numeric;
+begin
+ select * into c from public.fm_contracts where id=(p->>'contract_id')::uuid;
+ if auth.uid() is null or coalesce(public.fm_role(),'pending')='pending' or c.id is null or not c.active or not public.fm_mod('bill') or not public.fm_bill_can('prep',c.region) then raise exception 'not allowed';end if;
+ if (p->>'service_date')::date>(now() at time zone 'Asia/Riyadh')::date then raise exception 'future service is forecast only';end if;
+ if k is not null then select * into old from public.fm_service_entries330 where id=k for update;
+  if not found or old.building_key is distinct from p->>'building_key' or old.contract_id<>c.id or old.bill_id is not null or old.revision is distinct from (p->>'revision')::int then raise exception 'entry billed or stale';end if;
+ end if;
+ select x into b from jsonb_array_elements(coalesce(c.service_template330->'buildings','[]')) x where x->>'key'=p->>'building_key';
+ if b is null then raise exception 'building outside service contract';end if;
+ if btrim(coalesce(p->>'evidence',''))='' then raise exception 'service evidence required';end if;
+ q:=(p->>'quantity')::numeric;price:=coalesce(nullif(p->>'unit_price','')::numeric,(c.service_template330->>'price')::numeric);
+ if q is null or price is null or q::text in('NaN','Infinity','-Infinity') or price::text in('NaN','Infinity','-Infinity') or q<=0 or q>100000000 or price<0 or price>100000000 then raise exception 'invalid service quantity or price';end if;
+ insert into public.fm_service_entries330(id,contract_id,building_key,building_name,service_date,quantity,unit_price,evidence,cancelled,revision,by_id)
+ values(coalesce(k,gen_random_uuid()),c.id,b->>'key',b->>'name',(p->>'service_date')::date,q,price,left(btrim(p->>'evidence'),2000),coalesce((p->>'cancelled')::boolean,false),coalesce(old.revision,0)+1,auth.uid())
+ on conflict(id) do update set service_date=excluded.service_date,quantity=excluded.quantity,unit_price=excluded.unit_price,evidence=excluded.evidence,cancelled=excluded.cancelled,revision=excluded.revision,at=now(),by_id=auth.uid() returning * into v;
+ insert into public.fm_service_events330(contract_id,entry_id,old_value,new_value) values(c.id,v.id,case when old.id is not null then to_jsonb(old) end,to_jsonb(v));return to_jsonb(v);
+end $$;
+create or replace function public.fm_subcontract_report330(m text) returns jsonb language plpgsql stable security definer set search_path=public as $$
+begin
+ if auth.uid() is null or coalesce(public.fm_role(),'pending')='pending' or not public.fm_mod('bill') then raise exception 'not allowed';end if;
+ if m!~'^\d{4}-(0[1-9]|1[0-2])$' then raise exception 'invalid month';end if;
+ return jsonb_build_object('contracts',coalesce((select jsonb_agg(to_jsonb(c) order by c.contractor_name,c.name) from public.fm_contracts c where public.fm_bill_can('read',c.region) or public.fm_bill_can('prep',c.region) or c.contractor_id=auth.uid()),'[]'),
+ 'bills',coalesce((select jsonb_agg(to_jsonb(b)) from public.fm_bills b join public.fm_contracts c on c.id=b.contract_id where b.month=m and(public.fm_bill_can('read',c.region) or public.fm_bill_can('prep',c.region) or c.contractor_id=auth.uid())),'[]'),
+ 'entries',coalesce((select jsonb_agg(to_jsonb(e) order by e.service_date,e.id) from public.fm_service_entries330 e join public.fm_contracts c on c.id=e.contract_id where to_char(e.service_date,'YYYY-MM')=m and(public.fm_bill_can('read',c.region) or public.fm_bill_can('prep',c.region) or c.contractor_id=auth.uid())),'[]'));
+end $$;
+create or replace function public.fm_service_unbill330() returns trigger language plpgsql security definer set search_path=public as $$
+begin if new.status='cancelled' and old.status<>'cancelled' then update public.fm_service_entries330 set bill_id=null where bill_id=new.id;end if;return new;end $$;
+drop trigger if exists fm_service_unbill330 on public.fm_bills;
+create trigger fm_service_unbill330 after update of status on public.fm_bills for each row execute function public.fm_service_unbill330();
+revoke all on function public.fm_service_template330(jsonb),public.fm_service_unbill330() from public,anon,authenticated;
+revoke all on function public.fm_service_entry330_save(jsonb),public.fm_subcontract_report330(text) from public,anon;
+grant execute on function public.fm_service_entry330_save(jsonb),public.fm_subcontract_report330(text) to authenticated;
+
+-- Historic bills are deliberately not reclassified or recalculated.
+create or replace function public.fm_billing_scope330(p jsonb) returns jsonb language plpgsql immutable set search_path=public as $$
+declare c jsonb:='{}'; k text; v jsonb; ar jsonb; label text;
+begin
+ if p is null or p='{}'::jsonb then p:='{}';end if;
+ if jsonb_typeof(p)<>'object' then raise exception 'invalid billing scope';end if;
+ for k in select unnest(array['office','zone','gender','building_keys']) loop
+  v:=coalesce(p->'criteria'->k,p->k,'[]');
+  if jsonb_typeof(v)<>'array' or jsonb_array_length(v)>(case when k='building_keys' then 12000 else 100 end) then raise exception 'invalid billing scope';end if;
+  if exists(select 1 from jsonb_array_elements(v) x where jsonb_typeof(x)<>'string' or length(btrim(x#>>'{}')) not between 1 and 160) then raise exception 'invalid billing scope';end if;
+  if k='gender' and exists(select 1 from jsonb_array_elements_text(v) x where x not in('بنين','بنات','mix','—')) then raise exception 'invalid billing gender';end if;
+  select coalesce(jsonb_agg(x order by x),'[]') into ar from(select distinct btrim(x) x from jsonb_array_elements_text(v) x)t;
+  c:=c||jsonb_build_object(k,ar);
+ end loop;
+ label:=left(btrim(coalesce(p->>'label','')),200);
+ if c='{"office":[],"zone":[],"gender":[],"building_keys":[]}'::jsonb then return jsonb_build_object('key','all','label',coalesce(nullif(label,''),'كامل نطاق المنطقة'),'criteria',c);end if;
+ if label='' then label:=concat_ws(' / ',nullif(array_to_string(array(select jsonb_array_elements_text(c->'office')),'، '),''),nullif(array_to_string(array(select jsonb_array_elements_text(c->'zone')),'، '),''),nullif(array_to_string(array(select jsonb_array_elements_text(c->'gender')),'، '),''));end if;
+ return jsonb_build_object('key',md5(c::text),'label',label,'criteria',c);
+end $$;
+create or replace function public.fm_scope_match330(b jsonb,s jsonb) returns boolean language sql immutable as $$
+ select b is not null and not exists(select 1 from jsonb_each(coalesce(s->'criteria','{}')) e where jsonb_array_length(e.value)>0 and not(e.value ? coalesce(nullif(b->>(case when e.key='building_keys' then 'key' else e.key end),''),'—'))) $$;
+create or replace function public.fm_bill_building330(r text,m text,k text,part text) returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare cur public.fm_rate_snaps;prev public.fm_rate_snaps;b jsonb;has_current boolean;
+begin
+ select * into cur from public.fm_rate_snaps where region=r and month=m;
+ select * into prev from public.fm_rate_snaps where region=r and month=to_char((m||'-01')::date-interval '1 month','YYYY-MM');
+ select exists(select 1 from jsonb_array_elements(coalesce(cur.rows,'[]')) x where x->>'key'=k) into has_current;
+ if coalesce(part,'') in('','n') then
+  if part='n' and coalesce((cur.meta->'eff'->>k)::int,1)<=1 then return null;end if;
+  select x into b from jsonb_array_elements(coalesce(cur.rows,'[]')) x where x->>'key'=k;
+ elsif part='a' and has_current and coalesce((cur.meta->'eff'->>k)::int,1)>1 then
+  select x into b from jsonb_array_elements(coalesce(prev.rows,'[]')) x where x->>'key'=k;
+ elsif part='g' and not has_current and coalesce((cur.meta->'gone'->>k)::int,0)>0 then
+  select x into b from jsonb_array_elements(coalesce(prev.rows,'[]')) x where x->>'key'=k;
+ end if;
+ return b;
+end $$;
+do $$ begin
+ if to_regprocedure('public.fm_contract_save_pre330(jsonb)') is null then alter function public.fm_contract_save(jsonb) rename to fm_contract_save_pre330;end if;
+ if to_regprocedure('public.fm_bill_save_pre330(jsonb)') is null then alter function public.fm_bill_save(jsonb) rename to fm_bill_save_pre330;end if;
+ if to_regprocedure('public.fm_bill_build_pre330(uuid,text,uuid)') is null then alter function public.fm_bill_build(uuid,text,uuid) rename to fm_bill_build_pre330;end if;
+ if to_regprocedure('public.fm_rate_annex_save_pre330(uuid,jsonb)') is null then alter function public.fm_rate_annex_save(uuid,jsonb) rename to fm_rate_annex_save_pre330;end if;
+end $$;
+create or replace function public.fm_contract_save(p jsonb) returns uuid language plpgsql security definer set search_path=public as $$
+declare old public.fm_contracts;s jsonb;k uuid:=nullif(p->>'id','')::uuid;out_id uuid;
+begin
+ if auth.uid() is null or coalesce(public.fm_role(),'pending')='pending' or not public.fm_bill_can('contract',null) or not public.fm_mod('bill') then raise exception 'not allowed';end if;
+ if k is not null then select * into old from public.fm_contracts where id=k for update;if not found then raise exception 'unknown contract';end if;p:=to_jsonb(old)||p;end if;
+ s:=public.fm_billing_scope330(coalesce(p->'billing_scope','{}'));perform public.fm_service_template330(coalesce(p->'service_template330','{}'));
+ if s->>'key'<>'all' and coalesce(p->>'region','') not in('riyadh','qassim') then raise exception 'scope region required';end if;
+ if old.id is not null and exists(select 1 from public.fm_bills where contract_id=old.id) and
+ (s is distinct from public.fm_billing_scope330(old.billing_scope) or nullif(p->>'contractor_id','')::uuid is distinct from old.contractor_id or p->>'contractor_name' is distinct from old.contractor_name or nullif(p->>'region','') is distinct from old.region) then raise exception 'billed contract scope is locked; create a separate contract';end if;
+ if coalesce(nullif(p->>'penalty_cap_pct','')::numeric,10) not between 0 and 100 then raise exception 'invalid cap';end if;
+ out_id:=public.fm_contract_save_pre330(p);
+ update public.fm_contracts set billing_scope=s,billing_scope_key=s->>'key',service_template330=public.fm_service_template330(coalesce(p->'service_template330','{}')) where id=out_id;
+ return out_id;
+end $$;
+-- Existing cap applies to KPI + legacy penalties only. Direct deductions never consume it.
+create or replace function public.fm_bill_totals(p_lines jsonb,c public.fm_contracts) returns jsonb language plpgsql immutable as $$
+declare g numeric:=0;d numeric:=0;kp numeric:=0;pn numeric:=0;x jsonb;a numeric;ap numeric;ak numeric;cap numeric;ded numeric;net numeric;vat numeric;ret numeric;
+begin
+ if jsonb_typeof(coalesce(p_lines,'[]'))<>'array' then raise exception 'invalid lines';end if;
+ for x in select * from jsonb_array_elements(coalesce(p_lines,'[]')) loop
+  a:=coalesce(nullif(x->>'a','')::numeric,0);
+  if a::text in('NaN','Infinity','-Infinity') or a<0 then raise exception 'invalid line';end if;
+  case x->>'k' when 'fixed','wo','mat','add' then g:=g+a;when 'ded' then d:=d+a;when 'kpi' then kp:=kp+a;when 'pen' then pn:=pn+a;else raise exception 'invalid line';end case;
+ end loop;
+ g:=round(g,2);d:=round(d,2);kp:=round(kp,2);pn:=round(pn,2);
+ cap:=case when coalesce(c.penalty_cap_pct,0)>0 then round(g*c.penalty_cap_pct/100,2) end;
+ ap:=least(kp+pn,coalesce(cap,kp+pn));ak:=case when kp+pn>0 then round(ap*kp/(kp+pn),2) else 0 end;
+ ded:=d+ap;net:=g-ded;
+ if net<0 then raise exception 'deductions exceed invoice gross';end if;
+ vat:=round(net*coalesce(c.vat_pct,0)/100,2);ret:=round(net*coalesce(c.retention_pct,0)/100,2);
+ return jsonb_build_object('gross',g,'direct',d,'kpi_requested',kp,'kpi',ak,'pen_requested',pn,'pen',ap-ak,'cap',cap,'deductions',ded,'net',net,'vat',vat,'retention',ret,'total',round(net+vat-ret,2),'vat_pct',c.vat_pct,'retention_pct',c.retention_pct,'penalty_cap_pct',c.penalty_cap_pct);
+end $$;
+create or replace function public.fm_bill_wo_scope330(c public.fm_contracts,w public.work_orders,m text) returns boolean language plpgsql stable security definer set search_path=public as $$
+declare b jsonb;s jsonb:=public.fm_billing_scope330(c.billing_scope);dt int;eff int;gone int;
+begin
+ if not((w.assignee=c.contractor_id or(c.contractor_id is null and w.assignee_name=c.contractor_name)) and(c.region is null or w.region=c.region)) then return false;end if;
+ if s->>'key'='all' then return true;end if;
+ dt:=extract(day from coalesce(w.closed_at,w.updated_at) at time zone 'Asia/Riyadh');
+ for b in select x from public.fm_rate_snaps sn cross join lateral jsonb_array_elements(sn.rows) x where sn.region=c.region and sn.month=m loop
+  if not(public.fm_scope_match330(b,s)) then continue;end if;
+  if (nullif(w.building_id,'') is not null and (b->'sids' ? w.building_id or b->>'id'=w.building_id)) or (w.building_id is null and b->>'name'=w.school) then
+   select coalesce((meta->'eff'->>(b->>'key'))::int,1) into eff from public.fm_rate_snaps where region=c.region and month=m;
+   if dt>=coalesce(eff,1) then return true;end if;
+  end if;
+ end loop;
+ for b in select x from public.fm_rate_snaps sn cross join lateral jsonb_array_elements(sn.rows) x where sn.region=c.region and sn.month=to_char((m||'-01')::date-interval '1 month','YYYY-MM') loop
+  if not public.fm_scope_match330(b,s) then continue;end if;
+  if (nullif(w.building_id,'') is not null and(b->'sids' ? w.building_id or b->>'id'=w.building_id)) or(w.building_id is null and b->>'name'=w.school) then
+   select coalesce((meta->'eff'->>(b->>'key'))::int,1),coalesce((meta->'gone'->>(b->>'key'))::int,0) into eff,gone from public.fm_rate_snaps where region=c.region and month=m;
+   if dt<coalesce(eff,1) or dt<=coalesce(gone,0) then return true;end if;
+  end if;
+ end loop;return false;
+end $$;
+create or replace function public.fm_bill_build(p_contract uuid,p_month text,p_bill uuid) returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare c public.fm_contracts;L jsonb;e public.fm_service_entries330;out_l jsonb:='[]';x jsonb;w public.work_orders;
+begin
+ select * into c from public.fm_contracts where id=p_contract;
+ L:=public.fm_bill_build_pre330(p_contract,p_month,p_bill);
+ if c.service_template330<>'{}'::jsonb then
+  for e in select * from public.fm_service_entries330 where contract_id=c.id and not cancelled and to_char(service_date,'YYYY-MM')=p_month and(bill_id is null or bill_id=p_bill) order by service_date,id loop
+   out_l:=out_l||jsonb_build_array(jsonb_build_object('k','fixed','t',(c.service_template330->>'service')||' — '||e.building_name||' — '||e.service_date,'q',e.quantity,'p',e.unit_price,'a',round(e.quantity*e.unit_price,2),'service_entry_id',e.id,'ref','svc330','school',e.building_name));
+  end loop;return out_l;
+ end if;
+ for x in select * from jsonb_array_elements(L) loop
+  if x->>'k' in('wo','mat') then select * into w from public.work_orders where id=nullif(x->>'wo_id','')::uuid or code=x->>'ref';
+   if not found or not public.fm_bill_wo_scope330(c,w,p_month) then continue;end if;
+  end if;out_l:=out_l||jsonb_build_array(x);
+ end loop;return out_l;
+end $$;
+create or replace function public.fm_bill_save(p jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
+declare bl public.fm_bills;c public.fm_contracts;k uuid:=nullif(p->>'id','')::uuid;L jsonb:='[]';compat jsonb:='[]';x jsonb;q numeric;pr numeric;t jsonb;res jsonb;w public.work_orders;se public.fm_service_entries330;sc jsonb;m text;
+begin
+ if auth.uid() is null or coalesce(public.fm_role(),'pending')='pending' or not public.fm_mod('bill') then raise exception 'not allowed';end if;
+ if k is not null then
+  select * into bl from public.fm_bills where id=k for update;if not found then raise exception 'not found';end if;
+  if p ? 'expected_updated_at' and bl.updated_at is distinct from nullif(p->>'expected_updated_at','')::timestamptz then raise exception 'stale bill';end if;
+  if nullif(p->>'contract_id','')::uuid is not null and (p->>'contract_id')::uuid<>bl.contract_id then raise exception 'contract mismatch';end if;
+  select * into c from public.fm_contracts where id=bl.contract_id;m:=bl.month;
+ else select * into c from public.fm_contracts where id=nullif(p->>'contract_id','')::uuid;m:=p->>'month';end if;
+ if c.id is null or not public.fm_bill_can('prep',c.region) then raise exception 'not allowed';end if;
+ if m!~'^\d{4}-(0[1-9]|1[0-2])$' or m is null then raise exception 'invalid month';end if;
+ if jsonb_typeof(coalesce(p->'lines','[]'))<>'array' or jsonb_array_length(coalesce(p->'lines','[]'))>2000 then raise exception 'invalid lines';end if;
+ for x in select * from jsonb_array_elements(coalesce(p->'lines','[]')) loop
+  if x->>'k' not in('fixed','wo','mat','add','ded','kpi','pen') or x->>'k' is null then raise exception 'invalid line';end if;
+  q:=coalesce(nullif(x->>'q','')::numeric,1);pr:=coalesce(nullif(x->>'p','')::numeric,0);
+  if q::text in('NaN','Infinity','-Infinity') or pr::text in('NaN','Infinity','-Infinity') or q<0 or q>100000000 or pr<0 or pr>100000000 then raise exception 'invalid line';end if;
+  if x->>'k' in('add','ded','kpi','pen') and btrim(coalesce(x->>'t',''))='' then raise exception 'line description required';end if;
+  if x->>'k'='wo' and c.service_template330<>'{}'::jsonb then raise exception 'service contract bills accepted entries only';end if;
+  if x ? 'service_entry_id' then
+   select * into se from public.fm_service_entries330 where id=(x->>'service_entry_id')::uuid for update;
+   if not found or se.cancelled or se.contract_id<>c.id or to_char(se.service_date,'YYYY-MM')<>m or(se.bill_id is not null and se.bill_id is distinct from k) or x->>'k'<>'fixed' or q<>se.quantity or pr<>se.unit_price then raise exception 'service entry mismatch or already billed';end if;
+  end if;
+  if x->>'k'='wo' then select * into w from public.work_orders where id=nullif(x->>'wo_id','')::uuid;
+   if not found or w.status<>'closed' or to_char(coalesce(w.closed_at,w.updated_at) at time zone 'Asia/Riyadh','YYYY-MM')<>m or not public.fm_bill_wo_scope330(c,w,m) then raise exception 'work order outside billing scope';end if;
+  end if;
+  if x->>'k'='mat' and public.fm_billing_scope330(c.billing_scope)->>'key'<>'all' then
+   select * into w from public.work_orders where code=x->>'ref';
+   if not found or w.status<>'closed' or to_char(coalesce(w.closed_at,w.updated_at) at time zone 'Asia/Riyadh','YYYY-MM')<>m or not public.fm_bill_wo_scope330(c,w,m) then raise exception 'material outside billing scope';end if;
+  end if;
+  x:=x-'a'||jsonb_build_object('q',q,'p',pr,'a',round(q*pr,2),'t',left(coalesce(x->>'t',''),300));L:=L||jsonb_build_array(x);
+  compat:=compat||jsonb_build_array(case when x->>'k'='kpi' then x||'{"k":"pen"}'::jsonb else x end);
+ end loop;
+ if exists(select 1 from jsonb_array_elements(L) v(e) where v.e ? 'service_entry_id' group by v.e->>'service_entry_id' having count(*)>1) then raise exception 'duplicate service entry';end if;
+ t:=public.fm_bill_totals(L,c);res:=public.fm_bill_save_pre330(p||jsonb_build_object('lines',compat));k:=(res->>'id')::uuid;
+ update public.fm_service_entries330 set bill_id=null where bill_id=k;
+ update public.fm_service_entries330 set bill_id=k where id in(select (v.e->>'service_entry_id')::uuid from jsonb_array_elements(L) v(e) where v.e ? 'service_entry_id');
+ sc:=public.fm_billing_scope330(c.billing_scope)||jsonb_build_object('region',c.region,'contractor_name',c.contractor_name,'contractor_id',c.contractor_id,'contract_name',c.name);
+ update public.fm_bills set lines=L,scope_snapshot330=coalesce(scope_snapshot330,sc),totals_snapshot330=t,direct_deductions=(t->>'direct')::numeric,kpi_deductions=(t->>'kpi')::numeric,legacy_penalties=(t->>'pen')::numeric where id=k;
+ return jsonb_build_object('id',k)||t;
+end $$;
+create or replace function public.fm_rate_annex_save(p_bill uuid,p jsonb) returns boolean language plpgsql security definer set search_path=public as $$
+declare bl public.fm_bills;c public.fm_contracts;s jsonb;x jsonb;b jsonb;
+begin
+ select * into bl from public.fm_bills where id=p_bill for update;select * into c from public.fm_contracts where id=bl.contract_id;
+ if c.id is null or auth.uid() is null or not public.fm_bill_can('prep',c.region) then raise exception 'not allowed';end if;
+ s:=public.fm_billing_scope330(c.billing_scope);
+ if s->>'key'<>'all' then
+  if jsonb_typeof(p->'rows') is distinct from 'array' then raise exception 'invalid rows';end if;
+  for x in select * from jsonb_array_elements(p->'rows') loop
+   b:=public.fm_bill_building330(c.region,bl.month,x->>'k',x->>'pt');
+   if b is null or not public.fm_scope_match330(b,s) then raise exception 'building outside billing scope or missing monthly snapshot';end if;
+  end loop;
+ end if;
+ return public.fm_rate_annex_save_pre330(p_bill,p);
+end $$;
+-- Invoice + building annex update is atomic. Failed annex validation rolls the invoice back.
+create or replace function public.fm_rate_bill330(p jsonb,p_annex jsonb) returns jsonb language plpgsql security definer set search_path=public as $$
+declare c public.fm_contracts;res jsonb;
+begin
+ select * into c from public.fm_contracts where id=(p->>'contract_id')::uuid;
+ if c.id is null or not public.fm_bill_can('prep',c.region) then raise exception 'not allowed';end if;
+ perform pg_advisory_xact_lock(330,hashtext(c.id::text||':'||coalesce(p->>'month','')));
+ res:=public.fm_bill_save(p);perform public.fm_rate_annex_save((res->>'id')::uuid,p_annex);return res;
+end $$;
+revoke all on function public.fm_contract_save_pre330(jsonb),public.fm_bill_save_pre330(jsonb),public.fm_bill_build_pre330(uuid,text,uuid),public.fm_rate_annex_save_pre330(uuid,jsonb),public.fm_bill_building330(text,text,text,text),public.fm_bill_wo_scope330(public.fm_contracts,public.work_orders,text) from public,anon,authenticated;
+revoke all on function public.fm_bill_totals(jsonb,public.fm_contracts),public.fm_scope_match330(jsonb,jsonb) from public,anon,authenticated;
+revoke all on function public.fm_billing_scope330(jsonb),public.fm_contract_save(jsonb),public.fm_bill_save(jsonb),public.fm_bill_build(uuid,text,uuid),public.fm_rate_annex_save(uuid,jsonb),public.fm_rate_bill330(jsonb,jsonb) from public,anon;
+grant execute on function public.fm_billing_scope330(jsonb),public.fm_contract_save(jsonb),public.fm_bill_save(jsonb),public.fm_bill_build(uuid,text,uuid),public.fm_rate_annex_save(uuid,jsonb),public.fm_rate_bill330(jsonb,jsonb) to authenticated;
+notify pgrst,'reload schema';
+commit;
