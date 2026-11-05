@@ -14629,7 +14629,7 @@ declare r text:=p->>'region'; pid uuid:=nullif(p->>'person_id','')::uuid; sid uu
 begin
  if auth.uid() is null or not public.fm233_manage(r) then raise exception 'not allowed'; end if;
  if pid is null or d1 is null or d2 is null or d2<d1 or typ not in('annual','personal','sick','other') then raise exception 'بيانات الإجازة غير صحيحة'; end if;
- if not exists(select 1 from public.fm_people334 x where x.id=pid and x.region=r and x.active) then raise exception 'الفرد غير نشط أو خارج المنطقة'; end if;
+ perform 1 from public.fm_people334 x where x.id=pid and x.region=r and x.active for update; if not found then raise exception 'الفرد غير نشط أو خارج المنطقة'; end if;
  if sid is not null and (sid=pid or not exists(select 1 from public.fm_people334 x where x.id=sid and x.region=r and x.active)) then raise exception 'اختر بديلاً نشطاً من المنطقة نفسها'; end if;
  if exists(select 1 from public.fm_workforce337_leaves x where x.person_id=pid and x.status in('pending','approved') and daterange(x.starts_on,x.ends_on,'[]') && daterange(d1,d2,'[]')) then raise exception 'يوجد طلب إجازة متداخل للفرد'; end if;
  insert into public.fm_workforce337_leaves(region,person_id,leave_type,starts_on,ends_on,substitute_person_id,note)
@@ -14644,7 +14644,7 @@ begin
  if auth.uid() is null or p_decision not in('approved','rejected','cancelled') then raise exception 'not allowed'; end if;
  select * into x from public.fm_workforce337_leaves where id=p_id for update;
  if x.id is null or not public.fm233_manage(x.region) or x.status<>'pending' then raise exception 'not allowed'; end if;
- if p_decision='approved' and p_substitute is not null and (p_substitute=x.person_id or not exists(select 1 from public.fm_people334 p where p.id=p_substitute and p.region=x.region and p.active)) then raise exception 'البديل غير صالح'; end if;
+ if p_decision='approved' and p_substitute is not null and (p_substitute=x.person_id or not exists(select 1 from public.fm_people334 p where p.id=p_substitute and p.region=x.region and p.active) or exists(select 1 from public.fm_workforce337_leaves l where l.person_id=p_substitute and l.status in('pending','approved') and daterange(l.starts_on,l.ends_on,'[]') && daterange(x.starts_on,x.ends_on,'[]'))) then raise exception 'البديل غير صالح أو لديه إجازة متداخلة'; end if;
  update public.fm_workforce337_leaves set status=p_decision,substitute_person_id=coalesce(p_substitute,substitute_person_id),reviewed_at=now(),reviewed_by=auth.uid(),review_note=left(coalesce(p_note,''),1000),revision=revision+1 where id=p_id returning * into x;
  insert into public.fm_workforce337_events(region,person_id,event_type,effective_date,reason,old_value,new_value)
  values(x.region,x.person_id,'leave_review',x.starts_on,'مراجعة طلب الإجازة: '||p_decision,to_jsonb(x),jsonb_build_object('leave_id',x.id,'status',x.status,'substitute_person_id',x.substitute_person_id));
