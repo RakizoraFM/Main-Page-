@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V326">
+<meta name="fm-version" content="V327">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V326',date:'2026-11-04',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V327',date:'2026-11-04',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V327',d:'2026-11-05',t:'فحص البلاغات في السحابة بلا انتهاء مهلة',i:['بطاقة «🧹 البلاغات المحفوظة على هذا الجهاز» كانت تعرض «Error» لأن عدّ كل البلاغات تجاوز مهلة الخادم؛ الآن تفحص وجود بلاغ واحد على الأقل في كل منطقة ثم عدداً تقريبياً.']},
 {v:'V326',d:'2026-11-05',t:'من أين تأتي البلاغات بعد التصفير',i:['بطاقة «🧹 البلاغات المحفوظة على هذا الجهاز» تعرض بجانب عدد بلاغات الجهاز عددها في السحابة (الرياض / القصيم) وتاريخ آخر تصفير وأجزاءه، فيتضح إن كانت البلاغات ما زالت في السحابة أم نسخة محلية قديمة.']},
 {v:'V325',d:'2026-11-05',t:'تصفير البلاغات يشمل كل جداولها',i:['«تصفير البلاغات» يحذف الآن أيضاً: قائمة قبل تجاوز المهلة، تصعيدات البلاغات، إيقاف المهلة، مراجعة إغلاق الطارئ، تدقيق البلاغات، الإسناد البديل، أسباب الاختراق، إيصالات الاستيراد وأرقام الملخص الأسبوعي (القسم 91 من supabase_setup.sql).','على كل جهاز تُحذف مع البلاغات متابعات المتأخرات والبيانات المحلية المرتبطة بها.','بطاقة «🧹 البلاغات المحفوظة على هذا الجهاز» في الإعدادات ← السحابة: حذف النسخة المحلية من جهاز ما زال يعرض بلاغات قديمة.']},
 {v:'V324',d:'2026-11-05',t:'مزامنة قاعدة المباني بين أجهزة مدير النظام',i:['جهاز مدير النظام كان يحتفظ بنسخته المحلية من قاعدة المباني والإعدادات المشتركة ولا يأخذ نسخة السحابة، فيظهر في الجوال أرقام قديمة. الآن يأخذ النسخة الأحدث من السحابة بنفسه.','لا يرفع جهاز نسخة أقدم فوق نسخة أحدث على السحابة؛ تُحمّل الأحدث بدلها وتُحفظ نسخته ويمكن استرجاعها ورفعها («↩️ استرجاع نسخة هذا الجهاز»).']},
@@ -44398,12 +44399,17 @@ window.fmV325ClearDevice=clearDevice;
  c.insertAdjacentHTML('beforeend','<div data-cloud style="margin-top:8px;font-size:13px;color:#334155">☁️ جارٍ عدّ البلاغات في السحابة…</div>');cloudCount().then(t=>{const e=c.querySelector('[data-cloud]');if(!e)return;e.innerHTML=t})});
 /* V326: where do the tickets come from — the cloud counts next to the device count */
 async function cloudCount(){try{const C=window.FMCloud;if(!C||!C.engClient||!(C.state&&C.state.on))return '☁️ السحابة غير متصلة — البلاغات الظاهرة من هذا الجهاز فقط.';
-  const db=await C.engClient(),q=r=>{let x=db.from('tickets').select('id',{count:'exact',head:true});if(r)x=x.eq('region',r);return x};
-  const [all,ry,qs]=await Promise.all([q(),q('riyadh'),q('qassim')]);if(all.error)throw Error(all.error.message);
-  const n=all.count||0,w=await db.from('fm_settings').select('value').eq('key','wipe').maybeSingle().then(r=>r.data&&r.data.value).catch(()=>null);
+  /* V327: an exact count over every ticket can pass the statement timeout (an empty «Error»); check each region for at
+     least one row first, then try an estimated count for the number */
+  const S=v=>String(v??'').trim(),db=await C.engClient(),em=e=>(e&&e.code==='57014')?'انتهت مهلة الاستعلام على الخادم':S(e&&(e.message||e.details||e.hint||e.code))||'انتهت مهلة الاستعلام';
+  const one=async r=>{const x=await db.from('tickets').select('ticket_id').eq('region',r).limit(1);if(x.error)throw Error(em(x.error));return (x.data||[]).length>0};
+  const cnt=async r=>{try{const x=await db.from('tickets').select('ticket_id',{count:'planned',head:true}).eq('region',r);return x.error?null:x.count}catch(e){return null}};
+  const [ry,qs]=await Promise.all([one('riyadh'),one('qassim')]);
+  const w=await db.from('fm_settings').select('value').eq('key','wipe').maybeSingle().then(r=>r.data&&r.data.value).catch(()=>null);
   const last=w&&w.at?' • آخر تصفير: '+new Date(w.at).toLocaleString('ar-SA-u-ca-gregory',{dateStyle:'medium',timeStyle:'short'})+' ('+((w.parts||[]).join('، ')||'—')+')':' • لم يُسجَّل تصفير';
-  return n?`☁️ في السحابة الآن <b>${n.toLocaleString('en-US')}</b> بلاغ (الرياض ${(ry.count||0).toLocaleString('en-US')} • القصيم ${(qs.count||0).toLocaleString('en-US')})${last}. حذفها من هذا الجهاز لن يكفي — ستُقرأ من السحابة مرة أخرى؛ استخدم «تصفير بيانات المنصة» مع «البلاغات».`
-   :`☁️ لا توجد بلاغات في السحابة${last}. ما يظهر على هذا الجهاز نسخة قديمة محلية — احذفها بالزر أعلاه.`}catch(e){return '☁️ تعذّر عدّ البلاغات في السحابة: '+String(e.message||e)}}
+  if(!ry&&!qs)return `☁️ لا توجد بلاغات في السحابة${last}. ما يظهر على هذا الجهاز نسخة قديمة محلية — احذفها بالزر أعلاه.`;
+  const [nr,nq]=await Promise.all([ry?cnt('riyadh'):0,qs?cnt('qassim'):0]),f=(has,n)=>has?(n!=null&&n>0?'نعم (نحو '+n.toLocaleString('en-US')+')':'نعم'):'لا';
+  return `☁️ <b>توجد بلاغات في السحابة</b> — الرياض: ${f(ry,nr)} • القصيم: ${f(qs,nq)}${last}. حذفها من هذا الجهاز لن يكفي — ستُقرأ من السحابة مرة أخرى؛ استخدم «تصفير بيانات المنصة» مع «البلاغات».`}catch(e){return '☁️ تعذّر فحص البلاغات في السحابة: '+String(e.message||e)}}
 window.fmV326CloudCount=cloudCount;
 if(sessionStorage.getItem('fm325_cleared')){sessionStorage.removeItem('fm325_cleared');setTimeout(async()=>{let t='';try{t=(await cloudCount()).replace(/<[^>]+>/g,'')}catch(e){}try{(window.showToast||alert)('🧹 حُذفت نسخة البلاغات المحلية من هذا الجهاز. '+t,'success')}catch(e){}},4000)}
 })();</script>
