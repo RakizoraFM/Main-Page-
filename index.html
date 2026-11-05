@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V323">
+<meta name="fm-version" content="V324">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25636,10 +25636,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V323',date:'2026-11-04',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V324',date:'2026-11-04',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V324',d:'2026-11-05',t:'مزامنة قاعدة المباني بين أجهزة مدير النظام',i:['جهاز مدير النظام كان يحتفظ بنسخته المحلية من قاعدة المباني والإعدادات المشتركة ولا يأخذ نسخة السحابة، فيظهر في الجوال أرقام قديمة. الآن يأخذ النسخة الأحدث من السحابة بنفسه.','لا يرفع جهاز نسخة أقدم فوق نسخة أحدث على السحابة؛ تُحمّل الأحدث بدلها وتُحفظ نسخته ويمكن استرجاعها ورفعها («↩️ استرجاع نسخة هذا الجهاز»).']},
 {v:'V323',d:'2026-11-04',t:'فواتير المقاولين: تثبيت مباني كل شهر وتغيّرات المباني',i:['«📸 تثبيت مباني الشهر»: فاتورة الشهر تُحسب من لقطة محفوظة للمباني (الحجم، الجنس، الإغلاق، المقاول)، فتعديل قاعدة المباني لاحقاً لا يغيّر فواتير الأشهر السابقة. تُثبَّت تلقائياً عند إصدار المستخلص، ولا تُغيَّر بعد اعتماده.','تبويب «🔀 تغيّرات المباني»: الجديد، ما خرج (إغلاق / حذف / دمج في مبنى آخر)، وما تغيّر حجمه أو جنسه أو مقاوله مقارنة بالشهر السابق، مع أثره على فاتورة كل مقاول.','يوم السريان لكل تغيير داخل الشهر (قبله بالحجم أو المقاول القديم وبعده بالجديد)، وآخر يوم خدمة لكل مبنى خرج؛ تظهر الفترتان في الملحق وExcel والطباعة (القسم 90 من supabase_setup.sql).']},
 {v:'V322',d:'2026-11-04',t:'فواتير المقاولين: فلتر مكتب التعليم والزون مع المنطقة والنطاق',i:['شريط فلتر واحد أعلى «🧾 فاتورة الشهر» و«📊 كل المقاولين»: المنطقة، الشهر، مكتب التعليم، الزون، والنطاق (نظافة / صيانة / تكييف).','مكتب التعليم والزون اختيار متعدد مع بحث وعدد المباني لكل قيمة؛ الفاتورة والملخص والملحق وExcel والطباعة تتبع الفلتر وتذكره.','المستخلص يُبنى دائماً لكل مباني المقاول؛ يُطلب مسح فلتر المكتب / الزون قبل «📤 إنشاء / تحديث المستخلص».']},
 {v:'V321',d:'2026-11-04',t:'فواتير المقاولين: اختيار النطاق وطريقة الحساب',i:['اختر نطاقاً أو أكثر (نظافة / صيانة / تكييف) لأي مقاول، فتُحسب الفاتورة والملخص والتصدير والمستخلص على المختار فقط.','صندوق «🧮 طريقة الحساب» يشرح الخطوات بأرقام الفاتورة، وعمود «طريقة الحساب» لكل بند ولكل مبنى (السعر × أيام الخدمة ÷ أيام الشهر).','المستخلص يُحدَّث للنطاق المختار فقط وتبقى بنود النطاقات الأخرى كما هي.']},
@@ -29913,7 +29914,28 @@ async function pushRegion(k){
  }catch(e){toast('تعذر رفع البلاغات للسحابة: '+C.msg(e.message),'error');syncNote('⚠️ '+C.msg(e.message))}finally{pushing=false;if(pushAgain232.size){const next=pushAgain232.values().next().value;pushAgain232.delete(next);setTimeout(()=>pushRegion(next),100)}}}
 window.fmV136PushRegion=pushRegion;
 let kvT=null,kvDirty=new Set();
-async function pushShared(keys){if(!st.on||!isAdmin())return;keys=keys||SHARED;for(const k of keys){const v=localStorage.getItem(k);if(v==null)continue;let val;try{val=JSON.parse(v)}catch(e){val=v}try{await C.api.setKV(k,val)}catch(e){console.warn('kv',k,e)}}}
+async function pushShared(keys,force){if(!st.on||!isAdmin())return;keys=keys||SHARED;for(const k of keys){const v=localStorage.getItem(k);if(v==null)continue;let val;try{val=JSON.parse(v)}catch(e){val=v}
+ try{/* V324: a device whose copy is older than the cloud's must not push it back over the newer one */
+  if(!force){const at=await kvAt(k),mine=kvMine(k);if(at&&at>mine){const kv=await C.api.getKV([k]).catch(()=>[]);const x=kv.find(r=>r.key===k);const cv=x?(typeof x.value==='string'?x.value:JSON.stringify(x.value)):null;
+   if(x&&cv!==v&&!(k==='fm_school_master_db_v1'&&!mine&&kvMaxU(v)>kvMaxU(cv))){kvTake(x,v);if(k==='fm_school_master_db_v1')kvBar();else toast('☁️ توجد نسخة أحدث على السحابة من «'+(KVN[k]||k)+'» — حُمّلت بدل نسختك','warning');continue}}}
+  await C.api.setKV(k,val);const at2=await kvAt(k);kvStamp(k,at2||Date.now())}catch(e){console.warn('kv',k,e);if(k==='fm_school_master_db_v1')toast('⚠️ لم تُرفع قاعدة بيانات المباني إلى السحابة: '+C.msg(String(e&&e.message||e)),'error')}}}
+/* V324: per shared key, the cloud updated_at of the copy this device last took or pushed */
+const KVN={fm_school_master_db_v1:'قاعدة بيانات المباني',fm_contractors_v1:'قائمة المقاولين',fm_settings_v122:'الإعدادات',fm_work_rules_v135:'قواعد الإغلاق'};
+const kvMine=k=>+localStorage.getItem('fm324_at:'+k)||0;
+const kvStamp=(k,t)=>{try{_set.call(localStorage,'fm324_at:'+k,String(t))}catch(e){}};
+async function kvAt(k){try{const c=await C.engClient();const r=await c.from('app_kv').select('updated_at').eq('key',k).maybeSingle();return r&&r.data?Date.parse(r.data.updated_at)||0:0}catch(e){return 0}}
+function kvBackup(k,v){try{const q=indexedDB.open('fm324_bak',1);q.onupgradeneeded=()=>q.result.createObjectStore('kv');q.onsuccess=()=>{try{const t=q.result.transaction('kv','readwrite');t.objectStore('kv').put({v,at:Date.now()},k)}catch(e){}}}catch(e){}}
+window.fmV324Restore=k=>new Promise(res=>{try{const q=indexedDB.open('fm324_bak',1);q.onupgradeneeded=()=>q.result.createObjectStore('kv');q.onsuccess=()=>{const g=q.result.transaction('kv').objectStore('kv').get(k);g.onsuccess=()=>res(g.result||null);g.onerror=()=>res(null)};q.onerror=()=>res(null)}catch(e){res(null)}});
+window.fmV324Push=(k)=>pushShared([k],true);
+const kvMaxU=t=>{try{let a=JSON.parse(t);if(a&&!Array.isArray(a))a=a.schools;let m=0;(a||[]).forEach(r=>{const u=Date.parse(r&&r.updatedAt||'')||0;if(u>m)m=u});return m}catch(e){return 0}};
+function kvBar(){let b=document.getElementById('fm324-bar');if(b)b.remove();b=document.createElement('div');b.id='fm324-bar';b.dir='rtl';
+ b.style.cssText='position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:2147483000;background:#0f172a;color:#fff;border-radius:14px;padding:10px 14px;font:700 13px Cairo,Tahoma,sans-serif;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:92vw;box-shadow:0 10px 30px rgba(0,0,0,.3)';
+ b.innerHTML='<span>☁️ حُدّثت قاعدة بيانات المباني على هذا الجهاز من نسخة أحدث على السحابة.</span><button type="button" data-r style="border:0;border-radius:10px;padding:5px 10px;font:800 12px Cairo,Tahoma,sans-serif;background:#fbbf24;color:#0f172a">↩️ استرجاع نسخة هذا الجهاز ورفعها</button><button type="button" data-x style="border:0;background:transparent;color:#fff;font-size:16px">✕</button>';
+ document.body.appendChild(b);b.querySelector('[data-x]').onclick=()=>b.remove();
+ b.querySelector('[data-r]').onclick=async()=>{const k='fm_school_master_db_v1',o=await window.fmV324Restore(k);if(!o||!o.v)return alert('لا توجد نسخة سابقة محفوظة');if(!confirm('سترجع نسخة هذا الجهاز السابقة وتُرفع للسحابة لتحل محل النسخة الحالية لدى الجميع. متابعة؟'))return;
+  const was=pulling;pulling=true;try{localStorage.setItem(k,o.v)}catch(e){}pulling=was;await pushShared([k],true);try{window.fmSchoolDbRender?.()}catch(e){}try{window.dispatchEvent(new Event('fm-school-db-changed'))}catch(e){}b.remove();toast('✅ رُفعت نسخة هذا الجهاز')}}
+function kvTake(x,cur){const cv=typeof x.value==='string'?x.value:JSON.stringify(x.value);if(cur!=null&&cur!==cv)kvBackup(x.key,cur);const was=pulling;pulling=true;try{localStorage.setItem(x.key,cv)}catch(e){}pulling=was;kvStamp(x.key,Date.parse(x.updated_at||'')||Date.now());
+ if(x.key==='fm_school_master_db_v1'){try{window.fmSchoolDbRender?.()}catch(e){}try{window.dispatchEvent(new Event('fm-school-db-changed'))}catch(e){}}}
 /* admin: changes of the shared settings go to the cloud automatically */
 const _set=Storage.prototype.setItem;
 Storage.prototype.setItem=function(k,v){_set.apply(this,arguments);if(this===window.localStorage&&st.on&&isAdmin()&&SHARED.includes(k)&&!pulling){kvDirty.add(k);clearTimeout(kvT);kvT=setTimeout(()=>{const ks=[...kvDirty];kvDirty.clear();pushShared(ks)},1500)}};
@@ -29923,8 +29945,11 @@ async function pullAll(fresh,manual){
  try{
   const kv=await C.api.getKV(SHARED).catch(()=>[]);
   /* admin keeps local settings as the source; others take the shared copy */
-  if(!isAdmin()||manual==='kv')kv.forEach(x=>{try{localStorage.setItem(x.key,typeof x.value==='string'?x.value:JSON.stringify(x.value))}catch(e){}});
-  else if(isAdmin()&&kv.length)kv.forEach(x=>{if(localStorage.getItem(x.key)==null)try{localStorage.setItem(x.key,typeof x.value==='string'?x.value:JSON.stringify(x.value))}catch(e){}});
+  if(!isAdmin()||manual==='kv')kv.forEach(x=>{try{localStorage.setItem(x.key,typeof x.value==='string'?x.value:JSON.stringify(x.value))}catch(e){}kvStamp(x.key,Date.parse(x.updated_at||'')||0)});
+  else if(isAdmin()&&kv.length)kv.forEach(x=>{const cur=localStorage.getItem(x.key),cv=typeof x.value==='string'?x.value:JSON.stringify(x.value),at=Date.parse(x.updated_at||'')||0;
+   /* V324: the admin used to keep his local copy forever; now a newer cloud copy replaces it (the old one is kept for «استرجاع») */
+   if(cur!=null&&cur!==cv&&!kvMine(x.key)&&x.key==='fm_school_master_db_v1'&&kvMaxU(cur)>kvMaxU(cv)){setTimeout(()=>pushShared([x.key],true),500);return}  /* first sync: this device's school DB is the newer one */
+   if(cur==null||(at>kvMine(x.key)&&cur!==cv)){const n=cur!=null&&x.key==='fm_school_master_db_v1';kvTake(x,cur);if(n)kvBar()}else if(at>kvMine(x.key))kvStamp(x.key,at)});
   const regs=(st.profile.regions&&st.profile.regions.length?st.profile.regions:['riyadh','qassim']);
   for(const k of regs){
    const local=window.FM41?.datasets?.[k]?.rows;
