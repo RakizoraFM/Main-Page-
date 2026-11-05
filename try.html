@@ -323,7 +323,7 @@ $('#f').onsubmit=async e=>{e.preventDefault();const f=e.target,b=f.querySelector
  const ph=v('phone').replace(/[٠-٩]/g,c=>'٠١٢٣٤٥٦٧٨٩'.indexOf(c)); const serviceChoices=[...f.querySelectorAll('#service-choices input:checked')].map(c=>c.value);
  if(!v('name')||!v('company')||!/^\+?[0-9 ]{9,16}$/.test(ph)){$('#m').innerHTML='<div class="msg err">اكتب الاسم والجهة ورقم جوال صحيح</div>';return}
  b.disabled=true;b.textContent='جارٍ الإرسال…';
- try{await API.call('saas_lead_new',{p:{name:v('name'),company:v('company'),phone:ph.replace(/\s/g,''),email:v('email'),city:v('city'),schools:v('schools'),message:[v('message'),serviceChoices.length?'الخدمات المطلوبة: '+serviceChoices.join('، '):''].filter(Boolean).join('\\n'),hp:v('hp'),modules:[...document.querySelectorAll('#mods input:checked')].map(c=>c.value)}});
+ try{await API.call('saas_lead_new',{p:{name:v('name'),company:v('company'),phone:ph.replace(/\s/g,''),email:v('email'),city:v('city'),schools:v('schools'),message:[v('message'),serviceChoices.length?'الخدمات المطلوبة: '+serviceChoices.join('، '):''].filter(Boolean).join('؛ '),hp:v('hp'),modules:[...document.querySelectorAll('#mods input:checked')].map(c=>c.value)}});
   f.reset();$('#m').innerHTML='<div class="msg ok">✅ وصل طلبك — نتواصل معك خلال يوم عمل.</div>'}
  catch(err){$('#m').innerHTML=`<div class="msg err">${/too many/.test(err.message)?'تم إرسال طلبك من قبل — سنتواصل معك قريباً':/invalid phone/.test(err.message)?'رقم الجوال غير صحيح':'تعذر الإرسال — حاول مرة أخرى أو تواصل بالواتساب'}</div>`}
  b.disabled=false;b.textContent='إرسال الطلب'};
