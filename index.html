@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V327">
+<meta name="fm-version" content="V328">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -48,9 +48,22 @@ try{const a=JSON.parse(localStorage.getItem('fm-cloud-auth')||'null'),uid=a&&(a.
 /* V200: a reset of the platform's data (V190) asks this device to drop its local copies on the NEXT load, before any layer
    opens them (deleting an IndexedDB database that the page holds open is blocked, so the old tickets survived and were
    restored). localStorage fm190_clear = JSON parts. */
+/* V328: deleteDatabase waits («blocked») while another tab or the installed app holds the database open, and the old
+   tickets came back. Now every object store is emptied first (a normal transaction is never blocked), each tab closes its
+   connection to a ticket database when another one deletes it, and the other open tabs reload. */
+(function(){var TDB=['fm_v103_store','SmartTicketsAnalyticsDB','fm_photos_v135'];
+ try{var o0=IDBFactory.prototype.open;IDBFactory.prototype.open=function(n){var r=o0.apply(this,arguments);if(TDB.indexOf(n)>=0)try{r.addEventListener('success',function(){try{var d=r.result;d.addEventListener('versionchange',function(){try{d.close()}catch(e){}})}catch(e){}})}catch(e){}return r}}catch(e){}
+ function hard(n){return new Promise(function(done){var fin=function(){try{var d=indexedDB.deleteDatabase(n);d.onsuccess=d.onerror=d.onblocked=function(){done()}}catch(e){done()}};
+  try{var q=indexedDB.open(n);q.onupgradeneeded=function(){try{q.transaction.abort()}catch(e){}};
+   q.onsuccess=function(){var db=q.result,names=[].slice.call(db.objectStoreNames);if(!names.length){db.close();return fin()}
+    try{var t=db.transaction(names,'readwrite');names.forEach(function(x){t.objectStore(x).clear()});t.oncomplete=t.onerror=t.onabort=function(){try{db.close()}catch(e){}fin()}}catch(e){try{db.close()}catch(e2){}fin()}};
+   q.onerror=function(){fin()}}catch(e){fin()}})}
+ window.__fm328Hard=function(post){window.__fm328Self=1;return Promise.all(TDB.map(hard)).then(function(){if(post)try{new BroadcastChannel('fm328').postMessage('tickets')}catch(e){}setTimeout(function(){window.__fm328Self=0},5000)})};
+ try{new BroadcastChannel('fm328').onmessage=function(e){if(!e||e.data!=='tickets'||window.__fm328Self)return;var t=+sessionStorage.getItem('fm328_rl')||0;if(Date.now()-t<15000)return;try{sessionStorage.setItem('fm328_rl',String(Date.now()))}catch(x){}setTimeout(function(){location.reload()},300)}}catch(e){}
+})();
 (function(){try{const raw=localStorage.getItem('fm190_clear');if(!raw)return;const P=JSON.parse(raw)||[];localStorage.removeItem('fm190_clear');
- if(P.indexOf('tickets')>=0){['fm_v103_store','SmartTicketsAnalyticsDB','fm_photos_v135'].forEach(function(n){try{indexedDB.deleteDatabase(n)}catch(e){}});
-  Object.keys(localStorage).forEach(function(k){if(/^fm_ticket_work_v135$|^fm_ref_date_|^fm_rank_|^fm_followups_v122$|^fm239_breach:|^fm223_sync:|^fm265_ok:|^fm247_sub:|^fm_import232:|^fm319_days:/.test(k))try{localStorage.removeItem(k)}catch(e){}})}
+ if(P.indexOf('tickets')>=0){window.__fm328Self=1;window.__fm328Clr=window.__fm328Hard(true);
+  Object.keys(localStorage).forEach(function(k){if(/^fm_ticket_work_v135$|^fm_ref_date_|^fm_rank_|^fm_followups_v122$|^fm239_breach:|^fm223_sync:|^fm265_ok:|^fm247_sub:|^fm_import232:|^fm319_days:|^latest_uploaded_session$/.test(k))try{localStorage.removeItem(k)}catch(e){}})}
  if(P.indexOf('schooldb')>=0){try{localStorage.removeItem('fm_school_master_db_v1')}catch(e){}}
  window.__fm200Cleared=P}catch(e){}})();
 </script>
@@ -7834,6 +7847,7 @@ async function saveSessionToStorage(rows, fileName, customMeta = {}) {
 }
 
 async function loadSavedSessionFromStorage() {
+  if ((window.__fm200Cleared || []).indexOf('tickets') >= 0) return null; /* V328: the device copy was just cleared */
   try {
     const db = await openAppDatabase();
     if (db) {
@@ -25129,7 +25143,7 @@ function chip(){
 }
 window.fmV103ForgetSaved=async function(){if(!confirm('مسح ملفات البلاغات المحفوظة على هذا الجهاز؟ (البيانات المعروضة الآن تبقى حتى إعادة فتح الصفحة)'))return;await idbClear();meta={};chip();toast('تم مسح الملفات المحفوظة','info')};
 async function restore(){
-  const R=window.FM41;if(!R)return;
+  const R=window.FM41;if(!R)return;if((window.__fm200Cleared||[]).indexOf('tickets')>=0)return;/* V328 */
   if(['riyadh','qassim'].some(k=>R.datasets?.[k]?.rows?.length))return;
   const all=await idbAll();if(!Array.isArray(all)||!all.length)return;
   restoring=true;
@@ -25636,10 +25650,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V327',date:'2026-11-04',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V328',date:'2026-11-04',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V328',d:'2026-11-05',t:'حذف البلاغات من الجهاز يعمل وهو مفتوح في أكثر من نافذة',i:['كان حذف نسخة البلاغات المحلية يتعطل إذا كانت المنصة مفتوحة في نافذة أخرى أو في التطبيق المثبّت، فتعود البلاغات القديمة. الآن تُفرَّغ النسخة مباشرة، وتُغلق النوافذ الأخرى اتصالها وتعيد التحميل.','لا يسترجع الجهاز ملف البلاغات المحفوظ في التحميل الذي حُذف فيه.','بطاقة «البلاغات المحفوظة على هذا الجهاز» تعرض مصدر بلاغات كل منطقة (اسم الملف أو السحابة).']},
 {v:'V327',d:'2026-11-05',t:'فحص البلاغات في السحابة بلا انتهاء مهلة',i:['بطاقة «🧹 البلاغات المحفوظة على هذا الجهاز» كانت تعرض «Error» لأن عدّ كل البلاغات تجاوز مهلة الخادم؛ الآن تفحص وجود بلاغ واحد على الأقل في كل منطقة ثم عدداً تقريبياً.']},
 {v:'V326',d:'2026-11-05',t:'من أين تأتي البلاغات بعد التصفير',i:['بطاقة «🧹 البلاغات المحفوظة على هذا الجهاز» تعرض بجانب عدد بلاغات الجهاز عددها في السحابة (الرياض / القصيم) وتاريخ آخر تصفير وأجزاءه، فيتضح إن كانت البلاغات ما زالت في السحابة أم نسخة محلية قديمة.']},
 {v:'V325',d:'2026-11-05',t:'تصفير البلاغات يشمل كل جداولها',i:['«تصفير البلاغات» يحذف الآن أيضاً: قائمة قبل تجاوز المهلة، تصعيدات البلاغات، إيقاف المهلة، مراجعة إغلاق الطارئ، تدقيق البلاغات، الإسناد البديل، أسباب الاختراق، إيصالات الاستيراد وأرقام الملخص الأسبوعي (القسم 91 من supabase_setup.sql).','على كل جهاز تُحذف مع البلاغات متابعات المتأخرات والبيانات المحلية المرتبطة بها.','بطاقة «🧹 البلاغات المحفوظة على هذا الجهاز» في الإعدادات ← السحابة: حذف النسخة المحلية من جهاز ما زال يعرض بلاغات قديمة.']},
@@ -32191,7 +32206,7 @@ const MANUAL=[
  {id:'v2-nav-fm178-monthly',t:'التقرير الشهري للعميل',where:'التقارير ← «📑 التقرير الشهري للعميل»',what:'تقرير PDF شهري جاهز للإرسال للعميل: غلاف، الملخص التنفيذي مع المقارنة بالشهر السابق، البلاغات، أوامر العمل والصيانة الوقائية، التكاليف والمواد، رضا المدارس، وخطة الشهر القادم.',how:['اختر الشهر والمنطقة من أعلى الصفحة.','اكتب الملخص التنفيذي (أو اتركه للنص التلقائي) وخطة الشهر القادم — تظهر في المعاينة فوراً.','«🖨️ PDF / طباعة» ثم «حفظ كـ PDF» وأرسله للعميل.'],who:'المديرون والمهندس',tips:['أقسام التكاليف وأوامر العمل والرضا تظهر عند ربط السحابة وحسب صلاحياتك.','الأرقام من البلاغات المرفوعة للمنطقة؛ ارفع ملف الشهر كاملاً قبل إصدار التقرير.'],v:'V178'},
  {id:'saas-sub',t:'الاشتراك (لعدة شركات)',where:'الإعدادات ← السحابة ← «💳 الاشتراك»',what:'حالة اشتراك الشركة: الباقة وحد المدارس والمستخدم منها وتاريخ الانتهاء، وإدخال كود التفعيل بعد دفع فاتورة التجديد.',how:['عند اقتراب الانتهاء يظهر شريط أسفل الشاشة قبل 15 يوماً.','بعد الدفع يصل كود التفعيل من مزود الخدمة: «🔑 إدخال كود التفعيل» والصقه.','بعد الانتهاء بمهلة 7 أيام يتوقف الدخول للجميع وتبقى البيانات، ويعود العمل فور إدخال الكود.'],who:'مدير النظام',tips:['رابط دخول الشركة: start.html?c=رمز الشركة — أرسله لفريقك.','زيادة المدارس عن حد الباقة تُرفض عند حفظ قاعدة المدارس في السحابة — اطلب ترقية الباقة.'],v:'V179'},
  {id:'v2-nav-fm190-app',t:'تحميل التطبيق على جهاز آخر',where:'النظام ← «📲 تحميل التطبيق»',what:'المنصة لا تحتاج ملف تنزيل: تُثبَّت من رابطها على أي جهاز وتتحدث تلقائياً. هذه الصفحة تجمع الرابط ورمز QR وخطوات التثبيت لكل جهاز، وزر التثبيت على هذا الجهاز.',how:['على جهاز آخر: امسح رمز QR بكاميرا الجوال، أو أرسل الرابط لنفسك بواتساب أو البريد.','افتح الرابط وسجّل الدخول، ثم ثبّت التطبيق حسب نوع الجهاز (الخطوات في الصفحة).','على هذا الجهاز: «📲 تثبيت على هذا الجهاز».','للكمبيوتر بدون تثبيت: «📥 اختصار سطح المكتب» يضع أيقونة تفتح المنصة.'],who:'كل المستخدمين',tips:['على iPhone يتم التثبيت من Safari فقط.','الرابط يحمل رمز شركتكم، فيفتح على منصتكم مباشرة.'],v:'V190'},
- {id:'wipe',t:'تصفير بيانات المنصة',where:'الإعدادات ← السحابة ← «🧹 تصفير بيانات المنصة»',what:'حذف بيانات أجزاء تختارها من المنصة (البلاغات، قاعدة المدارس، أوامر العمل، المستودع، التواصل، بوابة المدارس، التكاليف، المستخلصات، مركز التكلفة، الأخبار والإشعارات) لبدء جديد أو بعد التجربة.',how:['افتح البطاقة؛ يظهر عدد السجلات في كل جزء.','اختر الأجزاء التي تريد تصفيرها.','اترك «تنزيل نسخة احتياطية» مفعّلاً لحفظ ملف بكل ما سيُحذف.','اكتب «تصفير» واضغط الزر، ثم أكّد.','انتظر حتى يكتمل تنزيل النسخة الاحتياطية (تُجهَّز على دفعات ويظهر العدد)، ثم يتم التصفير وتُعاد تحميل المنصة.'],who:'مدير النظام فقط',tips:['إن تعذّرت النسخة الاحتياطية تُسأل: متابعة بدونها أم الإلغاء.','إن لم يتم التصفير تظهر رسالة حمراء بالسبب تحت الزر.','لا يمكن التراجع عن التصفير إلا بالنسخة الاحتياطية.','الحسابات والإعدادات والاشتراك وقوالب أوامر العمل لا تُحذف.','حذف «الأصناف والموردين والمستودعات» يحذف معه حركة المستودع والعهد.'],v:'V202'},
+ {id:'wipe',t:'تصفير بيانات المنصة',where:'الإعدادات ← السحابة ← «🧹 تصفير بيانات المنصة»',what:'حذف بيانات أجزاء تختارها من المنصة (البلاغات، قاعدة المدارس، أوامر العمل، المستودع، التواصل، بوابة المدارس، التكاليف، المستخلصات، مركز التكلفة، الأخبار والإشعارات) لبدء جديد أو بعد التجربة.',how:['افتح البطاقة؛ يظهر عدد السجلات في كل جزء.','اختر الأجزاء التي تريد تصفيرها.','اترك «تنزيل نسخة احتياطية» مفعّلاً لحفظ ملف بكل ما سيُحذف.','اكتب «تصفير» واضغط الزر، ثم أكّد.','انتظر حتى يكتمل تنزيل النسخة الاحتياطية (تُجهَّز على دفعات ويظهر العدد)، ثم يتم التصفير وتُعاد تحميل المنصة.'],who:'مدير النظام فقط',tips:['إن تعذّرت النسخة الاحتياطية تُسأل: متابعة بدونها أم الإلغاء.','إن لم يتم التصفير تظهر رسالة حمراء بالسبب تحت الزر.','لا يمكن التراجع عن التصفير إلا بالنسخة الاحتياطية.','الحسابات والإعدادات والاشتراك وقوالب أوامر العمل لا تُحذف.','حذف «الأصناف والموردين والمستودعات» يحذف معه حركة المستودع والعهد.','إن بقيت بلاغات ظاهرة على جهاز بعد التصفير: بطاقة «🧹 البلاغات المحفوظة على هذا الجهاز» في نفس التبويب تعرض مصدرها (ملف على الجهاز أو السحابة) وتحذف نسخة الجهاز، حتى لو كانت المنصة مفتوحة في نافذة أخرى.'],v:'V328'},
  {id:'upload',t:'رفع ملف البلاغات',where:'زر «رفع بلاغات المنطقة» في الشريط العلوي، أو «⬆️ رفع ملف» في سطر المصدر أعلى لوحة القيادة، أو سحب الملف وإفلاته في أي مكان على الصفحة',what:'تحديث بلاغات المنطقة المفتوحة (الرياض أو القصيم) من ملف Excel المصدَّر من نظام البلاغات، أو بلصق جدول. يتعرف النظام تلقائياً على الأعمدة، وتتحدث كل المؤشرات والتقارير.',how:['اختر المنطقة من الشريط العلوي.','اضغط «رفع بلاغات المنطقة» أو «⬆️ رفع ملف» واختر ملف Excel، أو اسحب الملف إلى الصفحة.','لجدول منسوخ: «📋 لصق جدول» ← الصق الجدول مع صف العناوين ← «تحليل البيانات الملصوقة».','تأكد من «الإجمالي» و«أحدث تاريخ» في سطر المصدر.'],who:'مدير النظام، مدير المشروع، مدير التشغيل، مدير المنطقة (لمناطقه)',tips:['كل منطقة تُحلَّل ببياناتها فقط.','«تخصيص / تعديل مطابقة الأعمدة» إذا تغيّرت أسماء الأعمدة في الملف.'],v:'V189'},
  {id:'pwa',t:'تثبيت التطبيق والعمل دون اتصال',where:'زر «📲 ثبّت التطبيق» في صفحة الدخول والصفحة الرئيسية لتطبيق الميدان، و«الإعدادات» ← السحابة ← «📲 تثبيت المنصة والعمل دون اتصال»',what:'تثبيت المنصة أو تطبيق الميدان كتطبيق بأيقونة على الجوال أو الكمبيوتر، والعمل دون اتصال: الصفحات والمكتبات والخرائط التي فتحتها تبقى محفوظة على الجهاز وتتحدث تلقائياً عند الاتصال.',how:['على Android أو الكمبيوتر (Chrome / Edge): اضغط «📲 ثبّت التطبيق» ثم «تثبيت».','على iPhone / iPad: افتح الموقع في Safari ← زر المشاركة ⬆️ ← «إضافة إلى الشاشة الرئيسية» ← «إضافة».','افتح التطبيق من أيقونته؛ يفتح على صفحة الدخول ثم على تطبيقك.','افتحه مرة واحدة على الأقل وأنت متصل، وتصفّح الخرائط التي تحتاجها، لتعمل بعدها دون اتصال.'],who:'كل المستخدمين',tips:['دون اتصال يفتح التطبيق آخر ما استخدمته ويعرض آخر بيانات محفوظة؛ إجراءات أوامر العمل في الميدان تُرسل تلقائياً عند عودة الاتصال.','على iPhone لا تصل الإشعارات إلا بعد التثبيت (iOS 16.4 أو أحدث).','«🧹 مسح المحفوظ» يحرر المساحة ولا يمس بياناتك؛ يُحفظ من جديد عند الاستخدام.'],v:'V188'},
  {id:'push',t:'الإشعارات على الجوال والكمبيوتر',where:'الإعدادات ← السحابة ← «🔔 الإشعارات على هذا الجهاز»، أو الشريط أسفل الشاشة «🔔 فعّل الإشعارات»، وفي تطبيق الميدان زر «🔔» في الصفحة الرئيسية',what:'إشعار فوري يصلك حتى والتطبيق مغلق عند حدث يخصك: بلاغ جديد على مدارسك، خبر أو رسالة جديدة، طلب جديد من مدرسة، أمر عمل جديد، أمر بانتظار اعتمادك، إعادة أو اعتماد أمر، تصعيد، إيقاف عمل، طلب صرف، صرف لعهدتك، تالف متأخر، اعتماد صنف أو شراء، المستخلصات. الضغط عليه يفتح الأمر أو الصفحة.',how:['عند الدخول تظهر نافذة «🔔 فعّل الإشعارات» في كل زيارة حتى تسمح بها؛ اضغط «تفعيل الإشعارات» ثم «سماح».','افتح «🔔 إعدادات الإشعارات» واضغط «🔔 تفعيل على هذا الجهاز» واسمح للمتصفح بالإشعارات.','اختر الأنواع التي تريدها ثم «💾 حفظ اختياراتي».','«📨 أرسل لي تجربة» للتأكد أن الجهاز يستقبل.','فعّلها على كل جهاز تستخدمه (الجوال والكمبيوتر).'],who:'كل المستخدمين (بعد أن يجهّزها مدير النظام)',tips:['على iPhone / iPad: أضف التطبيق للشاشة الرئيسية من زر المشاركة أولاً، ثم افتحه من الأيقونة وفعّل الإشعارات (iOS 16.4 أو أحدث).','لا يصلك إشعار عن عمل قمت به بنفسك، والحملة الكبيرة تصلك بإشعار واحد.','إذا رفضت الإذن بالخطأ: افتح إعدادات الموقع في المتصفح واسمح بالإشعارات.'],v:'V271'},
@@ -35512,7 +35527,7 @@ const PARTS=[['tickets','📋 البلاغات','البلاغات المرفوع
  ['portal','🔗 بوابة المدارس','طلبات المدارس وروابط البوابة'],['costs','💰 تكاليف المباني','المصروفات والميزانيات'],['bill','🧾 المستخلصات','العقود والمستخلصات'],
  ['cc','💹 مركز التكلفة','المراكز والقيود والميزانيات وقائمة الموظفين'],['misc','📢 الأخبار والإشعارات وسجل الاستخدام','الأخبار، طابور الإشعارات، أيام الاستخدام']];
 function clearLocal(parts){const P=new Set(parts||[]);
- if(P.has('tickets')){['fm_v103_store','SmartTicketsAnalyticsDB','fm_photos_v135'].forEach(n=>{try{indexedDB.deleteDatabase(n)}catch(e){}});try{Object.keys(localStorage).forEach(k=>{if(/^fm_ticket_work_v135$|^fm_ref_date_|^fm_rank_|^fm_followups_v122$|^fm239_breach:|^fm223_sync:|^fm265_ok:|^fm247_sub:|^fm_import232:|^fm319_days:/.test(k))localStorage.removeItem(k)})}catch(e){}}
+ if(P.has('tickets')){window.__fm328Self=1;try{window.__fm328Hard?window.__fm328Hard():['fm_v103_store','SmartTicketsAnalyticsDB','fm_photos_v135'].forEach(n=>{try{indexedDB.deleteDatabase(n)}catch(e){}})}catch(e){}try{Object.keys(localStorage).forEach(k=>{if(/^fm_ticket_work_v135$|^fm_ref_date_|^fm_rank_|^fm_followups_v122$|^fm239_breach:|^fm223_sync:|^fm265_ok:|^fm247_sub:|^fm_import232:|^fm319_days:|^latest_uploaded_session$/.test(k))localStorage.removeItem(k)})}catch(e){}}
  if(P.has('schooldb')){try{localStorage.removeItem('fm_school_master_db_v1')}catch(e){}}}
 (window.fmHubExtras=window.fmHubExtras||[]).push(function(tab,pane){if(tab!=='cloud'||!isSys())return;const box=document.createElement('div');box.className='fm122-card fm190-w';box.style.marginTop='14px';box.style.borderColor='#fecaca';pane.appendChild(box);
  box.innerHTML='<h3>🧹 تصفير بيانات المنصة</h3><div class="fm125-src">احذف بيانات الأجزاء التي تختارها لبدء جديد. الحسابات والإعدادات والاشتراك وقوالب أوامر العمل لا تُحذف. لا يمكن التراجع إلا بالنسخة الاحتياطية.</div><div class="row"><button class="fm103-btn" type="button" data-o>🧹 اختيار البيانات للتصفير</button></div><div data-b></div>';
@@ -44388,14 +44403,19 @@ if(window.FM_MODS&&window.FM_MODS.bill&&!window.FM_MODS.bill.ids.includes('v2-na
    fm_v103_store / SmartTicketsAnalyticsDB / V135 work / follow-ups). The V200 early script deletes them on the next load
    (a database the page holds open cannot be deleted now), and the admin's pull then takes the cloud tickets only. */
 if(window.__f325)return;window.__f325=1;
-function clearDevice(){if(!confirm('حذف نسخة البلاغات المحفوظة على هذا الجهاز ثم إعادة تحميل الصفحة؟ لا يُحذف شيء من السحابة.'))return;
- try{localStorage.setItem('fm190_clear',JSON.stringify(['tickets']))}catch(e){}try{sessionStorage.setItem('fm325_cleared','1')}catch(e){}location.reload()}
+async function clearDevice(){if(!confirm('حذف نسخة البلاغات المحفوظة على هذا الجهاز ثم إعادة تحميل الصفحة؟ لا يُحذف شيء من السحابة.'))return;
+ try{localStorage.setItem('fm190_clear',JSON.stringify(['tickets']))}catch(e){}try{sessionStorage.setItem('fm325_cleared','1')}catch(e){}
+ /* V328: empty the stores now as well, and the other open tabs reload */
+ window.__fm328Self=1;try{await Promise.race([window.__fm328Hard?window.__fm328Hard():null,new Promise(r=>setTimeout(r,4000))])}catch(e){}location.reload()}
 window.fmV325ClearDevice=clearDevice;
 (window.fmHubExtras=window.fmHubExtras||[]).push(function(tab,pane){if(tab!=='cloud')return;if(pane.querySelector('#fm325-card'))return;
  const c=document.createElement('div');c.id='fm325-card';c.className='fm122-card';c.style.marginTop='14px';
  const n=(window.FM41&&FM41.datasets?Object.values(FM41.datasets).reduce((a,d)=>a+((d&&d.rows&&d.rows.length)||0),0):0)||((window.state&&state.rawTickets&&state.rawTickets.length)||0);
  c.innerHTML='<h4 style="margin:0 0 6px">🧹 البلاغات المحفوظة على هذا الجهاز</h4><div style="font-size:13px;color:#475569;margin-bottom:8px">على هذا الجهاز الآن '+n.toLocaleString('en-US')+' بلاغ محفوظ. إن بقيت بلاغات تظهر بعد «تصفير بيانات المنصة»، احذف النسخة المحلية؛ تُعاد قراءة البلاغات من السحابة فقط.</div><button type="button" class="fm103-btn">🧹 حذف البلاغات المحفوظة على هذا الجهاز</button>';
  c.querySelector('button').onclick=clearDevice;pane.appendChild(c);
+ /* V328: the source of each region's tickets now (file name, or «السحابة …») */
+ try{const RN={riyadh:'الرياض',qassim:'القصيم'},L=Object.keys(RN).map(k=>{const d=FM41.datasets&&FM41.datasets[k];return d&&d.rows&&d.rows.length?RN[k]+': '+d.rows.length.toLocaleString('en-US')+' بلاغ — المصدر «'+String(d.name||'غير معروف').replace(/[<>&]/g,'')+'»':''}).filter(Boolean);
+  if(L.length)c.insertAdjacentHTML('beforeend','<div data-src style="margin-top:8px;font-size:13px;color:#334155">📂 '+L.join('<br>📂 ')+'</div>')}catch(e){}
  c.insertAdjacentHTML('beforeend','<div data-cloud style="margin-top:8px;font-size:13px;color:#334155">☁️ جارٍ عدّ البلاغات في السحابة…</div>');cloudCount().then(t=>{const e=c.querySelector('[data-cloud]');if(!e)return;e.innerHTML=t})});
 /* V326: where do the tickets come from — the cloud counts next to the device count */
 async function cloudCount(){try{const C=window.FMCloud;if(!C||!C.engClient||!(C.state&&C.state.on))return '☁️ السحابة غير متصلة — البلاغات الظاهرة من هذا الجهاز فقط.';
