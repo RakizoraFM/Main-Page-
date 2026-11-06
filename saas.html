@@ -278,7 +278,7 @@ function settingsTab(p){const s=seller();p.innerHTML=`<div class="card"><h3>📦
  <div class="card"><h3>🌐 الصفحة التعريفية try.html</h3><div class="note">رابطها: <b dir="ltr">${esc(new URL('try.html',location.href).href)}</b> — تعرض الأجزاء والباقات ونموذج «اطلب تجربة»، وزر الدخول لنسخة العرض.</div>
  <div class="two"><label class="f">رمز شركة العرض (نسخة العرض)<input data-st="demo_code" dir="ltr" value="${esc((SET.site||{}).demo_code||'')}" placeholder="demo"></label><label class="f">جوال الواتساب للتواصل<input data-st="whatsapp" dir="ltr" value="${esc((SET.site||{}).whatsapp||'')}" placeholder="05xxxxxxxx"></label></div>
  <div class="two"><label class="f">بريد الإشعارات (لك فقط)<input data-st="email" dir="ltr" value="${esc((SET.site||{}).email||'')}"></label><label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-st="show_prices" ${(SET.site||{}).show_prices!==false?'checked':''} style="width:auto"> عرض الأسعار في الصفحة</label></div>
- <div class="row" style="margin-top:8px"><button class="b p" id="sts">💾 حفظ</button><a class="b" href="try.html" target="_blank" rel="noopener">👁️ معاينة</a></div></div>
+ <div class="row" style="margin-top:8px"><button class="b p" id="sts">💾 حفظ</button><button class="b" type="button" data-built-in-preview>👁️ معاينة داخل المنصة</button></div></div>
  <div class="card"><h3>🏷️ بيانات البائع في الفواتير</h3><div class="two"><label class="f">الاسم<input data-s="name" value="${esc(s.name)}"></label><label class="f">الرقم الضريبي<input data-s="vat_no" dir="ltr" value="${esc(s.vat_no)}"></label></div>
  <div class="two"><label class="f">العنوان<input data-s="address" value="${esc(s.address)}"></label><label class="f">الآيبان<input data-s="iban" dir="ltr" value="${esc(s.iban)}"></label></div><label class="f" style="max-width:220px">نسبة الضريبة %<input data-s="vat_pct" value="${esc(s.vat_pct)}"></label>
  <div class="row" style="margin-top:8px"><button class="b p" id="ss">💾 حفظ</button></div></div>`;
@@ -293,6 +293,29 @@ function settingsTab(p){const s=seller();p.innerHTML=`<div class="card"><h3>📦
  $('#ss').onclick=async()=>{const o={};p.querySelectorAll('[data-s]').forEach(i=>o[i.dataset.s]=i.dataset.s==='vat_pct'?+i.value||0:S(i.value));try{await API.saveSetting('seller',o);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}}}
 boot();
 })();
+</script>
+
+<style id="fm-built-in-preview-style">
+#fm-built-in-preview{width:min(1200px,96vw);height:min(900px,94vh);max-width:96vw;max-height:94vh;border:1px solid #cbd5e1;border-radius:16px;padding:0;background:#fff;overflow:hidden}
+#fm-built-in-preview::backdrop{background:rgba(15,23,42,.62)}
+#fm-built-in-preview .fm-bip-head{height:52px;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 14px;border-bottom:1px solid #e2e8f0;font:700 14px Cairo,Tahoma,sans-serif;color:#102b42}
+#fm-built-in-preview .fm-bip-close{border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:7px 12px;cursor:pointer;font:inherit}
+#fm-built-in-preview iframe{display:block;width:100%;height:calc(100% - 52px);border:0;background:#f8fafc}
+@media(max-width:700px){#fm-built-in-preview{width:100vw;height:100dvh;max-width:100vw;max-height:100dvh;border-radius:0}}
+</style>
+<script id="fm-built-in-preview">
+document.addEventListener('click',function(e){
+ const trigger=e.target.closest('[data-built-in-preview]');
+ if(!trigger)return;
+ const dialog=document.createElement('dialog');
+ dialog.id='fm-built-in-preview';
+ dialog.dir='rtl';
+ dialog.innerHTML='<div class="fm-bip-head"><span>معاينة الصفحة التعريفية</span><button type="button" class="fm-bip-close">إغلاق</button></div><iframe title="معاينة الصفحة التعريفية" src="try.html"></iframe>';
+ document.body.append(dialog);
+ dialog.querySelector('.fm-bip-close').onclick=()=>dialog.close();
+ dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+ dialog.showModal();
+});
 </script>
 </body>
 </html>
