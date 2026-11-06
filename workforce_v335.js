@@ -43,8 +43,8 @@ function csv(panel,p){
    if(arabic){
     const col=(...names)=>names.map(n=>rawHeaders.indexOf(n)).find(i=>i>=0);
     const at=(row,...names)=>{const i=col(...names);return i==null?'':S(row[i])};
-    const clean=v=>S(v).replace(/\\s+/g,' ').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').toLowerCase();
-    const normTitle=v=>S(v).replace(/\\s+/g,' ').replace(/فنى/g,'فني').replace(/تكيف/g,'تكييف').replace(/مكانيكا/g,'ميكانيكي').replace(/فني سباك(?=\\s|$|\\()/g,'فني سباكة').replace(/سائق حافة/g,'سائق حافلة').replace(/مشرفة نظافة/g,'مشرف نظافة').replace(/مشرف امن/g,'مشرف أمن').replace(/مسئول/g,'مسؤول').replace(/اداري|ادر[ىي]/g,'إداري').replace(/\\s*\\+\\s*/g,' + ').replace(/\\s+/g,' ').trim();
+    const clean=v=>S(v).replace(/\s+/g,' ').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').toLowerCase();
+    const normTitle=v=>S(v).replace(/\s+/g,' ').replace(/فنى/g,'فني').replace(/تكيف/g,'تكييف').replace(/مكانيكا/g,'ميكانيكي').replace(/Operation head support/gi,'مساعد مدير التشغيل').replace(/Operation head/gi,'مدير التشغيل').replace(/مدخلة بيانات/g,'مدخل بيانات').replace(/فني سباك(?=\s|$|\()/g,'فني سباكة').replace(/سائق حافة/g,'سائق حافلة').replace(/مشرفة نظافة/g,'مشرف نظافة').replace(/مشرف امن/g,'مشرف أمن').replace(/مسئول/g,'مسؤول').replace(/ادارى|اداري|ادرى/g,'إداري').replace(/\s*\+\s*/g,' + ').replace(/\s+/g,' ').trim();
     const qassimPlaces=['بريدة','عنيزة','النبهانية','البدائع','عيون الجواء','القصيم','الأسياح','عقلة الصقور','رياض الخبراء','البكيرية','الرس','المذنب','ضرية'];
     const jobFamily=t=>/مهندس/.test(t)?'engineer':/مشرف|مراقب/.test(t)?'supervisor':/فني/.test(t)?'technician':/متلقي بلاغات/.test(t)?'call_center':/معد تقارير/.test(t)?'report_preparer':/محاسب/.test(t)?'accountant':/إداري|مدير|مسؤول|مدخ/.test(t)?'admin':/سائق|عامل|بوفيه|مستودع|أمين/.test(t)?'support':'other';
     records=[];
