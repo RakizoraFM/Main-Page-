@@ -35,10 +35,38 @@ function csv(panel,p){
   const f=e.target.files?.[0];if(!f)return;result.textContent='جارٍ قراءة الملف والتحقق من البيانات…';actions.replaceChildren();
   try{
    const table=await readImportTable(f);if(!table.length)throw Error('الملف فارغ');
-   const got=table[0].map(v=>S(v).replace(/^\\uFEFF/,''));
-   const repeated=got.filter((h,i)=>got.indexOf(h)!==i);if(repeated.length)throw Error('هناك عناوين أعمدة مكررة: '+[...new Set(repeated)].join('، '));
-   for(const h of ['region','employee_code','full_name','employer','job_title'])if(!got.includes(h))throw Error('عمود مطلوب غير موجود: '+h);
-   const records=table.slice(1).filter(a=>a.some(v=>S(v))).map(a=>Object.fromEntries(got.map((k,i)=>[k,S(a[i])]).filter(([k])=>headers.includes(k))));
+   const rawHeaders=table[0].map(v=>S(v).replace(/^\\uFEFF/,''));
+   const arabic=rawHeaders.some(h=>['الإسم','الاسم','الوظيفة','مصدر العمالة'].includes(h));
+   let sourceMeta={vacant:0,excluded:0,missingCode:0};
+   const sourceRows=table.slice(1).filter(a=>a.some(v=>S(v)));
+   let records;
+   if(arabic){
+    const col=(...names)=>names.map(n=>rawHeaders.indexOf(n)).find(i=>i>=0);
+    const at=(row,...names)=>{const i=col(...names);return i==null?'':S(row[i])};
+    const clean=v=>S(v).replace(/\\s+/g,' ').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').toLowerCase();
+    const normTitle=v=>S(v).replace(/\\s+/g,' ').replace(/فنى/g,'فني').replace(/تكيف/g,'تكييف').replace(/مكانيكا/g,'ميكانيكي').replace(/فني سباك(?=\\s|$|\\()/g,'فني سباكة').replace(/سائق حافة/g,'سائق حافلة').replace(/مشرفة نظافة/g,'مشرف نظافة').replace(/مشرف امن/g,'مشرف أمن').replace(/مسئول/g,'مسؤول').replace(/اداري|ادر[ىي]/g,'إداري').replace(/\\s*\\+\\s*/g,' + ').replace(/\\s+/g,' ').trim();
+    const qassimPlaces=['بريدة','عنيزة','النبهانية','البدائع','عيون الجواء','القصيم','الأسياح','عقلة الصقور','رياض الخبراء','البكيرية','الرس','المذنب','ضرية'];
+    const jobFamily=t=>/مهندس/.test(t)?'engineer':/مشرف|مراقب/.test(t)?'supervisor':/فني/.test(t)?'technician':/متلقي بلاغات/.test(t)?'call_center':/معد تقارير/.test(t)?'report_preparer':/محاسب/.test(t)?'accountant':/إداري|مدير|مسؤول|مدخ/.test(t)?'admin':/سائق|عامل|بوفيه|مستودع|أمين/.test(t)?'support':'other';
+    records=[];
+    for(const row of sourceRows){
+     const rawRegion=at(row,'المنطقة'),sector=at(row,'القطاع'),state=clean(at(row,'حالة التيم')),source=at(row,'مصدر العمالة'),title=normTitle(at(row,'الوظيفة'));
+     if(/مطلوب الاستبعاد/.test(clean(sector+' '+rawRegion))){sourceMeta.excluded++;continue}
+     if(/vacant|شاغر|تحت التعين|تحت التعيين/.test(state)){sourceMeta.vacant++;continue}
+     const place=clean(rawRegion),isRiyadh=/الرياض/.test(rawRegion)&&!/رياض الخبراء/.test(rawRegion);
+     const known=qassimPlaces.some(p=>place.includes(clean(p)))||isRiyadh;
+     if(!known)throw Error('تعذر تحديد المنطقة التشغيلية من قيمة «'+rawRegion+'» في ورقة الملف.');
+     const code=at(row,'الرقم الوظيفي');
+     if(!code)sourceMeta.missingCode++;
+     const ajir=/أجير|اجير/.test(clean(source)),category=at(row,'التصنيف'),team=at(row,'رقم الفريق');
+     const department=[sector,rawRegion,category,team&&('الفريق '+team)].filter(Boolean).join(' • ');
+     records.push({region:isRiyadh?'riyadh':'qassim',employee_code:code,full_name:at(row,'الإسم','الاسم'),person_type:ajir?'contractor':'staff',employer:source||'غير محدد',department,job_title:title,specialty:'',employment_type:ajir?'outsourced':'other',start_date:at(row,'تاريخ المباشرة'),phone:at(row,'رقم التليفون'),direct_manager:at(row,'المدير'),job_family:jobFamily(title)});
+    }
+   }else{
+    const got=rawHeaders;
+    const repeated=got.filter((h,i)=>got.indexOf(h)!==i);if(repeated.length)throw Error('هناك عناوين أعمدة مكررة: '+[...new Set(repeated)].join('، '));
+    for(const h of ['region','employee_code','full_name','employer','job_title'])if(!got.includes(h))throw Error('عمود مطلوب غير موجود: '+h);
+    records=sourceRows.map(a=>Object.fromEntries(got.map((k,i)=>[k,S(a[i])]).filter(([k])=>headers.includes(k))));
+   }
    if(!records.length)throw Error('لا توجد صفوف بيانات');
    const errors=[],seen=new Set();
    records.forEach((x,i)=>{
@@ -53,7 +81,7 @@ function csv(panel,p){
    });
    if(errors.length){result.textContent=`تعذر اعتماد الملف: ${errors.length} ملاحظة. أول الملاحظات: ${errors.slice(0,8).join(' | ')}`;return}
    const counts=records.reduce((a,x)=>(a[x.region]=(a[x.region]||0)+1,a),{});
-   result.textContent=`المعاينة: ${records.length} سجلًا صالحًا — الرياض: ${counts.riyadh||0}، القصيم: ${counts.qassim||0}. لن تُحذف السجلات غير الموجودة في الملف.`;
+   result.textContent=`المعاينة: ${records.length} سجلًا صالحًا — الرياض: ${counts.riyadh||0}، القصيم: ${counts.qassim||0}. صفوف الشواغر/التعيين المستبعدة من سجل الأفراد: ${sourceMeta.vacant}. صفوف معلّمة للاستبعاد: ${sourceMeta.excluded}. لا يتضمن الاستيراد رقم الإقامة. لن تُحذف السجلات غير الموجودة في الملف.`;
    const confirmBtn=document.createElement('button');confirmBtn.type='button';confirmBtn.className='primary';confirmBtn.textContent=`تأكيد استيراد ${records.length} سجلًا`;
    confirmBtn.onclick=async()=>{confirmBtn.disabled=true;result.textContent='جارٍ حفظ السجلات…';try{const saved=await rpc('fm_workforce337_import_people',{p:{rows:records}});result.textContent=`تم حفظ ${saved.saved} سجلًا ضمن عملية واحدة.`;actions.replaceChildren();await load()}catch(er){result.textContent=/fm_workforce337_import_people|function .* does not exist|schema cache/i.test(er.message)?'توقف الاستيراد: شغّل ترحيل V337 على قاعدة البيانات أولاً.':'توقف الاستيراد: '+er.message;confirmBtn.disabled=false}};
    actions.append(confirmBtn);
