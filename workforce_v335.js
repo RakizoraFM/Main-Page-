@@ -48,7 +48,7 @@ function csv(panel,p){
     const qassimPlaces=['بريدة','عنيزة','النبهانية','البدائع','عيون الجواء','القصيم','الأسياح','عقلة الصقور','رياض الخبراء','البكيرية','الرس','المذنب','ضرية'];
     const jobFamily=t=>/مهندس/.test(t)?'engineer':/مشرف|مراقب/.test(t)?'supervisor':/فني/.test(t)?'technician':/متلقي بلاغات/.test(t)?'call_center':/معد تقارير/.test(t)?'report_preparer':/محاسب/.test(t)?'accountant':/إداري|مدير|مسؤول|مدخ/.test(t)?'admin':/سائق|عامل|بوفيه|مستودع|أمين/.test(t)?'support':'other';
     records=[];
-    for(const row of sourceRows){
+    for(const [sourceIndex,row] of sourceRows.entries()){
      const rawRegion=at(row,'المنطقة'),sector=at(row,'القطاع'),state=clean(at(row,'حالة التيم')),source=at(row,'مصدر العمالة'),title=normTitle(at(row,'الوظيفة'));
      if(/مطلوب الاستبعاد/.test(clean(sector+' '+rawRegion))){sourceMeta.excluded++;continue}
      if(/vacant|شاغر|تحت التعين|تحت التعيين/.test(state)){sourceMeta.vacant++;continue}
@@ -57,9 +57,10 @@ function csv(panel,p){
      if(!known)throw Error('تعذر تحديد المنطقة التشغيلية من قيمة «'+rawRegion+'» في ورقة الملف.');
      const code=at(row,'الرقم الوظيفي');
      if(!code)sourceMeta.missingCode++;
+     const safeCode=code||('MISSING-'+String(sourceIndex+2).padStart(4,'0'));
      const ajir=/أجير|اجير/.test(clean(source)),category=at(row,'التصنيف'),team=at(row,'رقم الفريق');
-     const department=[sector,rawRegion,category,team&&('الفريق '+team)].filter(Boolean).join(' • ');
-     records.push({region:isRiyadh?'riyadh':'qassim',employee_code:code,full_name:at(row,'الإسم','الاسم'),person_type:ajir?'contractor':'staff',employer:source||'غير محدد',department,job_title:title,specialty:'',employment_type:ajir?'outsourced':'other',start_date:at(row,'تاريخ المباشرة'),phone:at(row,'رقم التليفون'),direct_manager:at(row,'المدير'),job_family:jobFamily(title)});
+     const department=[sector,rawRegion,category,team&&('الفريق '+team),!code&&'الرقم الوظيفي مفقود'].filter(Boolean).join(' • ');
+     records.push({region:isRiyadh?'riyadh':'qassim',employee_code:safeCode,full_name:at(row,'الإسم','الاسم'),person_type:ajir?'contractor':'staff',employer:source||'غير محدد',department,job_title:title,specialty:'',employment_type:ajir?'outsourced':'other',start_date:at(row,'تاريخ المباشرة'),phone:at(row,'رقم التليفون'),direct_manager:at(row,'المدير'),job_family:jobFamily(title)});
     }
    }else{
     const got=rawHeaders;
