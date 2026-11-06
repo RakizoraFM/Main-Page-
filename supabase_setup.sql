@@ -14687,7 +14687,7 @@ begin
 end $$;
 
 create or replace function public.fm_workforce337_import_people(p jsonb) returns jsonb
-language plpgsql security definer set search_path=public as $
+language plpgsql security definer set search_path=public as $$
 declare rowv jsonb; saved jsonb; pid uuid; person_rev int; role_rev int; n int:=0; idx int:=0; r text; emp text; code text; emp_type text;
 begin
  if auth.uid() is null or jsonb_typeof(p->'rows')<>'array' then raise exception 'ملف الاستيراد غير صالح'; end if;
@@ -14708,7 +14708,7 @@ begin
   n:=n+1;
  end loop;
  return jsonb_build_object('saved',n,'atomic',true);
-end $;
+end $$;
 
 revoke all on function public.fm_workforce337_data(text),public.fm_workforce337_person_save(jsonb),public.fm_workforce337_plan_save(jsonb),public.fm_workforce337_leave_save(jsonb),public.fm_workforce337_leave_review(uuid,text,uuid,text),public.fm_workforce337_qualification_save(jsonb),public.fm_workforce337_move(jsonb),public.fm_workforce337_import_people(jsonb) from public,anon;
 grant execute on function public.fm_workforce337_data(text),public.fm_workforce337_person_save(jsonb),public.fm_workforce337_plan_save(jsonb),public.fm_workforce337_leave_save(jsonb),public.fm_workforce337_leave_review(uuid,text,uuid,text),public.fm_workforce337_qualification_save(jsonb),public.fm_workforce337_move(jsonb),public.fm_workforce337_import_people(jsonb) to authenticated;
