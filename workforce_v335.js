@@ -78,7 +78,7 @@ function csv(panel,p){
     x.region=area.toLowerCase();
     if(x.region&&!REG[x.region])errors.push(`صف ${row}: المنطقة يجب أن تكون riyadh أو qassim.`);
     const key=[x.region,S(x.employer).toLowerCase(),S(x.employee_code).toLowerCase()].join('|');
-    if(x.employee_code&&seen.has(key))errors.push(`صف ${row}: رقم وظيفي مكرر لنفس المنطقة وجهة العمل.`);
+    if(!arabic&&x.employee_code&&seen.has(key))errors.push(`صف ${row}: رقم وظيفي مكرر لنفس المنطقة وجهة العمل.`);
     seen.add(key);
    });
    if(errors.length){result.textContent=`تعذر اعتماد الملف: ${errors.length} ملاحظة. أول الملاحظات: ${errors.slice(0,8).join(' | ')}`;return}
