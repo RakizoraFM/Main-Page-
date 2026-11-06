@@ -37,7 +37,7 @@ function csv(panel,p){
    const table=await readImportTable(f);if(!table.length)throw Error('الملف فارغ');
    const rawHeaders=table[0].map(v=>S(v).replace(/^\\uFEFF/,''));
    const arabic=rawHeaders.some(h=>['الإسم','الاسم','الوظيفة','مصدر العمالة'].includes(h));
-   let sourceMeta={vacant:0,excluded:0,missingCode:0};
+   let sourceMeta={vacant:0,excluded:0,missingCode:0,duplicates:0};
    const sourceRows=table.slice(1).filter(a=>a.some(v=>S(v)));
    let records;
    if(arabic){
@@ -68,6 +68,7 @@ function csv(panel,p){
     for(const h of ['region','employee_code','full_name','employer','job_title'])if(!got.includes(h))throw Error('عمود مطلوب غير موجود: '+h);
     records=sourceRows.map(a=>Object.fromEntries(got.map((k,i)=>[k,S(a[i])]).filter(([k])=>headers.includes(k))));
    }
+   if(arabic){const unique=new Map;for(const x of records){const key=[x.region,S(x.employer).toLowerCase(),S(x.employee_code).toLowerCase()].join('|'),old=unique.get(key);if(old){sourceMeta.duplicates++;x.department=[x.department,'توزيع متكرر سابق: '+(old.department||'')].filter(Boolean).join(' • ').slice(0,160)}unique.set(key,x)}records=[...unique.values()]}
    if(!records.length)throw Error('لا توجد صفوف بيانات');
    const errors=[],seen=new Set();
    records.forEach((x,i)=>{
@@ -82,7 +83,7 @@ function csv(panel,p){
    });
    if(errors.length){result.textContent=`تعذر اعتماد الملف: ${errors.length} ملاحظة. أول الملاحظات: ${errors.slice(0,8).join(' | ')}`;return}
    const counts=records.reduce((a,x)=>(a[x.region]=(a[x.region]||0)+1,a),{});
-   result.textContent=`المعاينة: ${records.length} سجلًا صالحًا — الرياض: ${counts.riyadh||0}، القصيم: ${counts.qassim||0}. صفوف الشواغر/التعيين المستبعدة من سجل الأفراد: ${sourceMeta.vacant}. صفوف معلّمة للاستبعاد: ${sourceMeta.excluded}. بلا رقم وظيفي: ${sourceMeta.missingCode} (تُوسم بمعرف MISSING مؤقت). لا يتضمن الاستيراد رقم الإقامة. لن تُحذف السجلات غير الموجودة في الملف.`;
+   result.textContent=`المعاينة: ${records.length} سجلًا صالحًا — الرياض: ${counts.riyadh||0}، القصيم: ${counts.qassim||0}. صفوف الشواغر/التعيين المستبعدة من سجل الأفراد: ${sourceMeta.vacant}. صفوف معلّمة للاستبعاد: ${sourceMeta.excluded}. أرقام مكررة دُمجت: ${sourceMeta.duplicates}. بلا رقم وظيفي: ${sourceMeta.missingCode} (تُوسم بمعرف MISSING مؤقت). لا يتضمن الاستيراد رقم الإقامة. لن تُحذف السجلات غير الموجودة في الملف.`;
    const confirmBtn=document.createElement('button');confirmBtn.type='button';confirmBtn.className='primary';confirmBtn.textContent=`تأكيد استيراد ${records.length} سجلًا`;
    confirmBtn.onclick=async()=>{confirmBtn.disabled=true;result.textContent='جارٍ حفظ السجلات…';try{const saved=await rpc('fm_workforce337_import_people',{p:{rows:records}});result.textContent=`تم حفظ ${saved.saved} سجلًا ضمن عملية واحدة.`;actions.replaceChildren();await load()}catch(er){result.textContent=/fm_workforce337_import_people|function .* does not exist|schema cache/i.test(er.message)?'توقف الاستيراد: شغّل ترحيل V337 على قاعدة البيانات أولاً.':'توقف الاستيراد: '+er.message;confirmBtn.disabled=false}};
    actions.append(confirmBtn);
