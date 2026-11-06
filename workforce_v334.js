@@ -1,3 +1,86 @@
+/* Unified workspace: keep navigation available while opening module details. */
+(function () {
+  'use strict';
+  if (window.FMWorkspaceNavigation || !window.HTMLDialogElement) return;
+  const stack = [];
+  const proto = HTMLDialogElement.prototype;
+  const show = proto.show;
+  const close = proto.close;
+  function prune() {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (!stack[i].isConnected || !stack[i].open) stack.splice(i, 1);
+    }
+    stack.forEach((d, i) => d.classList.toggle('fm-workspace-covered', i !== stack.length - 1));
+  }
+  proto.showModal = function () {
+    if (this.open) return;
+    this.classList.add('fm-workspace-view');
+    this.setAttribute('aria-modal', 'false');
+    show.call(this);
+    stack.push(this);
+    prune();
+    this.addEventListener('close', prune, { once: true });
+    const back = this.querySelector('[data-close], [data-x]');
+    if (back && !back.closest('form')) {
+      back.textContent = '→ رجوع';
+      back.setAttribute('aria-label', 'الرجوع إلى العرض السابق');
+    }
+    this.scrollTop = 0;
+  };
+  proto.close = function (value) {
+    close.call(this, value);
+    prune();
+  };
+  function clear() {
+    for (const d of [...stack].reverse()) if (d.open) d.close();
+    prune();
+  }
+  document.addEventListener('click', function (event) {
+    if (event.target.closest('.v2-nav button, .v2-nav a')) {
+      clear();
+      window.v2CloseModal?.();
+    }
+  }, true);
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && stack.length) {
+      event.preventDefault();
+      stack[stack.length - 1].close();
+    }
+  });
+  const style = document.createElement('style');
+  style.textContent = `@media screen {
+    body { --fm-workspace-edge: var(--v2nav,278px); }
+    body.v2-nav-collapsed { --fm-workspace-edge: var(--v2nav-mini,76px); }
+    .v2-primary-sidebar { z-index: 12000 !important; }
+    dialog.fm-workspace-view[open], #v2-overlay.open, .modal-overlay.active {
+      position:fixed !important; inset:0 var(--fm-workspace-edge) 0 0 !important;
+      width:auto !important; height:auto !important; max-width:none !important;
+      max-height:none !important; margin:0 !important; padding:24px !important;
+      box-sizing:border-box !important; border:0 !important; border-radius:0 !important;
+      background:var(--bg-main,#f6f8fc) !important; box-shadow:none !important;
+      overflow:auto !important; transform:none !important;
+    }
+    dialog.fm-workspace-view[open] { z-index:11000 !important; display:block !important; }
+    dialog.fm-workspace-view.fm-workspace-covered[open] { display:none !important; }
+    #v2-overlay.open, .modal-overlay.active { display:block !important; backdrop-filter:none !important; }
+    #v2-overlay.open > .v2-modal, .modal-overlay.active > .modal-card {
+      position:relative !important; inset:auto !important; width:100% !important;
+      max-width:none !important; height:auto !important; max-height:none !important;
+      margin:0 !important; transform:none !important; box-shadow:none !important;
+      border-radius:12px !important; overflow:visible !important;
+    }
+    dialog.fm-workspace-view > header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    dialog.fm-workspace-view table { width:100%; }
+    dialog.fm-workspace-view .fm334-table-wrap, dialog.fm-workspace-view .fm335-scroll { overflow-x:auto; max-width:100%; }
+    @media(max-width:1100px) {
+      body, body.v2-nav-collapsed { --fm-workspace-edge:0px; }
+      dialog.fm-workspace-view[open], #v2-overlay.open, .modal-overlay.active { padding:64px 12px 24px !important; }
+    }
+  }`;
+  document.head.appendChild(style);
+  window.FMWorkspaceNavigation = { clear };
+})();
+
 /* V334 operational workforce roster. Personal fields are limited to work contact data. */
 (function(root){'use strict';
 const C=root.FMCloud, cats={maintenance:'فرق الصيانة',light_services:'الخدمات الخفيفة',administrative:'الطقم الإداري',support:'الخدمات المساندة'}, regions={riyadh:'الرياض',qassim:'القصيم'};
