@@ -240,6 +240,27 @@ header .site-nav{justify-content:center;margin-inline:auto!important}
 /* Precisely center the desktop tab group */
 @media(min-width:981px){header .site-nav{position:absolute;left:50%;transform:translateX(-50%);margin:0!important}}
 @media(max-width:980px){header .site-nav{position:static;left:auto;transform:none}}
+.solvix-gallery{margin:28px 0;padding:21px;background:rgba(255,255,255,.78);border:1px solid #d9e6ed;border-radius:20px;box-shadow:0 10px 28px rgba(16,35,63,.045)}
+.solvix-gallery-head{margin-bottom:15px}.solvix-gallery-head .section-kicker{margin-bottom:6px}
+.solvix-gallery-head h3{margin:0 0 3px;color:#142f4d;font-size:clamp(19px,2.5vw,24px)}
+.solvix-gallery-head p{margin:0;color:var(--mut);font-size:13px}
+.solvix-gallery-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.solvix-gallery-card{overflow:hidden;border:1px solid #dce7ed;border-radius:15px;background:#fff}
+.solvix-gallery-card img{display:block;width:100%;height:205px;object-fit:cover;background:#eaf0f4}
+#solvix .solvix-gallery-card .solvix-gallery-copy{display:grid;gap:2px;padding:11px 13px;width:100%;box-sizing:border-box;direction:rtl!important;text-align:right!important;justify-items:stretch}#solvix .solvix-gallery-card .solvix-gallery-copy b,#solvix .solvix-gallery-card .solvix-gallery-copy span{display:block;width:100%;direction:rtl!important;text-align:right!important}
+.solvix-gallery-copy b{color:#173653;font-size:14px}.solvix-gallery-copy span{color:var(--mut);font-size:12px}
+.solvix-gallery-note{margin:10px 0 0;color:#718196;font-size:11px}
+@media(max-width:980px){.solvix-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.solvix-gallery{padding:15px}.solvix-gallery-grid{grid-template-columns:1fr}.solvix-gallery-card img{height:220px}}
+
+.solvix-gallery-viewport{overflow:hidden;direction:ltr}
+.solvix-gallery-track{display:flex;width:max-content;animation:solvix-gallery-right 84s linear infinite;will-change:transform}
+.solvix-gallery-group{display:flex;flex:0 0 auto;gap:12px;padding-right:12px}
+.solvix-gallery-group .solvix-gallery-card{flex:0 0 clamp(270px,30vw,360px)}
+.solvix-gallery-viewport:hover .solvix-gallery-track{animation-play-state:paused}
+@keyframes solvix-gallery-right{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media(max-width:700px){.solvix-gallery-group .solvix-gallery-card{flex-basis:clamp(270px,78vw,330px)}}
+@media(prefers-reduced-motion:reduce){.solvix-gallery-track{animation:none;transform:none}.solvix-gallery-viewport{overflow-x:auto}}
 </style></head><body><header><div class="wrap"><div class="site-brand"><b>RakizoraFM</b><small>حلول التشغيل من Solvix</small></div><nav class="site-nav" aria-label="التنقل الرئيسي"><a class="" href="try.html">الرئيسية</a><a class="" href="services.html">خدمات إدارة المرافق</a><a class="" href="rakizora.html">RakizoraFM</a><a class="active" href="solvix.html">Solvix</a><a class="" href="partners.html">شركاؤنا</a><a class="" href="contact.html">اطلب عرضًا</a><a class="site-login" href="start.html">دخول العملاء</a></nav></div></header><main><section class="page-title"><div class="wrap"><span class="section-kicker">منصة حصر الأصول</span><img class="solvix-page-logo" src="assets/solvix-logo-transparent.svg" alt="شعار Solvix"><p>سجل رقمي موحد وموثوق للأصول، يدعم فرق الحصر والتشغيل.</p></div></section><section id="solvix" class="solvix-section"><div class="wrap">
  <div class="solvix-head"><h2>مميزات منصة حصر الأصول</h2><p class="sub">تساعد Solvix فرق الحصر على جمع بيانات الأصول ميدانياً، توثيق مواقعها وحالتها، ترميزها، ثم تسليم سجل رقمي منظم وتقارير واضحة.</p></div>
  <div class="solvix-features">
@@ -250,13 +271,38 @@ header .site-nav{justify-content:center;margin-inline:auto!important}
   <article class="solvix-feature"><span>05</span><h3>استمرار العمل دون اتصال</h3><p>تسجيل الأصول من الميدان دون إنترنت، مع مزامنة البيانات تلقائيًا عند عودة الاتصال وإظهار ما لم يُرسل بعد.</p></article>
   <article class="solvix-feature"><span>06</span><h3>لوحة متابعة وتقارير جاهزة</h3><p>متابعة الإنجاز وجودة البيانات على لوحة مباشرة، وتصدير سجلات Excel وتقارير PDF وأرشيف صور للأصول.</p></article>
  </div>
+ <section class="solvix-gallery" aria-labelledby="solvix-gallery-title">
+  <div class="solvix-gallery-head"><span class="section-kicker">حصر ميداني</span><h3 id="solvix-gallery-title">من الموقع إلى سجل الأصول</h3><p>توثيق الأصل وربطه ببياناته وموقعه ورمز التعريف عبر خطوات واضحة.</p></div>
+  <div class="solvix-gallery-viewport" aria-label="صور أعمال حصر الأصول الميداني، تتحرك من اليمين إلى اليسار">
+   <div class="solvix-gallery-track">
+    <div class="solvix-gallery-group">
+   <article class="solvix-gallery-card"><img src="assets/solvix-field-qr.svg" alt="فني يوثق وحدة تكييف برمز QR أثناء حصر الأصول" loading="lazy" decoding="async"><div class="solvix-gallery-copy" dir="rtl"><b>ترميز الأصل ميدانيًا</b><span>تثبيت الرمز وربط الأصل ببياناته.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-asset-tagging.webp" alt="فنيان بمعدات الوقاية يثبتان ملصق QR على أصل" loading="lazy" decoding="async"><div class="solvix-gallery-copy" dir="rtl"><b>مسح الرمز التعريفي</b><span>الوصول السريع إلى بطاقة الأصل وسجله.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-inspection-no-ghutra.svg" alt="فني بمعدات الوقاية يوثق فحص أصل باستخدام جهاز لوحي" loading="lazy" decoding="async"><div class="solvix-gallery-copy" dir="rtl"><b>توثيق حالة الأصل</b><span>تسجيل بيانات الفحص والملاحظات من الموقع.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-server-room-qr.jpg" alt="فني يرتدي معدات الوقاية يرمز خادمًا في غرفة تقنية، ومشرف يتابع العمل" loading="lazy" decoding="async"><div class="solvix-gallery-copy" dir="rtl"><b>حصر الأصول التقنية</b><span>توثيق الخوادم ومكوناتها برمز تعريف.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-server-asset-tagging.jpg" alt="فني يرتدي خوذة وسترة سلامة يمسح رمز أصل في غرفة الخوادم، ومشرف بالزي السعودي يتابع" loading="lazy" decoding="async"><div class="solvix-gallery-copy" dir="rtl"><b>ترميز معدات تقنية</b><span>ربط المعدات التقنية بسجل الأصول.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-healthcare-equipment.jpg" alt="فريق يوثق معدات وأجهزة داخل منشأة صحية مع الالتزام بملابس العمل المناسبة" loading="lazy" decoding="async"><div class="solvix-gallery-copy" dir="rtl"><b>حصر أجهزة المنشآت</b><span>تسجيل بيانات الأجهزة ومواقعها التشغيلية.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-hvac-asset-tagging.jpg" alt="فني يرتدي خوذة وسترة عاكسة يوثق وحدة تكييف برمز QR، ومشرف بالزي السعودي يتابع" loading="lazy" decoding="async"><div class="solvix-gallery-copy" dir="rtl"><b>توثيق وحدات التكييف</b><span>تسجيل بيانات الأصل وحالته وموقعه.</span></div></article>
+    </div>
+    <div class="solvix-gallery-group" aria-hidden="true">
+   <article class="solvix-gallery-card"><img src="assets/solvix-field-qr.svg" alt="" loading="lazy" decoding="async" aria-hidden="true"><div class="solvix-gallery-copy" dir="rtl"><b>ترميز الأصل ميدانيًا</b><span>تثبيت الرمز وربط الأصل ببياناته.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-asset-tagging.webp" alt="" loading="lazy" decoding="async" aria-hidden="true"><div class="solvix-gallery-copy" dir="rtl"><b>مسح الرمز التعريفي</b><span>الوصول السريع إلى بطاقة الأصل وسجله.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-inspection-no-ghutra.svg" alt="" loading="lazy" decoding="async" aria-hidden="true"><div class="solvix-gallery-copy" dir="rtl"><b>توثيق حالة الأصل</b><span>تسجيل بيانات الفحص والملاحظات من الموقع.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-server-room-qr.jpg" alt="" loading="lazy" decoding="async" aria-hidden="true"><div class="solvix-gallery-copy" dir="rtl"><b>حصر الأصول التقنية</b><span>توثيق الخوادم ومكوناتها برمز تعريف.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-server-asset-tagging.jpg" alt="" loading="lazy" decoding="async" aria-hidden="true"><div class="solvix-gallery-copy" dir="rtl"><b>ترميز معدات تقنية</b><span>ربط المعدات التقنية بسجل الأصول.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-healthcare-equipment.jpg" alt="" loading="lazy" decoding="async" aria-hidden="true"><div class="solvix-gallery-copy" dir="rtl"><b>حصر أجهزة المنشآت</b><span>تسجيل بيانات الأجهزة ومواقعها التشغيلية.</span></div></article>
+   <article class="solvix-gallery-card"><img src="assets/solvix-hvac-asset-tagging.jpg" alt="" loading="lazy" decoding="async" aria-hidden="true"><div class="solvix-gallery-copy" dir="rtl"><b>توثيق وحدات التكييف</b><span>تسجيل بيانات الأصل وحالته وموقعه.</span></div></article>
+    </div>
+   </div>  </div>
+  <p class="solvix-gallery-note">صور توضيحية لمراحل حصر الأصول والعمل الميداني.</p>
+ </section>
  <div class="solvix-connection"><b>كيف تكمل Solvix دور RakizoraFM؟</b><p>تجهّز Solvix سجل الأصول الموثق، بينما تدير RakizoraFM البلاغات والصيانة والفرق ومؤشرات الأداء؛ لتستند أعمال التشغيل إلى بيانات أصول محدثة.</p></div>
  <div class="solvix-delivery">
   <div class="solvix-delivery-head"><h3>طرق تقديم Solvix</h3><p>اختر نموذج التنفيذ المناسب لفريقك ونطاق المباني.</p></div>
   <div class="solvix-offers">
    <article class="solvix-offer"><img class="solvix-offer-image" src="assets/solvix-dashboard.webp" alt="مسؤولان يراجعان مؤشرات الأصول والتشغيل على لوحة رقمية" loading="lazy" decoding="async"><div class="solvix-offer-copy"><span>اشتراك المنصة</span><h4>فريقك ينفذ الحصر</h4><p>قاعدة أصول مستقلة للجهة، مع الصلاحيات والتدريب والدعم والتحديثات.</p></div></article>
    <article class="solvix-offer"><img class="solvix-offer-image" src="assets/solvix-asset-tagging.webp" alt="فنيان يرتديان الخوذة والنظارات والسترة العاكسة أثناء ترميز أصل ميداني" loading="lazy" decoding="async"><div class="solvix-offer-copy"><span>خدمة متكاملة</span><h4>فريقنا ينفذ الحصر</h4><p>حصر ميداني وترميز الأصول وملصقات QR وتسليم التقارير والسجلات النهائية.</p></div></article>
-   <article class="solvix-offer"><img class="solvix-offer-image" src="assets/solvix-field-inspection.webp" alt="فني يرتدي خوذة ونظارات وسترة عاكسة ويوثق فحص أصل باستخدام جهاز لوحي" loading="lazy" decoding="async"><div class="solvix-offer-copy"><span>تحديث دوري</span><h4>سجل أصول محدث</h4><p>تنفيذ الحصر الأول، ثم جرد مجدول لتحديث السجل ومتابعة نقل الأصول بين المواقع.</p></div></article>
+   <article class="solvix-offer"><img class="solvix-offer-image" src="assets/solvix-inspection-no-ghutra.svg" alt="فني يرتدي خوذة ونظارات وسترة عاكسة ويوثق فحص أصل باستخدام جهاز لوحي" loading="lazy" decoding="async"><div class="solvix-offer-copy"><span>تحديث دوري</span><h4>سجل أصول محدث</h4><p>تنفيذ الحصر الأول، ثم جرد مجدول لتحديث السجل ومتابعة نقل الأصول بين المواقع.</p></div></article>
   </div>
   <p class="solvix-note">يُحدد نطاق التنفيذ والعرض المالي وفق عدد المباني والأصول والمدة المطلوبة.</p>
  </div>
