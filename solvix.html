@@ -218,6 +218,24 @@ header a.site-login{background:rgba(255,255,255,.1);border:1px solid rgba(255,25
 
 
 .site-nav{display:flex;align-items:center;gap:3px;min-width:0;overflow:auto;scrollbar-width:none}.site-nav::-webkit-scrollbar{display:none}.site-nav a{display:inline-flex!important;align-items:center;white-space:nowrap;color:#dce8f3;font-size:12px;padding:7px 10px;border-radius:999px;text-decoration:none;font-weight:800}.site-nav a:hover,.site-nav a.active{background:#ffffff17;color:#fff}.site-nav a.active{box-shadow:inset 0 -2px #28c5ad}.site-nav a.site-login{background:linear-gradient(110deg,#20bda8,#0e918c);color:#062e35;border:0;padding-inline:12px}.site-brand{margin-inline-end:0!important}.site-brand b{flex:0}.page-title{padding:38px 0 26px;background:linear-gradient(135deg,#eaf6f5,#f3f6fd)}.page-title h1{margin:0 0 4px;color:#10233f;font-size:clamp(26px,3.5vw,40px)}.page-title p{margin:0;color:#607187}.landing-links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.landing-link{display:block;border:1px solid #dce5ee;border-radius:18px;background:#fff;padding:19px;box-shadow:0 8px 24px rgba(15,35,63,.05);text-decoration:none;transition:transform .18s ease,box-shadow .18s ease}.landing-link:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(15,35,63,.1)}.landing-link b{display:block;font-size:17px;color:#142f4d;margin:8px 0 4px}.landing-link p{margin:0;color:#607187;font-size:13px}.landing-link .mark{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#e2f5f3;font-size:19px}.page-action{margin-top:20px}.page-action .btn{display:inline-block}@media(max-width:980px){.site-nav{order:3;flex:1 1 100%;width:100%}.landing-links{grid-template-columns:1fr 1fr}header .wrap{flex-wrap:wrap}}@media(max-width:700px){header .wrap{min-height:62px;gap:6px}.site-brand{margin-inline-end:auto!important}.site-brand small{display:none}.site-nav{display:flex!important;order:3;flex:1 1 100%;width:100%;gap:2px;padding:1px 0 3px}.site-nav a,.site-nav a:not(.c){display:inline-flex!important;padding:6px 9px;font-size:11px}.site-nav a.site-login{padding:6px 9px;font-size:11px}.page-title{padding:27px 0 19px}.landing-links{grid-template-columns:1fr}.page-action .btn{width:100%;text-align:center}}
+
+/* Header alignment: brand right, page tabs centered */
+header .wrap{position:relative;display:flex;justify-content:center;align-items:center;min-height:72px;padding-top:10px;padding-bottom:10px;gap:8px}
+header .site-brand{position:absolute;inset-inline-start:16px;top:50%;transform:translateY(-50%);margin:0!important;display:flex;align-items:center}
+header .site-brand small{display:inline-flex!important}
+header .site-nav{justify-content:center;margin-inline:auto!important}
+@media(max-width:980px){
+ header .wrap{position:relative;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;padding:9px 16px 7px;gap:7px}
+ header .site-brand{position:static;inset:auto;top:auto;transform:none;margin-inline-start:0!important;margin-inline-end:auto!important}
+ header .site-nav{order:3;flex:1 1 100%;width:100%;justify-content:center;flex-wrap:wrap;overflow:visible;margin:0!important}
+}
+@media(max-width:700px){
+ header .wrap{padding:8px 12px 7px;gap:6px}
+ header .site-brand small{display:inline-flex!important}
+ header .site-nav{display:flex!important;gap:4px;row-gap:4px;padding:2px 0 4px}
+ header .site-nav a,header .site-nav a:not(.c){display:inline-flex!important;padding:5px 8px;font-size:10.5px}
+}
+
 </style></head><body><header><div class="wrap"><div class="site-brand"><b>RakizoraFM</b><small>حلول التشغيل من Solvix</small></div><nav class="site-nav" aria-label="التنقل الرئيسي"><a class="" href="try.html">الرئيسية</a><a class="" href="services.html">خدمات إدارة المرافق</a><a class="" href="rakizora.html">RakizoraFM</a><a class="active" href="solvix.html">Solvix</a><a class="" href="contact.html">اطلب عرضًا</a><a class="site-login" href="start.html">دخول العملاء</a></nav></div></header><main><section class="page-title"><div class="wrap"><span class="section-kicker">منصة حصر الأصول</span><h1>Solvix</h1><p>سجل رقمي موحد وموثوق للأصول، يدعم فرق الحصر والتشغيل.</p></div></section><section id="solvix" class="solvix-section"><div class="wrap">
  <div class="solvix-head"><img class="product-logo" src="assets/solvix-logo.png" alt="شعار Solvix" loading="lazy" decoding="async"><h2>مميزات منصة Solvix لحصر الأصول</h2><p class="sub">تساعد Solvix فرق الحصر على جمع بيانات الأصول ميدانياً، توثيق مواقعها وحالتها، ترميزها، ثم تسليم سجل رقمي منظم وتقارير واضحة.</p></div>
  <div class="solvix-features">
