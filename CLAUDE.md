@@ -750,3 +750,6 @@ Local checks: `node tests/integration/billing330.mjs`; browser fixture checks `n
 
 ## V341 — workforce charts merged
 - `workforce_v334.js` `overviewMarkup()`: the secondary row (job-titles chart `fm342-jobs-card` + «أكبر الفرق» `fm342-teams-card`) and the education-office stacked chart row `.fm340-region-row` (`fm342-region-card`) are removed; `D340` gains `['team', 5, 'الفريق']` (labels «فريق X», empty = «بدون فريق»; a bar click filters column 5 like the other tabs). `initOverviewCharts` still mounts `jobs` / `locations` only when their canvas exists (`mount` returns null otherwise). The «تفاصيل الكادر» section is gone: its staff / contractors / office (with the title breakdown `.fm340-br`) / supervision / engineering cards are a second row of `.fm340-kpis` (`k340`, same card keys); the duplicates (active, teams, shortage) were dropped. Cache-buster `?v=20261107-v341-dashboard`.
+
+## V342 — office titles as a drop-down
+- `workforce_v334.js`: the «الكادر الإداري والمكتبي» card shows `select.fm340-sel[data-f340-title]` («📋 المسميات (n)», options «title — count») instead of the `.fm340-br` grid; click / keydown / mousedown on it stop propagation so the card filter does not toggle; choosing a title sets `sourceGrid.values[9] = [title]` and opens the people tab. Cache-buster `?v=20261107-v342-dashboard`.
