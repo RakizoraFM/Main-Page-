@@ -757,3 +757,7 @@ Local checks: `node tests/integration/billing330.mjs`; browser fixture checks `n
 
 ## V343 / field F126 — version under the logo
 - `fm-v343-ver` (+ css): `span.fm343-v` inside `.v2-brand-logo` (absolute, under the logo; re-added every 1.5 s) shows the `fm-version` meta as is (`V343`; `window.fmV343Ver`). Field: `fmfVer()` / `fmfVerTag()` put `i.f126-v` (`F126`) under the logo in `shell()` (`.top`) and `sbHead()` (`.sbb`), both wrapped in `span.bmw`. The text comes from the meta tag, so it follows every version bump by itself.
+
+## V344 — one contractor chart with tabs in the buildings database
+- `fm-v311-bld-db` `VIZ`: the three contractor donuts (`clean`, `contractor`, `ac`) render as ONE card — only the pie whose key is `F.ct` is drawn (`localStorage fm344_ct`, default `clean`); its title is «👷 المقاولون» + `.fm344-tabs` (`[data-ct]`, labels without «مقاول», full name in `title`). Count mode / sizes / slice filters stay per key. `.fm311-viz.fm344` = two columns (office bars + contractors), one column ≤ 900 px.
+- Fix: the V343 manual entry `fm343-ver` had been put directly in `MANUAL` (not inside a group's `items`), so the manual script stopped on «Cannot read properties of undefined (reading 'forEach')»; it is now in the «النظام» group. A MANUAL entry always goes inside a group's `items`.
