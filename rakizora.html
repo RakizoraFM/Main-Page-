@@ -236,7 +236,7 @@ header a.site-login{background:rgba(255,255,255,.1);border:1px solid rgba(255,25
  </div>
 </div></section><section id="parts"><div class="wrap"><h2>اختر الأجزاء التي تحتاجها</h2><p class="sub">ابدأ بجزء واحد وأضف غيره لاحقاً بكود تفعيل — بياناتك لا تُفقد عند إيقاف جزء.</p>
  <div class="grid" id="parts-grid"></div></div></section><section id="plans" style="background:#fff"><div class="wrap"><h2>الباقات</h2><p class="sub">حسب عدد المباني والأجزاء — وأي جزء غير مشمول يُضاف بسعره.</p><div class="grid plans" id="plans-grid"><div class="card">جارٍ التحميل…</div></div></div></section><section id="demo" style="background:#fff"><div class="wrap"><h2>🧪 جرّب نسخة العرض</h2><p class="sub">بيانات وهمية بالكامل لمبانٍ وبلاغات وأوامر عمل ومستودعات — اختر أي دور (مدير مشروع، مهندس، مشرف، أمين مستودع…) وشاهد المنصة كما يراها.</p>
- <a class="btn p" id="demo-go" href="#trial">🧪 ادخل نسخة العرض</a><span id="demo-none" style="color:var(--mut);font-weight:700" hidden>نسخة العرض تُفعَّل قريباً — اطلب عرضاً مباشراً من النموذج.</span></div></section></main><footer>RakizoraFM × Solvix • إدارة المرافق والأصول الذكية • <a href="start.html">دخول العملاء</a></footer><script>
+ <a class="btn p" id="demo-go" href="contact.html">🧪 ادخل نسخة العرض</a><span id="demo-none" style="color:var(--mut);font-weight:700" hidden>نسخة العرض تُفعَّل قريباً — اطلب عرضاً مباشراً من النموذج.</span></div></section></main><footer>RakizoraFM × Solvix • إدارة المرافق والأصول الذكية • <a href="start.html">دخول العملاء</a></footer><script>
 (function(){
 'use strict';
 /* T1 (V185): public page of the platform. Reads the plans / add-ons / demo code from the owner's control project
@@ -265,7 +265,7 @@ const money=v=>(+v||0).toLocaleString('en-US')+' ر.س';
  if(site.whatsapp&&$('#wa')){const w=$('#wa');let p=S(site.whatsapp).replace(/[^\d]/g,'');if(/^05\d{8}$/.test(p))p='966'+p.slice(1);w.href='https://wa.me/'+p+'?text='+encodeURIComponent('السلام عليكم، أرغب في معرفة المزيد عن منصة RakizoraFM');w.hidden=false}
  if($('#plans-grid')) $('#plans-grid').innerHTML=plans.length?plans.map((x,i)=>{const mods=Array.isArray(x.modules)?x.modules:Object.keys(PN);return `<div class="card ${i===1?'hl':''}"><h3>${esc(x.name)}</h3>${x.price!=null?`<div class="pr">${money(x.price)} <small>/ شهرياً قبل الضريبة</small></div>`:''}
   <div style="color:var(--mut);font-weight:700">${+x.max?'حتى '+(+x.max).toLocaleString('en-US')+' مبنى':'عدد غير محدود من المباني'}</div><div style="margin:8px 0">${mods.map(k=>`<span class="chip">${esc(PN[k]||k)}</span>`).join('')}</div>
-  <a class="btn p" href="#trial" data-plan="${esc(x.k)}" style="margin-top:auto;text-align:center">اطلب هذه الباقة</a></div>`}).join('')
+  <a class="btn p" href="contact.html" data-plan="${esc(x.k)}" style="margin-top:auto;text-align:center">اطلب هذه الباقة</a></div>`}).join('')
   +(adds.some(a=>+a.base||+a.per_school)?`<div class="card"><h3>➕ أجزاء إضافية</h3><ul>${adds.filter(a=>+a.base||+a.per_school).map(a=>`<li>${esc(PN[a.k]||a.k)}: ${+a.base?money(a.base):''}${+a.per_school?` ${+a.base?'+ ':''}${money(a.per_school)} لكل مبنى`:''} شهرياً</li>`).join('')}</ul></div>`:'')
   :'<div class="card">تواصل معنا لعرض سعر يناسب عدد مبانيكم.</div>';
  document.querySelectorAll('[data-plan]').forEach(a=>a.onclick=()=>{const x=plans.find(p=>p.k===a.dataset.plan);if(x&&Array.isArray(x.modules)){if($('#extra-fields')) $('#extra-fields').open=true;document.querySelectorAll('#mods input').forEach(c=>c.checked=x.modules.includes(c.value));}const m=$('[name=message]');if(x&&m&&!S(m.value))m.value='مهتم بباقة '+x.name})})();
