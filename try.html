@@ -187,10 +187,25 @@ section .section-kicker{letter-spacing:.1px}
 @media(max-width:430px){.site-brand b{font-size:17px}.solution-grid{grid-template-columns:1fr}.solution-card .photo{height:190px}.hero-actions .btn{flex:1 1 100%;text-align:center}.workflow-grid{grid-template-columns:1fr}#trial .required-grid,#trial .extra-grid{grid-template-columns:1fr}#trial .required-grid label:first-child{grid-column:auto}#trial .card{padding:16px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
 
+
+.solvix-delivery{margin-top:22px;padding:20px;background:rgba(255,255,255,.58);border:1px solid #dce8ec;border-radius:18px}
+.solvix-delivery-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:13px}
+.solvix-delivery-head h3{margin:0;color:#142f4d;font-size:19px}
+.solvix-delivery-head p,.solvix-note{margin:0;color:var(--mut);font-size:13px}
+.solvix-offers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.solvix-offer{padding:17px;background:#fff;border:1px solid #dce8ec;border-radius:15px}
+.solvix-offer>span{display:inline-block;padding:3px 9px;border-radius:999px;background:#e1f4f2;color:#08777a;font-size:11px;font-weight:900}
+.solvix-offer h4{margin:9px 0 4px;color:#142f4d;font-size:15px}
+.solvix-offer p{margin:0;color:var(--mut);font-size:12.5px;line-height:1.75}
+.solvix-note{margin-top:12px}
+header a.site-login{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);white-space:nowrap}
+@media(max-width:980px){.solvix-offers{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.solvix-offers{grid-template-columns:1fr}.solvix-delivery-head{display:block}.solvix-delivery-head p{margin-top:3px}header a.site-login{display:inline-block!important;padding:6px 9px;font-size:11px}}
+@media(max-width:430px){.solvix-delivery{padding:14px}.site-brand b{font-size:15px}header a.site-login{padding:5px 7px;font-size:10px}}
 </style>
 </head>
 <body>
-<header><div class="wrap"><div class="site-brand"><b>RakizoraFM</b><small>حلول التشغيل من Solvix</small></div><a href="#scope">نطاق الخدمات</a><a href="#solutions">المنصات</a><a href="#solvix">Solvix</a><a href="#parts">الأجزاء</a><a href="#plans">الباقات</a><a href="#faq">الأسئلة</a><a href="#demo" data-demo-link>نسخة العرض</a><a class="c" href="#trial">اطلب عرضًا</a></div></header>
+<header><div class="wrap"><div class="site-brand"><b>RakizoraFM</b><small>حلول التشغيل من Solvix</small></div><a href="#scope">نطاق الخدمات</a><a href="#solutions">المنصات</a><a href="#solvix">Solvix</a><a href="#parts">الأجزاء</a><a href="#plans">الباقات</a><a href="#faq">الأسئلة</a><a href="#demo" data-demo-link>نسخة العرض</a><a class="site-login" href="start.html">دخول العملاء</a><a class="c" href="#trial">اطلب عرضًا</a></div></header>
 <div class="hero"><div class="wrap hero-layout">
  <div class="hero-copy">
   <div class="hero-brand"><span>RakizoraFM</span><em>×</em><span>Solvix</span></div>
@@ -226,11 +241,23 @@ section .section-kicker{letter-spacing:.1px}
 <section id="solvix" class="solvix-section"><div class="wrap">
  <div class="solvix-head"><img class="product-logo" src="assets/solvix-logo.png" alt="شعار Solvix" loading="lazy" decoding="async"><h2>مميزات منصة Solvix لحصر الأصول</h2><p class="sub">تساعد Solvix فرق الحصر على جمع بيانات الأصول ميدانياً، توثيق مواقعها وحالتها، ترميزها، ثم تسليم سجل رقمي منظم وتقارير واضحة.</p></div>
  <div class="solvix-features">
-  <article class="solvix-feature"><span>01</span><h3>حصر ميداني موحد</h3><p>تسجيل تعريف الأصل وفئته ووصفه وموقعه وحالته، مع الصور والبيانات المطلوبة لكل نطاق.</p></article>
-  <article class="solvix-feature"><span>02</span><h3>تحقق وترميز</h3><p>مراجعة البيانات ميدانياً، رصد النواقص والتكرار، وربط الأصل بملصق QR أو باركود لتسهيل الرجوع إليه.</p></article>
-  <article class="solvix-feature"><span>03</span><h3>سجل وتقارير أصول</h3><p>تسليم قاعدة أصول موحدة وتقارير الحصر والتغطية وجودة البيانات، بصيغ تساعد فريق التشغيل على استخدامها.</p></article>
+  <article class="solvix-feature"><span>01</span><h3>دليل أصول موحد</h3><p>تصنيف الأصل على أربعة مستويات وربطه بالمبنى والدور والغرفة، مع تسجيل بياناته الفنية وقراءة بيانات اللوحة عند توفرها.</p></article>
+  <article class="solvix-feature"><span>02</span><h3>توثيق ميداني موثوق</h3><p>صور للأصل ولوحة البيانات، مختومة بوقت التسجيل وموقع المبنى والغرفة والإحداثيات، مع تنبيه عند التصوير بعيدًا عن الموقع.</p></article>
+  <article class="solvix-feature"><span>03</span><h3>رقم ثابت وملصق QR</h3><p>رقم تعريف دائم لكل أصل، وطباعة ملصق QR وإثبات تثبيته بالصورة ثم مسحه للتحقق من مطابقته.</p></article>
+  <article class="solvix-feature"><span>04</span><h3>جودة واعتماد متعدد المراحل</h3><p>حقول إلزامية وفحص للتكرار، ثم مراجعة إدارية تعتمد الأصل أو تعيده بملاحظة قبل إدخاله في التقارير النهائية.</p></article>
+  <article class="solvix-feature"><span>05</span><h3>استمرار العمل دون اتصال</h3><p>تسجيل الأصول من الميدان دون إنترنت، مع مزامنة البيانات تلقائيًا عند عودة الاتصال وإظهار ما لم يُرسل بعد.</p></article>
+  <article class="solvix-feature"><span>06</span><h3>لوحة متابعة وتقارير جاهزة</h3><p>متابعة الإنجاز وجودة البيانات على لوحة مباشرة، وتصدير سجلات Excel وتقارير PDF وأرشيف صور للأصول.</p></article>
  </div>
- <div class="solvix-connection"><b>كيف تكمل Solvix دور RakizoraFM؟</b><p>تجهّز Solvix بيانات الأصول وسجلاتها، بينما تدير RakizoraFM البلاغات والصيانة والفرق ومتابعة الأداء. ويمكن إعداد مخرجات الحصر لتسهيل إدخال بيانات الأصول ضمن بيئة RakizoraFM.</p></div>
+ <div class="solvix-connection"><b>كيف تكمل Solvix دور RakizoraFM؟</b><p>تجهّز Solvix سجل الأصول الموثق، بينما تدير RakizoraFM البلاغات والصيانة والفرق ومؤشرات الأداء؛ لتستند أعمال التشغيل إلى بيانات أصول محدثة.</p></div>
+ <div class="solvix-delivery">
+  <div class="solvix-delivery-head"><h3>طرق تقديم Solvix</h3><p>اختر نموذج التنفيذ المناسب لفريقك ونطاق المباني.</p></div>
+  <div class="solvix-offers">
+   <article class="solvix-offer"><span>اشتراك المنصة</span><h4>فريقك ينفذ الحصر</h4><p>قاعدة أصول مستقلة للجهة، مع الصلاحيات والتدريب والدعم والتحديثات.</p></article>
+   <article class="solvix-offer"><span>خدمة متكاملة</span><h4>فريقنا ينفذ الحصر</h4><p>حصر ميداني وترميز الأصول وملصقات QR وتسليم التقارير والسجلات النهائية.</p></article>
+   <article class="solvix-offer"><span>تحديث دوري</span><h4>سجل أصول محدث</h4><p>تنفيذ الحصر الأول، ثم جرد مجدول لتحديث السجل ومتابعة نقل الأصول بين المواقع.</p></article>
+  </div>
+  <p class="solvix-note">يُحدد نطاق التنفيذ والعرض المالي وفق عدد المباني والأصول والمدة المطلوبة.</p>
+ </div>
 </div></section>
 
 <section class="workflow-section"><div class="wrap workflow-layout">
