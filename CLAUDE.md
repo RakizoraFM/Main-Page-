@@ -753,3 +753,4 @@ Local checks: `node tests/integration/billing330.mjs`; browser fixture checks `n
 
 ## V342 — office titles as a drop-down
 - `workforce_v334.js`: the «الكادر الإداري والمكتبي» card shows `select.fm340-sel[data-f340-title]` («📋 المسميات (n)», options «title — count») instead of the `.fm340-br` grid; click / keydown / mousedown on it stop propagation so the card filter does not toggle; choosing a title sets `sourceGrid.values[9] = [title]` and opens the people tab. Cache-buster `?v=20261107-v342-dashboard`.
+- `tools/cf_build.sh`: its post-copy step (added after V339) «repaired» the two broken strings V340 fixed in the source and stopped the build with «Expected malformed JavaScript string was not found» when they were already fixed, so every Cloudflare build since V340 failed (GitHub Pages was not affected). It now patches only when the broken text is still there.

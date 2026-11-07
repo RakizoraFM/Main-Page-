@@ -13,7 +13,7 @@ cp -r assets dist/
 cp workforce_v334.js workforce_v335.js building_history_v336.js dist/
 cp sw.js manifest.webmanifest fci_template.xlsx ppm_template.xlsx dist/
 cp -r icons dist/
-# Repair two literal line breaks inside JavaScript strings in the generated homepage.
+# Repair two literal line breaks inside JavaScript strings in the generated homepage (no-op since V340 fixed the source).
 python3 - <<'PY'
 from pathlib import Path
 
@@ -30,9 +30,9 @@ repairs = [
     ),
 ]
 for broken, fixed in repairs:
-    if broken not in source:
-        raise SystemExit("Expected malformed JavaScript string was not found in dist/index.html")
-    source = source.replace(broken, fixed, 1)
+    # V342: index.html itself was repaired in V340; only patch a copy that is still broken
+    if broken in source:
+        source = source.replace(broken, fixed, 1)
 page.write_text(source, encoding="utf-8")
 PY
 # the Edge Function code (the settings cards copy it from the site)
