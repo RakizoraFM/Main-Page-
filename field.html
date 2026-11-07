@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F125">
+<meta name="fm-version" content="F126">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -89,6 +89,7 @@ textarea.in{min-height:90px;line-height:1.8}
 .login p{text-align:center;color:var(--mut);margin:0 0 10px;font-size:13.5px}
 .link{color:var(--pri);font-weight:800;text-decoration:none}
 .muted{color:var(--mut);font-size:12.5px}
+.bmw{display:inline-flex;flex-direction:column;align-items:center;gap:2px;flex:none}.f126-v{font:800 9px/1 Cairo,Tahoma,sans-serif;font-style:normal;color:#93c5fd;direction:ltr;white-space:nowrap;letter-spacing:.2px}
 .top .bm{width:32px;height:32px;flex:none;border-radius:9px;background:#fff;padding:2px;object-fit:contain}
 .login .lg{display:block;width:min(220px,70%);height:auto;margin:0 auto 8px}
 .bnav{position:fixed;inset:auto 0 0 0;z-index:25;background:#fff;border-top:1px solid var(--line);display:flex;padding:4px 4px calc(env(safe-area-inset-bottom) + 4px);box-shadow:0 -4px 14px rgba(15,23,42,.06)}
@@ -451,12 +452,15 @@ async function pull(silent){
 function fromCache(){try{const scope=outbox.scope();if(!scope)return false;const o=JSON.parse(localStorage.getItem('fmf_cache_v191:'+scope)||'null');if(!o||o.scope!==scope||o.me?.id!==syncIdentity()?.uid)return false;
  D.me=o.me;D.syncAt=o.at||null;D.ref=o.ref||{};D.rank=o.rank||{};D.tickets=o.tickets;D.work=new Map(o.work.map(w=>[w.region+':'+w.ticket_id,w]));D.events=new Map();o.events.forEach(e=>{const k=e.region+':'+e.ticket_id;if(!D.events.has(k))D.events.set(k,[]);D.events.get(k).push(e)});D.hours=o.hours;D.rules=o.rules;D.db=o.db||[];return true}catch(e){return false}}
 
-function shell(inner,title,sub,back){return `<div class="top">${back?'<button id="bk">→</button>':`<img class="bm" src="${FM_BRAND.mark}" alt="${FM_BRAND.name}">`}<h1>${title}<small>${sub||''}</small></h1>${back?'':'<button id="rf" title="تحديث">🔄</button><button id="lo" title="خروج">خروج</button>'}</div><div class="wrap"><div class="q" id="qb"></div>${inner}</div>`}
+/* F126: version under the logo (the fm-version meta as is, e.g. F126) */
+function fmfVer(){const m=document.querySelector('meta[name="fm-version"]');const v=(m&&m.content)||'';return v}
+function fmfVerTag(){const v=fmfVer();return v?`<i class="f126-v" data-noi18n="1" title="الإصدار ${v}">${v}</i>`:''}
+function shell(inner,title,sub,back){return `<div class="top">${back?'<button id="bk">→</button>':`<span class="bmw"><img class="bm" src="${FM_BRAND.mark}" alt="${FM_BRAND.name}">${fmfVerTag()}</span>`}<h1>${title}<small>${sub||''}</small></h1>${back?'':'<button id="rf" title="تحديث">🔄</button><button id="lo" title="خروج">خروج</button>'}</div><div class="wrap"><div class="q" id="qb"></div>${inner}</div>`}
 /* ---------- main screens (F4): home, tickets, schools, profile ---------- */
 const VIEWS=[['home','🏠','الرئيسية'],['list','🎫','البلاغات'],['wo','📋','الأوامر'],['schools','🏫','المدارس'],['eng','💬','التواصل'],['me','👤','حسابي']];
 const SBX=[['plat','🖥️','المنصة الإدارية','fmfToPlatform'],['cus','🧰','عهدتي','fmfCustody'],['parts','📦','متابعة قطع الغيار','fmfPartsTracking'],['sync','⏳','مركز المزامنة','fmFieldSyncOpen'],['push','🔔','الإشعارات','fmPushOpen']];
 /* F38: on a wide screen the bottom bar becomes a sidebar (brand, the signed-in person, the pages, tools) */
-const sbHead=()=>{const me=D.me||{};return `<div class="sbh"><div class="sbb"><img src="${FM_BRAND.mark}" alt=""><div><b>${esc(FM_BRAND.name)}</b><small>تطبيق الميدان</small></div></div>
+const sbHead=()=>{const me=D.me||{};return `<div class="sbh"><div class="sbb"><span class="bmw"><img src="${FM_BRAND.mark}" alt="">${fmfVerTag()}</span><div><b>${esc(FM_BRAND.name)}</b><small>تطبيق الميدان</small></div></div>
  <button class="sbu" data-v="me">${avatarHtml(me,'av')}<div><b>${esc(myName())}</b><small>${esc(typeof jobLbl==='function'?jobLbl(me):'')}</small></div></button><div class="sbt">القائمة</div></div>`};
 const sbTools=()=>`<div class="sbx"><div class="sbt">أدوات</div>${SBX.filter(x=>typeof window[x[3]]==='function').map(([k,ic,t,f])=>`<button data-sx="${f}"><i>${ic}</i>${t}</button>`).join('')}<button data-sx="__out" class="out"><i>🚪</i>تسجيل الخروج</button></div>`;
 const navHtml=()=>`<nav class="bnav">${sbHead()}${VIEWS.filter(([k])=>k!=='eng'||['admin','engineer','supervisor'].includes(D.me&&D.me.role)).map(([k,ic,t])=>`<button data-v="${k}" class="${D.view===k?'on':''}"><i>${ic}</i>${t}${k==='wo'?`<em style="display:${woBadge()?'':'none'}">${woBadge()?fmt(woBadge()):''}</em>`:''}</button>`).join('')}${sbTools()}</nav>`;
