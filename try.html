@@ -202,6 +202,20 @@ header a.site-login{background:rgba(255,255,255,.1);border:1px solid rgba(255,25
 @media(max-width:980px){.solvix-offers{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.solvix-offers{grid-template-columns:1fr}.solvix-delivery-head{display:block}.solvix-delivery-head p{margin-top:3px}header a.site-login{display:inline-block!important;padding:6px 9px;font-size:11px}}
 @media(max-width:430px){.solvix-delivery{padding:14px}.site-brand b{font-size:15px}header a.site-login{padding:5px 7px;font-size:10px}}
+
+/* Unified Rakizora and Solvix identity with field-safe imagery */
+.solvix-section{background:radial-gradient(circle at 8% 0,rgba(22,138,242,.10),transparent 28%),linear-gradient(145deg,#eaf6f5,#f5f7ff)}
+.solvix-feature{border-color:#dbe7f0}
+.solvix-feature>span{background:linear-gradient(135deg,#e4f0ff,#e4f6f4);color:#1268c4}
+.solvix-connection{border-right-color:#23b9a8}
+.solvix-offers{align-items:stretch}
+.solvix-offer{padding:0;overflow:hidden;border-color:#d9e5ed;box-shadow:0 7px 20px rgba(16,35,63,.055)}
+.solvix-offer-image{display:block;width:100%;height:148px;object-fit:cover;object-position:center 43%;background:#dce8ee}
+.solvix-offer-copy{padding:14px 16px 16px}
+.solvix-offer:nth-child(2){border-top:3px solid #168cf4}
+.solvix-offer:nth-child(3){border-top:3px solid #7657e8}
+@media(max-width:700px){.solvix-offer-image{height:185px}}
+
 </style>
 </head>
 <body>
@@ -252,9 +266,9 @@ header a.site-login{background:rgba(255,255,255,.1);border:1px solid rgba(255,25
  <div class="solvix-delivery">
   <div class="solvix-delivery-head"><h3>طرق تقديم Solvix</h3><p>اختر نموذج التنفيذ المناسب لفريقك ونطاق المباني.</p></div>
   <div class="solvix-offers">
-   <article class="solvix-offer"><span>اشتراك المنصة</span><h4>فريقك ينفذ الحصر</h4><p>قاعدة أصول مستقلة للجهة، مع الصلاحيات والتدريب والدعم والتحديثات.</p></article>
-   <article class="solvix-offer"><span>خدمة متكاملة</span><h4>فريقنا ينفذ الحصر</h4><p>حصر ميداني وترميز الأصول وملصقات QR وتسليم التقارير والسجلات النهائية.</p></article>
-   <article class="solvix-offer"><span>تحديث دوري</span><h4>سجل أصول محدث</h4><p>تنفيذ الحصر الأول، ثم جرد مجدول لتحديث السجل ومتابعة نقل الأصول بين المواقع.</p></article>
+   <article class="solvix-offer"><img class="solvix-offer-image" src="assets/solvix-dashboard.webp" alt="مسؤولان يراجعان مؤشرات الأصول والتشغيل على لوحة رقمية" loading="lazy" decoding="async"><div class="solvix-offer-copy"><span>اشتراك المنصة</span><h4>فريقك ينفذ الحصر</h4><p>قاعدة أصول مستقلة للجهة، مع الصلاحيات والتدريب والدعم والتحديثات.</p></div></article>
+   <article class="solvix-offer"><img class="solvix-offer-image" src="assets/solvix-asset-tagging.webp" alt="فنيان يرتديان الخوذة والنظارات والسترة العاكسة أثناء ترميز أصل ميداني" loading="lazy" decoding="async"><div class="solvix-offer-copy"><span>خدمة متكاملة</span><h4>فريقنا ينفذ الحصر</h4><p>حصر ميداني وترميز الأصول وملصقات QR وتسليم التقارير والسجلات النهائية.</p></div></article>
+   <article class="solvix-offer"><img class="solvix-offer-image" src="assets/solvix-field-inspection.webp" alt="فني يرتدي خوذة ونظارات وسترة عاكسة ويوثق فحص أصل باستخدام جهاز لوحي" loading="lazy" decoding="async"><div class="solvix-offer-copy"><span>تحديث دوري</span><h4>سجل أصول محدث</h4><p>تنفيذ الحصر الأول، ثم جرد مجدول لتحديث السجل ومتابعة نقل الأصول بين المواقع.</p></div></article>
   </div>
   <p class="solvix-note">يُحدد نطاق التنفيذ والعرض المالي وفق عدد المباني والأصول والمدة المطلوبة.</p>
  </div>
