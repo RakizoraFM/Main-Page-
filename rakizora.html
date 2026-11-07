@@ -277,7 +277,7 @@ const PARTS=[['tickets','🎫','البلاغات والـ SLA','رفع بلاغ�
  ['cc','💹','مركز التكلفة','الإيراد والتكلفة والربح لكل منطقة وقسم وشهر مقابل الميزانية، تُجمع تلقائياً من المستخلصات وأوامر العمل والمستودع والرواتب، مع التوقع لنهاية السنة.'],
  ['costs','💰','تكاليف المباني','ملف لكل مبنى بمصاريفه وقطع غياره وإصلاحاته وميزانيته السنوية، وخطة الإحلال.'],
  ['solvix_assets','🏷️','حصر الأصول — Solvix','حصر ميداني للأصول والتحقق من بياناتها ومواقعها، وترميزها وإعداد سجل أصول رقمي يساعد فرق التشغيل على إدارة المباني.']];
-if($('#parts-grid')) $('#parts-grid').innerHTML=PARTS.map(([k,i,t,d])=>`<div class="card"><div class="ic">${i}</div><h3>${esc(t)}</h3><p>${esc(d)}</p></div>`).join('')+`<div class="card" style="background:#f0fdf4"><div class="ic">🧱</div><h3>الأساسي — مع كل اشتراك</h3><p>المستخدمون والمسميات والصلاحيات، قاعدة المباني، الخريطة، تطبيق الميدان، الأخبار، دليل المنصة، والنسخة الخاصة باسم شركتك وشعارها.</p></div>`;
+if($('#parts-grid')) $('#parts-grid').innerHTML=PARTS.filter(([k])=>k!=='solvix_assets').map(([k,i,t,d])=>`<div class="card"><div class="ic">${i}</div><h3>${esc(t)}</h3><p>${esc(d)}</p></div>`).join('')
 if($('#mods')) $('#mods').innerHTML=PARTS.map(([k,i,t])=>`<label><input type="checkbox" value="${k}"> ${i} ${esc(t)}</label>`).join('');
 const PN=Object.fromEntries(PARTS.map(([k,i,t])=>[k,i+' '+t]));
 const money=v=>(+v||0).toLocaleString('en-US')+' ر.س';
@@ -285,7 +285,7 @@ const money=v=>(+v||0).toLocaleString('en-US')+' ر.س';
  const site=(P&&P.site)||{},plans=(P&&Array.isArray(P.plans)&&P.plans)||[],adds=(P&&Array.isArray(P.addons)&&P.addons)||[];
  if(site.demo_code){const u='start.html?c='+encodeURIComponent(site.demo_code);if($('#demo-go')) $('#demo-go').href=u;document.querySelectorAll('[data-demo-link]').forEach(a=>a.href=u)}else{if($('#demo-go')) $('#demo-go').hidden=true;if($('#demo-none')) $('#demo-none').hidden=false}
  if(site.whatsapp&&$('#wa')){const w=$('#wa');let p=S(site.whatsapp).replace(/[^\d]/g,'');if(/^05\d{8}$/.test(p))p='966'+p.slice(1);w.href='https://wa.me/'+p+'?text='+encodeURIComponent('السلام عليكم، أرغب في معرفة المزيد عن منصة RakizoraFM');w.hidden=false}
- if($('#plans-grid')) $('#plans-grid').innerHTML=plans.length?plans.map((x,i)=>{const mods=Array.isArray(x.modules)?x.modules:Object.keys(PN);return `<div class="card ${i===1?'hl':''}"><h3>${esc(x.name)}</h3>${x.price!=null?`<div class="pr">${money(x.price)} <small>/ شهرياً قبل الضريبة</small></div>`:''}
+ if($('#plans-grid')) $('#plans-grid').innerHTML=plans.length?plans.map((x,i)=>{const mods=(Array.isArray(x.modules)?x.modules:Object.keys(PN)).filter(k=>k!=='solvix_assets');return `<div class="card ${i===1?'hl':''}"><h3>${esc(x.name)}</h3>${x.price!=null?`<div class="pr">${money(x.price)} <small>/ شهرياً قبل الضريبة</small></div>`:''}
   <div style="color:var(--mut);font-weight:700">${+x.max?'حتى '+(+x.max).toLocaleString('en-US')+' مبنى':'عدد غير محدود من المباني'}</div><div style="margin:8px 0">${mods.map(k=>`<span class="chip">${esc(PN[k]||k)}</span>`).join('')}</div>
   <a class="btn p" href="contact.html" data-plan="${esc(x.k)}" style="margin-top:auto;text-align:center">اطلب هذه الباقة</a></div>`}).join('')
   +(adds.some(a=>+a.base||+a.per_school)?`<div class="card"><h3>➕ أجزاء إضافية</h3><ul>${adds.filter(a=>+a.base||+a.per_school).map(a=>`<li>${esc(PN[a.k]||a.k)}: ${+a.base?money(a.base):''}${+a.per_school?` ${+a.base?'+ ':''}${money(a.per_school)} لكل مبنى`:''} شهرياً</li>`).join('')}</ul></div>`:'')
