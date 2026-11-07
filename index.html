@@ -29854,8 +29854,8 @@ function loginScreen(msg){
   <label>البريد الإلكتروني</label><input id="l-em" type="email" autocomplete="username" dir="ltr">
   <label>كلمة المرور</label><input id="l-pw" type="password" autocomplete="${mode==='up'?'new-password':'current-password'}" dir="ltr">
   <button class="go" type="button" id="l-go">${mode==='up'?'إنشاء الحساب':'دخول'}</button>
-  <div class="links">${mode==='up'?'<a href="#" data-m="in">لدي حساب — تسجيل الدخول</a>':'<a href="#" data-m="up">مستخدم جديد؟ إنشاء حساب</a>'}<a href="#" data-m="off" title="فصل هذا الجهاز عن السحابة والعمل بالملفات المحلية فقط">فصل الربط بالسحابة</a></div></div>`;
-  w.querySelectorAll('[data-m]').forEach(a=>a.onclick=e=>{e.preventDefault();const m=a.dataset.m;if(m==='off'){if(confirm('فصل هذا الجهاز عن السحابة؟ ستعمل المنصة بالملفات المحلية فقط.')){C.setCfg(null);w.remove();location.reload()}return}draw(m)});
+  <div class="links">${mode==='up'?'<a href="#" data-m="in">لدي حساب — تسجيل الدخول</a>':'<a href="#" data-m="up">مستخدم جديد؟ إنشاء حساب</a>'}</div></div>`;
+  w.querySelectorAll('[data-m]').forEach(a=>a.onclick=e=>{e.preventDefault();draw(a.dataset.m)});
   const go=async()=>{const em=S(w.querySelector('#l-em').value),pw=w.querySelector('#l-pw').value,b=w.querySelector('#l-go');if(!em||!pw){toast('اكتب البريد وكلمة المرور','warning');return}
    b.disabled=true;b.textContent='…';
    try{if(mode==='up'){const nm=S(w.querySelector('#l-name').value);if(!nm){toast('اكتب اسمك','warning');b.disabled=false;b.textContent='إنشاء الحساب';return}

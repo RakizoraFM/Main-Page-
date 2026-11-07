@@ -123,9 +123,7 @@ const API=window.FMStartAPI=window.FMStartAPI||{
 
 /* ---------- views ---------- */
 const frame=(inner)=>{const t=readT();app.innerHTML=`<img class="logo" src="${LOGO}" alt="RakizoraFM">${t&&t.name?`<div class="tn">${t.logo?`<img src="${esc(t.logo)}" alt="">`:''}<span>${esc(t.name)}</span></div>`:''}${inner}<div class="foot">RakizoraFM • إدارة المرافق والأصول الذكية</div>`};
-function tenantError(t){frame(`<h2>الدخول للشركة</h2>${msg(esc(t))}<button class="go" id="t-ch">إدخال رمز الشركة</button>`);$('#t-ch').onclick=changeCompany}
-function changeCompany(e){if(e&&e.preventDefault)e.preventDefault();const c=prompt('رمز الشركة (كما في الرابط الذي أرسله مزود الخدمة) — اتركه فارغاً للدخول الافتراضي:',(readT()||{}).code||'');if(c===null)return;
- const v=S(c).toLowerCase();if(!v){try{localStorage.removeItem(TKEY);localStorage.removeItem('fm-cloud-auth')}catch(_){}saveCfg(DEFAULT_CFG);location.href=location.pathname;return}location.href=location.pathname+'?c='+encodeURIComponent(v)}
+function tenantError(t){frame(`<h2>الدخول للشركة</h2>${msg(esc(t))}<div class="msg info">استخدم رابط الدخول الذي أرسله مزود الخدمة.</div>`)}
 /* resolve the company: ?c=code, else the one saved on this device; a change signs the old session out */
 async function tenantStep(){const qc=S(new URLSearchParams(location.search).get('c')).toLowerCase(),cur=readT(),code=qc||(cur&&cur.code)||'';if(!code)return true;
  let t=null;try{t=await (API.tenant||ctlTenant)(code)}catch(e){if(!qc&&cur){applyBrand(cur);return true}tenantError('تعذّر التحقق من الشركة — تحقق من الاتصال ثم أعد المحاولة');return false}
@@ -135,7 +133,6 @@ async function tenantStep(){const qc=S(new URLSearchParams(location.search).get(
  if(changed){try{localStorage.removeItem('fm-cloud-auth')}catch(e){}client=null}
  saveCfg({url:t.url,key:t.key});try{localStorage.setItem(TKEY,JSON.stringify({code:t.code,name:t.name,logo:t.logo,color:t.color,status:t.status,active_until:t.active_until,demo:!!t.demo,demo_pass:t.demo?t.demo_pass||'':undefined,ctl:DEFAULT_CFG}))}catch(e){}
  applyBrand(t);return true}
-window.fmStartChangeCompany=changeCompany;
 const msg=(t,k)=>t?`<div class="msg ${k||'err'}">${t}</div>`:'';
 function busy(b,on,txt){b.disabled=on;if(txt)b.textContent=txt}
 
@@ -163,9 +160,8 @@ function loginView(mode,info,err){
   ${mode==='reset'?'':`<label>كلمة المرور</label><input id="l-p" type="password" dir="ltr" autocomplete="${mode==='up'?'new-password':'current-password'}">`}
   ${msg(err)}
   <button class="go" id="l-go">${{in:'دخول',up:'إنشاء الحساب',reset:'إرسال رابط الاستعادة'}[mode]}</button>
-  <div class="links">${mode==='in'?'<a href="#" data-m="up">مستخدم جديد؟ إنشاء حساب</a><a href="#" class="mut" data-m="reset">نسيت كلمة المرور؟</a>':'<a href="#" data-m="in">لدي حساب — تسجيل الدخول</a>'}${mode==='in'?'<a href="#" class="mut" id="l-co">🏢 '+(readT()?'شركة أخرى':'رمز الشركة')+'</a>':''}</div>`);
+  <div class="links">${mode==='in'?'<a href="#" data-m="up">مستخدم جديد؟ إنشاء حساب</a><a href="#" class="mut" data-m="reset">نسيت كلمة المرور؟</a>':'<a href="#" data-m="in">لدي حساب — تسجيل الدخول</a>'}</div>`);
  app.querySelectorAll('[data-m]').forEach(a=>a.onclick=e=>{e.preventDefault();loginView(a.dataset.m)});
- $('#l-co')&&($('#l-co').onclick=changeCompany);
  const go=async()=>{const b=$('#l-go'),em=S($('#l-e').value),pw=$('#l-p')?.value||'',nm=S($('#l-n')?.value);
   if(!em||(mode!=='reset'&&!pw))return loginView(mode,'', 'اكتب البريد'+(mode==='reset'?'':' وكلمة المرور'));
   if(mode==='up'&&!nm)return loginView(mode,'','اكتب اسمك');
