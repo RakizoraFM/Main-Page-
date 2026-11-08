@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SA7">
+<meta name="fm-version" content="SA8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -36,6 +36,8 @@ dialog::backdrop{background:rgba(15,23,42,.45)}
 .in{padding:16px 18px;display:grid;gap:10px}.in h3{margin:0}
 label.f{display:grid;gap:4px;font-weight:800;font-size:12.5px;color:#334155}
 input,select,textarea{font:600 13.5px Cairo,Tahoma,sans-serif;border:1px solid #cbd5e1;border-radius:10px;padding:8px 10px;width:100%;background:#fff}
+/* SA8: checkboxes keep their size (the parts picker label used to overflow onto the «ضمن الباقة» chip) */
+input[type=checkbox],input[type=radio]{width:auto;padding:0;margin:0;accent-color:#4f46e5}td>label:has(>input[data-mod]){display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .ft{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--line);background:#f8fafc;border-radius:0 0 16px 16px;position:sticky;bottom:0}
 .note{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:10px;padding:8px 12px;font-weight:700;font-size:12.5px;line-height:1.9}
@@ -211,10 +213,11 @@ function tenantDlg(t,pre){const isNew=!t;const lead=pre&&pre.lead;t=t||Object.as
   <div class="two"><label class="f">رابط مشروع Supabase *<input data-k="url" dir="ltr" value="${esc(t.url||'')}" placeholder="https://xxxx.supabase.co"></label><label class="f">المفتاح العام *<input data-k="anon_key" dir="ltr" value="${esc(t.anon_key||'')}"></label></div>
   <div class="three"><label class="f">الباقة<select data-k="plan">${plans().map(p=>`<option value="${esc(p.k)}" ${t.plan===p.k?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label><label class="f">حد المدارس (0 = بلا حد)<input data-k="schools_limit" inputmode="numeric" value="${esc(t.schools_limit)}"></label><label class="f">الحالة<select data-k="status">${Object.entries(STL).map(([k,v])=>`<option value="${k}" ${t.status===k?'selected':''}>${v}</option>`).join('')}</select></label></div>
   <div class="two"><label class="f">الاشتراك حتى<input type="date" data-k="active_until" value="${esc(t.active_until||'')}"></label><label class="f">الرقم الضريبي للعميل<input data-k="vat_no" dir="ltr" value="${esc(t.vat_no||'')}"></label></div>
+  ${isNew?'':`<div class="note" style="border:2px solid #6366f1;background:#eef2ff"><b>🧩 أجزاء المنصة المفتوحة للشركة</b> — أجزاء الباقة مفعّلة دائماً؛ أضف أجزاء أخرى، ولتجربة جزء اكتب تاريخ انتهائها.</div><div data-mp>${modPicker(t.plan,tMods(t),t.schools_limit,1)}</div><div class="warn">عند الحفظ: إذا تغيّرت الباقة أو حد المدارس أو تاريخ الاشتراك أو الأجزاء يُصدر كود تفعيل ويُرسل للشركة تلقائياً، ويُطبَّق عند فتح مدير النظام فيها للمنصة.</div>`}
   <div class="three"><label class="f">مسؤول التواصل<input data-k="contact_name" value="${esc(t.contact_name||'')}"></label><label class="f">الجوال<input data-k="contact_phone" dir="ltr" value="${esc(t.contact_phone||'')}"></label><label class="f">البريد<input data-k="contact_email" dir="ltr" value="${esc(t.contact_email||'')}"></label></div>
   <label class="f">ملاحظات<textarea data-k="notes" rows="2">${esc(t.notes||'')}</textarea></label>
   <div class="two"><label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-demo ${t.demo?'checked':''} style="width:auto"> 🧪 شركة عرض (بيانات وهمية للعملاء المحتملين)</label><label class="f">كلمة مرور حسابات العرض (تظهر للزوار)<input data-k="demo_pass" dir="ltr" value="${esc(t.demo_pass||'')}" placeholder="مثال: Demo-2026!"></label></div>
-  ${isNew?'':`<div class="note"><b>🧩 أجزاء المنصة المفتوحة للشركة</b> — أجزاء الباقة مفعّلة دائماً؛ أضف أجزاء أخرى، ولتجربة جزء اكتب تاريخ انتهائها.</div><div data-mp>${modPicker(t.plan,tMods(t),t.schools_limit,1)}</div><div class="warn">عند الحفظ: إذا تغيّرت الباقة أو حد المدارس أو تاريخ الاشتراك أو الأجزاء يُصدر كود تفعيل ويُرسل للشركة تلقائياً، ويُطبَّق عند فتح مدير النظام فيها للمنصة.</div>`}</div>
+  </div>
    <div class="err" data-save-error role="alert" dir="auto" hidden style="padding:0 16px 8px"></div>
   <div class="ft"><button class="b p" data-s>💾 حفظ</button><button class="b" data-x>إلغاء</button></div>`);
  const q=s=>d.querySelector(s);const mods0=q('[data-mp]')?JSON.stringify(readPicker(d,t.plan)):'';q('[data-k=plan]').onchange=e=>{const p=planOf(e.target.value);q('[data-k=schools_limit]').value=p.max;const mp=q('[data-mp]');if(mp)mp.innerHTML=modPicker(e.target.value,tMods(t),p.max,1)};
