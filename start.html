@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S14">
+<meta name="fm-version" content="S15">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -91,6 +91,8 @@ const valid=o=>!!(o&&/^https:\/\//.test(S(o.url))&&S(o.key).length>=30);
    and uses it as the cloud config of the platform and the field app. Without a code the site default is used as before. */
 const TKEY='fm_tenant';
 const readT=()=>{try{return JSON.parse(localStorage.getItem(TKEY)||'null')}catch(e){return null}};
+/* S15: e-mail links (confirm sign-up, reset password) come back to this page WITH the company code, so a link opened on another phone uses the same company project. */
+const backUrl=()=>{const t=readT();return location.origin+location.pathname+(t&&t.code?'?c='+encodeURIComponent(t.code):'')};
 function applyBrand(t){try{if(t&&/^#[0-9a-f]{6}$/i.test(S(t.color)))document.documentElement.style.setProperty('--pri',t.color);if(t&&t.name)document.title='RakizoraFM | '+t.name}catch(e){}}
 let libP=null,client=null;
 function ensureLib(){if(window.supabase&&window.supabase.createClient)return Promise.resolve();if(libP)return libP;
@@ -114,8 +116,8 @@ const API=window.FMStartAPI=window.FMStartAPI||{
  async session(){const c=await sb();const {data}=await c.auth.getSession();return data?.session||null},
  async me(){const c=await sb();const {data:{user}}=await c.auth.getUser();if(!user)return null;const p=chk(await c.from('profiles').select('*').eq('id',user.id).maybeSingle());return p?Object.assign({},p,{email:p.email||user.email}):{id:user.id,email:user.email,role:'pending',regions:[]}},
  async signIn(em,pw){const c=await sb();return chk(await c.auth.signInWithPassword({email:em,password:pw}))},
- async signUp(em,pw,name){const c=await sb();return chk(await c.auth.signUp({email:em,password:pw,options:{data:{full_name:name}}}))},
- async reset(em){const c=await sb();return chk(await c.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname}))},
+ async signUp(em,pw,name){const c=await sb();return chk(await c.auth.signUp({email:em,password:pw,options:{data:{full_name:name},emailRedirectTo:backUrl()}}))},
+ async reset(em){const c=await sb();return chk(await c.auth.resetPasswordForEmail(em,{redirectTo:backUrl()}))},
  async setPassword(pw){const c=await sb();chk(await c.auth.updateUser({password:pw}));try{chk(await c.rpc('fm_password_changed'))}catch(e){}return true},
  async signOut(){const c=await sb();try{const r=await c.auth.signOut();if(r&&r.error)throw r.error}catch(e){try{await c.auth.signOut({scope:'local'})}catch(_){}}try{localStorage.removeItem('fm-cloud-auth')}catch(_){}},
  async routes(){try{const c=await sb();const r=await c.from('fm_settings').select('value').eq('key','routes').maybeSingle();return (r&&!r.error&&r.data&&r.data.value)||{}}catch(e){return {}}}
