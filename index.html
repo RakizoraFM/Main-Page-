@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V346">
+<meta name="fm-version" content="V347">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -29,8 +29,8 @@
    account's local data (fm* keys) is moved aside into IndexedDB fm165_stash and the cached tickets files are removed,
    so nothing of it is shown to the new account; when the previous account signs in again its data is put back. */
 (function(){
-function stash(prev,uid,reload){const keep=new Set(['fm_cloud_v136','fm-cloud-auth','fm165_data_owner']),snap={};
- Object.keys(localStorage).filter(k=>/^(fm|monthlyDensity|staff|smart|v\d)/i.test(k)&&!keep.has(k)).forEach(k=>{snap[k]=localStorage.getItem(k);try{localStorage.removeItem(k)}catch(e){}});
+function stash(prev,uid,reload){const keep=new Set(['fm_cloud_v136','fm-cloud-auth','fm165_data_owner','fm347_project','fm_tenant','fm_lang','fm_last_app']),snap={};
+ Object.keys(localStorage).filter(k=>(/^(fm|monthlyDensity|staff|smart|v\d)/i.test(k)||k==='latest_uploaded_session')&&!keep.has(k)).forEach(k=>{snap[k]=localStorage.getItem(k);try{localStorage.removeItem(k)}catch(e){}});
  ['fm_v103_store','SmartTicketsAnalyticsDB'].forEach(n=>{try{indexedDB.deleteDatabase(n)}catch(e){}});window.__fm165Wiped=true;
  const q=indexedDB.open('fm165_stash',1);q.onupgradeneeded=()=>q.result.createObjectStore('s');
  q.onsuccess=()=>{const db=q.result,tx=db.transaction('s','readwrite'),st=tx.objectStore('s');st.put(snap,prev);const g=st.get(uid);let back=null;
@@ -66,6 +66,32 @@ try{const a=JSON.parse(localStorage.getItem('fm-cloud-auth')||'null'),uid=a&&(a.
   Object.keys(localStorage).forEach(function(k){if(/^fm_ticket_work_v135$|^fm_ref_date_|^fm_rank_|^fm_followups_v122$|^fm239_breach:|^fm223_sync:|^fm265_ok:|^fm247_sub:|^fm_import232:|^fm319_days:|^latest_uploaded_session$/.test(k))try{localStorage.removeItem(k)}catch(e){}})}
  if(P.indexOf('schooldb')>=0){try{localStorage.removeItem('fm_school_master_db_v1')}catch(e){}}
  window.__fm200Cleared=P}catch(e){}})();
+</script>
+<script id="fm-v347-project-data">
+/* V347: local data belongs to one company project. Each company has its own Supabase project (fm_cloud_v136.url); when
+   this device opens another project, every local data key of the previous one (tickets fallback, school DB, settings
+   copies, stamps …) is moved into IndexedDB fm165_stash under 'p:<url>' and the local ticket databases are emptied (the
+   cloud of the new project is the source). Coming back to a project restores its keys. Also finishes the V165 account
+   switch with the V328 hard clear (a plain deleteDatabase stays blocked while another tab holds it). */
+(function(){try{
+ var KEEP={'fm_cloud_v136':1,'fm-cloud-auth':1,'fm165_data_owner':1,'fm347_project':1,'fm_tenant':1,'fm_lang':1,'fm_last_app':1};
+ var isData=function(k){return !KEEP[k]&&!/^fm_route_pref:/.test(k)&&(/^(fm|monthlyDensity|staff|smart|sta_|v\d)/i.test(k)||k==='latest_uploaded_session')};
+ var clrT=function(){try{window.__fm200Cleared=(window.__fm200Cleared||[]).concat(['tickets']);if(window.__fm328Hard)window.__fm328Hard(false)}catch(e){}};
+ if(window.__fm165Wiped)clrT();
+ var c=JSON.parse(localStorage.getItem('fm_cloud_v136')||'null'),u=c&&c.url?String(c.url).replace(/\/+$/,'').toLowerCase():'';
+ if(!u)return;var prev=localStorage.getItem('fm347_project');if(prev===u)return;
+ var t=null;try{t=JSON.parse(localStorage.getItem('fm_tenant')||'null')}catch(e){}
+ localStorage.setItem('fm347_project',u);
+ /* first V347 run on this device: the local copy's project is unknown. On the site's own project keep it as it was;
+    in a company project put it aside (kept under 'p:unknown', not deleted) */
+ if(!prev){if(!(t&&t.code))return;prev='unknown'}
+ var snap={};Object.keys(localStorage).forEach(function(k){if(isData(k)){snap[k]=localStorage.getItem(k);try{localStorage.removeItem(k)}catch(e){}}});
+ clrT();window.__fm347Switched={from:prev,to:u};
+ var q=indexedDB.open('fm165_stash',1);q.onupgradeneeded=function(){q.result.createObjectStore('s')};
+ q.onsuccess=function(){var db=q.result,tx=db.transaction('s','readwrite'),st=tx.objectStore('s'),back=null;st.put(snap,'p:'+prev);var g=st.get('p:'+u);
+  g.onsuccess=function(){back=g.result;if(back)st.delete('p:'+u)};
+  tx.oncomplete=function(){if(back){Object.keys(back).forEach(function(k){try{if(back[k]!=null)localStorage.setItem(k,back[k])}catch(e){}});location.reload()}}};
+}catch(e){}})();
 </script>
 <script id="fm-v228-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
@@ -25645,10 +25671,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V346',date:'2026-11-08',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V347',date:'2026-11-08',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:'V347',d:'2026-11-08',t:'بيانات كل شركة منفصلة على الجهاز',i:['عند فتح شركة أخرى على نفس الجهاز تُنقل بيانات الشركة السابقة المحفوظة على الجهاز (البلاغات، قاعدة المدارس، النسخ المحلية) جانباً، ولا تظهر في الشركة الجديدة ولا تُرفع لسحابتها','النسخة الاحتياطية المحلية للبلاغات (latest_uploaded_session) صارت تُنقل أيضاً عند تبديل الحساب','حذف نسخ البلاغات المحلية يعمل حتى لو كانت المنصة مفتوحة في نافذة أخرى']},
 {v:'V346',d:'2026-11-08',t:'الباقة والأجزاء تُطبَّق تلقائياً من لوحة مالك المنصة',i:['عندما يعدّل مالك المنصة الباقة أو حد المدارس أو تاريخ الاشتراك أو الأجزاء المفتوحة لشركتكم، يُطبَّق التغيير تلقائياً عند فتح مدير النظام للمنصة — دون إدخال كود','يبقى إدخال الكود يدوياً من «الإعدادات ← 💳 الاشتراك» متاحاً كما هو','ملف supabase_setup.sql يُشغَّل على أجزاء في المشاريع الجديدة، وينشئ ملف الحساب الذي سُجّل قبل تشغيله']},
 {v:'V345',d:'2026-11-08',t:'متابعة المشروع في الرئيسية — القوى العاملة بالمشروع',i:['في الصفحة الرئيسية قسم جديد «📊 متابعة المشروع» بتبويبات، أولها «👷 القوى العاملة بالمشروع»: نفس بطاقات صفحة إدارة القوى العاملة ورسم «توزيع القوى العاملة» ورسم «التصنيف»','الضغط على بطاقة أو شريط أو تصنيف يفتح سجل العاملين مفلتراً عليه؛ ويتبع فلتر المنطقة في الرئيسية','تبويبا «المواد وقطع الغيار» و«البلاغات» محجوزان للإصدارات القادمة؛ ويمكن إخفاء القسم بزر «إخفاء»']},
 {v:'V344',d:'2026-11-07',t:'رسم واحد لمقاولي المباني بتبويبات',i:['في صفحة قاعدة بيانات المباني صارت رسوم مقاول النظافة والصيانة والتكييف رسماً واحداً، وتتنقل بينها بتبويبات أعلاه','يحفظ الجهاز آخر تبويب اخترته، وتبقى أزرار «مدارس / مباني» و«📐 الأحجام» والفلترة بالضغط كما هي']},
@@ -32311,7 +32338,7 @@ const MANUAL=[
  {id:'v2-nav-quality',t:'جودة البيانات',where:'البيانات والإعداد ← «جودة البيانات»',what:'البلاغات بلا مدرسة أو تاريخ أو تصنيف، والمدارس غير المطابقة لقاعدة المدارس.',how:['صحّح المصدر (الملف أو القاعدة) ثم أعد الرفع.'],who:'مدير النظام'},
  {id:'v2-nav-refresh',t:'تحديث البيانات والجرافات',where:'البيانات والإعداد ← «تحديث البيانات والجرافات»',what:'إعادة حساب كل المؤشرات والرسوم.',how:['استخدمه بعد تعديل قاعدة المدارس أو الإعدادات.'],who:'المديرون'}
 ]},
-{g:'النظام',icon:'⚙️',items:[{id:'fm343-ver',t:'رقم الإصدار تحت الشعار',where:'أعلى القائمة الجانبية تحت الشعار (وفي تطبيق الميدان تحت الشعار في الشريط العلوي)',what:'يعرض رقم الإصدار الحالي للمنصة مثل V343 ولتطبيق الميدان مثل F126، لتعرف أي نسخة تعمل على جهازك.',how:['انظر تحت الشعار','إذا ظهر شريط «يوجد إصدار جديد» حدّث الصفحة ثم تأكد أن الرقم تغيّر'],who:'الجميع',v:'V343'},
+{g:'النظام',icon:'⚙️',items:[{id:'fm347-proj',t:'بيانات كل شركة منفصلة على الجهاز',where:'تلقائياً عند فتح المنصة',what:'إذا فتحت شركة أخرى (مشروع سحابي آخر) على نفس الجهاز، تُنقل بيانات الشركة السابقة المحفوظة على الجهاز جانباً فلا تظهر بلاغاتها ولا قاعدة مدارسها في الشركة الجديدة ولا تُرفع لسحابتها، وتعود عند الرجوع لتلك الشركة.',how:['افتح الشركة من رابطها start.html?c=كود الشركة','إذا ظهرت بلاغات قديمة: الإعدادات ← السحابة ← بطاقة «البلاغات المحفوظة على هذا الجهاز» تبيّن هل هي في السحابة أم على الجهاز فقط'],who:'الجميع',v:'V347'},{id:'fm343-ver',t:'رقم الإصدار تحت الشعار',where:'أعلى القائمة الجانبية تحت الشعار (وفي تطبيق الميدان تحت الشعار في الشريط العلوي)',what:'يعرض رقم الإصدار الحالي للمنصة مثل V343 ولتطبيق الميدان مثل F126، لتعرف أي نسخة تعمل على جهازك.',how:['انظر تحت الشعار','إذا ظهر شريط «يوجد إصدار جديد» حدّث الصفحة ثم تأكد أن الرقم تغيّر'],who:'الجميع',v:'V343'},
  {id:'v2-nav-fm122-settings',t:'الإعدادات',where:'النظام ← «الإعدادات»',what:'الأهداف ومهلة الـ SLA، قوالب الرسائل، التصعيد، جداول الإرسال، قواعد التحليل، النسخ الاحتياطي، والسحابة والمستخدمين.',how:['كل تبويب يحفظ إعداداته؛ إعدادات السحابة لمدير النظام فقط.'],who:'مدير النظام',v:'V308'},
  {id:'cloud',t:'السحابة وتطبيق الميدان',where:'الإعدادات ← «السحابة» / «📱 رابط تطبيق الميدان»',what:'ربط المنصة بقاعدة Supabase المشتركة: البلاغات والإجراءات والصور مشتركة لحظياً، ورابط جاهز لتطبيق الميدان.',how:['ملف supabase_setup.sql يُشغَّل في Supabase بعد كل تحديث يتطلبه (يُذكر في ملاحظات الإصدار).','«📱 رابط تطبيق الميدان»: نسخ أو واتساب للفريق.'],who:'مدير النظام',v:'V140'},
  {id:'v2-nav-fm167-news',t:'الأخبار (شريط الأخبار)',where:'النظام ← «📢 الأخبار»',what:'نشر أخبار تتحرك في شريط أعلى المنصة وتطبيق الميدان لكل المستخدمين أو لمسميات ومناطق محددة؛ الخبر العاجل يظهر أيضاً كنافذة مرة واحدة عند كل مستخدم.',how:['اكتب نص الخبر (وتفاصيل اختيارية تظهر عند الضغط عليه).','اختر الأهمية: عادي / مهم / عاجل، و«📌 تثبيت» ليظهر في المقدمة.','اختر لمن: المسميات والمناطق (بدون اختيار = الكل)، وفترة العرض من / إلى، ثم «📢 نشر».','من القائمة: «تعديل» أو «إيقاف» أي خبر.'],who:'مدير النظام ومدير المشروع ومدير العمليات ومدير الأمن والسلامة ومدير الجودة (للكل)، ومدير المنطقة (منطقته)، ومهندس المنطقة (فريقه)',tips:['الشريط يتوقف عند مرور الماوس عليه، وزر ⏸ يوقف حركته.'],v:'V167'},
