@@ -14714,3 +14714,21 @@ revoke all on function public.fm_workforce337_data(text),public.fm_workforce337_
 grant execute on function public.fm_workforce337_data(text),public.fm_workforce337_person_save(jsonb),public.fm_workforce337_plan_save(jsonb),public.fm_workforce337_leave_save(jsonb),public.fm_workforce337_leave_review(uuid,text,uuid,text),public.fm_workforce337_qualification_save(jsonb),public.fm_workforce337_move(jsonb),public.fm_workforce337_import_people(jsonb) to authenticated;
 notify pgrst,'reload schema';
 commit;
+
+-- ---------- 93) V346 — profiles for accounts created before this file was run ----------
+-- A new company project: the owner may sign up on start.html before running this file (or while a run failed half way),
+-- so auth.users has the account but public.profiles does not and the trigger above never ran for it.
+-- Missing profiles are created in sign-up order; the first one becomes admin when the project has no admin yet.
+do $do$
+declare u record;
+begin
+  for u in select a.id, a.email, a.raw_user_meta_data from auth.users a
+           where not exists (select 1 from public.profiles p where p.id = a.id) order by a.created_at loop
+    insert into public.profiles(id, email, full_name, role)
+    values (u.id, u.email, coalesce(u.raw_user_meta_data->>'full_name', split_part(u.email, '@', 1)),
+            case when exists (select 1 from public.profiles where role = 'admin') then 'pending' else 'admin' end)
+    on conflict (id) do nothing;
+  end loop;
+exception when others then raise notice 'V346 profile backfill skipped: %', sqlerrm;
+end $do$;
+notify pgrst, 'reload schema';
