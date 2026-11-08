@@ -175,3 +175,5 @@ end $$;
 revoke all on function public.saas_hmac(text, text) from public, anon, authenticated;
 revoke all on function public.saas_public(), public.saas_lead_new(jsonb), public.saas_ping(text, text, text) from public;
 grant execute on function public.saas_public(), public.saas_lead_new(jsonb), public.saas_ping(text, text, text) to anon, authenticated;
+-- SA6: make the API see new columns / functions right away after a rerun
+notify pgrst, 'reload schema';
