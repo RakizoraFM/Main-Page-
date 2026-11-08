@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F126">
+<meta name="fm-version" content="F127">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -3911,5 +3911,17 @@ window.fmfSupport={links,deco};
 })();
 </script>
 
+<style id="fmf-127-ver-css">#fm348-ver{position:fixed;left:6px;bottom:6px;z-index:2147483000;pointer-events:none;font:800 10px/1 Cairo,Tahoma,sans-serif;direction:ltr;color:#475569;background:rgba(255,255,255,.85);border:1px solid #cbd5e1;border-radius:999px;padding:3px 7px;box-shadow:0 1px 3px rgba(15,23,42,.12)}@media print{#fm348-ver{display:none}}</style>
+<script id="fmf-127-ver">
+/* V348 / F127: the version is always visible in a small fixed badge (bottom left) on every screen; the label under the
+   logo is hidden on phones and on sub-screens. Text = this page's fm-version meta. */
+(function(){
+ function ver(){var m=document.querySelector('meta[name="fm-version"]');return (m&&m.content)||''}
+ function put(){var b=document.body;if(!b)return;var e=document.getElementById('fm348-ver');
+  if(!e){e=document.createElement('div');e.id='fm348-ver';e.setAttribute('data-noi18n','1');e.setAttribute('aria-hidden','true');b.appendChild(e)}
+  var t=ver();if(e.textContent!==t)e.textContent=t;var n=document.querySelector('.bnav'),h=0;if(n){var r=n.getBoundingClientRect();if(r.height&&getComputedStyle(n).display!=='none'&&r.top<innerHeight)h=Math.round(innerHeight-r.top)}var px=(h?h+4:6)+'px';if(e.style.bottom!==px)e.style.bottom=px;}
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',put);else put();setInterval(put,1500);
+})();
+</script>
 </body>
 </html>
