@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SA5">
+<meta name="fm-version" content="SA7">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -100,14 +100,21 @@ const API=window.FMSaasAPI=window.FMSaasAPI||{
  async addInvoice(o){const c=await sb();return chk(await c.from('saas_invoices').insert(o).select())[0]},
  async updInvoice(id,o){const c=await sb();return chk(await c.from('saas_invoices').update(o).eq('id',id).select())[0]}
 };
-const ERR=m=>/Invalid login/i.test(m)?'البريد أو كلمة المرور غير صحيحة':/duplicate key/i.test(m)?'رمز الشركة مستخدم من قبل':/saas_tenants_url_check/.test(m)?'رابط المشروع يجب أن يكون https://xxxx.supabase.co':/anon_key_check/.test(m)?'المفتاح غير صالح — استخدم المفتاح العام (anon / publishable) فقط':/code_check/.test(m)?'رمز الشركة: أحرف إنجليزية صغيرة وأرقام و- (2–30)':/logo_check/.test(m)?'الشعار كبير — اختر صورة أصغر':/does not exist|schema cache/i.test(m)?'شغّل saas_control.sql في مشروع التحكم أولاً':/Failed to fetch/i.test(m)?'تعذر الاتصال':m;
-const toast=(m,bad)=>{const t=document.createElement('div');t.textContent=m;t.style.cssText=`position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:${bad?'#b91c1c':'#0f172a'};color:#fff;padding:10px 18px;border-radius:12px;font:800 13.5px Cairo,Tahoma,sans-serif;z-index:99`;document.body.appendChild(t);setTimeout(()=>t.remove(),3200)};
+/* SA6: name what the control project is missing (a column / table / function added by a later saas_control.sql) */
+const MISS=m=>{const x=/'([\w]+)' column of '([\w]+)'/.exec(m)||/column "?([\w]+)"? of relation "?([\w.]+)"?/.exec(m),y=/(?:relation|table|function)\s+"?([\w.]+)/i.exec(m)||/find the (?:table|function) '?([\w.]+)/i.exec(m);const what=x?`العمود «${x[1]}» في جدول «${x[2]}»`:y?`«${y[1]}»`:'جزء من الجداول';return `مشروع التحكم ينقصه تحديث: ${what} غير موجود. افتح SQL Editor في مشروع التحكم وشغّل ملف saas_control.sql الأحدث كاملاً (آمن لإعادة التشغيل ولا يمسح شيئاً)، ثم أعد المحاولة.`};
+const ERR=m=>/Invalid login/i.test(m)?'البريد أو كلمة المرور غير صحيحة':/duplicate key/i.test(m)?'رمز الشركة مستخدم من قبل':/saas_tenants_url_check/.test(m)?'رابط المشروع يجب أن يكون https://xxxx.supabase.co':/anon_key_check/.test(m)?'المفتاح غير صالح — استخدم المفتاح العام (anon / publishable) فقط':/code_check/.test(m)?'رمز الشركة: أحرف إنجليزية صغيرة وأرقام و- (2–30)':/logo_check/.test(m)?'الشعار كبير — اختر صورة أصغر':/does not exist|schema cache/i.test(m)?MISS(m):/Failed to fetch/i.test(m)?'تعذر الاتصال':m;
+const toast=(m,bad)=>{const t=document.createElement('div');t.textContent=m;t.style.cssText=`position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:${bad?'#b91c1c':'#0f172a'};color:#fff;padding:10px 18px;border-radius:12px;font:800 13.5px Cairo,Tahoma,sans-serif;z-index:99;max-width:min(680px,92vw);line-height:1.8;text-align:center`;document.body.appendChild(t);setTimeout(()=>t.remove(),bad&&m.length>60?12000:3200)};
 /* activation code = base64url(JSON {c,p,l,u,n,m?}) + '.' + hex HMAC-SHA256(that text, tenant secret) — verified by fm_plan_activate */
 async function signCode(t,plan,limit,until,nonce,mods){const o={c:t.code,p:plan,l:+limit||0,u:until,n:nonce};if(mods&&typeof mods==='object')o.m=mods;const p=JSON.stringify(o);
  const b=btoa(unescape(encodeURIComponent(p))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
  const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(t.secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
  const sig=new Uint8Array(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(b)));return b+'.'+[...sig].map(x=>x.toString(16).padStart(2,'0')).join('')}
 window.fmSaasSign=signCode;
+/* SA7: the activation code is also kept on the company row (license / license_at); the company's platform reads it through
+   saas_license and applies it when its system admin opens it. Older control schemas without the columns: saved without it. */
+const LIC_MISS=e=>/license/.test(String(e&&e.message||''))&&/column|schema cache/i.test(String(e&&e.message||''));
+async function saveLic(o,code){const x=Object.assign({},o,code?{license:code,license_at:new Date().toISOString()}:{});
+ try{return {r:await API.saveTenant(x,false),auto:!!code}}catch(e){if(!code||!LIC_MISS(e))throw e;return {r:await API.saveTenant(o,false),auto:false}}}
 let T=[],INV=[],SET={},TAB='dash',LEADS=[],USE=[];
 const plans=()=>Array.isArray(SET.plans)?SET.plans:[];
 const planOf=k=>plans().find(p=>p.k===k)||{k,name:k,max:0,price:0};
@@ -207,10 +214,10 @@ function tenantDlg(t,pre){const isNew=!t;const lead=pre&&pre.lead;t=t||Object.as
   <div class="three"><label class="f">مسؤول التواصل<input data-k="contact_name" value="${esc(t.contact_name||'')}"></label><label class="f">الجوال<input data-k="contact_phone" dir="ltr" value="${esc(t.contact_phone||'')}"></label><label class="f">البريد<input data-k="contact_email" dir="ltr" value="${esc(t.contact_email||'')}"></label></div>
   <label class="f">ملاحظات<textarea data-k="notes" rows="2">${esc(t.notes||'')}</textarea></label>
   <div class="two"><label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-demo ${t.demo?'checked':''} style="width:auto"> 🧪 شركة عرض (بيانات وهمية للعملاء المحتملين)</label><label class="f">كلمة مرور حسابات العرض (تظهر للزوار)<input data-k="demo_pass" dir="ltr" value="${esc(t.demo_pass||'')}" placeholder="مثال: Demo-2026!"></label></div>
-  ${isNew?'':'<div class="warn">تغيير الباقة أو التاريخ هنا يغيّر سجلك فقط — يصل للشركة بكود تفعيل (فاتورة مدفوعة أو «🔑 كود يدوي»).</div>'}</div>
+  ${isNew?'':`<div class="note"><b>🧩 أجزاء المنصة المفتوحة للشركة</b> — أجزاء الباقة مفعّلة دائماً؛ أضف أجزاء أخرى، ولتجربة جزء اكتب تاريخ انتهائها.</div><div data-mp>${modPicker(t.plan,tMods(t),t.schools_limit,1)}</div><div class="warn">عند الحفظ: إذا تغيّرت الباقة أو حد المدارس أو تاريخ الاشتراك أو الأجزاء يُصدر كود تفعيل ويُرسل للشركة تلقائياً، ويُطبَّق عند فتح مدير النظام فيها للمنصة.</div>`}</div>
    <div class="err" data-save-error role="alert" dir="auto" hidden style="padding:0 16px 8px"></div>
   <div class="ft"><button class="b p" data-s>💾 حفظ</button><button class="b" data-x>إلغاء</button></div>`);
- const q=s=>d.querySelector(s);q('[data-k=plan]').onchange=e=>{const p=planOf(e.target.value);q('[data-k=schools_limit]').value=p.max};
+ const q=s=>d.querySelector(s);const mods0=q('[data-mp]')?JSON.stringify(readPicker(d,t.plan)):'';q('[data-k=plan]').onchange=e=>{const p=planOf(e.target.value);q('[data-k=schools_limit]').value=p.max;const mp=q('[data-mp]');if(mp)mp.innerHTML=modPicker(e.target.value,tMods(t),p.max,1)};
  q('[data-logo]').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{logo=await shrinkLogo(f);q('[data-lp]').innerHTML=`<img class="logo" src="${logo}" style="width:64px;height:64px">`}catch(_){toast('تعذر قراءة الصورة',1)}};
  const save=q('[data-s]'),saveError=q('[data-save-error]');
  const showSaveError=m=>{saveError.textContent=m;saveError.hidden=false;saveError.scrollIntoView({block:'nearest'})};
@@ -218,10 +225,13 @@ function tenantDlg(t,pre){const isNew=!t;const lead=pre&&pre.lead;t=t||Object.as
   if(!o.name||!o.code||!o.url||!o.anon_key){showSaveError('أكمل الحقول المطلوبة');return}if(!keyOk(o.anon_key)){showSaveError('هذا ليس المفتاح العام — لا تستخدم service_role أو sb_secret أبداً');return}
   o.demo=q('[data-demo]').checked;o.demo_pass=o.demo?(o.demo_pass||null):null;if(o.demo&&!o.demo_pass){showSaveError('اكتب كلمة مرور حسابات العرض');return}
   o.url=o.url.replace(/\/+$/,'');o.schools_limit=+o.schools_limit||0;o.active_until=o.active_until||null;o.logo=logo||null;o.updated_at=new Date().toISOString();
+  let lic=null;
+  if(!isNew&&q('[data-mp]')){const mods=readPicker(d,o.plan),same=o.plan===t.plan&&(+o.schools_limit||0)===(+t.schools_limit||0)&&(o.active_until||'')===(t.active_until||'')&&JSON.stringify(mods)===mods0;
+   if(!same){if(!o.active_until){showSaveError('اختر تاريخ «الاشتراك حتى» — كود التفعيل يحتاجه');return}o.modules=mods;try{lic=await signCode(t,o.plan,o.schools_limit,o.active_until,'e-'+crypto.getRandomValues(new Uint32Array(2)).join(''),mods)}catch(e){showSaveError('تعذر توليد كود التفعيل: '+e.message);return}}}
   save.disabled=true;
-  let saved;
+  let saved,auto=false;
   try{
-   [saved]=await API.saveTenant(o,isNew);
+   if(lic){const x=await saveLic(o,lic);[saved]=x.r;auto=x.auto}else [saved]=await API.saveTenant(o,isNew);
    if(!saved){showSaveError('لم تُرجع قاعدة التحكم سجل الشركة. تحقق من صلاحية حساب المالك ثم حدّث القائمة.');return}
   }catch(e){
    const details=['PGRST204','PGRST205','42703','42P01'].includes(e.code)?' ('+e.code+': '+e.message+')':'';
@@ -235,7 +245,7 @@ function tenantDlg(t,pre){const isNew=!t;const lead=pre&&pre.lead;t=t||Object.as
   }catch(_){}
   T=isNew?[...T,saved]:T.map(item=>item.code===saved.code?saved:item);
   d.close();render();
-  if(isNew)provision(saved);else toast('تم الحفظ')
+  if(isNew)provision(saved);else if(lic){const c=dlg(`<div class="in"><h3>✅ حُفظت الباقة والأجزاء — ${esc(saved.name)}</h3>${codeBox(saved,lic,o.active_until,auto)}${auto?'':'<div class="warn">مشروع التحكم لا يدعم الإرسال التلقائي بعد — شغّل saas_control.sql الأحدث، وحتى ذلك أرسل الكود لمدير النظام.</div>'}</div><div class="ft"><button class="b" data-x>إغلاق</button></div>`);bindCode(c,saved,lic,o.active_until)}else toast('تم الحفظ')
  }}
 function provision(t){if(!t)return;const link=siteBase()+'?c='+encodeURIComponent(t.code);
  const sql=`select public.fm_plan_init('${t.code}', '${t.secret}', '${t.plan}', ${+t.schools_limit||0}, ${t.active_until?`'${t.active_until}'`:'null'});`;
@@ -258,9 +268,9 @@ async function manualCode(t){if(!t)return;const d=dlg(`<div class="in"><h3>🔑 
  d.querySelector('[data-k=p]').onchange=e=>{d.querySelector('[data-mp]').innerHTML=modPicker(e.target.value,tMods(t),t.schools_limit,1)};
  d.querySelector('[data-g]').onclick=async()=>{const p=d.querySelector('[data-k=p]').value,l=+d.querySelector('[data-k=l]').value||0,u=d.querySelector('[data-k=u]').value;if(!u){toast('اختر التاريخ',1);return}
   const mods=readPicker(d,p);const code=await signCode(t,p,l,u,'m-'+crypto.getRandomValues(new Uint32Array(2)).join(''),mods);
-  try{await API.saveTenant({code:t.code,plan:p,schools_limit:l,active_until:u,modules:mods,updated_at:new Date().toISOString()},false);await reload()}catch(e){toast(ERR(e.message),1)}
-  d.querySelector('[data-out]').innerHTML=codeBox(t,code,u);bindCode(d,t,code,u)}}
-const codeBox=(t,code,u)=>`<div class="note">أرسل الكود لمدير النظام في «${esc(t.name)}»: الإعدادات ← 💳 الاشتراك ← «إدخال كود التفعيل». يسري حتى ${dshow(u)}.</div><div class="code" data-cv>${esc(code)}</div><div class="row"><button class="b" data-cc>📋 نسخ الكود</button>${t.contact_phone?'<button class="b" data-cw>💬 واتساب</button>':''}</div>`;
+  let auto=false;try{auto=(await saveLic({code:t.code,plan:p,schools_limit:l,active_until:u,modules:mods,updated_at:new Date().toISOString()},code)).auto;await reload()}catch(e){toast(ERR(e.message),1)}
+  d.querySelector('[data-out]').innerHTML=codeBox(t,code,u,auto);bindCode(d,t,code,u)}}
+const codeBox=(t,code,u,auto)=>`${auto?`<div class="note" style="background:#dcfce7;border-color:#86efac">✅ أُرسل للشركة تلقائياً: يُطبَّق عند فتح مدير النظام في «${esc(t.name)}» للمنصة (خلال دقيقة من فتحها). الكود أدناه للاحتياط فقط.</div>`:''}<div class="note">أرسل الكود لمدير النظام في «${esc(t.name)}»: الإعدادات ← 💳 الاشتراك ← «إدخال كود التفعيل». يسري حتى ${dshow(u)}.</div><div class="code" data-cv>${esc(code)}</div><div class="row"><button class="b" data-cc>📋 نسخ الكود</button>${t.contact_phone?'<button class="b" data-cw>💬 واتساب</button>':''}</div>`;
 function bindCode(d,t,code,u){d.querySelector('[data-cc]').onclick=async()=>{try{await navigator.clipboard.writeText(code);toast('تم النسخ')}catch(e){prompt('انسخ:',code)}};
  const w=d.querySelector('[data-cw]');if(w)w.onclick=()=>wa(t.contact_phone,`كود تفعيل اشتراك RakizoraFM — ${t.name}\nيسري حتى ${u}\n\n${code}\n\nيُدخله مدير النظام من: الإعدادات ← 💳 الاشتراك ← إدخال كود التفعيل`)}
 
@@ -291,8 +301,8 @@ function invoices(p){p.innerHTML=`<div class="card"><div class="tw"><table><thea
  p.querySelectorAll('[data-sc]').forEach(b=>b.onclick=()=>{const i=I(b.dataset.sc),t=T.find(x=>x.code===i.tenant);const d=dlg(`<div class="in"><h3>🔑 كود التفعيل — ${esc(i.number)}</h3>${codeBox(t,i.activation_code,i.period_to)}</div><div class="ft"><button class="b" data-x>إغلاق</button></div>`);bindCode(d,t,i.activation_code,i.period_to)})}
 async function markPaid(i){const t=T.find(x=>x.code===i.tenant);if(!t||!confirm(`تأكيد استلام ${money(i.total)} من ${t.name}؟ سيُصدر كود تفعيل حتى ${i.period_to}.`))return;
  try{const code=await signCode(t,i.plan,i.schools_limit,i.period_to,'i-'+i.id,tMods(i));await API.updInvoice(i.id,{status:'paid',paid_at:new Date().toISOString(),activation_code:code});
-  await API.saveTenant(Object.assign({code:t.code,status:'active',plan:i.plan,schools_limit:i.schools_limit,active_until:i.period_to,updated_at:new Date().toISOString()},tMods(i)?{modules:tMods(i)}:{}),false);await reload();render();
-  const d=dlg(`<div class="in"><h3>✅ تم تسجيل الدفع — ${esc(i.number)}</h3>${codeBox(t,code,i.period_to)}</div><div class="ft"><button class="b" data-x>إغلاق</button></div>`);bindCode(d,t,code,i.period_to)}catch(e){toast(ERR(e.message),1)}}
+  const auto=(await saveLic(Object.assign({code:t.code,status:'active',plan:i.plan,schools_limit:i.schools_limit,active_until:i.period_to,updated_at:new Date().toISOString()},tMods(i)?{modules:tMods(i)}:{}),code)).auto;await reload();render();
+  const d=dlg(`<div class="in"><h3>✅ تم تسجيل الدفع — ${esc(i.number)}</h3>${codeBox(t,code,i.period_to,auto)}</div><div class="ft"><button class="b" data-x>إغلاق</button></div>`);bindCode(d,t,code,i.period_to)}catch(e){toast(ERR(e.message),1)}}
 function printInvoice(i){const t=T.find(x=>x.code===i.tenant)||{name:i.tenant},s=seller(),w=window.open('','_blank');if(!w){toast('اسمح بالنوافذ المنبثقة',1);return}const vat=+i.total-(+i.amount);
  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>فاتورة ${esc(i.number)}</title><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet"><style>body{font-family:Cairo,Tahoma,sans-serif;margin:30px 36px;color:#0f172a;font-size:13.5px}h1{margin:0;font-size:24px}.hd{display:flex;justify-content:space-between;border-bottom:3px double #0f172a;padding-bottom:10px;margin-bottom:16px}.m{color:#64748b}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:right}th{background:#f1f5f9}.tot td{font-weight:900;background:#eff6ff}.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px}.st{font-weight:900;color:${i.status==='paid'?'#15803d':i.status==='cancelled'?'#64748b':'#b45309'}}</style></head><body>
  <div class="hd"><div><h1>فاتورة ضريبية</h1><div class="m">Tax Invoice</div></div><div style="text-align:left"><b dir="ltr">${esc(i.number)}</b><div class="m">${dshow(i.issued_at)}</div><div class="st">${IST[i.status]}</div></div></div>
