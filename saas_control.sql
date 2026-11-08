@@ -177,3 +177,16 @@ revoke all on function public.saas_public(), public.saas_lead_new(jsonb), public
 grant execute on function public.saas_public(), public.saas_lead_new(jsonb), public.saas_ping(text, text, text) to anon, authenticated;
 -- SA6: make the API see new columns / functions right away after a rerun
 notify pgrst, 'reload schema';
+
+-- ---------- SA7 — the company's latest activation code, picked up by its platform ----------
+-- The owner console stores every code it issues (manual code, paid invoice, plan / parts edit) on the company row.
+-- The company's platform reads it here (anon, by company code) and its system admin's browser applies it with
+-- fm_plan_activate in the company project. The code is signed with the company secret and works only there, once.
+alter table public.saas_tenants add column if not exists license    text;
+alter table public.saas_tenants add column if not exists license_at timestamptz;
+create or replace function public.saas_license(p_code text) returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('code', t.license, 'at', t.license_at)
+    from public.saas_tenants t where t.code = lower(btrim(coalesce(p_code,''))) and t.license is not null $$;
+revoke all on function public.saas_license(text) from public;
+grant execute on function public.saas_license(text) to anon, authenticated;
+notify pgrst, 'reload schema';
