@@ -780,3 +780,6 @@ Local checks: `node tests/integration/billing330.mjs`; browser fixture checks `n
 
 ## saas SA8 — the parts picker where it can be seen
 - The company edit dialog shows «🧩 أجزاء المنصة المفتوحة للشركة» right after «الاشتراك حتى» (it was at the very bottom, below «شركة عرض», and was missed). CSS `input[type=checkbox],input[type=radio]{width:auto}`: the general `input{width:100%}` had stretched the picker's checkboxes, so the part names ran over the «ضمن الباقة» chip (also in «🔑 كود يدوي» and the invoice dialog).
+
+## saas SA9 — every part can be turned on or off
+- `modPicker(plan, cur, limit, trial)`: in the edit and «🔑 كود يدوي» dialogs (`trial`) every part is a live checkbox — a company's saved `modules` decides what is ticked (none saved → the plan's parts), and a plan part can be unticked (chip «ضمن الباقة — مُغلق»); the invoice dialog (`!trial`) still fixes the plan's parts (they set the price). `readPicker` returns only the ticked parts (+ disabled = fixed ones), so the activation code's `m` is the exact list and `fm_mod` closes anything missing, plan part or not. Changing the plan in a dialog restarts the ticks from the new plan. Saving with no part left asks for a confirmation.
