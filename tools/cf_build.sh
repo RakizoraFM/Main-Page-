@@ -15,34 +15,8 @@ cp -r assets dist/
 cp workforce_v334.js workforce_v335.js building_history_v336.js dist/
 cp sw.js manifest.webmanifest fci_template.xlsx ppm_template.xlsx dist/
 cp -r icons dist/
-# Repair two literal line breaks inside JavaScript strings in the generated homepage (no-op since V340 fixed the source).
-python3 - <<'PY'
-from pathlib import Path
-
-page = Path("dist/index.html")
-source = page.read_text(encoding="utf-8")
-repairs = [
-    (
-        "+clone.outerHTML+'
-
-
-</body></html>';",
-        "+clone.outerHTML+'\\n</body></html>';"
-    ),
-    (
-        "⏳ جارٍ تجهيز التقرير…
-
-
-</body>');",
-        "⏳ جارٍ تجهيز التقرير…\\n</body>');"
-    ),
-]
-for broken, fixed in repairs:
-    # V342: index.html itself was repaired in V340; only patch a copy that is still broken
-    if broken in source:
-        source = source.replace(broken, fixed, 1)
-page.write_text(source, encoding="utf-8")
-PY
+# V345: the old «repair two broken JavaScript strings» step was removed — index.html is fixed since V340, and the step's
+# own Python broke when an edit inserted blank lines before every </body> (multi-line string literal → SyntaxError).
 # the Edge Function code (the settings cards copy it from the site)
 for f in supabase/functions/*/index.ts; do mkdir -p "dist/$(dirname "$f")"; cp "$f" "dist/$f"; done
 cp cloudflare/_worker.js cloudflare/_routes.json cloudflare/404.html dist/
