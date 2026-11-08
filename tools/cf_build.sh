@@ -6,6 +6,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 rm -rf dist && mkdir -p dist
 cp index.html field.html start.html rate.html school.html supplier.html saas.html try.html dist/
+# Public marketing pages linked from the shared header must be present in the Pages artifact.
+cp services.html rakizora.html solvix.html partners.html contact.html dist/
 cp integrations.html dist/
 cp -r integrations dist/
 cp -r assets dist/
@@ -21,11 +23,17 @@ page = Path("dist/index.html")
 source = page.read_text(encoding="utf-8")
 repairs = [
     (
-        "+clone.outerHTML+'\n\n\n</body></html>';",
+        "+clone.outerHTML+'
+
+
+</body></html>';",
         "+clone.outerHTML+'\\n</body></html>';"
     ),
     (
-        "⏳ جارٍ تجهيز التقرير…\n\n\n</body>');",
+        "⏳ جارٍ تجهيز التقرير…
+
+
+</body>');",
         "⏳ جارٍ تجهيز التقرير…\\n</body>');"
     ),
 ]
