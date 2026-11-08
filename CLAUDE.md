@@ -783,3 +783,6 @@ Local checks: `node tests/integration/billing330.mjs`; browser fixture checks `n
 
 ## saas SA9 — every part can be turned on or off
 - `modPicker(plan, cur, limit, trial)`: in the edit and «🔑 كود يدوي» dialogs (`trial`) every part is a live checkbox — a company's saved `modules` decides what is ticked (none saved → the plan's parts), and a plan part can be unticked (chip «ضمن الباقة — مُغلق»); the invoice dialog (`!trial`) still fixes the plan's parts (they set the price). `readPicker` returns only the ticked parts (+ disabled = fixed ones), so the activation code's `m` is the exact list and `fm_mod` closes anything missing, plan part or not. Changing the plan in a dialog restarts the ticks from the new plan. Saving with no part left asks for a confirmation.
+
+## start S15 — e-mail links keep the company code
+- `backUrl()` = this page + `?c=<fm_tenant.code>`: `signUp` passes it as `emailRedirectTo`, `resetPasswordForEmail` as `redirectTo` (it used to drop `?c=`, so a link opened on another phone used the site default project). Supabase uses it only when it is listed in the company project's Authentication → URL Configuration → Redirect URLs; otherwise it sends the Site URL (default `http://localhost:3000`). Each new company project must set Site URL = the site's `start.html` and Redirect URLs = `https://<site>/**`.
