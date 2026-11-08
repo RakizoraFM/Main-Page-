@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SA5">
+<meta name="fm-version" content="SA6">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -100,8 +100,10 @@ const API=window.FMSaasAPI=window.FMSaasAPI||{
  async addInvoice(o){const c=await sb();return chk(await c.from('saas_invoices').insert(o).select())[0]},
  async updInvoice(id,o){const c=await sb();return chk(await c.from('saas_invoices').update(o).eq('id',id).select())[0]}
 };
-const ERR=m=>/Invalid login/i.test(m)?'البريد أو كلمة المرور غير صحيحة':/duplicate key/i.test(m)?'رمز الشركة مستخدم من قبل':/saas_tenants_url_check/.test(m)?'رابط المشروع يجب أن يكون https://xxxx.supabase.co':/anon_key_check/.test(m)?'المفتاح غير صالح — استخدم المفتاح العام (anon / publishable) فقط':/code_check/.test(m)?'رمز الشركة: أحرف إنجليزية صغيرة وأرقام و- (2–30)':/logo_check/.test(m)?'الشعار كبير — اختر صورة أصغر':/does not exist|schema cache/i.test(m)?'شغّل saas_control.sql في مشروع التحكم أولاً':/Failed to fetch/i.test(m)?'تعذر الاتصال':m;
-const toast=(m,bad)=>{const t=document.createElement('div');t.textContent=m;t.style.cssText=`position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:${bad?'#b91c1c':'#0f172a'};color:#fff;padding:10px 18px;border-radius:12px;font:800 13.5px Cairo,Tahoma,sans-serif;z-index:99`;document.body.appendChild(t);setTimeout(()=>t.remove(),3200)};
+/* SA6: name what the control project is missing (a column / table / function added by a later saas_control.sql) */
+const MISS=m=>{const x=/'([\w]+)' column of '([\w]+)'/.exec(m)||/column "?([\w]+)"? of relation "?([\w.]+)"?/.exec(m),y=/(?:relation|table|function)\s+"?([\w.]+)/i.exec(m)||/find the (?:table|function) '?([\w.]+)/i.exec(m);const what=x?`العمود «${x[1]}» في جدول «${x[2]}»`:y?`«${y[1]}»`:'جزء من الجداول';return `مشروع التحكم ينقصه تحديث: ${what} غير موجود. افتح SQL Editor في مشروع التحكم وشغّل ملف saas_control.sql الأحدث كاملاً (آمن لإعادة التشغيل ولا يمسح شيئاً)، ثم أعد المحاولة.`};
+const ERR=m=>/Invalid login/i.test(m)?'البريد أو كلمة المرور غير صحيحة':/duplicate key/i.test(m)?'رمز الشركة مستخدم من قبل':/saas_tenants_url_check/.test(m)?'رابط المشروع يجب أن يكون https://xxxx.supabase.co':/anon_key_check/.test(m)?'المفتاح غير صالح — استخدم المفتاح العام (anon / publishable) فقط':/code_check/.test(m)?'رمز الشركة: أحرف إنجليزية صغيرة وأرقام و- (2–30)':/logo_check/.test(m)?'الشعار كبير — اختر صورة أصغر':/does not exist|schema cache/i.test(m)?MISS(m):/Failed to fetch/i.test(m)?'تعذر الاتصال':m;
+const toast=(m,bad)=>{const t=document.createElement('div');t.textContent=m;t.style.cssText=`position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:${bad?'#b91c1c':'#0f172a'};color:#fff;padding:10px 18px;border-radius:12px;font:800 13.5px Cairo,Tahoma,sans-serif;z-index:99;max-width:min(680px,92vw);line-height:1.8;text-align:center`;document.body.appendChild(t);setTimeout(()=>t.remove(),bad&&m.length>60?12000:3200)};
 /* activation code = base64url(JSON {c,p,l,u,n,m?}) + '.' + hex HMAC-SHA256(that text, tenant secret) — verified by fm_plan_activate */
 async function signCode(t,plan,limit,until,nonce,mods){const o={c:t.code,p:plan,l:+limit||0,u:until,n:nonce};if(mods&&typeof mods==='object')o.m=mods;const p=JSON.stringify(o);
  const b=btoa(unescape(encodeURIComponent(p))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
