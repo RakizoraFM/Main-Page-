@@ -71,7 +71,8 @@ let libP=null,client=null;
 function ensureLib(){if(window.supabase&&window.supabase.createClient)return Promise.resolve();if(libP)return libP;
  libP=new Promise((res,rej)=>{const s=document.createElement('script');s.src=LIB;s.onload=()=>res();s.onerror=()=>{libP=null;rej(Error('Failed to fetch'))};document.head.appendChild(s)});return libP}
 async function sb(){if(client)return client;await ensureLib();client=window.supabase.createClient(CTRL.url,CTRL.key,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'fm-saas-auth'}});return client}
-const chk=({data,error})=>{if(error)throw Error(error.message||String(error));return data};
+const chk=({data,error})=>{if(error)throw Object.assign(Error(error.message||String(error)),{code:error.code});return data};
+const missingDemoColumn=e=>e?.code==='PGRST204'&&/'(?:demo|demo_pass)' column of 'saas_tenants'/i.test(e.message);
 /* all network calls go through API so tests can replace it */
 const API=window.FMSaasAPI=window.FMSaasAPI||{
  async session(){const c=await sb();return (await c.auth.getSession()).data?.session||null},
@@ -79,7 +80,17 @@ const API=window.FMSaasAPI=window.FMSaasAPI||{
  async signOut(){const c=await sb();await c.auth.signOut()},
  async isOwner(){const c=await sb();return !!chk(await c.rpc('saas_is_owner'))},
  async tenants(){const c=await sb();return chk(await c.from('saas_tenants').select('*').order('created_at'))},
- async saveTenant(t,isNew){const c=await sb();return isNew?chk(await c.from('saas_tenants').insert(t).select()):chk(await c.from('saas_tenants').update(t).eq('code',t.code).select())},
+ async saveTenant(t,isNew){
+  const c=await sb();
+  if(!isNew)return chk(await c.from('saas_tenants').update(t).eq('code',t.code).select());
+  try{return chk(await c.from('saas_tenants').insert(t).select())}
+  catch(e){
+   // Older control schemas can register regular companies without demo fields.
+   if(t.demo!==false||!missingDemoColumn(e))throw e;
+   const {demo,demo_pass,...regularTenant}=t;
+   return chk(await c.from('saas_tenants').insert(regularTenant).select())
+  }
+ },
  async settings(){const c=await sb();return Object.fromEntries((chk(await c.from('saas_settings').select('key,value'))||[]).map(x=>[x.key,x.value]))},
  async saveSetting(k,v){const c=await sb();return chk(await c.from('saas_settings').upsert([{key:k,value:v,updated_at:new Date().toISOString()}],{onConflict:'key'}))},
  async invoices(){const c=await sb();return chk(await c.from('saas_invoices').select('*').order('created_at',{ascending:false}).limit(1000))},
@@ -197,14 +208,35 @@ function tenantDlg(t,pre){const isNew=!t;const lead=pre&&pre.lead;t=t||Object.as
   <label class="f">ملاحظات<textarea data-k="notes" rows="2">${esc(t.notes||'')}</textarea></label>
   <div class="two"><label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" data-demo ${t.demo?'checked':''} style="width:auto"> 🧪 شركة عرض (بيانات وهمية للعملاء المحتملين)</label><label class="f">كلمة مرور حسابات العرض (تظهر للزوار)<input data-k="demo_pass" dir="ltr" value="${esc(t.demo_pass||'')}" placeholder="مثال: Demo-2026!"></label></div>
   ${isNew?'':'<div class="warn">تغيير الباقة أو التاريخ هنا يغيّر سجلك فقط — يصل للشركة بكود تفعيل (فاتورة مدفوعة أو «🔑 كود يدوي»).</div>'}</div>
+   <div class="err" data-save-error role="alert" dir="auto" hidden style="padding:0 16px 8px"></div>
   <div class="ft"><button class="b p" data-s>💾 حفظ</button><button class="b" data-x>إلغاء</button></div>`);
  const q=s=>d.querySelector(s);q('[data-k=plan]').onchange=e=>{const p=planOf(e.target.value);q('[data-k=schools_limit]').value=p.max};
  q('[data-logo]').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{logo=await shrinkLogo(f);q('[data-lp]').innerHTML=`<img class="logo" src="${logo}" style="width:64px;height:64px">`}catch(_){toast('تعذر قراءة الصورة',1)}};
- q('[data-s]').onclick=async()=>{const o={};d.querySelectorAll('[data-k]').forEach(i=>{if(!i.disabled)o[i.dataset.k]=S(i.value)});if(!isNew)o.code=t.code;else o.code=o.code.toLowerCase();
-  if(!o.name||!o.code||!o.url||!o.anon_key){toast('أكمل الحقول المطلوبة',1);return}if(!keyOk(o.anon_key)){toast('هذا ليس المفتاح العام — لا تستخدم service_role أو sb_secret أبداً',1);return}
-  o.demo=q('[data-demo]').checked;o.demo_pass=o.demo?(o.demo_pass||null):null;if(o.demo&&!o.demo_pass){toast('اكتب كلمة مرور حسابات العرض',1);return}
+ const save=q('[data-s]'),saveError=q('[data-save-error]');
+ const showSaveError=m=>{saveError.textContent=m;saveError.hidden=false;saveError.scrollIntoView({block:'nearest'})};
+ save.onclick=async()=>{if(save.disabled)return;saveError.hidden=true;const o={};d.querySelectorAll('[data-k]').forEach(i=>{if(!i.disabled)o[i.dataset.k]=S(i.value)});if(!isNew)o.code=t.code;else o.code=o.code.toLowerCase();
+  if(!o.name||!o.code||!o.url||!o.anon_key){showSaveError('أكمل الحقول المطلوبة');return}if(!keyOk(o.anon_key)){showSaveError('هذا ليس المفتاح العام — لا تستخدم service_role أو sb_secret أبداً');return}
+  o.demo=q('[data-demo]').checked;o.demo_pass=o.demo?(o.demo_pass||null):null;if(o.demo&&!o.demo_pass){showSaveError('اكتب كلمة مرور حسابات العرض');return}
   o.url=o.url.replace(/\/+$/,'');o.schools_limit=+o.schools_limit||0;o.active_until=o.active_until||null;o.logo=logo||null;o.updated_at=new Date().toISOString();
-  try{await API.saveTenant(o,isNew);if(lead)try{await API.updLead(lead,{status:'trial',tenant:o.code})}catch(_){}toast('تم الحفظ');d.close();await reload();render();if(isNew)provision(T.find(x=>x.code===o.code))}catch(e){toast(ERR(e.message),1)}}}
+  save.disabled=true;
+  let saved;
+  try{
+   [saved]=await API.saveTenant(o,isNew);
+   if(!saved){showSaveError('لم تُرجع قاعدة التحكم سجل الشركة. تحقق من صلاحية حساب المالك ثم حدّث القائمة.');return}
+  }catch(e){
+   const details=['PGRST204','PGRST205','42703','42P01'].includes(e.code)?' ('+e.code+': '+e.message+')':'';
+   showSaveError(ERR(e.message)+details);
+   return
+  }finally{save.disabled=false}
+  if(lead)try{
+   const change={status:'trial',tenant:saved.code};
+   await API.updLead(lead,change);
+   LEADS=LEADS.map(item=>item.id===lead?{...item,...change}:item)
+  }catch(_){}
+  T=isNew?[...T,saved]:T.map(item=>item.code===saved.code?saved:item);
+  d.close();render();
+  if(isNew)provision(saved);else toast('تم الحفظ')
+ }}
 function provision(t){if(!t)return;const link=siteBase()+'?c='+encodeURIComponent(t.code);
  const sql=`select public.fm_plan_init('${t.code}', '${t.secret}', '${t.plan}', ${+t.schools_limit||0}, ${t.active_until?`'${t.active_until}'`:'null'});`;
  const d=dlg(`<div class="in"><h3>🚀 تجهيز «${esc(t.name)}»</h3><ol style="margin:0;padding-inline-start:20px;line-height:2.1;font-weight:700;font-size:13.5px">
