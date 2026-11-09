@@ -15180,3 +15180,167 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: scheduled reports are not sent by themselves («أرسل الآن» still works)'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 95) V351 — full data backup (download / scheduled e-mail) and restore ----------
+-- The system admin's platform reads every table of schema public (except secrets and queues, fm_backup_skip) in pages,
+-- packs one JSON file (gzip, AES-GCM with the backup password) and downloads it or sends it through the V350 scheduled
+-- reports (kind 'p:backup', only the system admin may create such a schedule). Restore adds the missing rows (or also
+-- puts changed rows back) table by table with the table's triggers off. Not included: sign-in accounts (auth.users) and
+-- the photo / attachment files kept in Storage (only their paths are in the tables).
+create table if not exists public.fm_backup_cfg (
+  id int primary key default 1 check (id = 1),
+  pass text,
+  last jsonb,
+  updated_at timestamptz not null default now());
+alter table public.fm_backup_cfg enable row level security;
+revoke all on public.fm_backup_cfg from anon, authenticated;
+
+create or replace function public.fm_backup_skip() returns text[] language sql immutable as $$
+  select array['fm_backup_cfg','fm_push_cfg','fm_wa_cfg','fm_report_cfg','fm_plan','fm_push_subs','fm_push_queue','fm_wa_queue'] $$;
+
+-- the tables that may be read / restored, with their key and size
+create or replace function public.fm_backup_tables() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r record; n bigint; out jsonb := '[]'; pk text[];
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  for r in select c.oid, c.relname, c.reltuples from pg_class c join pg_namespace s on s.oid = c.relnamespace
+           where s.nspname = 'public' and c.relkind in ('r','p') and not c.relispartition and not c.relname = any(public.fm_backup_skip())
+           order by c.relname loop
+    if r.reltuples > 300000 then n := r.reltuples::bigint; else execute format('select count(*) from public.%I', r.relname) into n; end if;
+    select coalesce(array_agg(a.attname::text order by k.ord), '{}') into pk
+      from pg_index i, unnest(i.indkey) with ordinality k(attnum, ord), pg_attribute a
+     where i.indrelid = r.oid and i.indisprimary and a.attrelid = r.oid and a.attnum = k.attnum;
+    out := out || jsonb_build_object('t', r.relname, 'n', n, 'bytes', pg_total_relation_size(r.oid), 'pk', to_jsonb(pk));
+  end loop;
+  return jsonb_build_object('at', now(), 'tables', out);
+end $$;
+
+create or replace function public.fm_backup_ok_table(p_table text) returns boolean language sql stable security definer set search_path = public as $$
+  select exists(select 1 from pg_class c join pg_namespace s on s.oid = c.relnamespace
+                where s.nspname = 'public' and c.relname = p_table and c.relkind in ('r','p') and not c.relispartition)
+     and not p_table = any(public.fm_backup_skip()) $$;
+
+-- one page of a table (ordered by its primary key, else by ctid); p_limit ≤ 2000
+create or replace function public.fm_backup_page(p_table text, p_offset int, p_limit int) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ord text; r jsonb;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  if not public.fm_backup_ok_table(p_table) then raise exception 'unknown table'; end if;
+  select string_agg(format('%I', a.attname), ',' order by k.ord) into ord
+    from pg_index i, unnest(i.indkey) with ordinality k(attnum, ord), pg_attribute a
+   where i.indrelid = ('public.' || quote_ident(p_table))::regclass and i.indisprimary and a.attrelid = i.indrelid and a.attnum = k.attnum;
+  execute format('select coalesce(jsonb_agg(to_jsonb(x)), ''[]'') from (select * from public.%I order by %s offset %s limit %s) x',
+                 p_table, coalesce(ord, 'ctid'), greatest(coalesce(p_offset,0),0), least(greatest(coalesce(p_limit,500),1),2000)) into r;
+  return r;
+end $$;
+
+-- restore rows into one table: p_mode 'add' (missing rows only) or 'upsert' (also put changed rows back to the backup values)
+create or replace function public.fm_backup_restore(p_table text, p_rows jsonb, p_mode text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare rel regclass; cols text[]; pk text[]; ov text := ''; conf text; sql text; added bigint := 0; upd bigint := 0; failed int := 0; skipped int := 0;
+  err text; e jsonb; a bigint; u bigint; repl boolean := false; c text; seq text; m numeric; rows jsonb := coalesce(p_rows, '[]');
+  nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid()); cnt bigint;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  if not public.fm_backup_ok_table(p_table) then raise exception 'unknown table'; end if;
+  if p_mode not in ('add','upsert') then raise exception 'invalid mode'; end if;
+  if jsonb_typeof(rows) <> 'array' then raise exception 'invalid rows'; end if;
+  if jsonb_array_length(rows) = 0 then return jsonb_build_object('added', 0, 'updated', 0, 'failed', 0, 'skipped', 0); end if;
+  rel := ('public.' || quote_ident(p_table))::regclass;
+  -- a profile needs its sign-in account (auth.users is not in the backup)
+  if p_table = 'profiles' then
+    select coalesce(jsonb_agg(x), '[]'), count(*) filter (where true) into e, cnt from jsonb_array_elements(rows) x
+     where exists(select 1 from auth.users w where w.id::text = x->>'id');
+    skipped := jsonb_array_length(rows) - jsonb_array_length(e); rows := e;
+    if jsonb_array_length(rows) = 0 then return jsonb_build_object('added', 0, 'updated', 0, 'failed', 0, 'skipped', skipped, 'note', 'no account'); end if;
+  end if;
+  -- the columns present in the backup that still exist here (a newer column takes its default)
+  select coalesce(array_agg(a.attname::text order by a.attnum), '{}') into cols from pg_attribute a
+   where a.attrelid = rel and a.attnum > 0 and not a.attisdropped and a.attgenerated = '' and rows->0 ? a.attname;
+  if cardinality(cols) = 0 then raise exception 'no matching columns'; end if;
+  if exists(select 1 from pg_attribute a where a.attrelid = rel and a.attname = any(cols) and a.attidentity = 'a') then ov := 'overriding system value'; end if;
+  select coalesce(array_agg(a.attname::text order by k.ord), '{}') into pk
+    from pg_index i, unnest(i.indkey) with ordinality k(attnum, ord), pg_attribute a
+   where i.indrelid = rel and i.indisprimary and a.attrelid = rel and a.attnum = k.attnum;
+  if cardinality(pk) = 0 then
+    execute format('select count(*) from %s', rel) into cnt;
+    if cnt > 0 then return jsonb_build_object('added', 0, 'updated', 0, 'failed', 0, 'skipped', jsonb_array_length(rows), 'note', 'no key'); end if;
+    conf := '';
+  elsif p_mode = 'upsert' and exists(select 1 from unnest(cols) x where not x = any(pk)) then
+    conf := format('on conflict (%s) do update set %s', (select string_agg(format('%I', x), ',') from unnest(pk) x),
+                   (select string_agg(format('%I = excluded.%I', x, x), ',') from unnest(cols) x where not x = any(pk)));
+  else conf := 'on conflict do nothing'; end if;
+  sql := format('with i as (insert into %s (%s) %s select %s from jsonb_populate_recordset(null::%s, $1) %s returning (xmax = 0) as n) '
+                'select count(*) filter (where n), count(*) filter (where not n) from i',
+                rel, (select string_agg(format('%I', x), ',') from unnest(cols) x), ov,
+                (select string_agg(format('%I', x), ',') from unnest(cols) x), rel, conf);
+  -- the table's own triggers (stock balances, notifications, part guards …) must not run again on old rows
+  begin perform set_config('session_replication_role', 'replica', true); repl := true;
+  exception when others then repl := false; end;
+  if not repl then execute format('alter table %s disable trigger user', rel); end if;
+  begin
+    execute sql using rows into added, upd;
+  exception when others then
+    added := 0; upd := 0;
+    for e in select x from jsonb_array_elements(rows) x loop
+      begin execute sql using jsonb_build_array(e) into a, u; added := added + a; upd := upd + u;
+      exception when others then failed := failed + 1; if err is null then err := sqlerrm; end if; end;
+    end loop;
+  end;
+  if repl then perform set_config('session_replication_role', 'origin', true); else execute format('alter table %s enable trigger user', rel); end if;
+  -- sequences behind the restored ids
+  foreach c in array cols loop
+    seq := pg_get_serial_sequence(rel::text, c);
+    if seq is not null then
+      execute format('select max(%I)::numeric from %s', c, rel) into m;
+      if m is not null then execute format('select setval(%L, greatest(%s, (select last_value from %s)))', seq, m, seq); end if;
+    end if;
+  end loop;
+  insert into public.fm_audit_log(actor_name, action, target, details)
+  values (nm, 'restore', p_table, jsonb_build_object('mode', p_mode, 'rows', jsonb_array_length(rows), 'added', added, 'updated', upd, 'failed', failed, 'triggers_off', case when repl then 'replica' else 'disabled' end));
+  return jsonb_build_object('added', added, 'updated', upd, 'failed', failed, 'skipped', skipped, 'err', err);
+end $$;
+
+create or replace function public.fm_backup_status() returns jsonb language sql stable security definer set search_path = public as $$
+  select case when public.fm_wipe_ok() then jsonb_build_object('can', true,
+           'pass_set', coalesce((select pass is not null and pass <> '' from public.fm_backup_cfg where id = 1), false),
+           'last', (select last from public.fm_backup_cfg where id = 1))
+         else jsonb_build_object('can', false) end $$;
+create or replace function public.fm_backup_pass_get() returns text language plpgsql stable security definer set search_path = public as $$
+begin if not public.fm_wipe_ok() then raise exception 'not allowed'; end if; return (select pass from public.fm_backup_cfg where id = 1); end $$;
+create or replace function public.fm_backup_pass_set(p_pass text) returns void language plpgsql security definer set search_path = public as $$
+declare v text := nullif(btrim(coalesce(p_pass,'')), '');
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  if v is not null and length(v) < 8 then raise exception 'password too short'; end if;
+  insert into public.fm_backup_cfg(id, pass, updated_at) values (1, v, now()) on conflict (id) do update set pass = excluded.pass, updated_at = now();
+  insert into public.fm_audit_log(actor_name, action, target) values ((select coalesce(full_name, email) from public.profiles where id = auth.uid()), 'backup_pass', case when v is null then 'cleared' else 'set' end);
+end $$;
+-- the platform records each backup it made (at, how, size, tables, rows, enc, lite)
+create or replace function public.fm_backup_mark(p jsonb) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  insert into public.fm_backup_cfg(id, last) values (1, '{}') on conflict (id) do nothing;
+  update public.fm_backup_cfg set last = jsonb_build_object('at', now(), 'by', (select coalesce(full_name, email) from public.profiles where id = auth.uid()),
+    'how', left(coalesce(p->>'how',''), 20), 'size', (p->>'size')::bigint, 'tables', (p->>'tables')::int, 'rows', (p->>'rows')::bigint,
+    'enc', coalesce((p->>'enc')::boolean, false), 'lite', coalesce((p->>'lite')::boolean, false)), updated_at = now() where id = 1;
+end $$;
+
+-- a backup schedule may only be made / changed by the system admin (it sends every table)
+create or replace function public.fm_backup_sched_guard() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.kind = 'p:backup' and auth.uid() is not null and not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  return new;
+end $$;
+do $do$ begin
+  if to_regclass('public.fm_report_schedules') is not null then
+    drop trigger if exists fm_backup_sched_guard on public.fm_report_schedules;
+    create trigger fm_backup_sched_guard before insert or update on public.fm_report_schedules for each row execute function public.fm_backup_sched_guard();
+  end if;
+end $do$;
+
+revoke all on function public.fm_backup_skip(), public.fm_backup_ok_table(text), public.fm_backup_sched_guard() from public, anon, authenticated;
+revoke all on function public.fm_backup_tables(), public.fm_backup_page(text, int, int), public.fm_backup_restore(text, jsonb, text),
+  public.fm_backup_status(), public.fm_backup_pass_get(), public.fm_backup_pass_set(text), public.fm_backup_mark(jsonb) from public, anon;
+grant execute on function public.fm_backup_tables(), public.fm_backup_page(text, int, int), public.fm_backup_restore(text, jsonb, text),
+  public.fm_backup_status(), public.fm_backup_pass_get(), public.fm_backup_pass_set(text), public.fm_backup_mark(jsonb) to authenticated;
+notify pgrst, 'reload schema';
