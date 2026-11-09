@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S15">
+<meta name="fm-version" content="S16">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -114,7 +114,7 @@ async function ctlTenant(code){const r=await fetch(DEFAULT_CFG.url+'/rest/v1/rpc
  if(!r.ok)throw new Error('control '+r.status);return r.json()}
 const API=window.FMStartAPI=window.FMStartAPI||{
  async session(){const c=await sb();const {data}=await c.auth.getSession();return data?.session||null},
- async me(){const c=await sb();const {data:{user}}=await c.auth.getUser();if(!user)return null;const p=chk(await c.from('profiles').select('*').eq('id',user.id).maybeSingle());return p?Object.assign({},p,{email:p.email||user.email}):{id:user.id,email:user.email,role:'pending',regions:[]}},
+ async me(){const c=await sb();/* V349: a temporary failure of the user check (network, 5xx, 429) no longer looks like a sign-out: retry, then use the stored session's user; only a real auth refusal (401 / 403) or no session returns null */let user=null,err=null;for(let i=0;i<3;i++){let r;try{r=await c.auth.getUser()}catch(e){r={data:{user:null},error:e}}user=r&&r.data&&r.data.user||null;err=r&&r.error||null;if(user||!err)break;const st=+err.status||0;if(st===401||st===403||st===400||st===422)break;await new Promise(z=>setTimeout(z,700*(i+1)))}if(!user&&err){const st=+err.status||0;if(!(st===401||st===403||st===400||st===422)){try{const s=(await c.auth.getSession()).data;user=s&&s.session&&s.session.user||null}catch(e){}}}if(!user)return null;const p=chk(await c.from('profiles').select('*').eq('id',user.id).maybeSingle());return p?Object.assign({},p,{email:p.email||user.email}):{id:user.id,email:user.email,role:'pending',regions:[]}},
  async signIn(em,pw){const c=await sb();return chk(await c.auth.signInWithPassword({email:em,password:pw}))},
  async signUp(em,pw,name){const c=await sb();return chk(await c.auth.signUp({email:em,password:pw,options:{data:{full_name:name},emailRedirectTo:backUrl()}}))},
  async reset(em){const c=await sb();return chk(await c.auth.resetPasswordForEmail(em,{redirectTo:backUrl()}))},
