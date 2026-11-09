@@ -793,3 +793,6 @@ Local checks: `node tests/integration/billing330.mjs`; browser fixture checks `n
 
 ## V348 / field F127 — the version always visible
 - `fm-v348-ver` (index) / `fmf-127-ver` (field), same code (+ css): a fixed badge `#fm348-ver` bottom left on every screen (z-index above sheets, `pointer-events:none`, hidden in print) with this page's `fm-version` meta (V… / F…), re-checked every 1.5 s. In the field app it sits just above the bottom bar `.bnav` when that bar is shown. The V343 / F126 labels under the logo stay (they are hidden on phones / sub-screens).
+
+## V349 / field F128 / start S16 — no false sign-out after a reload
+- The three `API.me()` (index `fm-v136-cloud`, field, start) used `auth.getUser()` once and returned null on any error, so `start()` showed the login screen — it looked like the platform signed the user out after every reload (tickets wipe V329, reset V190, licence V346, company switch V347, account switch V165) whenever that one call failed (network blip, 5xx, 429). Now: up to 3 tries (0.7 s / 1.4 s); a 401 / 403 / 400 / 422 ends at once (real sign-out); other errors fall back to the stored session's user from `getSession()`. No session = null as before.

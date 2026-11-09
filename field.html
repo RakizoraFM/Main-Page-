@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F127">
+<meta name="fm-version" content="F128">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -264,7 +264,7 @@ const real={
  async changeEmail(em){const c=await sb();return chk(await c.auth.updateUser({email:em},{emailRedirectTo:location.origin+location.pathname.replace(/[^/]*$/,'')+'start.html'}))},
  async setPassword(pw){const c=await sb();chk(await c.auth.updateUser({password:pw}));try{chk(await c.rpc('fm_password_changed'))}catch(e){}return true},
  async session(){const c=await sb();const {data}=await c.auth.getSession();return data?.session||null},
- async me(){const c=await sb();const {data:{user}}=await c.auth.getUser();if(!user)return null;const p=chk(await c.from('profiles').select('*').eq('id',user.id).maybeSingle());return p?Object.assign({},p,{email:p.email||user.email}):{id:user.id,email:user.email,role:'pending',person_names:[],regions:[]}},
+ async me(){const c=await sb();/* V349: a temporary failure of the user check (network, 5xx, 429) no longer looks like a sign-out: retry, then use the stored session's user; only a real auth refusal (401 / 403) or no session returns null */let user=null,err=null;for(let i=0;i<3;i++){let r;try{r=await c.auth.getUser()}catch(e){r={data:{user:null},error:e}}user=r&&r.data&&r.data.user||null;err=r&&r.error||null;if(user||!err)break;const st=+err.status||0;if(st===401||st===403||st===400||st===422)break;await new Promise(z=>setTimeout(z,700*(i+1)))}if(!user&&err){const st=+err.status||0;if(!(st===401||st===403||st===400||st===422)){try{const s=(await c.auth.getSession()).data;user=s&&s.session&&s.session.user||null}catch(e){}}}if(!user)return null;const p=chk(await c.from('profiles').select('*').eq('id',user.id).maybeSingle());return p?Object.assign({},p,{email:p.email||user.email}):{id:user.id,email:user.email,role:'pending',person_names:[],regions:[]}},
  async listProfiles(){const c=await sb();return chk(await c.from('profiles').select('*').order('created_at'))},
  async saveProfile(id,patch){const c=await sb();return chk(await c.from('profiles').update(Object.assign({},patch,{updated_at:new Date().toISOString()})).eq('id',id).select())},
  async pushTickets(rows,onProgress){const c=await sb();for(let i=0;i<rows.length;i+=400){chk(await c.from('tickets').upsert(rows.slice(i,i+400),{onConflict:'region,ticket_id'}));onProgress?.(Math.min(rows.length,i+400),rows.length)}return rows.length},
