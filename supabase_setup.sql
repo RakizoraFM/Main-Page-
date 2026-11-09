@@ -14732,3 +14732,451 @@ begin
 exception when others then raise notice 'V346 profile backfill skipped: %', sqlerrm;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 94) V350 — scheduled reports by e-mail ----------
+-- A schedule = one report, a frequency (daily / weekly on a day / monthly on a date) at an hour (Riyadh) and recipients
+-- (accounts and outside e-mails). Who may schedule: the system admin and the titles that see the whole company
+-- (fm_scope_all: dept / project / ops / HSE / QA managers) — the reports cover every region.
+-- Two kinds of report:
+--   * server reports (wo_open, wo_period, stock_low, sla_due, school_req, attendance, weekly, issue_req) are built here
+--     from the cloud tables and sent by the Edge Function fm-report on time, even when nobody has the platform open;
+--   * platform reports (kind 'p:<key>', e.g. the monthly client report as PDF) need the platform's own code: their runs
+--     wait («wait») until the platform of the schedule's owner (or a system admin) is open, which builds the file and sends
+--     it through the same function. A waiting run older than 3 days expires.
+-- pg_cron «fm-reports» runs fm_report_due() every 10 minutes; fm_report_kick() calls the function through pg_net with
+-- a hook secret the function reads from fm_report_secret() (service role), like V272 push.
+create table if not exists public.fm_report_schedules (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  kind        text not null,
+  params      jsonb not null default '{}',
+  freq        text not null default 'weekly' check (freq in ('daily','weekly','monthly')),
+  dow         int  check (dow between 0 and 6),
+  dom         int  check (dom between 1 and 31),
+  hour        int  not null default 7 check (hour between 0 and 23),
+  to_users    uuid[] not null default '{}',
+  to_ext      text[] not null default '{}',
+  active      boolean not null default true,
+  next_at     timestamptz,
+  last_at     timestamptz,
+  last_status text,
+  last_err    text,
+  owner       uuid default auth.uid() references public.profiles(id) on delete set null,
+  owner_name  text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create table if not exists public.fm_report_runs (
+  id         uuid primary key default gen_random_uuid(),
+  sched_id   uuid references public.fm_report_schedules(id) on delete cascade,
+  kind       text,
+  due_at     timestamptz,
+  status     text not null default 'queued' check (status in ('queued','wait','sending','sent','failed','expired')),
+  manual     boolean not null default false,
+  by_name    text,
+  to_list    text[] not null default '{}',
+  err        text,
+  ref        text,
+  tries      int not null default 0,
+  claimed_at timestamptz,
+  sent_at    timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists fm_report_runs_st on public.fm_report_runs(status, created_at);
+create index if not exists fm_report_runs_sc on public.fm_report_runs(sched_id, created_at desc);
+create table if not exists public.fm_report_cfg (id int primary key default 1 check (id = 1), fn_url text, hook text, anon_key text, kicked_at timestamptz, last_req bigint);
+alter table public.fm_report_schedules enable row level security;
+alter table public.fm_report_runs enable row level security;
+alter table public.fm_report_cfg enable row level security;
+revoke all on public.fm_report_schedules, public.fm_report_runs, public.fm_report_cfg from anon, authenticated;
+
+create or replace function public.fm_report_can() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select p.active is not false and p.role <> 'pending' from public.profiles p where p.id = auth.uid()), false)
+     and (public.fm_role() = 'admin' or coalesce(public.fm_scope_all(), false)) $$;
+
+-- next send time after «after», at «hr» o'clock Riyadh: daily, weekly on «dw» (0 = Sunday) or monthly on «dm» (the last
+-- day of a shorter month when dm is larger)
+create or replace function public.fm_report_next(f text, dw int, dm int, hr int, after timestamptz) returns timestamptz language plpgsql stable as $$
+declare l timestamp := after at time zone 'Asia/Riyadh'; c timestamp; i int; last_d int;
+begin
+  hr := least(23, greatest(0, coalesce(hr, 7)));
+  for i in 0..400 loop
+    c := date_trunc('day', l) + make_interval(days => i) + make_interval(hours => hr);
+    if c <= l then continue; end if;
+    if f = 'daily' then return c at time zone 'Asia/Riyadh'; end if;
+    if f = 'weekly' and extract(dow from c)::int = coalesce(dw, 0) then return c at time zone 'Asia/Riyadh'; end if;
+    if f = 'monthly' then
+      last_d := extract(day from (date_trunc('month', c) + interval '1 month' - interval '1 day'))::int;
+      if extract(day from c)::int = least(coalesce(dm, 1), last_d) then return c at time zone 'Asia/Riyadh'; end if;
+    end if;
+  end loop;
+  return null;
+end $$;
+
+-- e-mails of the chosen accounts (active) + the outside addresses, without duplicates, ≤ 40
+create or replace function public.fm_report_to(us uuid[], ext text[]) returns text[] language sql stable security definer set search_path = public as $$
+  select coalesce(array_agg(e order by e), '{}') from (
+    select distinct lower(btrim(x)) e from (
+      select p.email x from public.profiles p where p.id = any(coalesce(us, '{}')) and p.active is not false and p.deleted_at is null
+      union all select unnest(coalesce(ext, '{}'))) a
+    where btrim(coalesce(x, '')) ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$' limit 40) b $$;
+
+-- the report data: {title, kpis:[[label, value]], sheets:[{name, cols:[], rows:[[]]}]} or {error}
+create or replace function public.fm_report_data(k text, p jsonb) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare rg text := nullif(btrim(coalesce(p->>'region','')), ''); dd int := least(366, greatest(1, coalesce(nullif(p->>'days','')::int, 7)));
+  rl text := coalesce((select case rg when 'riyadh' then 'الرياض' when 'qassim' then 'القصيم' else rg end), 'كل المناطق');
+  res jsonb; kp jsonb; rows jsonb; rows2 jsonb; yd date := ((now() at time zone 'Asia/Riyadh')::date - 1);
+begin
+  if k = 'wo_open' then
+    with o as (select * from public.work_orders w where w.status in ('assigned','accepted','in_progress','done','returned') and (rg is null or w.region = rg))
+    select jsonb_build_array(
+        jsonb_build_array('الأوامر المفتوحة', count(*)),
+        jsonb_build_array('متأخرة عن موعدها', count(*) filter (where due_at < now() and status <> 'done')),
+        jsonb_build_array('بانتظار الاعتماد', count(*) filter (where status = 'done')),
+        jsonb_build_array('مرتجعة للتصحيح', count(*) filter (where status = 'returned')),
+        jsonb_build_array('لم تُقبل بعد', count(*) filter (where status = 'assigned'))) into kp from o;
+    select coalesce(jsonb_agg(jsonb_build_array(code, title, school, region,
+        case status when 'assigned' then 'مسند' when 'accepted' then 'مقبول' when 'in_progress' then 'قيد التنفيذ' when 'done' then 'بانتظار الاعتماد' when 'returned' then 'مرتجع' else status end,
+        priority, assignee_name, approver_name, to_char(due_at at time zone 'Asia/Riyadh', 'YYYY-MM-DD'),
+        case when due_at < now() and status <> 'done' then floor(extract(epoch from now() - due_at) / 86400)::int else 0 end)
+        order by (due_at < now() and status <> 'done') desc, due_at nulls last), '[]') into rows
+    from (select * from public.work_orders w where w.status in ('assigned','accepted','in_progress','done','returned') and (rg is null or w.region = rg) order by w.due_at nulls last limit 5000) w;
+    select coalesce(jsonb_agg(jsonb_build_array(n, t, l, d, r) order by l desc, t desc), '[]') into rows2 from (
+      select coalesce(assignee_name, '—') n, count(*) t, count(*) filter (where due_at < now() and status <> 'done') l,
+             count(*) filter (where status = 'done') d, count(*) filter (where status = 'returned') r
+      from public.work_orders w where w.status in ('assigned','accepted','in_progress','done','returned') and (rg is null or w.region = rg) group by 1) x;
+    return jsonb_build_object('title', 'أوامر العمل المفتوحة — ' || rl, 'kpis', kp, 'sheets', jsonb_build_array(
+      jsonb_build_object('name', 'الأوامر المفتوحة', 'cols', jsonb_build_array('الرقم','العنوان','المدرسة','المنطقة','الحالة','الأولوية','المنفّذ','المعتمد','موعد الإنجاز','أيام التأخير'), 'rows', rows),
+      jsonb_build_object('name', 'حسب المنفّذ', 'cols', jsonb_build_array('المنفّذ','المفتوحة','المتأخرة','بانتظار الاعتماد','المرتجعة'), 'rows', rows2)));
+  elsif k = 'wo_period' then
+    select jsonb_build_array(
+        jsonb_build_array('أوامر جديدة', count(*) filter (where created_at >= now() - make_interval(days => dd))),
+        jsonb_build_array('أوامر معتمدة (مغلقة)', count(*) filter (where status = 'closed' and closed_at >= now() - make_interval(days => dd))),
+        jsonb_build_array('أُغلقت في موعدها', count(*) filter (where status = 'closed' and closed_at >= now() - make_interval(days => dd) and (due_at is null or closed_at <= due_at))),
+        jsonb_build_array('بانتظار الاعتماد الآن', count(*) filter (where status = 'done'))) into kp
+    from public.work_orders w where (rg is null or w.region = rg);
+    select coalesce(jsonb_agg(jsonb_build_array(n, c, d, ot, lt) order by d desc, c desc), '[]') into rows from (
+      select coalesce(assignee_name, '—') n,
+        count(*) filter (where created_at >= now() - make_interval(days => dd)) c,
+        count(*) filter (where status = 'closed' and closed_at >= now() - make_interval(days => dd)) d,
+        count(*) filter (where status = 'closed' and closed_at >= now() - make_interval(days => dd) and (due_at is null or closed_at <= due_at)) ot,
+        count(*) filter (where status in ('assigned','accepted','in_progress','returned') and due_at < now()) lt
+      from public.work_orders w where (rg is null or w.region = rg) group by 1) x where c + d + lt > 0;
+    select coalesce(jsonb_agg(jsonb_build_array(code, title, school, assignee_name, approver_name, to_char(closed_at at time zone 'Asia/Riyadh', 'YYYY-MM-DD'),
+        case when due_at is null or closed_at <= due_at then 'نعم' else 'لا' end) order by closed_at desc), '[]') into rows2
+    from (select * from public.work_orders w where w.status = 'closed' and w.closed_at >= now() - make_interval(days => dd) and (rg is null or w.region = rg) order by w.closed_at desc limit 5000) w;
+    return jsonb_build_object('title', 'إنجاز أوامر العمل — آخر ' || dd || ' يوم — ' || rl, 'kpis', kp, 'sheets', jsonb_build_array(
+      jsonb_build_object('name', 'حسب المنفّذ', 'cols', jsonb_build_array('المنفّذ','جديدة','معتمدة','في موعدها','متأخرة مفتوحة'), 'rows', rows),
+      jsonb_build_object('name', 'الأوامر المعتمدة', 'cols', jsonb_build_array('الرقم','العنوان','المدرسة','المنفّذ','المعتمد','تاريخ الاعتماد','في موعدها'), 'rows', rows2)));
+  elsif k = 'stock_low' then
+    with x as (select st.name sn, st.region sr, m.code, m.name mn, m.unit, s.qty, s.min_qty
+               from public.wo_stock s join public.wo_stores st on st.id = s.store_id join public.wo_materials m on m.id = s.material_id
+               where st.active and (s.qty < 0 or (s.min_qty > 0 and s.qty < s.min_qty)) and (rg is null or st.region = rg))
+    select jsonb_build_array(jsonb_build_array('أصناف تحت الحد الأدنى', count(*) filter (where qty >= 0)), jsonb_build_array('أرصدة سالبة', count(*) filter (where qty < 0))),
+           coalesce(jsonb_agg(jsonb_build_array(sn, sr, code, mn, unit, qty, min_qty, greatest(min_qty - qty, 0)) order by (qty < 0) desc, sn, mn), '[]') into kp, rows from x;
+    return jsonb_build_object('title', 'المخزون تحت الحد الأدنى — ' || rl, 'kpis', kp, 'sheets', jsonb_build_array(
+      jsonb_build_object('name', 'تحت الحد الأدنى', 'cols', jsonb_build_array('المستودع','المنطقة','الكود','الصنف','الوحدة','الرصيد','الحد الأدنى','النقص'), 'rows', rows)));
+  elsif k = 'sla_due' then
+    with x as (select * from public.fm_sla_watch w where w.due_at < now() + interval '48 hours' and (rg is null or w.region = rg))
+    select jsonb_build_array(jsonb_build_array('تجاوزت المهلة', count(*) filter (where due_at < now())),
+             jsonb_build_array('تنتهي خلال 24 ساعة', count(*) filter (where due_at >= now() and due_at < now() + interval '24 hours')),
+             jsonb_build_array('تنتهي خلال 48 ساعة', count(*) filter (where due_at >= now() + interval '24 hours'))),
+           coalesce(jsonb_agg(jsonb_build_array(ticket_id, region, school, priority, category, to_char(due_at at time zone 'Asia/Riyadh', 'YYYY-MM-DD HH24:MI'),
+             round(extract(epoch from due_at - now()) / 3600.0, 1), sup, eng) order by due_at), '[]') into kp, rows from x;
+    return jsonb_build_object('title', 'بلاغات قبل تجاوز المهلة / المتجاوزة — ' || rl, 'kpis', kp,
+      'note', 'من آخر قائمة أرسلتها المنصة (تُحدَّث عند فتح المنصة من حساب يرفع البلاغات).',
+      'sheets', jsonb_build_array(jsonb_build_object('name', 'البلاغات', 'cols', jsonb_build_array('رقم البلاغ','المنطقة','المدرسة','الأولوية','التصنيف','نهاية المهلة','الساعات المتبقية','المشرف','المهندس'), 'rows', rows)));
+  elsif k = 'school_req' then
+    with x as (select * from public.fm_school_requests r where (r.status in ('new','accepted','in_progress') or r.created_at >= now() - make_interval(days => dd)) and (rg is null or r.region = rg))
+    select jsonb_build_array(jsonb_build_array('طلبات جديدة لم تُستلم', count(*) filter (where status = 'new')),
+             jsonb_build_array('قيد التنفيذ', count(*) filter (where status in ('accepted','in_progress'))),
+             jsonb_build_array('طلبات آخر ' || dd || ' يوم', count(*) filter (where created_at >= now() - make_interval(days => dd))),
+             jsonb_build_array('منجزة في الفترة', count(*) filter (where status = 'done' and created_at >= now() - make_interval(days => dd)))),
+           coalesce(jsonb_agg(jsonb_build_array(code, school_name, region, category, case urgency when 'urgent' then 'عاجل' else 'عادي' end,
+             case status when 'new' then 'جديد' when 'accepted' then 'مقبول' when 'in_progress' then 'قيد التنفيذ' when 'done' then 'منجز' when 'rejected' then 'مرفوض' else status end,
+             to_char(created_at at time zone 'Asia/Riyadh', 'YYYY-MM-DD'), floor(extract(epoch from now() - created_at) / 86400)::int, wo_code) order by created_at desc), '[]') into kp, rows from x;
+    return jsonb_build_object('title', 'طلبات المدارس — ' || rl, 'kpis', kp, 'sheets', jsonb_build_array(
+      jsonb_build_object('name', 'الطلبات', 'cols', jsonb_build_array('الرقم','المدرسة','المنطقة','التصنيف','الأهمية','الحالة','التاريخ','العمر (يوم)','أمر العمل'), 'rows', rows)));
+  elsif k = 'attendance' then
+    with x as (select coalesce(a.name, p.full_name, '—') n, min(a.at) filter (where a.kind = 'in') fi, max(a.at) filter (where a.kind = 'out') lo,
+                 count(*) filter (where a.kind = 'visit') v, count(*) filter (where a.kind = 'visit' and a.dist_m > 500) far
+               from public.fm_att a left join public.profiles p on p.id = a.user_id
+               where a.day = yd and (rg is null or rg = any(coalesce(p.regions, '{}')) or coalesce(cardinality(p.regions), 0) = 0) group by 1)
+    select jsonb_build_array(jsonb_build_array('حضروا', count(*) filter (where fi is not null)), jsonb_build_array('بدون تسجيل انصراف', count(*) filter (where fi is not null and lo is null)),
+             jsonb_build_array('الزيارات', coalesce(sum(v), 0)), jsonb_build_array('زيارات بعيدة عن المدرسة', coalesce(sum(far), 0))),
+           coalesce(jsonb_agg(jsonb_build_array(n, to_char(fi at time zone 'Asia/Riyadh', 'HH24:MI'), to_char(lo at time zone 'Asia/Riyadh', 'HH24:MI'),
+             case when fi is not null and lo is not null then round(extract(epoch from lo - fi) / 3600.0, 1) end, v, far) order by n), '[]') into kp, rows from x;
+    return jsonb_build_object('title', 'الحضور — ' || to_char(yd, 'YYYY-MM-DD') || ' — ' || rl, 'kpis', kp, 'sheets', jsonb_build_array(
+      jsonb_build_object('name', 'الحضور', 'cols', jsonb_build_array('الاسم','أول حضور','آخر انصراف','الساعات','الزيارات','زيارات بعيدة'), 'rows', rows)));
+  elsif k = 'weekly' then
+    with wk as (select max(week) w from public.fm_weekly where week <= (now() at time zone 'Asia/Riyadh')::date),
+         x as (select f.* from public.fm_weekly f, wk where f.week = wk.w and (rg is null or f.region = rg))
+    select jsonb_build_array(jsonb_build_array('البلاغات المستلمة', coalesce(sum((tickets->>'rec')::numeric), 0)), jsonb_build_array('المغلقة', coalesce(sum((tickets->>'closed')::numeric), 0)),
+             jsonb_build_array('المفتوحة الآن', coalesce(sum((tickets->>'open')::numeric), 0)), jsonb_build_array('أوامر عمل جديدة', coalesce(sum((ops->>'wo_new')::numeric), 0)),
+             jsonb_build_array('أوامر متأخرة', coalesce(sum((ops->>'wo_late')::numeric), 0))),
+           coalesce(jsonb_agg(jsonb_build_array(to_char(week, 'YYYY-MM-DD'), region, tickets->>'rec', tickets->>'closed', tickets->>'sla', tickets->>'br', tickets->>'open', tickets->>'open_br',
+             ops->>'wo_new', ops->>'wo_closed', ops->>'wo_late', ops->>'wo_wait', ops->>'low', ops->>'req_new') order by region), '[]') into kp, rows from x;
+    return jsonb_build_object('title', 'الملخص الأسبوعي — ' || rl, 'kpis', kp,
+      'note', 'أرقام البلاغات كما أرسلتها المنصة لهذا الأسبوع؛ أرقام الأوامر والمخزون من السحابة.',
+      'sheets', jsonb_build_array(jsonb_build_object('name', 'حسب المنطقة', 'cols', jsonb_build_array('الأسبوع','المنطقة','مستلمة','مغلقة','الالتزام %','متجاوزة','مفتوحة','مفتوحة متجاوزة','أوامر جديدة','أوامر معتمدة','أوامر متأخرة','بانتظار الاعتماد','أصناف تحت الحد','طلبات مدارس جديدة'), 'rows', rows)));
+  elsif k = 'issue_req' then
+    with x as (select r.* from public.wo_issue_requests r left join public.wo_stores st on st.id = r.store_id
+               where r.status in ('requested','partial') and (rg is null or st.region = rg))
+    select jsonb_build_array(jsonb_build_array('طلبات صرف مفتوحة', count(*)), jsonb_build_array('أقدم من 3 أيام', count(*) filter (where at < now() - interval '3 days')),
+             jsonb_build_array('مصروفة جزئياً', count(*) filter (where status = 'partial'))),
+           coalesce(jsonb_agg(jsonb_build_array(code, holder_name, requested_by_name, school, wo_code, ticket_ref, case status when 'partial' then 'جزئي' else 'مطلوب' end,
+             to_char(at at time zone 'Asia/Riyadh', 'YYYY-MM-DD'), floor(extract(epoch from now() - at) / 86400)::int) order by at), '[]') into kp, rows from x;
+    return jsonb_build_object('title', 'طلبات صرف قطع الغيار المفتوحة — ' || rl, 'kpis', kp, 'sheets', jsonb_build_array(
+      jsonb_build_object('name', 'الطلبات', 'cols', jsonb_build_array('الرقم','المستلم','الطالب','المدرسة','أمر العمل','البلاغ','الحالة','التاريخ','العمر (يوم)'), 'rows', rows)));
+  end if;
+  return jsonb_build_object('error', 'unknown report');
+exception when undefined_table or undefined_column then
+  return jsonb_build_object('error', 'missing: ' || sqlerrm);
+end $$;
+
+create or replace function public.fm_report_kick() returns void language plpgsql security definer set search_path = public as $$
+declare c public.fm_report_cfg; rid bigint;
+begin
+  update public.fm_report_cfg set kicked_at = now() where id = 1 and fn_url is not null and coalesce(kicked_at, 'epoch') < now() - interval '5 seconds' returning * into c;
+  if not found then return; end if;
+  begin
+    execute 'select net.http_post(url := $1, body := ''{}''::jsonb, headers := $2, timeout_milliseconds := 30000)' into rid
+      using c.fn_url, jsonb_build_object('Content-Type','application/json','x-fm-hook', coalesce(c.hook,''))
+                     || case when c.anon_key is not null then jsonb_build_object('Authorization','Bearer ' || c.anon_key, 'apikey', c.anon_key) else '{}'::jsonb end;
+    update public.fm_report_cfg set last_req = rid where id = 1;
+  exception when others then null;
+  end;
+end $$;
+
+-- every 10 minutes (pg_cron): due schedules → runs, waiting platform runs older than 3 days expire, stuck sends retried
+create or replace function public.fm_report_due() returns int language plpgsql security definer set search_path = public as $$
+declare s record; n int := 0;
+begin
+  for s in select r.* from public.fm_report_schedules r
+           where r.active and r.next_at is not null and r.next_at <= now()
+             and exists (select 1 from public.profiles p where p.id = r.owner and p.active is not false and p.role <> 'pending')
+           for update of r skip locked loop
+    insert into public.fm_report_runs(sched_id, kind, due_at, status) values (s.id, s.kind, s.next_at, case when s.kind like 'p:%' then 'wait' else 'queued' end);
+    update public.fm_report_schedules set next_at = public.fm_report_next(s.freq, s.dow, s.dom, s.hour, greatest(now(), s.next_at)) where id = s.id;
+    n := n + 1;
+  end loop;
+  update public.fm_report_runs set status = 'expired', err = 'لم تُفتح المنصة خلال 3 أيام لتجهيز التقرير' where status = 'wait' and created_at < now() - interval '3 days';
+  update public.fm_report_runs set status = 'queued' where status = 'sending' and claimed_at < now() - interval '15 minutes' and tries < 3 and kind not like 'p:%';
+  update public.fm_report_runs set status = 'wait' where status = 'sending' and claimed_at < now() - interval '15 minutes' and kind like 'p:%' and created_at > now() - interval '3 days';
+  if exists (select 1 from public.fm_report_runs where status = 'queued') then perform public.fm_report_kick(); end if;
+  return n;
+end $$;
+
+-- server mode of the function (service role): take queued runs with their data and recipients
+create or replace function public.fm_report_claim(n int default 5) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r record; outv jsonb := '[]'; dat jsonb; tl text[];
+begin
+  for r in select x.id rid, s.name sname, s.kind skind, s.params sparams, s.to_users su, s.to_ext se
+           from public.fm_report_runs x join public.fm_report_schedules s on s.id = x.sched_id
+           where x.status = 'queued' and x.tries < 3 order by x.created_at limit greatest(1, least(coalesce(n, 5), 20))
+           for update of x skip locked loop
+    tl := public.fm_report_to(r.su, r.se);
+    if coalesce(cardinality(tl), 0) = 0 then
+      update public.fm_report_runs set status = 'failed', err = 'لا يوجد بريد صالح للمستلمين' where id = r.rid;
+      update public.fm_report_schedules set last_at = now(), last_status = 'failed', last_err = 'لا يوجد بريد صالح للمستلمين' where id = (select sched_id from public.fm_report_runs where id = r.rid);
+      continue;
+    end if;
+    begin dat := public.fm_report_data(r.skind, r.sparams); exception when others then dat := jsonb_build_object('error', sqlerrm); end;
+    update public.fm_report_runs set status = 'sending', tries = tries + 1, claimed_at = now(), to_list = tl where id = r.rid;
+    outv := outv || jsonb_build_array(jsonb_build_object('id', r.rid, 'name', r.sname, 'kind', r.skind, 'params', r.sparams, 'to', to_jsonb(tl), 'data', dat));
+  end loop;
+  return jsonb_build_object('runs', outv, 'cfg', coalesce(public.fm_setting('mail'), '{}'::jsonb));
+end $$;
+
+create or replace function public.fm_report_done(rid uuid, ok boolean, er text, rf text, retry boolean) returns void language plpgsql security definer set search_path = public as $$
+declare sid uuid; tr int; kd text;
+begin
+  select sched_id, tries, kind into sid, tr, kd from public.fm_report_runs where id = rid and status = 'sending';
+  if not found then return; end if;
+  if ok then
+    update public.fm_report_runs set status = 'sent', sent_at = now(), err = null, ref = left(rf, 200) where id = rid;
+  elsif coalesce(retry, false) and tr < 3 then
+    update public.fm_report_runs set status = case when kd like 'p:%' then 'wait' else 'queued' end, err = left(er, 500) where id = rid;
+  else
+    update public.fm_report_runs set status = 'failed', err = left(er, 500) where id = rid;
+  end if;
+  update public.fm_report_schedules set last_at = now(), last_status = case when ok then 'sent' else 'failed' end, last_err = case when ok then null else left(er, 500) end where id = sid;
+end $$;
+create or replace function public.fm_report_result(p jsonb) returns void language sql security definer set search_path = public as $$
+  select public.fm_report_done((p->>'id')::uuid, coalesce((p->>'ok')::boolean, false), p->>'err', p->>'ref', coalesce((p->>'retry')::boolean, false)) $$;
+create or replace function public.fm_report_secret() returns text language sql stable security definer set search_path = public as $$
+  select hook from public.fm_report_cfg where id = 1 $$;
+
+-- platform reports: the runs this person's platform should build (his own schedules; a system admin also builds the others')
+create or replace function public.fm_report_wait() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_report_can() then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'sched_id', s.id, 'name', s.name, 'kind', s.kind, 'params', s.params, 'freq', s.freq, 'due_at', x.due_at, 'mine', s.owner = auth.uid()) order by x.created_at)
+    from public.fm_report_runs x join public.fm_report_schedules s on s.id = x.sched_id
+    where x.status = 'wait' and x.created_at > now() - interval '3 days' and (s.owner = auth.uid() or public.fm_role() = 'admin')), '[]'::jsonb);
+end $$;
+create or replace function public.fm_report_client_begin(p_run uuid) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s public.fm_report_schedules; tl text[];
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  select r.* into s from public.fm_report_schedules r join public.fm_report_runs x on x.sched_id = r.id where x.id = p_run;
+  if not found then raise exception 'not found'; end if;
+  if s.owner is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  tl := public.fm_report_to(s.to_users, s.to_ext);
+  if coalesce(cardinality(tl), 0) = 0 then raise exception 'no recipients'; end if;
+  update public.fm_report_runs set status = 'sending', tries = tries + 1, claimed_at = now(), to_list = tl where id = p_run and status = 'wait';
+  if not found then raise exception 'taken'; end if;
+  return jsonb_build_object('id', p_run, 'name', s.name, 'kind', s.kind, 'params', s.params, 'to', to_jsonb(tl), 'cfg', coalesce(public.fm_setting('mail'), '{}'::jsonb));
+end $$;
+create or replace function public.fm_report_client_end(p_run uuid, p_ok boolean, p_err text, p_ref text) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  perform public.fm_report_done(p_run, coalesce(p_ok, false), p_err, p_ref, false);
+end $$;
+-- the platform could not build the file (e.g. no data loaded): record it and stop retrying
+create or replace function public.fm_report_client_skip(p_run uuid, p_err text) returns void language plpgsql security definer set search_path = public as $$
+declare sid uuid;
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  update public.fm_report_runs set status = 'failed', err = left(coalesce(p_err, 'تعذّر تجهيز التقرير'), 500) where id = p_run and status in ('wait','sending') returning sched_id into sid;
+  if sid is not null then update public.fm_report_schedules set last_at = now(), last_status = 'failed', last_err = left(p_err, 500) where id = sid; end if;
+end $$;
+
+-- the management page
+create or replace function public.fm_report_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare rid uuid := nullif(p->>'id', '')::uuid; nm text := btrim(coalesce(p->>'name', '')); kd text := btrim(coalesce(p->>'kind', ''));
+  fq text := coalesce(p->>'freq', 'weekly'); dw int := nullif(p->>'dow', '')::int; dm int := nullif(p->>'dom', '')::int; hr int := coalesce(nullif(p->>'hour', '')::int, 7);
+  us uuid[] := coalesce(array(select jsonb_array_elements_text(coalesce(p->'to_users', '[]'::jsonb))::uuid), '{}');
+  ex text[] := coalesce(array(select lower(btrim(e)) from jsonb_array_elements_text(coalesce(p->'to_ext', '[]'::jsonb)) e where btrim(e) <> ''), '{}');
+  ow uuid; nm2 text;
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  if length(nm) < 2 or length(nm) > 120 then raise exception 'invalid name'; end if;
+  if kd !~ '^(wo_open|wo_period|stock_low|sla_due|school_req|attendance|weekly|issue_req|p:[a-z0-9_]{1,30})$' then raise exception 'invalid report'; end if;
+  if fq not in ('daily','weekly','monthly') or hr not between 0 and 23 then raise exception 'invalid schedule'; end if;
+  if fq = 'weekly' and (dw is null or dw not between 0 and 6) then raise exception 'invalid schedule'; end if;
+  if fq = 'monthly' and (dm is null or dm not between 1 and 31) then raise exception 'invalid schedule'; end if;
+  if cardinality(us) > 30 or cardinality(ex) > 20 then raise exception 'too many recipients'; end if;
+  if exists (select 1 from unnest(ex) e where e !~* '^[^@\s]+@[^@\s]+\.[^@\s]+$') then raise exception 'invalid email'; end if;
+  if cardinality(us) + cardinality(ex) = 0 then raise exception 'no recipients'; end if;
+  if rid is null then
+    select full_name into nm2 from public.profiles where id = auth.uid();
+    insert into public.fm_report_schedules(name, kind, params, freq, dow, dom, hour, to_users, to_ext, active, owner, owner_name, next_at)
+    values (nm, kd, coalesce(p->'params', '{}'::jsonb), fq, dw, dm, hr, us, ex, coalesce((p->>'active')::boolean, true), auth.uid(), nm2,
+            public.fm_report_next(fq, dw, dm, hr, now())) returning id into rid;
+  else
+    select owner into ow from public.fm_report_schedules where id = rid for update;
+    if not found then raise exception 'not found'; end if;
+    if ow is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+    update public.fm_report_schedules set name = nm, kind = kd, params = coalesce(p->'params', '{}'::jsonb), freq = fq, dow = dw, dom = dm, hour = hr,
+      to_users = us, to_ext = ex, active = coalesce((p->>'active')::boolean, active), next_at = public.fm_report_next(fq, dw, dm, hr, now()), updated_at = now() where id = rid;
+  end if;
+  return rid;
+end $$;
+create or replace function public.fm_report_toggle(p_id uuid, p_on boolean) returns void language plpgsql security definer set search_path = public as $$
+declare s public.fm_report_schedules;
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  select * into s from public.fm_report_schedules where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if s.owner is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  update public.fm_report_schedules set active = coalesce(p_on, false), updated_at = now(),
+    next_at = case when coalesce(p_on, false) then public.fm_report_next(s.freq, s.dow, s.dom, s.hour, now()) else next_at end where id = p_id;
+end $$;
+create or replace function public.fm_report_del(p_id uuid) returns void language plpgsql security definer set search_path = public as $$
+declare ow uuid;
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  select owner into ow from public.fm_report_schedules where id = p_id;
+  if not found then return; end if;
+  if ow is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  delete from public.fm_report_schedules where id = p_id;
+end $$;
+-- send now (a test or an extra send): a run outside the schedule
+create or replace function public.fm_report_send_now(p_id uuid) returns uuid language plpgsql security definer set search_path = public as $$
+declare s public.fm_report_schedules; rid uuid;
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  select * into s from public.fm_report_schedules where id = p_id;
+  if not found then raise exception 'not found'; end if;
+  if s.owner is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  if (select count(*) from public.fm_report_runs where manual and created_at > now() - interval '1 day' and sched_id = p_id) >= 10 then raise exception 'too many today'; end if;
+  insert into public.fm_report_runs(sched_id, kind, due_at, status, manual, by_name)
+  values (s.id, s.kind, now(), case when s.kind like 'p:%' then 'wait' else 'queued' end, true, (select full_name from public.profiles where id = auth.uid()))
+  returning id into rid;
+  if s.kind not like 'p:%' then perform public.fm_report_kick(); end if;
+  return rid;
+end $$;
+create or replace function public.fm_report_preview(k text, p jsonb) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  return public.fm_report_data(k, coalesce(p, '{}'::jsonb));
+end $$;
+create or replace function public.fm_report_list() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_report_can() then return jsonb_build_object('can', false); end if;
+  return jsonb_build_object('can', true, 'admin', public.fm_role() = 'admin', 'me', auth.uid(),
+    'mail', coalesce(public.fm_setting('mail'), '{}'::jsonb),
+    'linked', exists (select 1 from public.fm_report_cfg where id = 1 and fn_url is not null and hook is not null),
+    'schedules', coalesce((select jsonb_agg(to_jsonb(s) order by s.created_at desc) from public.fm_report_schedules s), '[]'::jsonb),
+    'runs', coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'sched_id', x.sched_id, 'name', s.name, 'kind', x.kind, 'status', x.status, 'manual', x.manual, 'by_name', x.by_name,
+        'to', x.to_list, 'err', x.err, 'due_at', x.due_at, 'sent_at', x.sent_at, 'created_at', x.created_at) order by x.created_at desc)
+      from (select * from public.fm_report_runs order by created_at desc limit 80) x left join public.fm_report_schedules s on s.id = x.sched_id), '[]'::jsonb),
+    'people', coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'name', coalesce(p.full_name, p.email), 'email', p.email, 'title', p.job_title) order by p.full_name)
+      from public.profiles p where p.active is not false and p.deleted_at is null and p.role <> 'pending' and coalesce(p.email, '') <> ''), '[]'::jsonb));
+end $$;
+
+-- link to the function (system admin, one click from the page): function URL, hook secret, the site's public key
+create or replace function public.fm_report_autoset(p jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed'; end if;
+  if length(coalesce(p->>'hook','')) < 24 then raise exception 'secret too short'; end if;
+  if coalesce(p->>'fn_url','') !~ '^https://[^ ]+$' then raise exception 'invalid url'; end if;
+  insert into public.fm_report_cfg(id) values (1) on conflict do nothing;
+  update public.fm_report_cfg set fn_url = p->>'fn_url', hook = p->>'hook', anon_key = coalesce(nullif(btrim(p->>'anon_key'), ''), anon_key), kicked_at = null where id = 1;
+  return true;
+end $$;
+create or replace function public.fm_report_check() returns bigint language plpgsql security definer set search_path = public as $$
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed'; end if;
+  update public.fm_report_cfg set kicked_at = null, last_req = null where id = 1;
+  perform public.fm_report_kick();
+  return (select last_req from public.fm_report_cfg where id = 1);
+end $$;
+create or replace function public.fm_report_status() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare hs int; hc text; rid bigint;
+begin
+  if public.fm_role() is distinct from 'admin' then raise exception 'not allowed'; end if;
+  select last_req into rid from public.fm_report_cfg where id = 1;
+  if rid is not null then
+    begin execute 'select status_code, left(coalesce(content::text, error_msg, ''''), 300) from net._http_response where id = $1' into hs, hc using rid;
+    exception when others then null; end;
+  end if;
+  return jsonb_build_object('fn_url', (select fn_url from public.fm_report_cfg where id = 1), 'has_hook', (select hook is not null from public.fm_report_cfg where id = 1),
+    'pg_net', exists (select 1 from pg_extension where extname = 'pg_net'), 'pg_cron', exists (select 1 from pg_extension where extname = 'pg_cron'),
+    'queued', (select count(*) from public.fm_report_runs where status = 'queued'), 'waiting', (select count(*) from public.fm_report_runs where status = 'wait'),
+    'sent30', (select count(*) from public.fm_report_runs where status = 'sent' and sent_at > now() - interval '30 days'),
+    'failed30', (select count(*) from public.fm_report_runs where status = 'failed' and created_at > now() - interval '30 days'),
+    'last_err', (select err from public.fm_report_runs where err is not null order by created_at desc limit 1),
+    'last_req', rid, 'http_status', hs, 'http_body', hc);
+end $$;
+
+revoke all on function public.fm_report_data(text, jsonb), public.fm_report_kick(), public.fm_report_due(), public.fm_report_claim(int),
+  public.fm_report_done(uuid, boolean, text, text, boolean), public.fm_report_result(jsonb), public.fm_report_secret(), public.fm_report_to(uuid[], text[]) from public, anon, authenticated;
+revoke all on function public.fm_report_can(), public.fm_report_next(text, int, int, int, timestamptz), public.fm_report_wait(), public.fm_report_client_begin(uuid),
+  public.fm_report_client_end(uuid, boolean, text, text), public.fm_report_client_skip(uuid, text), public.fm_report_save(jsonb), public.fm_report_toggle(uuid, boolean),
+  public.fm_report_del(uuid), public.fm_report_send_now(uuid), public.fm_report_preview(text, jsonb), public.fm_report_list(), public.fm_report_autoset(jsonb),
+  public.fm_report_check(), public.fm_report_status() from public, anon;
+grant execute on function public.fm_report_can(), public.fm_report_next(text, int, int, int, timestamptz), public.fm_report_wait(), public.fm_report_client_begin(uuid),
+  public.fm_report_client_end(uuid, boolean, text, text), public.fm_report_client_skip(uuid, text), public.fm_report_save(jsonb), public.fm_report_toggle(uuid, boolean),
+  public.fm_report_del(uuid), public.fm_report_send_now(uuid), public.fm_report_preview(text, jsonb), public.fm_report_list(), public.fm_report_autoset(jsonb),
+  public.fm_report_check(), public.fm_report_status() to authenticated;
+do $do$ begin
+  execute 'grant execute on function public.fm_report_claim(int), public.fm_report_result(jsonb), public.fm_report_secret() to service_role';
+exception when undefined_object then null; end $do$;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-reports'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-reports'', ''*/10 * * * *'', ''select public.fm_report_due()'')';
+  exception when others then raise notice 'pg_cron is not available: scheduled reports are not sent by themselves («أرسل الآن» still works)'; end;
+end $do$;
+notify pgrst, 'reload schema';
