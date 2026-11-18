@@ -15917,3 +15917,223 @@ revoke all on function public.fm_ap_can_pay(), public.fm_ap_can_exc(), public.fm
 grant execute on function public.fm_ap_can_pay(), public.fm_ap_can_exc(), public.fm_supplier_pay(jsonb), public.fm_supplier_pay_void(uuid, text),
   public.fm_supplier_inv_act(uuid, text, text, text), public.fm_ap_list(int), public.fm_ap_rules_set(jsonb) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 99) V355 — ERP: project revenue (owner contract, owner claims, collections) and margin ----------
+-- Each project gets its owner contract (monthly value, period, VAT, client, reference). Revenue is kept in separate stages so a
+-- margin is never shown on an estimate by mistake: entitled (the contract's monthly value) → claimed (OC-YYYY-#### submitted to
+-- the owner) → certified (the amount the owner approved) → invoiced (invoice no / date) → collected (RC-YYYY-#### receipts, partial
+-- allowed, void with a reason). Margin = certified − the V353 cost of the project's orders closed in that month.
+-- Who: read = fm_erp_cost_can (area manager: projects of his regions); claims / contract = admin, sysadmin, project / ops manager,
+-- accountant; certify = admin, sysadmin, project / ops manager (not the person who submitted, unless admin / sysadmin);
+-- collections = admin, sysadmin, accountant.
+alter table public.fm_erp_projects add column if not exists contract_monthly numeric(14,2) not null default 0;
+alter table public.fm_erp_projects add column if not exists contract_from date;
+alter table public.fm_erp_projects add column if not exists contract_to date;
+alter table public.fm_erp_projects add column if not exists vat_pct numeric(5,2) not null default 15;
+alter table public.fm_erp_projects add column if not exists client text;
+alter table public.fm_erp_projects add column if not exists contract_ref text;
+
+create sequence if not exists public.fm_erp_claim_seq;
+create table if not exists public.fm_erp_owner_claims (
+  id            uuid primary key default gen_random_uuid(),
+  code          text unique not null default ('OC-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_erp_claim_seq')::text, 4, '0')),
+  project_id    uuid not null references public.fm_erp_projects(id),
+  month         text not null check (month ~ '^\d{4}-\d{2}$'),
+  amount        numeric(14,2) not null check (amount >= 0),       -- claimed, before VAT
+  certified     numeric(14,2),                                     -- approved by the owner, before VAT
+  vat_pct       numeric(5,2) not null default 15,
+  status        text not null default 'draft' check (status in ('draft','submitted','certified','invoiced','cancelled')),
+  invoice_no    text,
+  invoice_date  date,
+  collected     numeric(14,2) not null default 0,                  -- incl. VAT, from posted receipts
+  note          text,
+  history       jsonb not null default '[]',
+  by_id         uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name       text,
+  submitted_by  uuid references public.profiles(id) on delete set null,
+  certified_by  uuid references public.profiles(id) on delete set null,
+  at            timestamptz not null default now()
+);
+create unique index if not exists fm_erp_owner_claims_uq on public.fm_erp_owner_claims (project_id, month) where status <> 'cancelled';
+create sequence if not exists public.fm_erp_rc_seq;
+create table if not exists public.fm_erp_collections (
+  id           uuid primary key default gen_random_uuid(),
+  code         text unique not null default ('RC-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_erp_rc_seq')::text, 4, '0')),
+  claim_id     uuid not null references public.fm_erp_owner_claims(id) on delete cascade,
+  project_id   uuid not null references public.fm_erp_projects(id),
+  rc_date      date not null default (now() at time zone 'Asia/Riyadh')::date,
+  amount       numeric(14,2) not null check (amount > 0),
+  method       text not null default 'bank' check (method in ('bank','cheque','cash','other')),
+  ref          text,
+  note         text,
+  status       text not null default 'posted' check (status in ('posted','void')),
+  void_reason  text,
+  void_name    text,
+  void_at      timestamptz,
+  by_id        uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name      text,
+  at           timestamptz not null default now()
+);
+create index if not exists fm_erp_collections_claim on public.fm_erp_collections (claim_id);
+alter table public.fm_erp_owner_claims enable row level security;
+alter table public.fm_erp_collections enable row level security;
+revoke all on public.fm_erp_owner_claims, public.fm_erp_collections from public, anon, authenticated;
+
+create or replace function public.fm_erp_rev_can(k text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.fm_role() <> 'pending' and case k
+    when 'edit'    then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager','accountant')
+    when 'certify' then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    when 'collect' then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant')
+    else false end $$;
+create or replace function public.fm_erp_rev_sees(p_project uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select public.fm_erp_cost_can() and (public.fm_erp_cost_all() or exists(select 1 from public.fm_erp_projects p where p.id = p_project and public.fm_region_ok(p.region))) $$;
+
+create or replace function public.fm_erp_contract_set(p_project uuid, p jsonb) returns void language plpgsql security definer set search_path = public as $$
+declare pr public.fm_erp_projects;
+begin
+  if not public.fm_erp_rev_can('edit') then raise exception 'not allowed'; end if;
+  select * into pr from public.fm_erp_projects where id = p_project for update;
+  if not found then raise exception 'project not found'; end if;
+  if coalesce((p->>'monthly')::numeric, 0) < 0 then raise exception 'invalid amount'; end if;
+  if nullif(p->>'from','') is not null and nullif(p->>'to','') is not null and (p->>'to')::date < (p->>'from')::date then raise exception 'invalid period'; end if;
+  update public.fm_erp_projects set contract_monthly = round(coalesce((p->>'monthly')::numeric, 0), 2), contract_from = nullif(p->>'from','')::date,
+    contract_to = nullif(p->>'to','')::date, vat_pct = least(greatest(coalesce((p->>'vat_pct')::numeric, 15), 0), 100),
+    client = left(nullif(btrim(coalesce(p->>'client','')),''),200), contract_ref = left(nullif(btrim(coalesce(p->>'ref','')),''),100) where id = p_project;
+  insert into public.fm_erp_project_events(project_id, actor, action, entity_id, reason, old_value, new_value)
+  values (p_project, auth.uid(), 'contract', p_project, coalesce(nullif(btrim(p->>'reason'),''), 'تعديل عقد المالك'),
+    jsonb_build_object('monthly', pr.contract_monthly, 'from', pr.contract_from, 'to', pr.contract_to, 'vat_pct', pr.vat_pct, 'client', pr.client, 'ref', pr.contract_ref), p - 'reason');
+end $$;
+
+-- a draft claim: p {id?, project_id, month, amount, note}
+create or replace function public.fm_erp_claim_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare c public.fm_erp_owner_claims; pr public.fm_erp_projects; v uuid := nullif(p->>'id','')::uuid; a numeric := round(coalesce((p->>'amount')::numeric, -1), 2);
+begin
+  if not public.fm_erp_rev_can('edit') then raise exception 'not allowed'; end if;
+  if a < 0 then raise exception 'invalid amount'; end if;
+  if v is not null then
+    select * into c from public.fm_erp_owner_claims where id = v for update;
+    if not found then raise exception 'claim not found'; end if;
+    if c.status <> 'draft' then raise exception 'not a draft'; end if;
+    update public.fm_erp_owner_claims set amount = a, note = left(nullif(btrim(coalesce(p->>'note','')),''),1000),
+      history = history || jsonb_build_array(jsonb_build_object('at', now(), 'by', public.fm_me_name(), 'act', 'edit', 'amount', a)) where id = v;
+    return v;
+  end if;
+  select * into pr from public.fm_erp_projects where id = nullif(p->>'project_id','')::uuid;
+  if not found or not pr.active then raise exception 'active project required'; end if;
+  if coalesce(p->>'month','') !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  if exists(select 1 from public.fm_erp_owner_claims where project_id = pr.id and month = p->>'month' and status <> 'cancelled') then raise exception 'claim exists for month'; end if;
+  insert into public.fm_erp_owner_claims(project_id, month, amount, vat_pct, note, by_name, history)
+  values (pr.id, p->>'month', a, pr.vat_pct, left(nullif(btrim(coalesce(p->>'note','')),''),1000), public.fm_me_name(),
+          jsonb_build_array(jsonb_build_object('at', now(), 'by', public.fm_me_name(), 'act', 'create', 'amount', a)))
+  returning id into v;
+  return v;
+end $$;
+
+-- submit | certify {amount, note} | return (certifier, note) | invoice {invoice_no, invoice_date} | cancel (note)
+create or replace function public.fm_erp_claim_act(p_id uuid, p_action text, p jsonb default '{}') returns text language plpgsql security definer set search_path = public as $$
+declare c public.fm_erp_owner_claims; nm text := public.fm_me_name(); amt numeric; v_note text := nullif(btrim(coalesce(p->>'note','')),'');
+begin
+  select * into c from public.fm_erp_owner_claims where id = p_id for update;
+  if not found then raise exception 'claim not found'; end if;
+  if p_action = 'submit' and c.status = 'draft' then
+    if not public.fm_erp_rev_can('edit') then raise exception 'not allowed'; end if;
+    update public.fm_erp_owner_claims set status = 'submitted', submitted_by = auth.uid() where id = p_id;
+  elsif p_action = 'certify' and c.status = 'submitted' then
+    if not public.fm_erp_rev_can('certify') then raise exception 'not allowed'; end if;
+    if c.submitted_by = auth.uid() and not (public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin') then raise exception 'self certify'; end if;
+    amt := round(coalesce((p->>'amount')::numeric, c.amount), 2);
+    if amt < 0 then raise exception 'invalid amount'; end if;
+    if amt <> c.amount and coalesce(length(v_note),0) < 3 then raise exception 'note required'; end if;
+    update public.fm_erp_owner_claims set status = 'certified', certified = amt, certified_by = auth.uid() where id = p_id;
+  elsif p_action = 'return' and c.status = 'submitted' then
+    if not public.fm_erp_rev_can('certify') then raise exception 'not allowed'; end if;
+    if coalesce(length(v_note),0) < 3 then raise exception 'note required'; end if;
+    update public.fm_erp_owner_claims set status = 'draft' where id = p_id;
+  elsif p_action = 'invoice' and c.status = 'certified' then
+    if not public.fm_erp_rev_can('collect') and not public.fm_erp_rev_can('edit') then raise exception 'not allowed'; end if;
+    if coalesce(btrim(p->>'invoice_no'),'') = '' then raise exception 'invoice number required'; end if;
+    update public.fm_erp_owner_claims set status = 'invoiced', invoice_no = left(btrim(p->>'invoice_no'),60),
+      invoice_date = coalesce(nullif(p->>'invoice_date','')::date, (now() at time zone 'Asia/Riyadh')::date) where id = p_id;
+  elsif p_action = 'cancel' and c.status in ('draft','submitted','certified') then
+    if not public.fm_erp_rev_can('edit') then raise exception 'not allowed'; end if;
+    if coalesce(length(v_note),0) < 3 then raise exception 'note required'; end if;
+    update public.fm_erp_owner_claims set status = 'cancelled' where id = p_id;
+  else raise exception 'invalid status'; end if;
+  update public.fm_erp_owner_claims set history = history || jsonb_build_array(jsonb_build_object('at', now(), 'by', nm, 'act', p_action, 'note', v_note,
+    'amount', case when p_action = 'certify' then amt end, 'invoice_no', p->>'invoice_no')) where id = p_id;
+  insert into public.fm_erp_project_events(project_id, actor, action, entity_id, reason, new_value)
+  values (c.project_id, auth.uid(), 'claim_' || p_action, p_id, coalesce(v_note, c.code), jsonb_build_object('code', c.code, 'month', c.month, 'amount', amt));
+  return p_action;
+end $$;
+
+create or replace function public.fm_erp_claim_refresh(p_id uuid) returns void language sql security definer set search_path = public as $$
+  update public.fm_erp_owner_claims set collected = coalesce((select sum(amount) from public.fm_erp_collections where claim_id = p_id and status = 'posted'), 0) where id = p_id $$;
+
+-- a receipt against an invoiced claim: p {claim_id, rc_date, amount, method, ref, note}; amount ≤ certified + VAT − collected
+create or replace function public.fm_erp_collect(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare c public.fm_erp_owner_claims; a numeric := round(coalesce((p->>'amount')::numeric, 0), 2); due numeric; rid uuid; rc text;
+begin
+  if not public.fm_erp_rev_can('collect') then raise exception 'not allowed'; end if;
+  select * into c from public.fm_erp_owner_claims where id = nullif(p->>'claim_id','')::uuid for update;
+  if not found then raise exception 'claim not found'; end if;
+  if c.status <> 'invoiced' then raise exception 'claim not invoiced'; end if;
+  if coalesce(p->>'method','bank') not in ('bank','cheque','cash','other') then raise exception 'invalid method'; end if;
+  due := round(c.certified * (1 + c.vat_pct / 100), 2) - c.collected;
+  if a <= 0 or a > due + 0.005 then raise exception 'amount exceeds due'; end if;
+  insert into public.fm_erp_collections(claim_id, project_id, rc_date, amount, method, ref, note, by_name)
+  values (c.id, c.project_id, coalesce(nullif(p->>'rc_date','')::date, (now() at time zone 'Asia/Riyadh')::date), a, coalesce(p->>'method','bank'),
+          left(nullif(btrim(coalesce(p->>'ref','')),''),100), left(nullif(btrim(coalesce(p->>'note','')),''),500), public.fm_me_name())
+  returning id, code into rid, rc;
+  perform public.fm_erp_claim_refresh(c.id);
+  insert into public.fm_audit_log(actor_name, action, target, details) values (public.fm_me_name(), 'erp_collect', rc, jsonb_build_object('claim', c.code, 'amount', a));
+  return jsonb_build_object('id', rid, 'code', rc, 'amount', a);
+end $$;
+create or replace function public.fm_erp_collect_void(p_id uuid, p_reason text) returns void language plpgsql security definer set search_path = public as $$
+declare r public.fm_erp_collections;
+begin
+  if not public.fm_erp_rev_can('collect') then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p_reason,''))) < 3 then raise exception 'note required'; end if;
+  select * into r from public.fm_erp_collections where id = p_id for update;
+  if not found then raise exception 'receipt not found'; end if;
+  if r.status <> 'posted' then raise exception 'already void'; end if;
+  perform 1 from public.fm_erp_owner_claims where id = r.claim_id for update;
+  update public.fm_erp_collections set status = 'void', void_reason = btrim(p_reason), void_name = public.fm_me_name(), void_at = now() where id = p_id;
+  perform public.fm_erp_claim_refresh(r.claim_id);
+  insert into public.fm_audit_log(actor_name, action, target, details) values (public.fm_me_name(), 'erp_collect_void', r.code, jsonb_build_object('amount', r.amount, 'reason', btrim(p_reason)));
+end $$;
+
+-- the revenue page for a year: projects with contract, claims, receipts and the V353 cost by project × closing month
+create or replace function public.fm_erp_revenue(p_year int) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare y int := coalesce(p_year, extract(year from now())::int); ids uuid[]; pj jsonb; cl jsonb; rc jsonb; co jsonb;
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'code', p.code, 'name', p.name, 'region', p.region, 'active', p.active, 'monthly', p.contract_monthly,
+      'from', p.contract_from, 'to', p.contract_to, 'vat_pct', p.vat_pct, 'client', p.client, 'ref', p.contract_ref) order by p.code), '[]'::jsonb) into pj
+    from public.fm_erp_projects p where public.fm_erp_rev_sees(p.id);
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'code', c.code, 'project_id', c.project_id, 'month', c.month, 'amount', c.amount, 'certified', c.certified,
+      'vat_pct', c.vat_pct, 'status', c.status, 'invoice_no', c.invoice_no, 'invoice_date', c.invoice_date, 'collected', c.collected, 'note', c.note,
+      'history', c.history, 'by', c.by_name, 'mine_sub', c.submitted_by = auth.uid(), 'at', c.at,
+      'due', case when c.status = 'invoiced' then round(c.certified * (1 + c.vat_pct / 100), 2) - c.collected end,
+      'age', case when c.status = 'invoiced' and c.invoice_date is not null then (now() at time zone 'Asia/Riyadh')::date - c.invoice_date end) order by c.month desc, c.at desc), '[]'::jsonb) into cl
+    from public.fm_erp_owner_claims c where (left(c.month,4)::int = y or (c.status = 'invoiced' and c.collected < round(c.certified * (1 + c.vat_pct / 100), 2))) and public.fm_erp_rev_sees(c.project_id);
+  select coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'code', r.code, 'claim_id', r.claim_id, 'claim', c.code, 'project_id', r.project_id, 'date', r.rc_date,
+      'amount', r.amount, 'method', r.method, 'ref', r.ref, 'status', r.status, 'void_reason', r.void_reason, 'void_name', r.void_name, 'by', r.by_name) order by r.at desc), '[]'::jsonb) into rc
+    from public.fm_erp_collections r join public.fm_erp_owner_claims c on c.id = r.claim_id where extract(year from r.rc_date)::int = y and public.fm_erp_rev_sees(r.project_id);
+  select coalesce(array_agg(o.id), '{}') into ids from public.work_orders o join public.fm_erp_work_order_projects l on l.wo_id = o.id
+   where o.status = 'closed' and extract(year from coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh')::int = y and public.fm_erp_rev_sees(l.project_id);
+  select coalesce(jsonb_agg(jsonb_build_object('project_id', x.pid, 'month', x.m, 'cost', x.v, 'n', x.n)), '[]'::jsonb) into co from (
+    select l.project_id pid, to_char(coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh', 'YYYY-MM') m,
+           round(sum(c.mat_store + c.mat_buy + c.contractor + c.labour_std + c.labour_ot), 2) v, count(*) n
+      from public.fm_erp_cost_rows(ids) c join public.work_orders o on o.id = c.wo_id join public.fm_erp_work_order_projects l on l.wo_id = o.id
+     group by 1, 2) x;
+  return jsonb_build_object('year', y, 'projects', pj, 'claims', cl, 'receipts', rc, 'cost', co,
+    'can', jsonb_build_object('edit', public.fm_erp_rev_can('edit'), 'certify', public.fm_erp_rev_can('certify'), 'collect', public.fm_erp_rev_can('collect')),
+    'admin', public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin');
+end $$;
+
+revoke all on function public.fm_erp_rev_sees(uuid), public.fm_erp_claim_refresh(uuid) from public, anon, authenticated;
+revoke all on function public.fm_erp_rev_can(text), public.fm_erp_contract_set(uuid, jsonb), public.fm_erp_claim_save(jsonb), public.fm_erp_claim_act(uuid, text, jsonb),
+  public.fm_erp_collect(jsonb), public.fm_erp_collect_void(uuid, text), public.fm_erp_revenue(int) from public, anon;
+grant execute on function public.fm_erp_rev_can(text), public.fm_erp_contract_set(uuid, jsonb), public.fm_erp_claim_save(jsonb), public.fm_erp_claim_act(uuid, text, jsonb),
+  public.fm_erp_collect(jsonb), public.fm_erp_collect_void(uuid, text), public.fm_erp_revenue(int) to authenticated;
+notify pgrst, 'reload schema';
