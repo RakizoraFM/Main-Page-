@@ -17309,3 +17309,168 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: the server backup runs only with «▶️ نسخة الآن»'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 107) V367 — scheduled reports per region: each region's copy goes to that region's people ----------
+-- A schedule whose params carry split = true makes one run per region (fm_report_runs.region): the data are built with
+-- params.region = that region, and the recipients are the schedule's own list + the active accounts whose job title is in
+-- params.split_titles (default area_manager, area_engineer) and whose regions include it. Regions = the regions of those
+-- people (else riyadh, qassim). Without split nothing changes.
+alter table public.fm_report_runs add column if not exists region text;
+
+create or replace function public.fm_report_titles(p jsonb) returns text[] language sql immutable as $$
+  select case when jsonb_typeof(p->'split_titles') = 'array' and jsonb_array_length(p->'split_titles') > 0
+              then array(select jsonb_array_elements_text(p->'split_titles')) else array['area_manager','area_engineer'] end $$;
+create or replace function public.fm_report_regions(p jsonb) returns text[] language sql stable security definer set search_path = public as $$
+  select coalesce(nullif(array(select distinct r from public.profiles pr, unnest(coalesce(pr.regions, '{}')) r
+                   where pr.active is not false and pr.deleted_at is null and pr.job_title = any(public.fm_report_titles(p)) and coalesce(r, '') <> '' order by 1), '{}'),
+                  array['riyadh','qassim']) $$;
+-- recipients of one run: the schedule's list + (split) the region's people
+create or replace function public.fm_report_to_run(us uuid[], ex text[], p jsonb, rg text) returns text[] language sql stable security definer set search_path = public as $$
+  select coalesce(array_agg(distinct e), '{}') from (
+    select unnest(public.fm_report_to(us, ex)) e
+    union select lower(pr.email) from public.profiles pr
+     where rg is not null and pr.active is not false and pr.deleted_at is null and pr.role <> 'pending'
+       and pr.job_title = any(public.fm_report_titles(p)) and rg = any(coalesce(pr.regions, '{}'))
+       and pr.email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$') x where e is not null $$;
+create or replace function public.fm_report_rn(rg text) returns text language sql immutable as $$
+  select case rg when 'riyadh' then 'الرياض' when 'qassim' then 'القصيم' else rg end $$;
+create or replace function public.fm_report_params(p jsonb, rg text) returns jsonb language sql immutable as $$
+  select case when rg is null then coalesce(p, '{}'::jsonb) else coalesce(p, '{}'::jsonb) || jsonb_build_object('region', rg) end $$;
+-- insert the run(s) of a schedule; returns the first id
+create or replace function public.fm_report_make_runs(s public.fm_report_schedules, p_due timestamptz, p_manual boolean, p_by text) returns uuid language plpgsql security definer set search_path = public as $$
+declare rid uuid; first uuid; rg text; st text := case when s.kind like 'p:%' then 'wait' else 'queued' end;
+begin
+  if coalesce((s.params->>'split')::boolean, false) then
+    foreach rg in array public.fm_report_regions(s.params) loop
+      insert into public.fm_report_runs(sched_id, kind, due_at, status, manual, by_name, region) values (s.id, s.kind, p_due, st, coalesce(p_manual, false), p_by, rg) returning id into rid;
+      first := coalesce(first, rid);
+    end loop;
+  else
+    insert into public.fm_report_runs(sched_id, kind, due_at, status, manual, by_name) values (s.id, s.kind, p_due, st, coalesce(p_manual, false), p_by) returning id into first;
+  end if;
+  return first;
+end $$;
+
+create or replace function public.fm_report_due() returns int language plpgsql security definer set search_path = public as $$
+declare s public.fm_report_schedules; n int := 0;
+begin
+  for s in select r.* from public.fm_report_schedules r
+           where r.active and r.next_at is not null and r.next_at <= now()
+             and exists (select 1 from public.profiles p where p.id = r.owner and p.active is not false and p.role <> 'pending')
+           for update of r skip locked loop
+    perform public.fm_report_make_runs(s, s.next_at, false, null);
+    update public.fm_report_schedules set next_at = public.fm_report_next(s.freq, s.dow, s.dom, s.hour, greatest(now(), s.next_at)) where id = s.id;
+    n := n + 1;
+  end loop;
+  update public.fm_report_runs set status = 'expired', err = 'لم تُفتح المنصة خلال 3 أيام لتجهيز التقرير' where status = 'wait' and created_at < now() - interval '3 days';
+  update public.fm_report_runs set status = 'queued' where status = 'sending' and claimed_at < now() - interval '15 minutes' and tries < 3 and kind not like 'p:%';
+  update public.fm_report_runs set status = 'wait' where status = 'sending' and claimed_at < now() - interval '15 minutes' and kind like 'p:%' and created_at > now() - interval '3 days';
+  if exists (select 1 from public.fm_report_runs where status = 'queued') then perform public.fm_report_kick(); end if;
+  return n;
+end $$;
+
+create or replace function public.fm_report_claim(n int default 5) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r record; outv jsonb := '[]'; dat jsonb; tl text[]; pr jsonb;
+begin
+  for r in select x.id rid, x.region xr, s.name sname, s.kind skind, s.params sparams, s.to_users su, s.to_ext se
+           from public.fm_report_runs x join public.fm_report_schedules s on s.id = x.sched_id
+           where x.status = 'queued' and x.tries < 3 order by x.created_at limit greatest(1, least(coalesce(n, 5), 20))
+           for update of x skip locked loop
+    tl := public.fm_report_to_run(r.su, r.se, r.sparams, r.xr);
+    if coalesce(cardinality(tl), 0) = 0 then
+      update public.fm_report_runs set status = 'failed', err = 'لا يوجد بريد صالح للمستلمين' where id = r.rid;
+      update public.fm_report_schedules set last_at = now(), last_status = 'failed', last_err = 'لا يوجد بريد صالح للمستلمين' where id = (select sched_id from public.fm_report_runs where id = r.rid);
+      continue;
+    end if;
+    pr := public.fm_report_params(r.sparams, r.xr);
+    begin dat := public.fm_report_data(r.skind, pr); exception when others then dat := jsonb_build_object('error', sqlerrm); end;
+    update public.fm_report_runs set status = 'sending', tries = tries + 1, claimed_at = now(), to_list = tl where id = r.rid;
+    outv := outv || jsonb_build_array(jsonb_build_object('id', r.rid, 'name', r.sname || coalesce(' — ' || public.fm_report_rn(r.xr), ''), 'kind', r.skind, 'params', pr, 'to', to_jsonb(tl), 'data', dat));
+  end loop;
+  return jsonb_build_object('runs', outv, 'cfg', coalesce(public.fm_setting('mail'), '{}'::jsonb));
+end $$;
+
+create or replace function public.fm_report_wait() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_report_can() then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'sched_id', s.id, 'name', s.name || coalesce(' — ' || public.fm_report_rn(x.region), ''), 'kind', s.kind, 'params', public.fm_report_params(s.params, x.region),
+      'region', x.region, 'freq', s.freq, 'due_at', x.due_at, 'mine', s.owner = auth.uid()) order by x.created_at)
+    from public.fm_report_runs x join public.fm_report_schedules s on s.id = x.sched_id
+    where x.status = 'wait' and x.created_at > now() - interval '3 days' and (s.owner = auth.uid() or public.fm_role() = 'admin')), '[]'::jsonb);
+end $$;
+
+create or replace function public.fm_report_client_begin(p_run uuid) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s public.fm_report_schedules; tl text[]; rg text;
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  select r.* into s from public.fm_report_schedules r join public.fm_report_runs x on x.sched_id = r.id where x.id = p_run;
+  if not found then raise exception 'not found'; end if;
+  select x.region into rg from public.fm_report_runs x where x.id = p_run;
+  if s.owner is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  tl := public.fm_report_to_run(s.to_users, s.to_ext, s.params, rg);
+  if coalesce(cardinality(tl), 0) = 0 then raise exception 'no recipients'; end if;
+  update public.fm_report_runs set status = 'sending', tries = tries + 1, claimed_at = now(), to_list = tl where id = p_run and status = 'wait';
+  if not found then raise exception 'taken'; end if;
+  return jsonb_build_object('id', p_run, 'name', s.name || coalesce(' — ' || public.fm_report_rn(rg), ''), 'kind', s.kind, 'params', public.fm_report_params(s.params, rg), 'to', to_jsonb(tl), 'cfg', coalesce(public.fm_setting('mail'), '{}'::jsonb));
+end $$;
+
+create or replace function public.fm_report_send_now(p_id uuid) returns uuid language plpgsql security definer set search_path = public as $$
+declare s public.fm_report_schedules; rid uuid;
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  select * into s from public.fm_report_schedules where id = p_id;
+  if not found then raise exception 'not found'; end if;
+  if s.owner is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  if (select count(distinct date_trunc('second', created_at)) from public.fm_report_runs where manual and created_at > now() - interval '1 day' and sched_id = p_id) >= 10 then raise exception 'too many today'; end if;
+  rid := public.fm_report_make_runs(s, now(), true, (select full_name from public.profiles where id = auth.uid()));
+  if s.kind not like 'p:%' then perform public.fm_report_kick(); end if;
+  return rid;
+end $$;
+
+-- the regions and the people a split schedule would reach (page preview)
+create or replace function public.fm_report_split_preview(p jsonb) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare rg text; outv jsonb := '[]';
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  foreach rg in array public.fm_report_regions(p) loop
+    outv := outv || jsonb_build_array(jsonb_build_object('region', rg, 'to', to_jsonb(public.fm_report_to_run('{}', '{}', p, rg))));
+  end loop;
+  return outv;
+end $$;
+create or replace function public.fm_report_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare rid uuid := nullif(p->>'id', '')::uuid; nm text := btrim(coalesce(p->>'name', '')); kd text := btrim(coalesce(p->>'kind', ''));
+  fq text := coalesce(p->>'freq', 'weekly'); dw int := nullif(p->>'dow', '')::int; dm int := nullif(p->>'dom', '')::int; hr int := coalesce(nullif(p->>'hour', '')::int, 7);
+  us uuid[] := coalesce(array(select jsonb_array_elements_text(coalesce(p->'to_users', '[]'::jsonb))::uuid), '{}');
+  ex text[] := coalesce(array(select lower(btrim(e)) from jsonb_array_elements_text(coalesce(p->'to_ext', '[]'::jsonb)) e where btrim(e) <> ''), '{}');
+  ow uuid; nm2 text;
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  if length(nm) < 2 or length(nm) > 120 then raise exception 'invalid name'; end if;
+  if kd !~ '^(wo_open|wo_period|stock_low|sla_due|school_req|attendance|weekly|issue_req|p:[a-z0-9_]{1,30})$' then raise exception 'invalid report'; end if;
+  if fq not in ('daily','weekly','monthly') or hr not between 0 and 23 then raise exception 'invalid schedule'; end if;
+  if fq = 'weekly' and (dw is null or dw not between 0 and 6) then raise exception 'invalid schedule'; end if;
+  if fq = 'monthly' and (dm is null or dm not between 1 and 31) then raise exception 'invalid schedule'; end if;
+  if cardinality(us) > 30 or cardinality(ex) > 20 then raise exception 'too many recipients'; end if;
+  if exists (select 1 from unnest(ex) e where e !~* '^[^@\s]+@[^@\s]+\.[^@\s]+$') then raise exception 'invalid email'; end if;
+  if cardinality(us) + cardinality(ex) = 0 and not coalesce((p->'params'->>'split')::boolean, false) then raise exception 'no recipients'; end if;
+  if coalesce((p->'params'->>'split')::boolean, false) and exists (select 1 from jsonb_array_elements_text(coalesce(p->'params'->'split_titles', '[]'::jsonb)) t where t not in ('area_manager','area_engineer','supervisor','storekeeper','accountant','owner_rep','qa_manager','hse_manager','contractor')) then raise exception 'invalid titles'; end if;
+  if rid is null then
+    select full_name into nm2 from public.profiles where id = auth.uid();
+    insert into public.fm_report_schedules(name, kind, params, freq, dow, dom, hour, to_users, to_ext, active, owner, owner_name, next_at)
+    values (nm, kd, coalesce(p->'params', '{}'::jsonb), fq, dw, dm, hr, us, ex, coalesce((p->>'active')::boolean, true), auth.uid(), nm2,
+            public.fm_report_next(fq, dw, dm, hr, now())) returning id into rid;
+  else
+    select owner into ow from public.fm_report_schedules where id = rid for update;
+    if not found then raise exception 'not found'; end if;
+    if ow is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+    update public.fm_report_schedules set name = nm, kind = kd, params = coalesce(p->'params', '{}'::jsonb), freq = fq, dow = dw, dom = dm, hour = hr,
+      to_users = us, to_ext = ex, active = coalesce((p->>'active')::boolean, active), next_at = public.fm_report_next(fq, dw, dm, hr, now()), updated_at = now() where id = rid;
+  end if;
+  return rid;
+end $$;
+
+revoke all on function public.fm_report_titles(jsonb), public.fm_report_regions(jsonb), public.fm_report_to_run(uuid[], text[], jsonb, text), public.fm_report_params(jsonb, text),
+  public.fm_report_make_runs(public.fm_report_schedules, timestamptz, boolean, text) from public, anon, authenticated;
+revoke all on function public.fm_report_split_preview(jsonb) from public, anon;
+grant execute on function public.fm_report_split_preview(jsonb) to authenticated;
+notify pgrst, 'reload schema';
