@@ -17474,3 +17474,140 @@ revoke all on function public.fm_report_titles(jsonb), public.fm_report_regions(
 revoke all on function public.fm_report_split_preview(jsonb) from public, anon;
 grant execute on function public.fm_report_split_preview(jsonb) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 108) V368 — workforce: monthly snapshot and monthly bonus register ----------
+-- (1) fm_wf_snaps: one row per region × month with the counts the platform shows (computed in the browser from the
+--     workforce register, which lives in the original Excel rows). Anyone who reads the region may save the CURRENT
+--     Riyadh month (the latest save of the month wins); past months are frozen. Keys are whitelisted numbers.
+-- (2) fm_wf_bonuses (BN-YYYY-####) + fm_wf_bonus_caps (region × month cap, 0 = no cap): a proposal (managers of the
+--     region, area engineer / supervisor of the region) → approve / reject by a manager of the region (fm233_manage),
+--     never the proposer (admin excepted); approve refuses going over the month's cap («cap exceeded»). RLS on, no
+--     policies, no grants: RPCs only.
+create table if not exists public.fm_wf_snaps (
+  region text not null check (region in ('riyadh','qassim')),
+  month text not null check (month ~ '^\d{4}-\d{2}$'),
+  stats jsonb not null default '{}'::jsonb,
+  by_id uuid default auth.uid(), at timestamptz not null default now(),
+  primary key (region, month));
+alter table public.fm_wf_snaps enable row level security;
+revoke all on public.fm_wf_snaps from anon, authenticated;
+
+create or replace function public.fm_wf_month() returns text language sql stable as $$ select to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM') $$;
+create or replace function public.fm_wf_snap_save(p_region text, p_stats jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare k text; st jsonb := '{}'::jsonb; m text := public.fm_wf_month();
+begin
+  if not public.fm233_read(p_region) then raise exception 'not allowed'; end if;
+  foreach k in array array['total','active','staff','contractors','vacant','plan_req','plan_act','gap','unassigned','teams','expiring','expired','missing_code','field'] loop
+    if jsonb_typeof(p_stats->k) = 'number' and (p_stats->>k)::numeric between 0 and 1000000 then st := st || jsonb_build_object(k, round((p_stats->>k)::numeric)); end if;
+  end loop;
+  insert into public.fm_wf_snaps(region, month, stats, by_id, at) values (p_region, m, st, auth.uid(), now())
+  on conflict (region, month) do update set stats = excluded.stats, by_id = excluded.by_id, at = now();
+  return m;
+end $$;
+create or replace function public.fm_wf_snap_list(p_months int default 12) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('region', region, 'month', month, 'stats', stats, 'at', at) order by month, region), '[]'::jsonb)
+  from public.fm_wf_snaps where public.fm233_read(region)
+   and month >= to_char((now() at time zone 'Asia/Riyadh') - make_interval(months => least(greatest(coalesce(p_months, 12), 1), 36)), 'YYYY-MM') $$;
+
+create table if not exists public.fm_wf_bonus_caps (
+  region text not null check (region in ('riyadh','qassim')), month text not null check (month ~ '^\d{4}-\d{2}$'),
+  cap numeric not null default 0 check (cap >= 0), by_id uuid default auth.uid(), at timestamptz not null default now(),
+  primary key (region, month));
+create table if not exists public.fm_wf_bonuses (
+  id uuid primary key default gen_random_uuid(),
+  code text unique,
+  region text not null check (region in ('riyadh','qassim')),
+  month text not null check (month ~ '^\d{4}-\d{2}$'),
+  person_id uuid references public.fm_people334(id) on delete set null,
+  person_name text not null check (length(btrim(person_name)) between 2 and 160),
+  employee_code text not null default '',
+  job_title text not null default '',
+  kind text not null default 'bonus' check (kind in ('bonus','incentive','allowance','other')),
+  amount numeric not null check (amount > 0 and amount <= 1000000),
+  reason text not null check (length(btrim(reason)) between 3 and 1000),
+  status text not null default 'pending' check (status in ('pending','approved','rejected','cancelled')),
+  by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(),
+  dec_by uuid, dec_name text, dec_at timestamptz, dec_note text);
+create index if not exists fm_wf_bonuses_m on public.fm_wf_bonuses(region, month, status);
+alter table public.fm_wf_bonuses enable row level security;
+alter table public.fm_wf_bonus_caps enable row level security;
+revoke all on public.fm_wf_bonuses, public.fm_wf_bonus_caps from anon, authenticated;
+
+create or replace function public.fm_wf_bonus_prop(r text) returns boolean language sql stable security definer set search_path = public as $$
+  select public.fm233_manage(r) or coalesce(auth.uid() is not null and public.fm_role() <> 'pending'
+    and public.fm_my_pos() in ('area_engineer','supervisor') and public.fm_region_ok(r), false) $$;
+create or replace function public.fm_wf_bonus_used(r text, m text) returns numeric language sql stable security definer set search_path = public as $$
+  select coalesce(sum(amount), 0) from public.fm_wf_bonuses where region = r and month = m and status = 'approved' $$;
+
+create or replace function public.fm_wf_bonus_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare r text := p->>'region'; m text := coalesce(nullif(p->>'month', ''), public.fm_wf_month()); pid uuid := nullif(p->>'person_id', '')::uuid;
+  pr public.fm_people334; nm text := btrim(coalesce(p->>'person_name', '')); rid uuid; cd text;
+begin
+  if r not in ('riyadh','qassim') or not public.fm_wf_bonus_prop(r) then raise exception 'not allowed'; end if;
+  if m !~ '^\d{4}-\d{2}$' or m < to_char((now() at time zone 'Asia/Riyadh') - interval '2 months', 'YYYY-MM') or m > public.fm_wf_month() then raise exception 'invalid month'; end if;
+  if pid is not null then
+    select * into pr from public.fm_people334 where id = pid and region = r;
+    if not found then raise exception 'person not found'; end if;
+    nm := pr.full_name;
+  end if;
+  if (select count(*) from public.fm_wf_bonuses where by_id = auth.uid() and at > now() - interval '1 day') >= 200 then raise exception 'too many today'; end if;
+  cd := 'BN-' || to_char(now() at time zone 'Asia/Riyadh', 'YYYY') || '-' || lpad((coalesce((select count(*) from public.fm_wf_bonuses where code like 'BN-' || to_char(now() at time zone 'Asia/Riyadh', 'YYYY') || '-%'), 0) + 1)::text, 4, '0');
+  insert into public.fm_wf_bonuses(code, region, month, person_id, person_name, employee_code, job_title, kind, amount, reason, by_name)
+  values (cd, r, m, pid, nm, coalesce(pr.employee_code, left(btrim(coalesce(p->>'employee_code', '')), 80)), coalesce(pr.job_title, left(btrim(coalesce(p->>'job_title', '')), 160)),
+          coalesce(nullif(p->>'kind', ''), 'bonus'), (p->>'amount')::numeric, btrim(coalesce(p->>'reason', '')), (select full_name from public.profiles where id = auth.uid()))
+  returning id into rid;
+  insert into public.fm_audit_log(actor_name, action, target, details) values ((select coalesce(full_name, email) from public.profiles where id = auth.uid()), 'wf_bonus_new', cd, jsonb_build_object('amount', p->>'amount', 'person', nm));
+  return rid;
+end $$;
+
+create or replace function public.fm_wf_bonus_act(p_id uuid, p_action text, p_note text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare b public.fm_wf_bonuses; capv numeric; used numeric; nm text := (select full_name from public.profiles where id = auth.uid());
+begin
+  select * into b from public.fm_wf_bonuses where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if p_action = 'cancel' then
+    if b.status <> 'pending' or (b.by_id is distinct from auth.uid() and not public.fm233_manage(b.region)) then raise exception 'not allowed'; end if;
+    update public.fm_wf_bonuses set status = 'cancelled', dec_by = auth.uid(), dec_name = nm, dec_at = now(), dec_note = left(p_note, 500) where id = p_id;
+  elsif p_action in ('approve','reject') then
+    if not public.fm233_manage(b.region) then raise exception 'not allowed'; end if;
+    if b.by_id = auth.uid() and public.fm_role() <> 'admin' then raise exception 'self approval'; end if;
+    if b.status <> 'pending' and not (p_action = 'reject' and b.status = 'approved') then raise exception 'not pending'; end if;
+    if p_action = 'reject' and length(btrim(coalesce(p_note, ''))) < 3 then raise exception 'note required'; end if;
+    if p_action = 'approve' then
+      perform pg_advisory_xact_lock(hashtext('fm_wf_bonus:' || b.region || ':' || b.month));
+      select cap into capv from public.fm_wf_bonus_caps where region = b.region and month = b.month;
+      used := public.fm_wf_bonus_used(b.region, b.month);
+      if coalesce(capv, 0) > 0 and used + b.amount > capv then raise exception 'cap exceeded: % of %', used + b.amount, capv; end if;
+    end if;
+    update public.fm_wf_bonuses set status = case when p_action = 'approve' then 'approved' else 'rejected' end, dec_by = auth.uid(), dec_name = nm, dec_at = now(), dec_note = left(p_note, 500) where id = p_id;
+  else raise exception 'invalid action'; end if;
+  insert into public.fm_audit_log(actor_name, action, target, details) values (coalesce(nm, ''), 'wf_bonus_' || p_action, b.code, jsonb_build_object('amount', b.amount, 'note', p_note));
+  return jsonb_build_object('ok', true, 'used', public.fm_wf_bonus_used(b.region, b.month));
+end $$;
+
+create or replace function public.fm_wf_bonus_cap_set(p_region text, p_month text, p_cap numeric) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm233_manage(p_region) then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' or coalesce(p_cap, -1) < 0 then raise exception 'invalid'; end if;
+  insert into public.fm_wf_bonus_caps(region, month, cap) values (p_region, p_month, p_cap) on conflict (region, month) do update set cap = excluded.cap, by_id = auth.uid(), at = now();
+end $$;
+
+create or replace function public.fm_wf_bonus_list(p_month text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare m text := coalesce(nullif(p_month, ''), public.fm_wf_month()); regs jsonb := '[]'; r text;
+begin
+  foreach r in array array['riyadh','qassim'] loop
+    if public.fm233_read(r) or public.fm_wf_bonus_prop(r) then
+      regs := regs || jsonb_build_array(jsonb_build_object('region', r, 'cap', coalesce((select cap from public.fm_wf_bonus_caps where region = r and month = m), 0),
+        'used', public.fm_wf_bonus_used(r, m), 'pending', (select coalesce(sum(amount), 0) from public.fm_wf_bonuses where region = r and month = m and status = 'pending'),
+        'can_prop', public.fm_wf_bonus_prop(r), 'can_dec', public.fm233_manage(r)));
+    end if;
+  end loop;
+  return jsonb_build_object('month', m, 'regions', regs, 'me', auth.uid(), 'rows', coalesce((select jsonb_agg(to_jsonb(b) order by b.at desc) from public.fm_wf_bonuses b where b.month = m and (public.fm233_read(b.region) or b.by_id = auth.uid())), '[]'::jsonb));
+end $$;
+
+revoke all on function public.fm_wf_bonus_prop(text), public.fm_wf_bonus_used(text, text) from public, anon, authenticated;
+revoke all on function public.fm_wf_snap_save(text, jsonb), public.fm_wf_snap_list(int), public.fm_wf_bonus_save(jsonb), public.fm_wf_bonus_act(uuid, text, text),
+  public.fm_wf_bonus_cap_set(text, text, numeric), public.fm_wf_bonus_list(text) from public, anon;
+grant execute on function public.fm_wf_snap_save(text, jsonb), public.fm_wf_snap_list(int), public.fm_wf_bonus_save(jsonb), public.fm_wf_bonus_act(uuid, text, text),
+  public.fm_wf_bonus_cap_set(text, text, numeric), public.fm_wf_bonus_list(text) to authenticated;
+notify pgrst, 'reload schema';
