@@ -16590,3 +16590,125 @@ revoke all on function public.fm_acct_keys(), public.fm_acct_can(), public.fm_ac
 grant execute on function public.fm_acct_can(), public.fm_acct_can_set(), public.fm_acct_map(), public.fm_acct_map_set(jsonb),
   public.fm_acct_journal(date, date), public.fm_acct_export_log(jsonb) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 103) V360 — ERP: monthly budget per project and category, actuals against it, alerts at 80 % / 100 % ----------
+-- Categories: mat (materials: store + bought), sub (contractor bills), labour (standard hours + approved overtime) — the V353 order
+-- cost of the project's orders closed that month — and indirect (the V356 allocation, only for those who see the cost centers).
+-- fm_settings.erp_budget {warn 80}. fm_v360_daily() (pg_cron fm-v360-daily 06:05 UTC) pushes kind «budget» once per project, year
+-- and level when the year-to-date actual crosses warn % / 100 % of the year-to-date budget.
+create table if not exists public.fm_erp_budgets (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.fm_erp_projects(id) on delete cascade,
+  year int not null check (year between 2000 and 2100),
+  m int not null check (m between 1 and 12),
+  cat text not null check (cat in ('mat','sub','labour','indirect')),
+  amount numeric(14,2) not null default 0 check (amount >= 0),
+  by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(),
+  unique (project_id, year, m, cat)
+);
+create table if not exists public.fm_erp_budget_alerts (
+  project_id uuid not null references public.fm_erp_projects(id) on delete cascade,
+  year int not null, level int not null, at timestamptz not null default now(),
+  primary key (project_id, year, level)
+);
+alter table public.fm_erp_budgets enable row level security;
+alter table public.fm_erp_budget_alerts enable row level security;
+revoke all on public.fm_erp_budgets, public.fm_erp_budget_alerts from anon, authenticated;
+
+create or replace function public.fm_erp_budget_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('warn', 80) || coalesce((select value from public.fm_settings where key = 'erp_budget' and jsonb_typeof(value) = 'object'), '{}'::jsonb) $$;
+
+-- internal: actual per project × month × category for a year (projects filtered by the caller later)
+create or replace function public.fm_erp_budget_actual(p_year int, p_indirect boolean) returns table(project_id uuid, m int, cat text, amount numeric)
+language plpgsql stable security definer set search_path = public as $$
+declare ids uuid[];
+begin
+  select coalesce(array_agg(o.id), '{}') into ids from public.work_orders o join public.fm_erp_work_order_projects l on l.wo_id = o.id
+   where o.status = 'closed' and extract(year from coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh')::int = p_year;
+  return query
+    select x.pid, x.mm, x.k, round(sum(x.v), 2) from (
+      select l.project_id pid, extract(month from coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh')::int mm, u.k, u.v
+        from public.fm_erp_cost_rows(ids) c join public.work_orders o on o.id = c.wo_id join public.fm_erp_work_order_projects l on l.wo_id = o.id,
+        lateral (values ('mat', c.mat_store + c.mat_buy), ('sub', c.contractor), ('labour', c.labour_std + c.labour_ot)) u(k, v)) x
+     where x.v <> 0 group by 1, 2, 3;
+  if p_indirect then
+    begin
+      return query select a.project_id, a.m, 'indirect'::text, round(sum(a.amount), 2) from public.fm_erp_alloc_rows(p_year) a where a.project_id is not null group by 1, 2;
+    exception when others then null;
+    end;
+  end if;
+end $$;
+
+create or replace function public.fm_erp_budget(p_year int) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare y int := coalesce(p_year, extract(year from now() at time zone 'Asia/Riyadh')::int); ind boolean := false;
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  begin ind := public.fm_cc_can('view'); exception when others then ind := false; end;
+  return jsonb_build_object('year', y, 'cfg', public.fm_erp_budget_cfg(), 'indirect', ind, 'can_edit', public.fm_erp_rev_can('edit'),
+    'projects', (select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'code', p.code, 'name', p.name, 'region', p.region, 'active', p.active,
+                   'monthly', p.contract_monthly) order by p.code), '[]'::jsonb) from public.fm_erp_projects p where public.fm_erp_rev_sees(p.id)),
+    'budget', (select coalesce(jsonb_agg(jsonb_build_object('p', b.project_id, 'm', b.m, 'c', b.cat, 'a', b.amount)), '[]'::jsonb)
+                 from public.fm_erp_budgets b where b.year = y and public.fm_erp_rev_sees(b.project_id)),
+    'actual', (select coalesce(jsonb_agg(jsonb_build_object('p', a.project_id, 'm', a.m, 'c', a.cat, 'a', a.amount)), '[]'::jsonb)
+                 from public.fm_erp_budget_actual(y, ind) a where public.fm_erp_rev_sees(a.project_id)),
+    'alerts', (select coalesce(jsonb_agg(jsonb_build_object('p', x.project_id, 'level', x.level, 'at', x.at)), '[]'::jsonb)
+                 from public.fm_erp_budget_alerts x where x.year = y and public.fm_erp_rev_sees(x.project_id)));
+end $$;
+
+-- rows [{m, c, a}] replace those cells of the year; a missing cell is left as it is; a = 0 deletes the cell
+create or replace function public.fm_erp_budget_set(p_project uuid, p_year int, p_rows jsonb, p_reason text default '') returns int
+language plpgsql security definer set search_path = public as $$
+declare r jsonb; n int := 0; mm int; k text; v numeric; old jsonb; nw jsonb;
+begin
+  if auth.uid() is null or not public.fm_erp_rev_can('edit') or not public.fm_erp_rev_sees(p_project) then raise exception 'not allowed'; end if;
+  if p_year is null or p_year < 2000 or p_year > 2100 then raise exception 'invalid year'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 48 then raise exception 'invalid rows'; end if;
+  select coalesce(jsonb_object_agg(b.m || ':' || b.cat, b.amount), '{}') into old from public.fm_erp_budgets b where b.project_id = p_project and b.year = p_year;
+  for r in select x from jsonb_array_elements(p_rows) x loop
+    mm := (r->>'m')::int; k := r->>'c'; v := round(coalesce(nullif(r->>'a','')::numeric, 0), 2);
+    if mm is null or mm < 1 or mm > 12 or k not in ('mat','sub','labour','indirect') or v < 0 or v > 1e11 then raise exception 'invalid row'; end if;
+    if v = 0 then delete from public.fm_erp_budgets where project_id = p_project and year = p_year and m = mm and cat = k;
+    else insert into public.fm_erp_budgets(project_id, year, m, cat, amount, by_name) values (p_project, p_year, mm, k, v, public.fm_me_name())
+         on conflict (project_id, year, m, cat) do update set amount = excluded.amount, by_id = auth.uid(), by_name = excluded.by_name, at = now();
+    end if;
+    n := n + 1;
+  end loop;
+  select coalesce(jsonb_object_agg(b.m || ':' || b.cat, b.amount), '{}') into nw from public.fm_erp_budgets b where b.project_id = p_project and b.year = p_year;
+  if old is distinct from nw then
+    delete from public.fm_erp_budget_alerts where project_id = p_project and year = p_year;   -- a new budget re-arms the alerts
+    insert into public.fm_erp_project_events(project_id, actor, action, entity_id, reason, old_value, new_value)
+    values (p_project, auth.uid(), 'budget', p_project, coalesce(nullif(btrim(p_reason),''), 'ميزانية ' || p_year), old, nw);
+  end if;
+  return n;
+end $$;
+
+create or replace function public.fm_v360_daily() returns int language plpgsql security definer set search_path = public as $$
+declare y int := extract(year from now() at time zone 'Asia/Riyadh')::int; cm int := extract(month from now() at time zone 'Asia/Riyadh')::int;
+        w numeric := coalesce((public.fm_erp_budget_cfg()->>'warn')::numeric, 80); r record; lv int; u uuid; n int := 0;
+begin
+  for r in with b as (select project_id, sum(amount) bv from public.fm_erp_budgets where year = y and m <= cm group by 1),
+                a as (select project_id, sum(amount) av from public.fm_erp_budget_actual(y, true) where m <= cm group by 1)
+           select p.id, p.code, p.name, p.region, b.bv, coalesce(a.av, 0) av from public.fm_erp_projects p join b on b.project_id = p.id left join a on a.project_id = p.id
+            where p.active and b.bv > 0 loop
+    lv := case when r.av >= r.bv then 100 when r.av >= r.bv * w / 100 then w::int else 0 end;
+    continue when lv = 0 or exists (select 1 from public.fm_erp_budget_alerts x where x.project_id = r.id and x.year = y and x.level >= lv);
+    insert into public.fm_erp_budget_alerts(project_id, year, level) values (r.id, y, lv) on conflict do nothing;
+    for u in select p.id from public.profiles p where p.active and (public.fm_posx(p.role, p.job_title) in ('sysadmin','project_manager','ops_manager','accountant','dept_manager')
+               or (public.fm_posx(p.role, p.job_title) = 'area_manager' and coalesce(r.region,'') = any(coalesce(p.regions, '{}')))) loop
+      begin perform public.fm_push_add(u, 'budget', (case when lv >= 100 then '🔴 ' else '🟡 ' end) || 'ميزانية المشروع ' || r.code || ': ' || round(r.av / r.bv * 100) || '%',
+        r.name || ' — الفعلي ' || round(r.av) || ' من ميزانية حتى الآن ' || round(r.bv) || ' ر.س', 'budget', 'bud-' || r.code || '-' || y || '-' || lv, false);
+      exception when others then null; end;
+    end loop;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_erp_budget_actual(int, boolean), public.fm_v360_daily() from public, anon, authenticated;
+revoke all on function public.fm_erp_budget_cfg(), public.fm_erp_budget(int), public.fm_erp_budget_set(uuid, int, jsonb, text) from public, anon;
+grant execute on function public.fm_erp_budget_cfg(), public.fm_erp_budget(int), public.fm_erp_budget_set(uuid, int, jsonb, text) to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v360-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v360-daily'', ''5 6 * * *'', ''select public.fm_v360_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: project budget alerts are not pushed'; end;
+end $do$;
+notify pgrst, 'reload schema';
