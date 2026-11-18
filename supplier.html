@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SU1">
+<meta name="fm-version" content="SU2">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -44,7 +44,7 @@ async function tenantCfg(){if(!CO)return true;try{const r=await fetch(CTRL.url+'
 const app=document.getElementById('app');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const token=(new URLSearchParams(location.search).get('k')||'').trim().toLowerCase();
-const ERR={'invalid link':'الرابط غير صحيح أو تم إيقافه. اطلب رابطاً جديداً من الشركة.','not open':'طلب عرض السعر لم يعد مفتوحاً.','no prices':'أدخل سعراً لصنف واحد على الأقل.','invalid price':'سعر غير صحيح.','photo too large':'الملف كبير جداً. أرسل صورة أو PDF أصغر.','invalid photo':'نوع الملف غير مدعوم (صورة أو PDF).','too many':'تم إرسال فواتير كثيرة اليوم. حاول غداً.','invoice no required':'اكتب رقم الفاتورة.','invalid amount':'اكتب مبلغ الفاتورة.','photo required':'أرفق صورة الفاتورة أو ملف PDF.','unknown po':'طلب الشراء غير موجود.','duplicate invoice':'رقم الفاتورة هذا مُرسل من قبل.'};
+const ERR={'invalid link':'الرابط غير صحيح أو تم إيقافه. اطلب رابطاً جديداً من الشركة.','not open':'طلب عرض السعر لم يعد مفتوحاً.','no prices':'أدخل سعراً لصنف واحد على الأقل.','invalid price':'سعر غير صحيح.','photo too large':'الملف كبير جداً. أرسل صورة أو PDF أصغر.','invalid photo':'نوع الملف غير مدعوم (صورة أو PDF).','too many':'تم إرسال فواتير كثيرة اليوم. حاول غداً.','invoice no required':'اكتب رقم الفاتورة.','invalid amount':'اكتب مبلغ الفاتورة.','photo required':'أرفق صورة الفاتورة أو ملف PDF.','unknown po':'طلب الشراء غير موجود.','duplicate invoice':'رقم الفاتورة هذا مُرسل من قبل.','line not in purchase request':'صنف ليس ضمن طلب الشراء.','too many lines':'عدد البنود كبير جداً.','duplicate line':'الصنف مكرر في البنود.'};
 async function rpc(fn,body){const r=await fetch(CFG.url+'/rest/v1/rpc/'+fn,{method:'POST',headers:{apikey:CFG.key,Authorization:'Bearer '+CFG.key,'Content-Type':'application/json'},body:JSON.stringify(body)});
  const x=await r.json().catch(()=>null);if(!r.ok){const m=(x&&x.message)||('HTTP '+r.status);throw Error(ERR[m]||m)}return x}
 const date=v=>{try{return v?new Date(v).toLocaleDateString('ar-SA-u-ca-gregory',{timeZone:'Asia/Riyadh',year:'numeric',month:'short',day:'numeric'}):''}catch(e){return ''}};
@@ -84,17 +84,28 @@ function drawRfq(p,R){p.innerHTML=R.length?R.map((r,i)=>`<div class="it" data-i=
    const t=await rpc('fm_supplier_quote',{p_token:token,p_rfq:r.id,p:{prices,delivery_days:box.querySelector('[data-dd]').value||null,valid_until:box.querySelector('[data-vu]').value||null,note:box.querySelector('[data-nt]').value,photo:ph}});
    msg='✅ وصل عرضكم على '+r.code+' — الإجمالي '+n(t)+' ر.س';await load();draw()}catch(err){alert(err.message);b.disabled=false}}})}
 function drawPo(p,P){p.innerHTML=P.length?P.map(o=>`<div class="it"><div class="r1"><b>${esc(o.code)}</b><span class="st ${esc(o.status)}">${esc(PST[o.status]||o.status)}</span></div><small>${esc(date(o.at))} · الإجمالي ${n(o.total)} ر.س${(o.inv||[]).length?' · فواتير: '+o.inv.map(x=>esc(x.code)+' ('+esc(IST[x.status]||x.status)+')').join('، '):''}</small>
-  <table><thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th><th>المستلم</th></tr></thead><tbody>${(o.lines||[]).map(l=>`<tr><td>${esc(l.name||'صنف')}</td><td>${n(l.qty)} ${esc(l.unit||'')}</td><td>${n(l.price)}</td><td>${n(l.recv)}</td></tr>`).join('')}</tbody></table>
+  <table><thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th><th>المستلم</th><th>فُوتر</th></tr></thead><tbody>${(o.lines||[]).map(l=>`<tr><td>${esc(l.name||'صنف')}</td><td>${n(l.qty)} ${esc(l.unit||'')}</td><td>${n(l.paid??l.price)}</td><td>${n(l.recv)}</td><td>${n(l.invoiced||0)}</td></tr>`).join('')}</tbody></table>
   <button class="btn s" data-inv="${esc(o.id)}">🧾 رفع فاتورة لهذا الطلب</button></div>`).join(''):'<div class="empty">لا توجد طلبات شراء معتمدة لكم.</div>';
  p.querySelectorAll('[data-inv]').forEach(b=>b.onclick=()=>{invPo=b.dataset.inv;tab='inv';msg='';draw()})}
 function drawInv(p,V,P){p.innerHTML=`<div class="it"><b>➕ فاتورة جديدة</b>
   <label class="f">طلب الشراء</label><select data-po><option value="">— بدون —</option>${P.map(o=>`<option value="${esc(o.id)}" ${o.id===invPo?'selected':''}>${esc(o.code)} · ${n(o.total)} ر.س</option>`).join('')}</select>
   <div class="g2"><div><label class="f">رقم الفاتورة</label><input data-no></div><div><label class="f">تاريخ الفاتورة</label><input type="date" data-dt></div><div><label class="f">المبلغ شامل الضريبة (ر.س)</label><input type="number" min="0" step="0.01" data-am></div><div><label class="f">الضريبة (اختياري)</label><input type="number" min="0" step="0.01" data-vat></div></div>
+  <div data-lns></div>
   <label class="f">صورة الفاتورة أو PDF</label><input type="file" accept="image/*,application/pdf" data-ph><label class="f">ملاحظة</label><input data-nt>
   <button class="btn" data-go>📤 إرسال الفاتورة</button></div>
-  ${V.length?V.map(v=>`<div class="it"><div class="r1"><b>${esc(v.code)} · فاتورة ${esc(v.no)}</b><span class="st ${esc(v.status)}">${esc(IST[v.status]||v.status)}</span></div><small>${esc(date(v.at))} · ${n(v.amount)} ر.س${v.po?' · '+esc(v.po):''}${v.pay_ref?' · مرجع الدفع '+esc(v.pay_ref):''}</small>${v.response?`<div><small>💬 ${esc(v.response)}</small></div>`:''}</div>`).join(''):'<div class="empty">لم ترسلوا فواتير بعد.</div>'}`;
+  ${V.length?V.map(v=>`<div class="it"><div class="r1"><b>${esc(v.code)} · فاتورة ${esc(v.no)}</b><span class="st ${esc(v.status)}">${esc(IST[v.status]||v.status)}</span></div><small>${esc(date(v.at))} · ${n(v.amount)} ر.س${v.po?' · '+esc(v.po):''}${v.pay_ref?' · مرجع الدفع '+esc(v.pay_ref):''}</small>${v.response?`<div><small>💬 ${esc(v.response)}</small></div>`:''}${v.status==='accepted'||v.status==='paid'?`<div><small>💳 المدفوع ${n(v.paid||0)} ر.س · المتبقي ${n(v.rest||0)} ر.س</small></div>${(v.payments||[]).map(x=>`<div><small>• ${esc(date(x.date))} ${esc(x.code)}: ${n(x.amount)} ر.س${x.ref?' — '+esc(x.ref):''}</small></div>`).join('')}`:''}${(v.lines||[]).length?`<div><small>📋 ${v.lines.length} بند</small></div>`:''}</div>`).join(''):'<div class="empty">لم ترسلوا فواتير بعد.</div>'}`;
+ /* SU2: invoice lines from the purchase request (quantity left to invoice = received − invoiced, approved price); amount and VAT follow them */
+ const lns=()=>{const o=P.find(x=>x.id===p.querySelector('[data-po]').value),box=p.querySelector('[data-lns]');if(!o||!(o.lines||[]).length){box.innerHTML='';return}
+  box.innerHTML=`<label class="f">بنود الفاتورة (اختياري — تسرّع المراجعة)</label><table><thead><tr><th>الصنف</th><th>متاح للفوترة</th><th>الكمية</th><th>السعر</th><th>القيمة</th></tr></thead><tbody>${o.lines.filter(l=>l.material_id).map(l=>{const av=Math.max(0,(+l.recv||0)-(+l.invoiced||0));
+   return `<tr data-lm="${esc(l.material_id)}"><td>${esc(l.name||'صنف')}</td><td>${n(av)} ${esc(l.unit||'')}</td><td><input type="number" min="0" step="0.001" data-lq value="${av||''}" style="width:80px"></td><td><input type="number" min="0" step="0.01" data-lp value="${esc(l.paid??l.price)}" style="width:90px"></td><td data-lv></td></tr>`}).join('')}</tbody></table>
+   <small>المجموع قبل الضريبة <b data-ls></b> ر.س — يُملأ المبلغ والضريبة (15%) تلقائياً ويمكن تعديلهما</small>`;
+  const calc=()=>{let t=0;box.querySelectorAll('tr[data-lm]').forEach(r=>{const v=(+r.querySelector('[data-lq]').value||0)*(+r.querySelector('[data-lp]').value||0);r.querySelector('[data-lv]').textContent=n(v);t+=v});
+   box.querySelector('[data-ls]').textContent=n(t);if(t>0){p.querySelector('[data-am]').value=(Math.round(t*115)/100).toFixed(2);p.querySelector('[data-vat]').value=(Math.round(t*15)/100).toFixed(2)}};
+  box.querySelectorAll('input').forEach(i=>i.oninput=calc);calc()};
+ p.querySelector('[data-po]').onchange=lns;lns();
  p.querySelector('[data-go]').onclick=async e=>{const b=e.target;b.disabled=true;try{const f=p.querySelector('[data-ph]').files[0];if(!f)throw Error(ERR['photo required']);const ph=await readFile(f,560000);
-  const r=await rpc('fm_supplier_invoice',{p_token:token,p:{po_id:p.querySelector('[data-po]').value||null,invoice_no:p.querySelector('[data-no]').value,invoice_date:p.querySelector('[data-dt]').value||null,amount:p.querySelector('[data-am]').value,vat:p.querySelector('[data-vat]').value||null,photo:ph,note:p.querySelector('[data-nt]').value}});
+  const lines=[...p.querySelectorAll('[data-lns] tr[data-lm]')].map(r=>({material_id:r.dataset.lm,qty:+r.querySelector('[data-lq]').value||0,price:+r.querySelector('[data-lp]').value||0})).filter(x=>x.qty>0);
+  const r=await rpc('fm_supplier_invoice',{p_token:token,p:{lines:lines.length?lines:null,po_id:p.querySelector('[data-po]').value||null,invoice_no:p.querySelector('[data-no]').value,invoice_date:p.querySelector('[data-dt]').value||null,amount:p.querySelector('[data-am]').value,vat:p.querySelector('[data-vat]').value||null,photo:ph,note:p.querySelector('[data-nt]').value}});
   msg='✅ وصلت الفاتورة '+(r&&r.code||'')+' — ستراجعها الشركة';invPo='';await load();draw()}catch(err){alert(err.message);b.disabled=false}}}
 window.__fmSU={draw:()=>draw(),get I(){return I}};
 start();

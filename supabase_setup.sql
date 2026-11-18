@@ -16137,3 +16137,456 @@ revoke all on function public.fm_erp_rev_can(text), public.fm_erp_contract_set(u
 grant execute on function public.fm_erp_rev_can(text), public.fm_erp_contract_set(uuid, jsonb), public.fm_erp_claim_save(jsonb), public.fm_erp_claim_act(uuid, text, jsonb),
   public.fm_erp_collect(jsonb), public.fm_erp_collect_void(uuid, text), public.fm_erp_revenue(int) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 100) V356 — ERP: indirect costs (salaries, building expenses, vehicles, overhead) allocated to projects ----------
+-- A rule takes the indirect categories of one cost center (V186: labour = fm_cc_staff, exp = building expenses, vehicles, fuel,
+-- housing, telecom, tools, rent, overhead, other — never sub / mat / buy, which the V353 order cost already counts, nor revenue)
+-- and splits each month's amount over projects: «pct» = fixed shares (≤ 100 %, the rest stays unallocated), «orders» = by the
+-- number of orders of each target project closed that month (no closed order → unallocated). Two active rules may not take the
+-- same category of the same center in overlapping months. Nothing is written to the cost centers; the result feeds the margin.
+create table if not exists public.fm_erp_alloc_rules (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null check (length(btrim(name)) between 2 and 120),
+  center_id  uuid not null references public.fm_cc_centers(id) on delete cascade,
+  cats       text[] not null,
+  method     text not null default 'pct' check (method in ('pct','orders')),
+  targets    jsonb not null default '[]',      -- [{project_id, pct}]
+  from_month text not null check (from_month ~ '^\d{4}-\d{2}$'),
+  to_month   text check (to_month is null or to_month ~ '^\d{4}-\d{2}$'),
+  active     boolean not null default true,
+  note       text,
+  by_id      uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name    text,
+  at         timestamptz not null default now()
+);
+alter table public.fm_erp_alloc_rules enable row level security;
+revoke all on public.fm_erp_alloc_rules from public, anon, authenticated;
+
+create or replace function public.fm_erp_alloc_cats() returns text[] language sql immutable as $$
+  select array['labour','exp','vehicles','fuel','housing','telecom','tools','rent','overhead','other'] $$;
+create or replace function public.fm_erp_alloc_can_edit() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','accountant')) $$;
+
+-- p {id?, name, center_id, cats[], method, targets [{project_id, pct}], from_month, to_month?, active, note}
+create or replace function public.fm_erp_alloc_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare v uuid := nullif(p->>'id','')::uuid; cs text[]; t jsonb := '[]'; x jsonb; s numeric := 0; fm text := p->>'from_month'; tm text := nullif(p->>'to_month','');
+  meth text := coalesce(p->>'method','pct'); act boolean := coalesce((p->>'active')::boolean, true); cen uuid := nullif(p->>'center_id','')::uuid;
+begin
+  if not public.fm_erp_alloc_can_edit() then raise exception 'not allowed'; end if;
+  if not exists (select 1 from public.fm_cc_centers where id = cen) then raise exception 'center required'; end if;
+  select coalesce(array_agg(distinct c), '{}') into cs from jsonb_array_elements_text(case when jsonb_typeof(p->'cats') = 'array' then p->'cats' else '[]' end) c where c = any(public.fm_erp_alloc_cats());
+  if cardinality(cs) = 0 then raise exception 'categories required'; end if;
+  if meth not in ('pct','orders') then raise exception 'invalid method'; end if;
+  if coalesce(fm,'') !~ '^\d{4}-\d{2}$' or (tm is not null and (tm !~ '^\d{4}-\d{2}$' or tm < fm)) then raise exception 'invalid period'; end if;
+  for x in select e from jsonb_array_elements(case when jsonb_typeof(p->'targets') = 'array' then p->'targets' else '[]' end) e loop
+    if not exists (select 1 from public.fm_erp_projects where id = nullif(x->>'project_id','')::uuid) then raise exception 'project not found'; end if;
+    if t @> jsonb_build_array(jsonb_build_object('project_id', x->>'project_id')) then raise exception 'duplicate project'; end if;
+    if meth = 'pct' then
+      if coalesce((x->>'pct')::numeric, 0) <= 0 then raise exception 'invalid share'; end if;
+      s := s + (x->>'pct')::numeric;
+      t := t || jsonb_build_array(jsonb_build_object('project_id', x->>'project_id', 'pct', round((x->>'pct')::numeric, 2)));
+    else t := t || jsonb_build_array(jsonb_build_object('project_id', x->>'project_id')); end if;
+  end loop;
+  if jsonb_array_length(t) = 0 then raise exception 'projects required'; end if;
+  if s > 100.0001 then raise exception 'shares over 100'; end if;
+  if act and exists (select 1 from public.fm_erp_alloc_rules r where r.active and r.center_id = cen and r.id is distinct from v and r.cats && cs
+       and r.from_month <= coalesce(tm, '9999-12') and coalesce(r.to_month, '9999-12') >= fm) then raise exception 'overlapping rule'; end if;
+  if v is null then
+    insert into public.fm_erp_alloc_rules(name, center_id, cats, method, targets, from_month, to_month, active, note, by_name)
+    values (btrim(p->>'name'), cen, cs, meth, t, fm, tm, act, left(nullif(btrim(coalesce(p->>'note','')),''),500), public.fm_me_name()) returning id into v;
+  else
+    update public.fm_erp_alloc_rules set name = btrim(p->>'name'), center_id = cen, cats = cs, method = meth, targets = t, from_month = fm, to_month = tm, active = act,
+      note = left(nullif(btrim(coalesce(p->>'note','')),''),500) where id = v;
+    if not found then raise exception 'rule not found'; end if;
+  end if;
+  insert into public.fm_audit_log(actor_name, action, target, details) values (public.fm_me_name(), 'erp_alloc_rule', v::text, p);
+  return v;
+end $$;
+create or replace function public.fm_erp_alloc_del(p_id uuid) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_erp_alloc_can_edit() then raise exception 'not allowed'; end if;
+  delete from public.fm_erp_alloc_rules where id = p_id;
+  insert into public.fm_audit_log(actor_name, action, target) values (public.fm_me_name(), 'erp_alloc_del', p_id::text);
+end $$;
+
+-- the allocation of a year (internal): one row per rule × month × project (project null = unallocated)
+create or replace function public.fm_erp_alloc_rows(p_year int) returns table(rule_id uuid, m int, project_id uuid, cat text, amount numeric)
+language plpgsql stable security definer set search_path = public as $$
+declare r public.fm_erp_alloc_rules; mo int; tot numeric; ym text; n int; k jsonb; sh numeric; done numeric; c text; act jsonb;
+begin
+  -- the cost centers' indirect actuals of the year, once: {"<center>|<month>|<cat>": amount}
+  select coalesce(jsonb_object_agg(x.k, x.v), '{}') into act from (
+    select a.center_id::text || '|' || a.m || '|' || a.cat k, sum(a.amount) v from public.fm_cc_actuals(p_year) a where a.cat = any(public.fm_erp_alloc_cats()) group by 1) x;
+  for r in select * from public.fm_erp_alloc_rules where active loop
+    for mo in 1..12 loop
+      ym := p_year || '-' || lpad(mo::text, 2, '0');
+      continue when ym < r.from_month or ym > coalesce(r.to_month, '9999-12');
+      for c in select unnest(r.cats) loop
+        tot := coalesce((act->>(r.center_id::text || '|' || mo || '|' || c))::numeric, 0);
+        continue when tot = 0;
+        done := 0;
+        if r.method = 'pct' then
+          for k in select e from jsonb_array_elements(r.targets) e loop
+            sh := round(tot * (k->>'pct')::numeric / 100, 2); done := done + sh;
+            rule_id := r.id; m := mo; project_id := (k->>'project_id')::uuid; cat := c; amount := sh; return next;
+          end loop;
+        else
+          select count(*) into n from public.work_orders o join public.fm_erp_work_order_projects l on l.wo_id = o.id
+           where o.status = 'closed' and to_char(coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh', 'YYYY-MM') = ym
+             and l.project_id in (select (e->>'project_id')::uuid from jsonb_array_elements(r.targets) e);
+          if n > 0 then
+            for k in select e from jsonb_array_elements(r.targets) e loop
+              select round(tot * count(*)::numeric / n, 2) into sh from public.work_orders o join public.fm_erp_work_order_projects l on l.wo_id = o.id
+               where o.status = 'closed' and to_char(coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh', 'YYYY-MM') = ym and l.project_id = (k->>'project_id')::uuid;
+              done := done + sh;
+              rule_id := r.id; m := mo; project_id := (k->>'project_id')::uuid; cat := c; amount := sh; return next;
+            end loop;
+          end if;
+        end if;
+        if tot - done > 0.005 then rule_id := r.id; m := mo; project_id := null; cat := c; amount := round(tot - done, 2); return next; end if;
+      end loop;
+    end loop;
+  end loop;
+end $$;
+
+create or replace function public.fm_erp_alloc(p_year int) returns jsonb language plpgsql security definer set search_path = public as $$
+declare y int := coalesce(p_year, extract(year from now())::int); cc boolean := public.fm_cc_can('view');
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  return jsonb_build_object('year', y, 'cc', cc, 'can_edit', public.fm_erp_alloc_can_edit(), 'cats', to_jsonb(public.fm_erp_alloc_cats()),
+    'rules', (select coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'name', r.name, 'center_id', r.center_id, 'center', c.name, 'center_code', c.code, 'cats', r.cats, 'method', r.method,
+        'targets', r.targets, 'from', r.from_month, 'to', r.to_month, 'active', r.active, 'note', r.note, 'by', r.by_name, 'at', r.at) order by r.at), '[]'::jsonb)
+        from public.fm_erp_alloc_rules r join public.fm_cc_centers c on c.id = r.center_id),
+    'centers', case when cc then (select coalesce(jsonb_agg(jsonb_build_object('id', id, 'code', code, 'name', name, 'region', region) order by code), '[]'::jsonb) from public.fm_cc_centers) else '[]'::jsonb end,
+    'projects', (select coalesce(jsonb_agg(jsonb_build_object('id', id, 'code', code, 'name', name, 'region', region) order by code), '[]'::jsonb) from public.fm_erp_projects where public.fm_erp_rev_sees(id)),
+    'rows', case when cc then (select coalesce(jsonb_agg(jsonb_build_object('rule', a.rule_id, 'm', a.m, 'project_id', a.project_id, 'cat', a.cat, 'amount', a.amount)), '[]'::jsonb)
+        from public.fm_erp_alloc_rows(y) a where a.project_id is null or public.fm_erp_rev_sees(a.project_id)) else '[]'::jsonb end);
+end $$;
+
+-- V355 revenue now also returns the allocated indirect cost per project × month (only for those who see the cost centers)
+create or replace function public.fm_erp_revenue_alloc(p_year int) returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  if not public.fm_cc_can('view') then return jsonb_build_object('ok', false, 'rows', '[]'::jsonb); end if;
+  return jsonb_build_object('ok', true, 'rows', (select coalesce(jsonb_agg(jsonb_build_object('project_id', x.project_id, 'month', x.ym, 'alloc', x.v)), '[]'::jsonb) from (
+    select a.project_id, coalesce(p_year, extract(year from now())::int) || '-' || lpad(a.m::text, 2, '0') ym, round(sum(a.amount), 2) v
+      from public.fm_erp_alloc_rows(coalesce(p_year, extract(year from now())::int)) a where a.project_id is not null and public.fm_erp_rev_sees(a.project_id) group by 1, 2) x));
+end $$;
+
+revoke all on function public.fm_erp_alloc_cats(), public.fm_erp_alloc_rows(int) from public, anon, authenticated;
+revoke all on function public.fm_erp_alloc_can_edit(), public.fm_erp_alloc_save(jsonb), public.fm_erp_alloc_del(uuid), public.fm_erp_alloc(int), public.fm_erp_revenue_alloc(int) from public, anon;
+grant execute on function public.fm_erp_alloc_can_edit(), public.fm_erp_alloc_save(jsonb), public.fm_erp_alloc_del(uuid), public.fm_erp_alloc(int), public.fm_erp_revenue_alloc(int) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 101) V357 — ERP: supplier invoice lines matched line by line; payments shown on the supplier portal ----------
+-- An invoice may carry lines [{material_id, name, qty, price}] — only items of its purchase request (entered by the supplier on the
+-- portal, prefilled from what was received, or by the staff). fm_inv_match then also checks, per item, the quantity invoiced so far
+-- (accepted / paid invoices + this one) against the quantity received and the price against the received price (+ tol_pct), and that
+-- the lines add up to the invoice net (state line_qty / line_price / lines_sum → accept with exception like V354). The supplier
+-- portal shows each invoice's paid amount, remaining amount and payments, and the items already invoiced per purchase-request line.
+alter table public.wo_supplier_invoices add column if not exists lines jsonb;
+create or replace function public.fm_inv_lines_clean(p_po uuid, p_lines jsonb) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare po public.wo_purchase_requests; x jsonb; pl jsonb; out jsonb := '[]'; seen text[] := '{}'; q numeric; pr numeric;
+begin
+  if p_lines is null or jsonb_typeof(p_lines) <> 'array' or jsonb_array_length(p_lines) = 0 then return null; end if;
+  if p_po is null then raise exception 'lines need a purchase request'; end if;
+  if jsonb_array_length(p_lines) > 200 then raise exception 'too many lines'; end if;
+  select * into po from public.wo_purchase_requests where id = p_po;
+  for x in select e from jsonb_array_elements(p_lines) e loop
+    select e into pl from jsonb_array_elements(coalesce(po.lines,'[]')) e where e->>'material_id' = x->>'material_id' limit 1;
+    if pl is null then raise exception 'line not in purchase request'; end if;
+    if x->>'material_id' = any(seen) then raise exception 'duplicate line'; end if; seen := seen || (x->>'material_id');
+    q := round(coalesce(nullif(x->>'qty','')::numeric, 0), 3); pr := round(coalesce(nullif(x->>'price','')::numeric, -1), 2);
+    continue when q = 0;
+    if q < 0 or pr < 0 then raise exception 'invalid line'; end if;
+    out := out || jsonb_build_array(jsonb_build_object('material_id', x->>'material_id', 'name', (select name from public.wo_materials where id = (x->>'material_id')::uuid), 'qty', q, 'price', pr, 'amount', round(q * pr, 2)));
+  end loop;
+  return case when jsonb_array_length(out) = 0 then null else out end;
+end $$;
+-- the staff may set / replace the lines of an invoice still under review
+create or replace function public.fm_supplier_inv_lines(p_id uuid, p_lines jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare i public.wo_supplier_invoices;
+begin
+  if auth.uid() is null or not public.fm_sup_staff() then raise exception 'not allowed'; end if;
+  select * into i from public.wo_supplier_invoices where id = p_id for update;
+  if not found then raise exception 'invoice not found'; end if;
+  if i.status <> 'new' then raise exception 'invalid status'; end if;
+  update public.wo_supplier_invoices set lines = public.fm_inv_lines_clean(i.po_id, p_lines) where id = p_id;
+  return public.fm_inv_match(p_id);
+end $$;
+
+create or replace function public.fm_inv_match(p_id uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare i public.wo_supplier_invoices; po public.wo_purchase_requests; R jsonb := public.fm_ap_rules();
+  net numeric; ln jsonb; lr jsonb := '[]'; pl jsonb; qprev numeric; ppo numeric; qo boolean := false; po_ boolean := false; lsum numeric := 0; rec numeric := 0; ord numeric := 0; prev numeric := 0; cum numeric; tol numeric; st text; vexp numeric;
+begin
+  select * into i from public.wo_supplier_invoices where id = p_id;
+  if not found then return null; end if;
+  net := round(i.amount - coalesce(i.vat, 0), 2);
+  vexp := round(net * coalesce((R->>'vat_pct')::numeric, 15) / 100, 2);
+  if i.po_id is not null then select * into po from public.wo_purchase_requests where id = i.po_id; end if;
+  if po.id is null then
+    st := 'no_po';
+  else
+    select coalesce(sum(coalesce((l->>'recv')::numeric,0) * coalesce((l->>'paid')::numeric, (l->>'price')::numeric, 0)),0),
+           coalesce(sum(coalesce((l->>'qty')::numeric,0) * coalesce((l->>'price')::numeric,0)),0)
+      into rec, ord from jsonb_array_elements(coalesce(po.lines,'[]')) l;
+    select coalesce(sum(x.amount - coalesce(x.vat,0)),0) into prev from public.wo_supplier_invoices x
+     where x.po_id = po.id and x.id <> i.id and x.status in ('accepted','paid');   -- only invoices already accepted, not other pending ones
+    rec := round(rec, 2); ord := round(ord, 2);
+    cum := prev + net;
+    tol := greatest(coalesce((R->>'tol_amt')::numeric, 0), rec * coalesce((R->>'tol_pct')::numeric, 0) / 100);
+    st := case when rec <= 0 then 'no_receipt' when cum > rec + tol then 'over' else 'ok' end;
+    -- V357: line by line — quantity invoiced so far (accepted / paid invoices + this) vs received, price vs the received price (+ tol_pct)
+    if jsonb_typeof(i.lines) = 'array' and jsonb_array_length(i.lines) > 0 then
+      for ln in select x from jsonb_array_elements(i.lines) x loop
+        select x into pl from jsonb_array_elements(coalesce(po.lines,'[]')) x where x->>'material_id' = ln->>'material_id' limit 1;
+        select coalesce(sum((il->>'qty')::numeric),0) into qprev from public.wo_supplier_invoices x, jsonb_array_elements(case when jsonb_typeof(x.lines) = 'array' then x.lines else '[]' end) il
+         where x.po_id = po.id and x.id <> i.id and x.status in ('accepted','paid') and il->>'material_id' = ln->>'material_id';
+        ppo := coalesce((pl->>'paid')::numeric, (pl->>'price')::numeric, 0);
+        lsum := lsum + coalesce((ln->>'qty')::numeric,0) * coalesce((ln->>'price')::numeric,0);
+        lr := lr || jsonb_build_array(jsonb_build_object('material_id', ln->>'material_id', 'name', ln->>'name', 'qty', (ln->>'qty')::numeric, 'price', (ln->>'price')::numeric,
+          'recv', coalesce((pl->>'recv')::numeric,0), 'ordered', coalesce((pl->>'qty')::numeric,0), 'prev', qprev, 'po_price', ppo,
+          'q_over', qprev + coalesce((ln->>'qty')::numeric,0) > coalesce((pl->>'recv')::numeric,0) + 0.0001,
+          'p_over', coalesce((ln->>'price')::numeric,0) > ppo * (1 + coalesce((R->>'tol_pct')::numeric,0) / 100) + 0.005));
+        if qprev + coalesce((ln->>'qty')::numeric,0) > coalesce((pl->>'recv')::numeric,0) + 0.0001 then qo := true; end if;
+        if coalesce((ln->>'price')::numeric,0) > ppo * (1 + coalesce((R->>'tol_pct')::numeric,0) / 100) + 0.005 then po_ := true; end if;
+      end loop;
+      if st = 'ok' then st := case when qo then 'line_qty' when po_ then 'line_price' when abs(round(lsum,2) - net) > greatest(1, net * 0.005) then 'lines_sum' else 'ok' end; end if;
+    end if;
+  end if;
+  return jsonb_build_object('state', st, 'net', net, 'vat', i.vat, 'vat_exp', vexp,
+    'vat_diff', i.vat is not null and abs(i.vat - vexp) > 1, 'received', rec, 'ordered', ord, 'invoiced_before', round(prev,2),
+    'cum', round(coalesce(cum, net),2), 'over_by', case when st = 'over' then round(cum - rec, 2) else 0 end, 'tol', round(coalesce(tol,0),2),
+    'po_status', po.status, 'lines', case when jsonb_array_length(lr) > 0 then lr end, 'lines_sum', case when jsonb_array_length(lr) > 0 then round(lsum,2) end, 'at', now());
+end $$;
+
+create or replace function public.fm_supplier_invoice(p_token text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s uuid; po public.wo_purchase_requests; ln jsonb; i public.wo_supplier_invoices; a numeric := nullif(p->>'amount','')::numeric; u uuid; reg text;
+begin
+  s := public.fm_sup_token(p_token);
+  if (select count(*) from public.wo_supplier_invoices where supplier_id = s and at > now() - interval '1 day') >= 20 then raise exception 'too many'; end if;
+  if length(btrim(coalesce(p->>'invoice_no',''))) < 1 then raise exception 'invoice no required'; end if;
+  if a is null or a <= 0 or a > 100000000 then raise exception 'invalid amount'; end if;
+  if nullif(p->>'photo','') is null then raise exception 'photo required'; end if;
+  if length(p->>'photo') > 560000 or (p->>'photo') !~ '^data:(image/(jpeg|png|webp)|application/pdf);base64,' then raise exception 'invalid photo'; end if;
+  if nullif(p->>'po_id','') is not null then
+    select * into po from public.wo_purchase_requests where id = (p->>'po_id')::uuid and supplier_id = s;
+    if not found then raise exception 'unknown po'; end if;
+    select region into reg from public.wo_stores where id = po.store_id;
+  end if;
+  ln := public.fm_inv_lines_clean(po.id, p->'lines');   -- V357: optional lines, only items of the purchase request
+  if exists (select 1 from public.wo_supplier_invoices where supplier_id = s and lower(btrim(invoice_no)) = lower(btrim(p->>'invoice_no')) and status <> 'rejected') then raise exception 'duplicate invoice'; end if;
+  insert into public.wo_supplier_invoices(supplier_id, po_id, po_code, invoice_no, invoice_date, amount, vat, photo, note, lines)
+  values (s, po.id, po.code, left(btrim(p->>'invoice_no'),60), nullif(p->>'invoice_date','')::date, round(a,2), nullif(p->>'vat','')::numeric, p->>'photo', left(nullif(btrim(coalesce(p->>'note','')),''),500), ln) returning * into i;
+  begin
+    for u in select p2.id from public.profiles p2 where p2.active and public.fm_posx(p2.role, p2.job_title) in ('accountant','project_manager') union select * from public.fm_wh_keepers_of(reg) loop
+      perform public.fm_push_add(u, 'wh_inv', '🧾 فاتورة مورد جديدة ' || i.code, concat_ws(' — ', (select name from public.wo_suppliers where id = s), i.invoice_no, round(i.amount) || ' ر.س', i.po_code), 'wh=inv', 'sinv-' || i.code, false);
+    end loop;
+  exception when others then null; end;
+  return jsonb_build_object('code', i.code);
+end $$;
+
+create or replace function public.fm_supplier_portal(p_token text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s uuid; sp public.wo_suppliers;
+begin
+  s := public.fm_sup_token(p_token);
+  select * into sp from public.wo_suppliers where id = s;
+  return jsonb_build_object('state', 'ok', 'supplier', sp.name,
+    'rfqs', coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'code', r.code, 'at', r.at, 'due', r.due_date, 'note', r.note, 'region', r.region,
+        'lines', (select jsonb_agg(jsonb_build_object('material_id', l->>'material_id', 'qty', (l->>'qty')::numeric, 'name', m.name, 'unit', m.unit, 'code', m.code, 'specs', m.specs))
+                    from jsonb_array_elements(r.lines) l left join public.wo_materials m on m.id = (l->>'material_id')::uuid),
+        'quote', (select jsonb_build_object('prices', q.prices, 'total', q.total, 'delivery_days', q.delivery_days, 'valid_until', q.valid_until, 'note', q.note, 'at', q.at)
+                    from public.wo_rfq_quotes q where q.rfq_id = r.id and q.supplier_id = s)) order by r.at desc)
+      from public.wo_rfqs r where r.status = 'open' and (cardinality(r.invited) = 0 or s = any(r.invited)) and (r.due_date is null or r.due_date >= (now() at time zone 'Asia/Riyadh')::date - 1)), '[]'::jsonb),
+    'won', coalesce((select jsonb_agg(jsonb_build_object('code', r.code, 'po', r.po_code, 'at', r.decided_at) order by r.decided_at desc)
+      from (select * from public.wo_rfqs where award_supplier_id = s and status = 'awarded' order by decided_at desc limit 20) r), '[]'::jsonb),
+    'pos', coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'code', p.code, 'at', p.at, 'status', p.status, 'total', p.total, 'received_at', p.received_at,
+        'lines', (select jsonb_agg(jsonb_build_object('material_id', l->>'material_id', 'name', m.name, 'unit', m.unit, 'qty', (l->>'qty')::numeric, 'price', (l->>'price')::numeric, 'paid', coalesce((l->>'paid')::numeric, (l->>'price')::numeric), 'recv', coalesce((l->>'recv')::numeric,0),
+            'invoiced', (select coalesce(sum((il->>'qty')::numeric),0) from public.wo_supplier_invoices xi, jsonb_array_elements(case when jsonb_typeof(xi.lines) = 'array' then xi.lines else '[]' end) il
+                          where xi.po_id = p.id and xi.status <> 'rejected' and il->>'material_id' = l->>'material_id')))
+                    from jsonb_array_elements(p.lines) l left join public.wo_materials m on m.id = (l->>'material_id')::uuid),
+        'inv', (select jsonb_agg(jsonb_build_object('code', i.code, 'status', i.status)) from public.wo_supplier_invoices i where i.po_id = p.id)) order by p.at desc)
+      from (select * from public.wo_purchase_requests where supplier_id = s and status in ('approved','partial','received') order by at desc limit 60) p), '[]'::jsonb),
+    'fas', coalesce((select jsonb_agg(jsonb_build_object('code', f.code, 'title', f.title, 'start', f.start_date, 'end', f.end_date, 'status', f.status, 'cap', f.cap_value, 'used', (public.fm_fa_used(f.id)->>'value')::numeric))
+      from public.wo_frameworks f where f.supplier_id = s and f.status = 'active'), '[]'::jsonb),
+    'invoices', coalesce((select jsonb_agg(jsonb_build_object('code', i.code, 'po', i.po_code, 'no', i.invoice_no, 'date', i.invoice_date, 'amount', i.amount, 'status', i.status, 'response', i.response, 'pay_ref', i.pay_ref, 'at', i.at,
+        'paid', i.paid_amount, 'rest', round(i.amount - i.paid_amount, 2), 'lines', i.lines,
+        'payments', (select coalesce(jsonb_agg(jsonb_build_object('code', py.code, 'date', py.pay_date, 'amount', a.amount, 'ref', py.ref) order by py.pay_date), '[]'::jsonb) from public.wo_supplier_pay_alloc a join public.wo_supplier_payments py on py.id = a.payment_id where a.invoice_id = i.id and py.status = 'posted')) order by i.at desc)
+      from (select * from public.wo_supplier_invoices where supplier_id = s order by at desc limit 60) i), '[]'::jsonb));
+end $$;
+
+create or replace function public.fm_ap_list(p_days int default 365) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare d int := least(greatest(coalesce(p_days,365),30),1100); inv jsonb; pays jsonb;
+begin
+  if auth.uid() is null or not public.fm_sup_staff() then raise exception 'not allowed'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'code', i.code, 'supplier', s.name, 'supplier_id', i.supplier_id, 'po', i.po_code, 'po_id', i.po_id,
+      'no', i.invoice_no, 'date', i.invoice_date, 'amount', i.amount, 'vat', i.vat, 'paid', i.paid_amount, 'rest', round(i.amount - i.paid_amount, 2),
+      'status', i.status, 'response', i.response, 'note', i.note, 'at', i.at, 'dec', i.dec_name, 'dec_by', i.dec_by, 'dec_at', i.dec_at,
+      'exc', i.exc_name, 'exc_note', i.exc_note, 'exc_at', i.exc_at,
+      'lines', i.lines, 'match', case when i.status = 'new' then public.fm_inv_match(i.id) else coalesce(i.match, public.fm_inv_match(i.id)) end,
+      'po_lines', case when i.status = 'new' and i.po_id is not null then (select jsonb_agg(jsonb_build_object('material_id', l->>'material_id', 'name', m.name, 'unit', m.unit,
+          'qty', (l->>'qty')::numeric, 'recv', coalesce((l->>'recv')::numeric,0), 'price', coalesce((l->>'paid')::numeric, (l->>'price')::numeric)))
+        from public.wo_purchase_requests r, jsonb_array_elements(coalesce(r.lines,'[]')) l left join public.wo_materials m on m.id = (l->>'material_id')::uuid where r.id = i.po_id) end,
+      'age', ((now() at time zone 'Asia/Riyadh')::date - coalesce(i.invoice_date, (i.at at time zone 'Asia/Riyadh')::date)))
+      order by (i.status = 'new') desc, i.at desc), '[]'::jsonb) into inv
+    from public.wo_supplier_invoices i join public.wo_suppliers s on s.id = i.supplier_id
+   where i.at > now() - make_interval(days => d) or (i.status = 'accepted' and i.paid_amount < i.amount);
+  select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'code', p.code, 'supplier', s.name, 'supplier_id', p.supplier_id, 'date', p.pay_date, 'amount', p.amount,
+      'method', p.method, 'ref', p.ref, 'note', p.note, 'status', p.status, 'void_reason', p.void_reason, 'void_name', p.void_name, 'by', p.by_name, 'at', p.at,
+      'alloc', (select coalesce(jsonb_agg(jsonb_build_object('invoice_id', a.invoice_id, 'code', x.code, 'no', x.invoice_no, 'amount', a.amount)), '[]'::jsonb)
+                 from public.wo_supplier_pay_alloc a join public.wo_supplier_invoices x on x.id = a.invoice_id where a.payment_id = p.id))
+      order by p.at desc), '[]'::jsonb) into pays
+    from public.wo_supplier_payments p join public.wo_suppliers s on s.id = p.supplier_id
+   where p.at > now() - make_interval(days => d);
+  return jsonb_build_object('invoices', inv, 'payments', pays, 'rules', public.fm_ap_rules(),
+    'can_pay', public.fm_ap_can_pay(), 'can_exc', public.fm_ap_can_exc(), 'me', auth.uid(),
+    'can_set', public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin');
+end $$;
+
+revoke all on function public.fm_inv_lines_clean(uuid, jsonb), public.fm_inv_match(uuid) from public, anon, authenticated;
+revoke all on function public.fm_supplier_inv_lines(uuid, jsonb), public.fm_ap_list(int) from public, anon;
+grant execute on function public.fm_supplier_inv_lines(uuid, jsonb), public.fm_ap_list(int) to authenticated;
+revoke all on function public.fm_supplier_portal(text), public.fm_supplier_invoice(text, jsonb) from public;
+grant execute on function public.fm_supplier_portal(text), public.fm_supplier_invoice(text, jsonb) to anon, authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 102) V359 — ERP: accounting journal export (owner claims, collections, supplier invoices / payments, contractor bills, materials used) ----------
+-- Read only: the journal is rebuilt from the documents each time (nothing is posted here). fm_settings.acct_map {key: {code, name}} names the
+-- accounts of the company's own accounting system; fm_acct_exports logs each downloaded file so an overlapping period is warned about.
+create table if not exists public.fm_acct_exports (
+  id uuid primary key default gen_random_uuid(),
+  d_from date not null, d_to date not null, n int not null default 0, debit numeric(16,2) not null default 0,
+  srcs text[] not null default '{}', fmt text, note text,
+  by_id uuid default auth.uid() references public.profiles(id) on delete set null, by_name text, at timestamptz not null default now()
+);
+alter table public.fm_acct_exports enable row level security;
+revoke all on public.fm_acct_exports from anon, authenticated;
+
+create or replace function public.fm_acct_keys() returns text[] language sql immutable as $$
+  select array['receivable','revenue','vat_out','vat_in','bank','cash','ap','ap_sub','retention','inventory','expense','cost_mat','cost_sub'] $$;
+create or replace function public.fm_acct_can() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant','dept_manager','project_manager')) $$;
+create or replace function public.fm_acct_can_set() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant')) $$;
+create or replace function public.fm_acct_map() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'receivable', jsonb_build_object('code','1130','name','ذمم مدينة — المالك'), 'revenue', jsonb_build_object('code','4100','name','إيرادات عقود الصيانة'),
+    'vat_out', jsonb_build_object('code','2310','name','ضريبة القيمة المضافة — مخرجات'), 'vat_in', jsonb_build_object('code','1350','name','ضريبة القيمة المضافة — مدخلات'),
+    'bank', jsonb_build_object('code','1120','name','البنك'), 'cash', jsonb_build_object('code','1110','name','الصندوق'),
+    'ap', jsonb_build_object('code','2110','name','ذمم دائنة — الموردون'), 'ap_sub', jsonb_build_object('code','2120','name','ذمم دائنة — مقاولو الباطن'),
+    'retention', jsonb_build_object('code','2130','name','محتجزات مقاولي الباطن'), 'inventory', jsonb_build_object('code','1140','name','مخزون قطع الغيار'),
+    'expense', jsonb_build_object('code','5900','name','مشتريات بدون طلب شراء'), 'cost_mat', jsonb_build_object('code','5110','name','تكلفة المواد المستخدمة'),
+    'cost_sub', jsonb_build_object('code','5120','name','تكلفة مقاولي الباطن'))
+    || coalesce((select value from public.fm_settings where key = 'acct_map' and jsonb_typeof(value) = 'object'), '{}'::jsonb) $$;
+create or replace function public.fm_acct_map_set(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v jsonb := '{}'; k text;
+begin
+  if not public.fm_acct_can_set() then raise exception 'not allowed'; end if;
+  foreach k in array public.fm_acct_keys() loop
+    if jsonb_typeof(p->k) = 'object' then
+      v := v || jsonb_build_object(k, jsonb_build_object('code', left(btrim(coalesce(p->k->>'code','')), 40), 'name', left(btrim(coalesce(p->k->>'name','')), 120)));
+    end if;
+  end loop;
+  insert into public.fm_settings(key, value) values ('acct_map', v) on conflict (key) do update set value = excluded.value, updated_at = now();
+  return public.fm_acct_map();
+end $$;
+
+-- the journal of [from, to] (Riyadh dates, ≤ 400 days): entries [{src, date, ref, desc, dim, lines [{a, dr, cr}]}]
+create or replace function public.fm_acct_journal(p_from date, p_to date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ents jsonb := '[]'; r record; tz text := 'Asia/Riyadh'; v numeric; n numeric; acc text; skipped text[] := '{}';
+begin
+  if not public.fm_acct_can() then raise exception 'not allowed'; end if;
+  if p_from is null or p_to is null or p_to < p_from or p_to - p_from > 400 then raise exception 'invalid period'; end if;
+  -- 1) owner claims invoiced: receivable / revenue + output VAT
+  begin
+    for r in select c.*, p.code pcode from public.fm_erp_owner_claims c join public.fm_erp_projects p on p.id = c.project_id
+              where c.status in ('invoiced') and c.invoice_date between p_from and p_to and coalesce(c.certified,0) > 0 loop
+      n := round(r.certified, 2); v := round(r.certified * coalesce(r.vat_pct,0) / 100, 2);
+      ents := ents || jsonb_build_array(jsonb_build_object('src','claim','date',r.invoice_date,'ref',coalesce(r.invoice_no, r.code),'desc','مستخلص المالك '||r.code||' — '||r.month,'dim',r.pcode,
+        'lines', jsonb_build_array(jsonb_build_object('a','receivable','dr',n+v,'cr',0), jsonb_build_object('a','revenue','dr',0,'cr',n))
+                 || case when v > 0 then jsonb_build_array(jsonb_build_object('a','vat_out','dr',0,'cr',v)) else '[]'::jsonb end));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'claim'; end;
+  -- 2) collections from the owner
+  begin
+    for r in select x.*, p.code pcode, c.code ccode from public.fm_erp_collections x join public.fm_erp_owner_claims c on c.id = x.claim_id join public.fm_erp_projects p on p.id = x.project_id
+              where x.status = 'posted' and x.rc_date between p_from and p_to loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      ents := ents || jsonb_build_array(jsonb_build_object('src','collect','date',r.rc_date,'ref',coalesce(nullif(r.ref,''), r.code),'desc','تحصيل '||r.code||' على '||r.ccode,'dim',r.pcode,
+        'lines', jsonb_build_array(jsonb_build_object('a',acc,'dr',r.amount,'cr',0), jsonb_build_object('a','receivable','dr',0,'cr',r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'collect'; end;
+  -- 3) supplier invoices accepted: inventory (or expense without a purchase request) + input VAT / supplier
+  begin
+    for r in select i.*, s.name sname, st.region sreg from public.wo_supplier_invoices i join public.wo_suppliers s on s.id = i.supplier_id
+               left join public.wo_purchase_requests pr on pr.id = i.po_id left join public.wo_stores st on st.id = pr.store_id
+              where i.status in ('accepted','paid') and i.dec_at is not null and (i.dec_at at time zone tz)::date between p_from and p_to loop
+      v := round(coalesce(r.vat,0), 2); n := round(r.amount - v, 2);
+      ents := ents || jsonb_build_array(jsonb_build_object('src','sinv','date',(r.dec_at at time zone tz)::date,'ref',r.invoice_no,'desc','فاتورة المورد '||r.sname||' '||r.code||coalesce(' — '||r.po_code,''),'dim',coalesce(r.sreg,''),
+        'lines', jsonb_build_array(jsonb_build_object('a',case when r.po_id is null then 'expense' else 'inventory' end,'dr',n,'cr',0))
+                 || case when v > 0 then jsonb_build_array(jsonb_build_object('a','vat_in','dr',v,'cr',0)) else '[]'::jsonb end
+                 || jsonb_build_array(jsonb_build_object('a','ap','dr',0,'cr',r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'sinv'; end;
+  -- 4) supplier payments
+  begin
+    for r in select x.*, s.name sname from public.wo_supplier_payments x join public.wo_suppliers s on s.id = x.supplier_id
+              where x.status = 'posted' and x.pay_date between p_from and p_to loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      ents := ents || jsonb_build_array(jsonb_build_object('src','spay','date',r.pay_date,'ref',coalesce(nullif(r.ref,''), r.code),'desc','دفعة للمورد '||r.sname||' '||r.code,'dim','',
+        'lines', jsonb_build_array(jsonb_build_object('a','ap','dr',r.amount,'cr',0), jsonb_build_object('a',acc,'dr',0,'cr',r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'spay'; end;
+  -- 5) contractor bills approved (date of the approval step) and 6) paid
+  begin
+    for r in select b.*, c.code ccode, coalesce(c.contractor_name,'') cname, c.region creg,
+                    (select max((h->>'at')::timestamptz) from jsonb_array_elements(b.history) h where h->>'a' = 'approve') appr_at
+               from public.fm_bills b join public.fm_contracts c on c.id = b.contract_id where b.status in ('approved','paid') loop
+      if r.appr_at is not null and (r.appr_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','bill','date',(r.appr_at at time zone tz)::date,'ref',r.code,'desc','مستخلص '||r.cname||' '||r.ccode||' — '||r.month,'dim',coalesce(r.creg,''),
+          'lines', jsonb_build_array(jsonb_build_object('a','cost_sub','dr',r.net,'cr',0))
+                   || case when r.vat > 0 then jsonb_build_array(jsonb_build_object('a','vat_in','dr',r.vat,'cr',0)) else '[]'::jsonb end
+                   || case when r.retention > 0 then jsonb_build_array(jsonb_build_object('a','retention','dr',0,'cr',r.retention)) else '[]'::jsonb end
+                   || jsonb_build_array(jsonb_build_object('a','ap_sub','dr',0,'cr',r.total))));
+      end if;
+      if r.status = 'paid' and r.paid_at is not null and (r.paid_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','billpay','date',(r.paid_at at time zone tz)::date,'ref',coalesce(nullif(r.pay_ref,''), r.code),'desc','صرف مستخلص '||r.cname||' '||r.code,'dim',coalesce(r.creg,''),
+          'lines', jsonb_build_array(jsonb_build_object('a','ap_sub','dr',r.total,'cr',0), jsonb_build_object('a','bank','dr',0,'cr',r.total))));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'bill'; end;
+  -- 7) materials used (store «out» moves + custody «use»), one entry per month and region, dated the month's last day in the period
+  begin
+    for r in with u as (
+               select (m.at at time zone tz)::date d, coalesce(st.region,'') reg, -m.qty * coalesce(m.unit_price, mt.price, 0) val
+                 from public.wo_stock_moves m join public.wo_stores st on st.id = m.store_id left join public.wo_materials mt on mt.id = m.material_id
+                where m.kind = 'out' and m.qty < 0 and (m.at at time zone tz)::date between p_from and p_to
+               union all
+               select (c.at at time zone tz)::date, coalesce(st.region,''), -c.qty * coalesce(c.unit_price, mt.price, 0)
+                 from public.wo_custody_moves c left join public.wo_stores st on st.id = c.store_id left join public.wo_materials mt on mt.id = c.material_id
+                where c.kind = 'use' and c.qty < 0 and (c.at at time zone tz)::date between p_from and p_to)
+             select to_char(d,'YYYY-MM') mo, reg, round(sum(val),2) val, least(p_to, (date_trunc('month', min(d)) + interval '1 month - 1 day')::date) dd from u group by 1, 2 having round(sum(val),2) > 0 order by 1, 2 loop
+      ents := ents || jsonb_build_array(jsonb_build_object('src','cons','date',r.dd,'ref','MAT-'||r.mo,'desc','مواد مستخدمة في أوامر العمل '||r.mo,'dim',r.reg,
+        'lines', jsonb_build_array(jsonb_build_object('a','cost_mat','dr',r.val,'cr',0), jsonb_build_object('a','inventory','dr',0,'cr',r.val))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'cons'; end;
+  return jsonb_build_object('from', p_from, 'to', p_to, 'map', public.fm_acct_map(), 'can_set', public.fm_acct_can_set(), 'skipped', to_jsonb(skipped),
+    'entries', coalesce((select jsonb_agg(e order by e->>'date', e->>'src', e->>'ref') from jsonb_array_elements(ents) e), '[]'::jsonb),
+    'exports', coalesce((select jsonb_agg(jsonb_build_object('from', x.d_from, 'to', x.d_to, 'n', x.n, 'debit', x.debit, 'fmt', x.fmt, 'by', x.by_name, 'at', x.at) order by x.at desc)
+                           from public.fm_acct_exports x where x.d_from <= p_to and x.d_to >= p_from), '[]'::jsonb));
+end $$;
+create or replace function public.fm_acct_export_log(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid;
+begin
+  if not public.fm_acct_can() then raise exception 'not allowed'; end if;
+  insert into public.fm_acct_exports(d_from, d_to, n, debit, srcs, fmt, note, by_name)
+  values ((p->>'from')::date, (p->>'to')::date, coalesce((p->>'n')::int, 0), coalesce((p->>'debit')::numeric, 0),
+          coalesce((select array_agg(x) from jsonb_array_elements_text(coalesce(p->'srcs','[]')) x), '{}'), left(coalesce(p->>'fmt',''), 20), left(coalesce(p->>'note',''), 500), public.fm_me_name())
+  returning id into v_id;
+  return v_id;
+end $$;
+revoke all on function public.fm_acct_keys(), public.fm_acct_can(), public.fm_acct_can_set(), public.fm_acct_map(), public.fm_acct_map_set(jsonb),
+  public.fm_acct_journal(date, date), public.fm_acct_export_log(jsonb) from public, anon;
+grant execute on function public.fm_acct_can(), public.fm_acct_can_set(), public.fm_acct_map(), public.fm_acct_map_set(jsonb),
+  public.fm_acct_journal(date, date), public.fm_acct_export_log(jsonb) to authenticated;
+notify pgrst, 'reload schema';
