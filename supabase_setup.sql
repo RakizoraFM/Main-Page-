@@ -16590,3 +16590,474 @@ revoke all on function public.fm_acct_keys(), public.fm_acct_can(), public.fm_ac
 grant execute on function public.fm_acct_can(), public.fm_acct_can_set(), public.fm_acct_map(), public.fm_acct_map_set(jsonb),
   public.fm_acct_journal(date, date), public.fm_acct_export_log(jsonb) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 103) V360 — ERP: monthly budget per project and category, actuals against it, alerts at 80 % / 100 % ----------
+-- Categories: mat (materials: store + bought), sub (contractor bills), labour (standard hours + approved overtime) — the V353 order
+-- cost of the project's orders closed that month — and indirect (the V356 allocation, only for those who see the cost centers).
+-- fm_settings.erp_budget {warn 80}. fm_v360_daily() (pg_cron fm-v360-daily 06:05 UTC) pushes kind «budget» once per project, year
+-- and level when the year-to-date actual crosses warn % / 100 % of the year-to-date budget.
+create table if not exists public.fm_erp_budgets (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.fm_erp_projects(id) on delete cascade,
+  year int not null check (year between 2000 and 2100),
+  m int not null check (m between 1 and 12),
+  cat text not null check (cat in ('mat','sub','labour','indirect')),
+  amount numeric(14,2) not null default 0 check (amount >= 0),
+  by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(),
+  unique (project_id, year, m, cat)
+);
+create table if not exists public.fm_erp_budget_alerts (
+  project_id uuid not null references public.fm_erp_projects(id) on delete cascade,
+  year int not null, level int not null, at timestamptz not null default now(),
+  primary key (project_id, year, level)
+);
+alter table public.fm_erp_budgets enable row level security;
+alter table public.fm_erp_budget_alerts enable row level security;
+revoke all on public.fm_erp_budgets, public.fm_erp_budget_alerts from anon, authenticated;
+
+create or replace function public.fm_erp_budget_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('warn', 80) || coalesce((select value from public.fm_settings where key = 'erp_budget' and jsonb_typeof(value) = 'object'), '{}'::jsonb) $$;
+
+-- internal: actual per project × month × category for a year (projects filtered by the caller later)
+create or replace function public.fm_erp_budget_actual(p_year int, p_indirect boolean) returns table(project_id uuid, m int, cat text, amount numeric)
+language plpgsql stable security definer set search_path = public as $$
+declare ids uuid[];
+begin
+  select coalesce(array_agg(o.id), '{}') into ids from public.work_orders o join public.fm_erp_work_order_projects l on l.wo_id = o.id
+   where o.status = 'closed' and extract(year from coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh')::int = p_year;
+  return query
+    select x.pid, x.mm, x.k, round(sum(x.v), 2) from (
+      select l.project_id pid, extract(month from coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh')::int mm, u.k, u.v
+        from public.fm_erp_cost_rows(ids) c join public.work_orders o on o.id = c.wo_id join public.fm_erp_work_order_projects l on l.wo_id = o.id,
+        lateral (values ('mat', c.mat_store + c.mat_buy), ('sub', c.contractor), ('labour', c.labour_std + c.labour_ot)) u(k, v)) x
+     where x.v <> 0 group by 1, 2, 3;
+  if p_indirect then
+    begin
+      return query select a.project_id, a.m, 'indirect'::text, round(sum(a.amount), 2) from public.fm_erp_alloc_rows(p_year) a where a.project_id is not null group by 1, 2;
+    exception when others then null;
+    end;
+  end if;
+end $$;
+
+create or replace function public.fm_erp_budget(p_year int) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare y int := coalesce(p_year, extract(year from now() at time zone 'Asia/Riyadh')::int); ind boolean := false;
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  begin ind := public.fm_cc_can('view'); exception when others then ind := false; end;
+  return jsonb_build_object('year', y, 'cfg', public.fm_erp_budget_cfg(), 'indirect', ind, 'can_edit', public.fm_erp_rev_can('edit'),
+    'projects', (select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'code', p.code, 'name', p.name, 'region', p.region, 'active', p.active,
+                   'monthly', p.contract_monthly) order by p.code), '[]'::jsonb) from public.fm_erp_projects p where public.fm_erp_rev_sees(p.id)),
+    'budget', (select coalesce(jsonb_agg(jsonb_build_object('p', b.project_id, 'm', b.m, 'c', b.cat, 'a', b.amount)), '[]'::jsonb)
+                 from public.fm_erp_budgets b where b.year = y and public.fm_erp_rev_sees(b.project_id)),
+    'actual', (select coalesce(jsonb_agg(jsonb_build_object('p', a.project_id, 'm', a.m, 'c', a.cat, 'a', a.amount)), '[]'::jsonb)
+                 from public.fm_erp_budget_actual(y, ind) a where public.fm_erp_rev_sees(a.project_id)),
+    'alerts', (select coalesce(jsonb_agg(jsonb_build_object('p', x.project_id, 'level', x.level, 'at', x.at)), '[]'::jsonb)
+                 from public.fm_erp_budget_alerts x where x.year = y and public.fm_erp_rev_sees(x.project_id)));
+end $$;
+
+-- rows [{m, c, a}] replace those cells of the year; a missing cell is left as it is; a = 0 deletes the cell
+create or replace function public.fm_erp_budget_set(p_project uuid, p_year int, p_rows jsonb, p_reason text default '') returns int
+language plpgsql security definer set search_path = public as $$
+declare r jsonb; n int := 0; mm int; k text; v numeric; old jsonb; nw jsonb;
+begin
+  if auth.uid() is null or not public.fm_erp_rev_can('edit') or not public.fm_erp_rev_sees(p_project) then raise exception 'not allowed'; end if;
+  if p_year is null or p_year < 2000 or p_year > 2100 then raise exception 'invalid year'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 48 then raise exception 'invalid rows'; end if;
+  select coalesce(jsonb_object_agg(b.m || ':' || b.cat, b.amount), '{}') into old from public.fm_erp_budgets b where b.project_id = p_project and b.year = p_year;
+  for r in select x from jsonb_array_elements(p_rows) x loop
+    mm := (r->>'m')::int; k := r->>'c'; v := round(coalesce(nullif(r->>'a','')::numeric, 0), 2);
+    if mm is null or mm < 1 or mm > 12 or k not in ('mat','sub','labour','indirect') or v < 0 or v > 1e11 then raise exception 'invalid row'; end if;
+    if v = 0 then delete from public.fm_erp_budgets where project_id = p_project and year = p_year and m = mm and cat = k;
+    else insert into public.fm_erp_budgets(project_id, year, m, cat, amount, by_name) values (p_project, p_year, mm, k, v, public.fm_me_name())
+         on conflict (project_id, year, m, cat) do update set amount = excluded.amount, by_id = auth.uid(), by_name = excluded.by_name, at = now();
+    end if;
+    n := n + 1;
+  end loop;
+  select coalesce(jsonb_object_agg(b.m || ':' || b.cat, b.amount), '{}') into nw from public.fm_erp_budgets b where b.project_id = p_project and b.year = p_year;
+  if old is distinct from nw then
+    delete from public.fm_erp_budget_alerts where project_id = p_project and year = p_year;   -- a new budget re-arms the alerts
+    insert into public.fm_erp_project_events(project_id, actor, action, entity_id, reason, old_value, new_value)
+    values (p_project, auth.uid(), 'budget', p_project, coalesce(nullif(btrim(p_reason),''), 'ميزانية ' || p_year), old, nw);
+  end if;
+  return n;
+end $$;
+
+create or replace function public.fm_v360_daily() returns int language plpgsql security definer set search_path = public as $$
+declare y int := extract(year from now() at time zone 'Asia/Riyadh')::int; cm int := extract(month from now() at time zone 'Asia/Riyadh')::int;
+        w numeric := coalesce((public.fm_erp_budget_cfg()->>'warn')::numeric, 80); r record; lv int; u uuid; n int := 0;
+begin
+  for r in with b as (select project_id, sum(amount) bv from public.fm_erp_budgets where year = y and m <= cm group by 1),
+                a as (select project_id, sum(amount) av from public.fm_erp_budget_actual(y, true) where m <= cm group by 1)
+           select p.id, p.code, p.name, p.region, b.bv, coalesce(a.av, 0) av from public.fm_erp_projects p join b on b.project_id = p.id left join a on a.project_id = p.id
+            where p.active and b.bv > 0 loop
+    lv := case when r.av >= r.bv then 100 when r.av >= r.bv * w / 100 then w::int else 0 end;
+    continue when lv = 0 or exists (select 1 from public.fm_erp_budget_alerts x where x.project_id = r.id and x.year = y and x.level >= lv);
+    insert into public.fm_erp_budget_alerts(project_id, year, level) values (r.id, y, lv) on conflict do nothing;
+    for u in select p.id from public.profiles p where p.active and (public.fm_posx(p.role, p.job_title) in ('sysadmin','project_manager','ops_manager','accountant','dept_manager')
+               or (public.fm_posx(p.role, p.job_title) = 'area_manager' and coalesce(r.region,'') = any(coalesce(p.regions, '{}')))) loop
+      begin perform public.fm_push_add(u, 'budget', (case when lv >= 100 then '🔴 ' else '🟡 ' end) || 'ميزانية المشروع ' || r.code || ': ' || round(r.av / r.bv * 100) || '%',
+        r.name || ' — الفعلي ' || round(r.av) || ' من ميزانية حتى الآن ' || round(r.bv) || ' ر.س', 'budget', 'bud-' || r.code || '-' || y || '-' || lv, false);
+      exception when others then null; end;
+    end loop;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_erp_budget_actual(int, boolean), public.fm_v360_daily() from public, anon, authenticated;
+revoke all on function public.fm_erp_budget_cfg(), public.fm_erp_budget(int), public.fm_erp_budget_set(uuid, int, jsonb, text) from public, anon;
+grant execute on function public.fm_erp_budget_cfg(), public.fm_erp_budget(int), public.fm_erp_budget_set(uuid, int, jsonb, text) to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v360-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v360-daily'', ''5 6 * * *'', ''select public.fm_v360_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: project budget alerts are not pushed'; end;
+end $do$;
+notify pgrst, 'reload schema';
+
+-- ---------- 104) V361 — ERP: expected cash flow (what the owner owes in, what suppliers / contractors are owed out) ----------
+-- Read only. Each open document becomes a dated item: firm = an obligation that is fixed (invoiced claim, accepted supplier invoice,
+-- approved contractor bill), possible = still under review (certified claim not invoiced yet, new supplier invoice, submitted /
+-- reviewed bill). Expected date = the document date + the terms in fm_settings.erp_cash {owner_days 60, supplier_days 30,
+-- sub_days 30, pay_day 27, salaries true, opening, opening_date}; salaries of the V186 staff (when visible) are one outflow per
+-- month on pay_day. The browser groups the items into weeks (overdue ones in the first).
+create or replace function public.fm_erp_cash_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('owner_days', 60, 'supplier_days', 30, 'sub_days', 30, 'pay_day', 27, 'salaries', true, 'opening', null, 'opening_date', null)
+         || coalesce((select value from public.fm_settings where key = 'erp_cash' and jsonb_typeof(value) = 'object'), '{}'::jsonb) $$;
+create or replace function public.fm_erp_cash_cfg_set(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v jsonb;
+begin
+  if not public.fm_acct_can_set() then raise exception 'not allowed'; end if;
+  v := jsonb_build_object('owner_days', least(greatest(coalesce((p->>'owner_days')::int, 60), 0), 365), 'supplier_days', least(greatest(coalesce((p->>'supplier_days')::int, 30), 0), 365),
+    'sub_days', least(greatest(coalesce((p->>'sub_days')::int, 30), 0), 365), 'pay_day', least(greatest(coalesce((p->>'pay_day')::int, 27), 1), 28),
+    'salaries', coalesce((p->>'salaries')::boolean, true), 'opening', case when nullif(p->>'opening','') is null then null else round((p->>'opening')::numeric, 2) end,
+    'opening_date', case when nullif(p->>'opening_date','') is null then null else (p->>'opening_date')::date end);
+  insert into public.fm_settings(key, value) values ('erp_cash', v) on conflict (key) do update set value = excluded.value, updated_at = now();
+  return v;
+end $$;
+
+create or replace function public.fm_erp_cash() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare cfg jsonb := public.fm_erp_cash_cfg(); od int; sd int; bd int; I jsonb := '[]'; r record; today date := (now() at time zone 'Asia/Riyadh')::date;
+        sal numeric := null; skipped text[] := '{}'; cc boolean := false;
+begin
+  if not public.fm_acct_can() then raise exception 'not allowed'; end if;
+  od := (cfg->>'owner_days')::int; sd := (cfg->>'supplier_days')::int; bd := (cfg->>'sub_days')::int;
+  begin   -- owner: invoiced claims still due (firm), certified not invoiced (possible)
+    for r in select c.*, p.code pcode,
+                    (select max((h->>'at')::timestamptz) from jsonb_array_elements(c.history) h where h->>'act' = 'certify') cert_at
+               from public.fm_erp_owner_claims c join public.fm_erp_projects p on p.id = c.project_id where c.status in ('certified','invoiced') loop
+      if r.status = 'invoiced' then
+        if round(r.certified * (1 + coalesce(r.vat_pct,0) / 100) - coalesce(r.collected,0), 2) > 0 then
+          I := I || jsonb_build_array(jsonb_build_object('dir','in','firm',true,'k','claim','date', coalesce(r.invoice_date, today) + od,
+            'amount', round(r.certified * (1 + coalesce(r.vat_pct,0) / 100) - coalesce(r.collected,0), 2), 'ref', coalesce(r.invoice_no, r.code), 'party', r.pcode, 'doc', r.code));
+        end if;
+      else
+        I := I || jsonb_build_array(jsonb_build_object('dir','in','firm',false,'k','claim_cert','date', greatest(today, coalesce((r.cert_at at time zone 'Asia/Riyadh')::date, today)) + od,
+          'amount', round(coalesce(r.certified, r.amount) * (1 + coalesce(r.vat_pct,0) / 100), 2), 'ref', r.code, 'party', r.pcode, 'doc', r.code));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'claim'; end;
+  begin   -- suppliers: accepted invoices (firm, the unpaid rest), new invoices (possible)
+    for r in select i.*, s.name sname from public.wo_supplier_invoices i join public.wo_suppliers s on s.id = i.supplier_id where i.status in ('new','accepted') loop
+      if r.status = 'accepted' and r.amount - coalesce(r.paid_amount,0) > 0 then
+        I := I || jsonb_build_array(jsonb_build_object('dir','out','firm',true,'k','sinv','date', coalesce(r.invoice_date, (r.dec_at at time zone 'Asia/Riyadh')::date, today) + sd,
+          'amount', round(r.amount - coalesce(r.paid_amount,0), 2), 'ref', r.invoice_no, 'party', r.sname, 'doc', r.code));
+      elsif r.status = 'new' then
+        I := I || jsonb_build_array(jsonb_build_object('dir','out','firm',false,'k','sinv_new','date', coalesce(r.invoice_date, (r.at at time zone 'Asia/Riyadh')::date) + sd,
+          'amount', r.amount, 'ref', r.invoice_no, 'party', r.sname, 'doc', r.code));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'sinv'; end;
+  begin   -- contractor bills: approved (firm), submitted / reviewed (possible)
+    for r in select b.*, coalesce(c.contractor_name, c.name) cname,
+                    (select max((h->>'at')::timestamptz) from jsonb_array_elements(b.history) h where h->>'a' = 'approve') appr_at
+               from public.fm_bills b join public.fm_contracts c on c.id = b.contract_id where b.status in ('submitted','reviewed','approved') and b.total > 0 loop
+      I := I || jsonb_build_array(jsonb_build_object('dir','out','firm', r.status = 'approved','k', case when r.status = 'approved' then 'bill' else 'bill_rev' end,
+        'date', coalesce((r.appr_at at time zone 'Asia/Riyadh')::date, (r.updated_at at time zone 'Asia/Riyadh')::date, today) + bd,
+        'amount', r.total, 'ref', r.code, 'party', r.cname, 'doc', r.code || ' — ' || r.month));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'bill'; end;
+  if coalesce((cfg->>'salaries')::boolean, true) then
+    begin cc := public.fm_cc_can('salaries'); exception when others then cc := false; end;
+    if cc then
+      begin
+        select round(sum((coalesce(salary,0) + coalesce(housing,0) + coalesce(transport,0) + coalesce(other,0)) * (1 + coalesce(gosi_pct,0) / 100)), 2) into sal
+          from public.fm_cc_staff where coalesce(active, true) and (end_date is null or end_date >= today);
+      exception when undefined_table or undefined_column then skipped := skipped || 'salaries'; end;
+    end if;
+  end if;
+  return jsonb_build_object('today', today, 'cfg', cfg, 'can_set', public.fm_acct_can_set(), 'salaries', sal, 'skipped', to_jsonb(skipped),
+    'items', coalesce((select jsonb_agg(x order by x->>'date') from jsonb_array_elements(I) x), '[]'::jsonb));
+end $$;
+revoke all on function public.fm_erp_cash_cfg(), public.fm_erp_cash_cfg_set(jsonb), public.fm_erp_cash() from public, anon;
+grant execute on function public.fm_erp_cash_cfg(), public.fm_erp_cash_cfg_set(jsonb), public.fm_erp_cash() to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 105) V362 — ERP: contractor retention released (approved → paid, void), reversing entries for voided documents ----------
+-- Held per contract = Σ retention of its approved / paid bills − Σ releases not void. A release is approved by fm_bill_can('approve')
+-- (with a reason, ≤ held), paid by fm_bill_can('pay') — not by the one who approved it unless admin / sysadmin — and may be voided
+-- with a reason. fm_acct_journal (redefined) adds the release (Dr retention / Cr bank on the pay date) and, on the void date, the
+-- reversal of voided collections, supplier payments and paid releases (the original entries stay, so a period exported before the
+-- void stays right). fm_erp_cash (redefined) counts approved releases as firm outflows.
+create sequence if not exists public.fm_ret_seq;
+create table if not exists public.fm_ret_releases (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null default ('RR-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_ret_seq')::text, 4, '0')),
+  contract_id uuid not null references public.fm_contracts(id) on delete restrict,
+  amount numeric(14,2) not null check (amount > 0),
+  rel_date date not null,
+  reason text not null,
+  status text not null default 'approved' check (status in ('approved','paid','void')),
+  pay_date date, pay_ref text,
+  approved_by uuid default auth.uid(), approved_name text, paid_by uuid, paid_name text,
+  void_reason text, void_name text, void_at timestamptz,
+  at timestamptz not null default now()
+);
+alter table public.fm_ret_releases enable row level security;
+revoke all on public.fm_ret_releases from anon, authenticated;
+
+create or replace function public.fm_ret_held(p_contract uuid) returns numeric language sql stable security definer set search_path = public as $$
+  select coalesce((select sum(retention) from public.fm_bills where contract_id = p_contract and status in ('approved','paid')), 0)
+       - coalesce((select sum(amount) from public.fm_ret_releases where contract_id = p_contract and status <> 'void'), 0) $$;
+
+create or replace function public.fm_ret_list() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not (public.fm_bill_can('read', null) or public.fm_my_pos() in ('area_manager','area_engineer')) then raise exception 'not allowed'; end if;
+  return jsonb_build_object('today', (now() at time zone 'Asia/Riyadh')::date,
+    'contracts', (select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'code', c.code, 'name', c.name, 'contractor', coalesce(c.contractor_name, ''), 'region', c.region,
+        'start', c.start_date, 'end', c.end_date, 'active', c.active, 'pct', c.retention_pct,
+        'retained', (select coalesce(sum(b.retention), 0) from public.fm_bills b where b.contract_id = c.id and b.status in ('approved','paid')),
+        'bills', (select count(*) from public.fm_bills b where b.contract_id = c.id and b.status in ('approved','paid') and b.retention > 0),
+        'released', (select coalesce(sum(x.amount), 0) from public.fm_ret_releases x where x.contract_id = c.id and x.status <> 'void'),
+        'held', public.fm_ret_held(c.id),
+        'can_rel', public.fm_bill_can('approve', c.region), 'can_pay', public.fm_bill_can('pay', c.region)) order by c.code), '[]'::jsonb)
+      from public.fm_contracts c where public.fm_bill_can('read', c.region)
+        and (exists (select 1 from public.fm_bills b where b.contract_id = c.id and b.retention > 0 and b.status in ('approved','paid'))
+             or exists (select 1 from public.fm_ret_releases x where x.contract_id = c.id))),
+    'releases', (select coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'code', x.code, 'contract_id', x.contract_id, 'contract', c.code, 'contractor', coalesce(c.contractor_name, c.name),
+        'amount', x.amount, 'date', x.rel_date, 'reason', x.reason, 'status', x.status, 'pay_date', x.pay_date, 'pay_ref', x.pay_ref,
+        'approved', x.approved_name, 'paid', x.paid_name, 'void_reason', x.void_reason, 'void_name', x.void_name, 'mine', x.approved_by = auth.uid(),
+        'can_pay', public.fm_bill_can('pay', c.region), 'can_void', public.fm_bill_can('approve', c.region) or public.fm_bill_can('pay', c.region)) order by x.at desc), '[]'::jsonb)
+      from public.fm_ret_releases x join public.fm_contracts c on c.id = x.contract_id where public.fm_bill_can('read', c.region)));
+end $$;
+
+create or replace function public.fm_ret_release(p_contract uuid, p_amount numeric, p_date date, p_reason text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts; h numeric; v_id uuid; v_code text;
+begin
+  select * into c from public.fm_contracts where id = p_contract for update;
+  if auth.uid() is null or not found or not public.fm_bill_can('approve', c.region) then raise exception 'not allowed'; end if;
+  if not public.fm_mod('bill') then raise exception 'module disabled'; end if;
+  if btrim(coalesce(p_reason,'')) = '' or length(btrim(p_reason)) < 3 then raise exception 'reason required'; end if;
+  h := public.fm_ret_held(p_contract);
+  if p_amount is null or round(p_amount, 2) <= 0 then raise exception 'invalid amount'; end if;
+  if round(p_amount, 2) > round(h, 2) then raise exception 'exceeds held: %', h; end if;
+  insert into public.fm_ret_releases(contract_id, amount, rel_date, reason, approved_name)
+  values (p_contract, round(p_amount, 2), coalesce(p_date, (now() at time zone 'Asia/Riyadh')::date), left(btrim(p_reason), 500), public.fm_me_name())
+  returning id, code into v_id, v_code;
+  begin insert into public.fm_audit_log(actor_name, action, target, details) values (public.fm_me_name(), 'ret_release', v_code, jsonb_build_object('contract', c.code, 'amount', p_amount));
+  exception when others then null; end;
+  if c.contractor_id is not null then
+    begin perform public.fm_push_add(c.contractor_id, 'bill', '🔓 إفراج محتجزات ' || v_code, 'العقد ' || c.code || ' — ' || round(p_amount) || ' ر.س', 'bill', 'ret-' || v_code, false);
+    exception when others then null; end;
+  end if;
+  return jsonb_build_object('id', v_id, 'code', v_code, 'held', h - round(p_amount, 2));
+end $$;
+
+create or replace function public.fm_ret_act(p_id uuid, p_action text, p jsonb default '{}') returns text language plpgsql security definer set search_path = public as $$
+declare x public.fm_ret_releases; c public.fm_contracts; adm boolean := public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin'; r text := btrim(coalesce(p->>'reason',''));
+begin
+  select * into x from public.fm_ret_releases where id = p_id for update;
+  if auth.uid() is null or not found then raise exception 'not found'; end if;
+  select * into c from public.fm_contracts where id = x.contract_id;
+  if p_action = 'pay' then
+    if x.status <> 'approved' then raise exception 'invalid status'; end if;
+    if not public.fm_bill_can('pay', c.region) then raise exception 'not allowed'; end if;
+    if x.approved_by = auth.uid() and not adm then raise exception 'self payment'; end if;
+    update public.fm_ret_releases set status = 'paid', pay_date = coalesce(nullif(p->>'date','')::date, (now() at time zone 'Asia/Riyadh')::date),
+      pay_ref = left(nullif(btrim(coalesce(p->>'ref','')),''), 120), paid_by = auth.uid(), paid_name = public.fm_me_name() where id = p_id;
+    if c.contractor_id is not null then
+      begin perform public.fm_push_add(c.contractor_id, 'bill', '💵 صُرفت المحتجزات ' || x.code, round(x.amount) || ' ر.س', 'bill', 'retp-' || x.code, false); exception when others then null; end;
+    end if;
+  elsif p_action = 'void' then
+    if x.status = 'void' then raise exception 'invalid status'; end if;
+    if not (public.fm_bill_can('approve', c.region) or public.fm_bill_can('pay', c.region)) then raise exception 'not allowed'; end if;
+    if length(r) < 3 then raise exception 'reason required'; end if;
+    update public.fm_ret_releases set status = 'void', void_reason = left(r, 500), void_name = public.fm_me_name(), void_at = now() where id = p_id;
+  else raise exception 'invalid action'; end if;
+  begin insert into public.fm_audit_log(actor_name, action, target, details) values (public.fm_me_name(), 'ret_' || p_action, x.code, p); exception when others then null; end;
+  return p_action;
+end $$;
+create or replace function public.fm_acct_journal(p_from date, p_to date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ents jsonb := '[]'; r record; tz text := 'Asia/Riyadh'; v numeric; n numeric; acc text; skipped text[] := '{}';
+begin
+  if not public.fm_acct_can() then raise exception 'not allowed'; end if;
+  if p_from is null or p_to is null or p_to < p_from or p_to - p_from > 400 then raise exception 'invalid period'; end if;
+  -- 1) owner claims invoiced: receivable / revenue + output VAT
+  begin
+    for r in select c.*, p.code pcode from public.fm_erp_owner_claims c join public.fm_erp_projects p on p.id = c.project_id
+              where c.status in ('invoiced') and c.invoice_date between p_from and p_to and coalesce(c.certified,0) > 0 loop
+      n := round(r.certified, 2); v := round(r.certified * coalesce(r.vat_pct,0) / 100, 2);
+      ents := ents || jsonb_build_array(jsonb_build_object('src','claim','date',r.invoice_date,'ref',coalesce(r.invoice_no, r.code),'desc','مستخلص المالك '||r.code||' — '||r.month,'dim',r.pcode,
+        'lines', jsonb_build_array(jsonb_build_object('a','receivable','dr',n+v,'cr',0), jsonb_build_object('a','revenue','dr',0,'cr',n))
+                 || case when v > 0 then jsonb_build_array(jsonb_build_object('a','vat_out','dr',0,'cr',v)) else '[]'::jsonb end));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'claim'; end;
+  -- 2) collections from the owner
+  begin
+    for r in select x.*, p.code pcode, c.code ccode from public.fm_erp_collections x join public.fm_erp_owner_claims c on c.id = x.claim_id join public.fm_erp_projects p on p.id = x.project_id
+              where (x.status = 'posted' or (x.status = 'void' and x.void_at is not null)) and x.rc_date between p_from and p_to loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      ents := ents || jsonb_build_array(jsonb_build_object('src','collect','date',r.rc_date,'ref',coalesce(nullif(r.ref,''), r.code),'desc','تحصيل '||r.code||' على '||r.ccode,'dim',r.pcode,
+        'lines', jsonb_build_array(jsonb_build_object('a',acc,'dr',r.amount,'cr',0), jsonb_build_object('a','receivable','dr',0,'cr',r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'collect'; end;
+  -- 3) supplier invoices accepted: inventory (or expense without a purchase request) + input VAT / supplier
+  begin
+    for r in select i.*, s.name sname, st.region sreg from public.wo_supplier_invoices i join public.wo_suppliers s on s.id = i.supplier_id
+               left join public.wo_purchase_requests pr on pr.id = i.po_id left join public.wo_stores st on st.id = pr.store_id
+              where i.status in ('accepted','paid') and i.dec_at is not null and (i.dec_at at time zone tz)::date between p_from and p_to loop
+      v := round(coalesce(r.vat,0), 2); n := round(r.amount - v, 2);
+      ents := ents || jsonb_build_array(jsonb_build_object('src','sinv','date',(r.dec_at at time zone tz)::date,'ref',r.invoice_no,'desc','فاتورة المورد '||r.sname||' '||r.code||coalesce(' — '||r.po_code,''),'dim',coalesce(r.sreg,''),
+        'lines', jsonb_build_array(jsonb_build_object('a',case when r.po_id is null then 'expense' else 'inventory' end,'dr',n,'cr',0))
+                 || case when v > 0 then jsonb_build_array(jsonb_build_object('a','vat_in','dr',v,'cr',0)) else '[]'::jsonb end
+                 || jsonb_build_array(jsonb_build_object('a','ap','dr',0,'cr',r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'sinv'; end;
+  -- 4) supplier payments
+  begin
+    for r in select x.*, s.name sname from public.wo_supplier_payments x join public.wo_suppliers s on s.id = x.supplier_id
+              where (x.status = 'posted' or (x.status = 'void' and x.void_at is not null)) and x.pay_date between p_from and p_to loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      ents := ents || jsonb_build_array(jsonb_build_object('src','spay','date',r.pay_date,'ref',coalesce(nullif(r.ref,''), r.code),'desc','دفعة للمورد '||r.sname||' '||r.code,'dim','',
+        'lines', jsonb_build_array(jsonb_build_object('a','ap','dr',r.amount,'cr',0), jsonb_build_object('a',acc,'dr',0,'cr',r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'spay'; end;
+  -- 5) contractor bills approved (date of the approval step) and 6) paid
+  begin
+    for r in select b.*, c.code ccode, coalesce(c.contractor_name,'') cname, c.region creg,
+                    (select max((h->>'at')::timestamptz) from jsonb_array_elements(b.history) h where h->>'a' = 'approve') appr_at
+               from public.fm_bills b join public.fm_contracts c on c.id = b.contract_id where b.status in ('approved','paid') loop
+      if r.appr_at is not null and (r.appr_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','bill','date',(r.appr_at at time zone tz)::date,'ref',r.code,'desc','مستخلص '||r.cname||' '||r.ccode||' — '||r.month,'dim',coalesce(r.creg,''),
+          'lines', jsonb_build_array(jsonb_build_object('a','cost_sub','dr',r.net,'cr',0))
+                   || case when r.vat > 0 then jsonb_build_array(jsonb_build_object('a','vat_in','dr',r.vat,'cr',0)) else '[]'::jsonb end
+                   || case when r.retention > 0 then jsonb_build_array(jsonb_build_object('a','retention','dr',0,'cr',r.retention)) else '[]'::jsonb end
+                   || jsonb_build_array(jsonb_build_object('a','ap_sub','dr',0,'cr',r.total))));
+      end if;
+      if r.status = 'paid' and r.paid_at is not null and (r.paid_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','billpay','date',(r.paid_at at time zone tz)::date,'ref',coalesce(nullif(r.pay_ref,''), r.code),'desc','صرف مستخلص '||r.cname||' '||r.code,'dim',coalesce(r.creg,''),
+          'lines', jsonb_build_array(jsonb_build_object('a','ap_sub','dr',r.total,'cr',0), jsonb_build_object('a','bank','dr',0,'cr',r.total))));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'bill'; end;
+  -- V362: reversals on the void date of collections / supplier payments voided after they were posted
+  begin
+    for r in select x.*, p.code pcode, c.code ccode from public.fm_erp_collections x join public.fm_erp_owner_claims c on c.id = x.claim_id join public.fm_erp_projects p on p.id = x.project_id
+              where x.status = 'void' and x.void_at is not null and (x.void_at at time zone tz)::date between p_from and p_to loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      ents := ents || jsonb_build_array(jsonb_build_object('src','collect_v','date',(r.void_at at time zone tz)::date,'ref',r.code,'desc','عكس تحصيل ملغى '||r.code||' على '||r.ccode||coalesce(' — '||r.void_reason,''),'dim',r.pcode,
+        'lines', jsonb_build_array(jsonb_build_object('a','receivable','dr',r.amount,'cr',0), jsonb_build_object('a',acc,'dr',0,'cr',r.amount))));
+    end loop;
+    for r in select x.*, s.name sname from public.wo_supplier_payments x join public.wo_suppliers s on s.id = x.supplier_id
+              where x.status = 'void' and x.void_at is not null and (x.void_at at time zone tz)::date between p_from and p_to loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      ents := ents || jsonb_build_array(jsonb_build_object('src','spay_v','date',(r.void_at at time zone tz)::date,'ref',r.code,'desc','عكس دفعة ملغاة للمورد '||r.sname||' '||r.code||coalesce(' — '||r.void_reason,''),'dim','',
+        'lines', jsonb_build_array(jsonb_build_object('a',acc,'dr',r.amount,'cr',0), jsonb_build_object('a','ap','dr',0,'cr',r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'void'; end;
+  -- V362: retention released to contractors (paid), and its reversal when a paid release is voided
+  begin
+    for r in select x.*, ct.code ccode, coalesce(ct.contractor_name, ct.name) cname, ct.region creg from public.fm_ret_releases x join public.fm_contracts ct on ct.id = x.contract_id
+              where x.pay_date is not null and x.status in ('paid','void') loop
+      if r.pay_date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','retrel','date',r.pay_date,'ref',coalesce(nullif(r.pay_ref,''), r.code),'desc','إفراج محتجزات '||r.cname||' '||r.ccode||' ('||r.code||')','dim',coalesce(r.creg,''),
+          'lines', jsonb_build_array(jsonb_build_object('a','retention','dr',r.amount,'cr',0), jsonb_build_object('a','bank','dr',0,'cr',r.amount))));
+      end if;
+      if r.status = 'void' and r.void_at is not null and (r.void_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','retrel_v','date',(r.void_at at time zone tz)::date,'ref',r.code,'desc','عكس إفراج محتجزات ملغى '||r.code||coalesce(' — '||r.void_reason,''),'dim',coalesce(r.creg,''),
+          'lines', jsonb_build_array(jsonb_build_object('a','bank','dr',r.amount,'cr',0), jsonb_build_object('a','retention','dr',0,'cr',r.amount))));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'retrel'; end;
+  -- 7) materials used (store «out» moves + custody «use»), one entry per month and region, dated the month's last day in the period
+  begin
+    for r in with u as (
+               select (m.at at time zone tz)::date d, coalesce(st.region,'') reg, -m.qty * coalesce(m.unit_price, mt.price, 0) val
+                 from public.wo_stock_moves m join public.wo_stores st on st.id = m.store_id left join public.wo_materials mt on mt.id = m.material_id
+                where m.kind = 'out' and m.qty < 0 and (m.at at time zone tz)::date between p_from and p_to
+               union all
+               select (c.at at time zone tz)::date, coalesce(st.region,''), -c.qty * coalesce(c.unit_price, mt.price, 0)
+                 from public.wo_custody_moves c left join public.wo_stores st on st.id = c.store_id left join public.wo_materials mt on mt.id = c.material_id
+                where c.kind = 'use' and c.qty < 0 and (c.at at time zone tz)::date between p_from and p_to)
+             select to_char(d,'YYYY-MM') mo, reg, round(sum(val),2) val, least(p_to, (date_trunc('month', min(d)) + interval '1 month - 1 day')::date) dd from u group by 1, 2 having round(sum(val),2) > 0 order by 1, 2 loop
+      ents := ents || jsonb_build_array(jsonb_build_object('src','cons','date',r.dd,'ref','MAT-'||r.mo,'desc','مواد مستخدمة في أوامر العمل '||r.mo,'dim',r.reg,
+        'lines', jsonb_build_array(jsonb_build_object('a','cost_mat','dr',r.val,'cr',0), jsonb_build_object('a','inventory','dr',0,'cr',r.val))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'cons'; end;
+  return jsonb_build_object('from', p_from, 'to', p_to, 'map', public.fm_acct_map(), 'can_set', public.fm_acct_can_set(), 'skipped', to_jsonb(skipped),
+    'entries', coalesce((select jsonb_agg(e order by e->>'date', e->>'src', e->>'ref') from jsonb_array_elements(ents) e), '[]'::jsonb),
+    'exports', coalesce((select jsonb_agg(jsonb_build_object('from', x.d_from, 'to', x.d_to, 'n', x.n, 'debit', x.debit, 'fmt', x.fmt, 'by', x.by_name, 'at', x.at) order by x.at desc)
+                           from public.fm_acct_exports x where x.d_from <= p_to and x.d_to >= p_from), '[]'::jsonb));
+end $$;
+create or replace function public.fm_erp_cash() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare cfg jsonb := public.fm_erp_cash_cfg(); od int; sd int; bd int; I jsonb := '[]'; r record; today date := (now() at time zone 'Asia/Riyadh')::date;
+        sal numeric := null; skipped text[] := '{}'; cc boolean := false;
+begin
+  if not public.fm_acct_can() then raise exception 'not allowed'; end if;
+  od := (cfg->>'owner_days')::int; sd := (cfg->>'supplier_days')::int; bd := (cfg->>'sub_days')::int;
+  begin   -- owner: invoiced claims still due (firm), certified not invoiced (possible)
+    for r in select c.*, p.code pcode,
+                    (select max((h->>'at')::timestamptz) from jsonb_array_elements(c.history) h where h->>'act' = 'certify') cert_at
+               from public.fm_erp_owner_claims c join public.fm_erp_projects p on p.id = c.project_id where c.status in ('certified','invoiced') loop
+      if r.status = 'invoiced' then
+        if round(r.certified * (1 + coalesce(r.vat_pct,0) / 100) - coalesce(r.collected,0), 2) > 0 then
+          I := I || jsonb_build_array(jsonb_build_object('dir','in','firm',true,'k','claim','date', coalesce(r.invoice_date, today) + od,
+            'amount', round(r.certified * (1 + coalesce(r.vat_pct,0) / 100) - coalesce(r.collected,0), 2), 'ref', coalesce(r.invoice_no, r.code), 'party', r.pcode, 'doc', r.code));
+        end if;
+      else
+        I := I || jsonb_build_array(jsonb_build_object('dir','in','firm',false,'k','claim_cert','date', greatest(today, coalesce((r.cert_at at time zone 'Asia/Riyadh')::date, today)) + od,
+          'amount', round(coalesce(r.certified, r.amount) * (1 + coalesce(r.vat_pct,0) / 100), 2), 'ref', r.code, 'party', r.pcode, 'doc', r.code));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'claim'; end;
+  begin   -- suppliers: accepted invoices (firm, the unpaid rest), new invoices (possible)
+    for r in select i.*, s.name sname from public.wo_supplier_invoices i join public.wo_suppliers s on s.id = i.supplier_id where i.status in ('new','accepted') loop
+      if r.status = 'accepted' and r.amount - coalesce(r.paid_amount,0) > 0 then
+        I := I || jsonb_build_array(jsonb_build_object('dir','out','firm',true,'k','sinv','date', coalesce(r.invoice_date, (r.dec_at at time zone 'Asia/Riyadh')::date, today) + sd,
+          'amount', round(r.amount - coalesce(r.paid_amount,0), 2), 'ref', r.invoice_no, 'party', r.sname, 'doc', r.code));
+      elsif r.status = 'new' then
+        I := I || jsonb_build_array(jsonb_build_object('dir','out','firm',false,'k','sinv_new','date', coalesce(r.invoice_date, (r.at at time zone 'Asia/Riyadh')::date) + sd,
+          'amount', r.amount, 'ref', r.invoice_no, 'party', r.sname, 'doc', r.code));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'sinv'; end;
+  begin   -- contractor bills: approved (firm), submitted / reviewed (possible)
+    for r in select b.*, coalesce(c.contractor_name, c.name) cname,
+                    (select max((h->>'at')::timestamptz) from jsonb_array_elements(b.history) h where h->>'a' = 'approve') appr_at
+               from public.fm_bills b join public.fm_contracts c on c.id = b.contract_id where b.status in ('submitted','reviewed','approved') and b.total > 0 loop
+      I := I || jsonb_build_array(jsonb_build_object('dir','out','firm', r.status = 'approved','k', case when r.status = 'approved' then 'bill' else 'bill_rev' end,
+        'date', coalesce((r.appr_at at time zone 'Asia/Riyadh')::date, (r.updated_at at time zone 'Asia/Riyadh')::date, today) + bd,
+        'amount', r.total, 'ref', r.code, 'party', r.cname, 'doc', r.code || ' — ' || r.month));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'bill'; end;
+  begin   -- V362: retention releases approved, not paid yet (firm)
+    for r in select x.*, coalesce(ct.contractor_name, ct.name) cname from public.fm_ret_releases x join public.fm_contracts ct on ct.id = x.contract_id where x.status = 'approved' loop
+      I := I || jsonb_build_array(jsonb_build_object('dir','out','firm',true,'k','ret','date', greatest(r.rel_date, today - 365),
+        'amount', r.amount, 'ref', r.code, 'party', r.cname, 'doc', r.code));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'ret'; end;
+  if coalesce((cfg->>'salaries')::boolean, true) then
+    begin cc := public.fm_cc_can('salaries'); exception when others then cc := false; end;
+    if cc then
+      begin
+        select round(sum((coalesce(salary,0) + coalesce(housing,0) + coalesce(transport,0) + coalesce(other,0)) * (1 + coalesce(gosi_pct,0) / 100)), 2) into sal
+          from public.fm_cc_staff where coalesce(active, true) and (end_date is null or end_date >= today);
+      exception when undefined_table or undefined_column then skipped := skipped || 'salaries'; end;
+    end if;
+  end if;
+  return jsonb_build_object('today', today, 'cfg', cfg, 'can_set', public.fm_acct_can_set(), 'salaries', sal, 'skipped', to_jsonb(skipped),
+    'items', coalesce((select jsonb_agg(x order by x->>'date') from jsonb_array_elements(I) x), '[]'::jsonb));
+end $$;
+revoke all on function public.fm_ret_held(uuid) from public, anon, authenticated;
+revoke all on function public.fm_ret_list(), public.fm_ret_release(uuid, numeric, date, text), public.fm_ret_act(uuid, text, jsonb), public.fm_acct_journal(date, date), public.fm_erp_cash() from public, anon;
+grant execute on function public.fm_ret_list(), public.fm_ret_release(uuid, numeric, date, text), public.fm_ret_act(uuid, text, jsonb), public.fm_acct_journal(date, date), public.fm_erp_cash() to authenticated;
+notify pgrst, 'reload schema';
