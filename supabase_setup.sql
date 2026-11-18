@@ -17061,3 +17061,251 @@ revoke all on function public.fm_ret_held(uuid) from public, anon, authenticated
 revoke all on function public.fm_ret_list(), public.fm_ret_release(uuid, numeric, date, text), public.fm_ret_act(uuid, text, jsonb), public.fm_acct_journal(date, date), public.fm_erp_cash() from public, anon;
 grant execute on function public.fm_ret_list(), public.fm_ret_release(uuid, numeric, date, text), public.fm_ret_act(uuid, text, jsonb), public.fm_acct_journal(date, date), public.fm_erp_cash() to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 106) V365 — server backup without opening the platform; Storage files mirrored ----------
+-- The Edge Function fm-backup (pg_cron fm-backup-srv every 10 min → fm_backup_srv_tick → pg_net) reads every table with the
+-- service role (the same tables as the V351 page), writes one encrypted .fmbak file (V351 format and password) into the
+-- private bucket fm-backups (db/…), keeps the newest `keep` files, mirrors new / changed Storage files of the other buckets
+-- into fm-backups/files/<bucket>/<path> (a deleted original stays in the mirror), and e-mails a download link (signed URL)
+-- to the system admins and the outside addresses. A run that runs out of time continues the files on the next tick.
+create table if not exists public.fm_backup_srv (
+  id int primary key default 1 check (id = 1),
+  enabled boolean not null default false,
+  freq text not null default 'weekly' check (freq in ('daily','weekly')),
+  dow int not null default 5 check (dow between 0 and 6),
+  hour int not null default 2 check (hour between 0 and 23),
+  keep int not null default 8 check (keep between 1 and 60),
+  files boolean not null default true,
+  to_admins boolean not null default true,
+  to_ext text[] not null default '{}',
+  link_days int not null default 7 check (link_days between 1 and 30),
+  next_at timestamptz,
+  force boolean not null default false,
+  more boolean not null default false,
+  running_at timestamptz,
+  fn_url text, hook text, anon_key text, kicked_at timestamptz, last_req bigint,
+  last jsonb,
+  updated_at timestamptz not null default now());
+alter table public.fm_backup_srv enable row level security;
+revoke all on public.fm_backup_srv from anon, authenticated;
+insert into public.fm_backup_srv(id) values (1) on conflict (id) do nothing;
+
+create table if not exists public.fm_backup_files (
+  bucket text not null, name text not null, size bigint, src_updated timestamptz, copied_at timestamptz not null default now(),
+  primary key (bucket, name));
+alter table public.fm_backup_files enable row level security;
+revoke all on public.fm_backup_files from anon, authenticated;
+
+-- the V351 page never reads / restores these two either
+create or replace function public.fm_backup_skip() returns text[] language sql immutable as $$
+  select array['fm_backup_cfg','fm_push_cfg','fm_wa_cfg','fm_report_cfg','fm_plan','fm_push_subs','fm_push_queue','fm_wa_queue','fm_backup_srv','fm_backup_files'] $$;
+
+do $do$ begin
+  insert into storage.buckets (id, name, public) values ('fm-backups','fm-backups', false) on conflict (id) do nothing;
+exception when others then raise notice 'bucket fm-backups: %', sqlerrm; end $do$;
+
+-- service role: the tables and their pages (same as fm_backup_tables / fm_backup_page, without the person check)
+create or replace function public.fm_backup_srv_tables() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r record; n bigint; out jsonb := '[]';
+begin
+  for r in select c.relname, c.reltuples from pg_class c join pg_namespace s on s.oid = c.relnamespace
+           where s.nspname = 'public' and c.relkind in ('r','p') and not c.relispartition and not c.relname = any(public.fm_backup_skip())
+           order by c.relname loop
+    if r.reltuples > 300000 then n := r.reltuples::bigint; else execute format('select count(*) from public.%I', r.relname) into n; end if;
+    out := out || jsonb_build_object('t', r.relname, 'n', n);
+  end loop;
+  return out;
+end $$;
+create or replace function public.fm_backup_srv_page(p_table text, p_offset int, p_limit int) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ord text; r jsonb;
+begin
+  if not public.fm_backup_ok_table(p_table) then raise exception 'unknown table'; end if;
+  select string_agg(format('%I', a.attname), ',' order by k.ord) into ord
+    from pg_index i, unnest(i.indkey) with ordinality k(attnum, ord), pg_attribute a
+   where i.indrelid = ('public.' || quote_ident(p_table))::regclass and i.indisprimary and a.attrelid = i.indrelid and a.attnum = k.attnum;
+  execute format('select coalesce(jsonb_agg(to_jsonb(x)), ''[]'') from (select * from public.%I order by %s offset %s limit %s) x',
+                 p_table, coalesce(ord, 'ctid'), greatest(coalesce(p_offset,0),0), least(greatest(coalesce(p_limit,500),1),2000)) into r;
+  return r;
+end $$;
+
+-- Storage files not yet mirrored (or changed since), in name order after (bucket, name)
+create or replace function public.fm_backup_srv_objects(p_bucket text, p_name text, p_n int) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r jsonb;
+begin
+  begin
+    execute $q$select coalesce(jsonb_agg(jsonb_build_object('b', x.bucket_id, 'n', x.name, 's', x.sz, 'u', x.updated_at) order by x.bucket_id, x.name), '[]')
+      from (select o.bucket_id, o.name, (o.metadata->>'size')::bigint sz, coalesce(o.updated_at, o.created_at) updated_at from storage.objects o
+            where o.bucket_id <> 'fm-backups' and o.name not like '%/.emptyFolderPlaceholder'
+              and (o.bucket_id, o.name) > (coalesce($1,''), coalesce($2,''))
+              and not exists (select 1 from public.fm_backup_files f where f.bucket = o.bucket_id and f.name = o.name
+                              and f.src_updated >= coalesce(o.updated_at, o.created_at))
+            order by o.bucket_id, o.name limit $3) x$q$ into r using p_bucket, p_name, least(greatest(coalesce(p_n,100),1),500);
+  exception when others then r := '[]'; end;
+  return r;
+end $$;
+create or replace function public.fm_backup_srv_copied(p jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  insert into public.fm_backup_files(bucket, name, size, src_updated, copied_at)
+  select x->>'b', x->>'n', (x->>'s')::bigint, (x->>'u')::timestamptz, now() from jsonb_array_elements(coalesce(p,'[]')) x
+  on conflict (bucket, name) do update set size = excluded.size, src_updated = excluded.src_updated, copied_at = now();
+  get diagnostics n = row_count; return n;
+end $$;
+-- database backups to delete (all but the newest `keep`)
+create or replace function public.fm_backup_srv_old(p_keep int) returns text[] language plpgsql stable security definer set search_path = public as $$
+declare r text[];
+begin
+  begin
+    execute $q$select coalesce(array_agg(name), '{}') from (select name from storage.objects where bucket_id = 'fm-backups' and name like 'db/%'
+      order by created_at desc offset $1) x$q$ into r using greatest(coalesce(p_keep,8),1);
+  exception when others then r := '{}'; end;
+  return r;
+end $$;
+
+-- recipients: the system admins (when to_admins) + outside addresses
+create or replace function public.fm_backup_srv_to() returns text[] language sql stable security definer set search_path = public as $$
+  select coalesce(array_agg(distinct e), '{}') from (
+    select lower(p.email) e from public.profiles p, public.fm_backup_srv c
+     where c.id = 1 and c.to_admins and p.role = 'admin' and p.job_title = 'sysadmin' and p.active is not false and p.deleted_at is null and p.email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    union select lower(x) from public.fm_backup_srv c, unnest(c.to_ext) x where c.id = 1 and x ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$') t $$;
+
+-- the function asks for work: 'db' (due or asked now; then the files) or 'files' (the mirror is not finished yet)
+create or replace function public.fm_backup_srv_claim() returns jsonb language plpgsql security definer set search_path = public as $$
+declare c public.fm_backup_srv; job text;
+begin
+  select * into c from public.fm_backup_srv where id = 1 for update;
+  if not found then return jsonb_build_object('job', null); end if;
+  if c.running_at is not null and c.running_at > now() - interval '15 minutes' then return jsonb_build_object('job', null, 'why', 'running'); end if;
+  if c.force or (c.enabled and c.next_at is not null and c.next_at <= now()) then job := 'db';
+  elsif c.more and c.files then job := 'files';
+  else return jsonb_build_object('job', null); end if;
+  update public.fm_backup_srv set running_at = now(), force = false,
+    next_at = case when job = 'db' and c.enabled then public.fm_report_next(c.freq, c.dow, null, c.hour, now()) else next_at end where id = 1;
+  return jsonb_build_object('job', job, 'files', c.files, 'keep', c.keep, 'link_days', c.link_days, 'to', to_jsonb(public.fm_backup_srv_to()),
+    'pass', (select pass from public.fm_backup_cfg where id = 1), 'mail', public.fm_setting('mail'),
+    'company', (select company from public.fm_plan limit 1), 'last', c.last);
+exception when undefined_table or undefined_column or undefined_function then
+  update public.fm_backup_srv set running_at = now(), force = false where id = 1;
+  return jsonb_build_object('job', coalesce(job, 'db'), 'files', c.files, 'keep', c.keep, 'link_days', c.link_days, 'to', to_jsonb(public.fm_backup_srv_to()),
+    'pass', (select pass from public.fm_backup_cfg where id = 1), 'mail', '{}'::jsonb, 'company', null, 'last', c.last);
+end $$;
+-- the function's result: p {job, ok, err, path, size, tables, rows, files_new, files_bytes, more, mailed, mail_err}
+create or replace function public.fm_backup_srv_result(p jsonb) returns void language plpgsql security definer set search_path = public as $$
+declare c public.fm_backup_srv; l jsonb;
+begin
+  select * into c from public.fm_backup_srv where id = 1;
+  l := coalesce(c.last, '{}'::jsonb);
+  if p->>'job' = 'db' then
+    l := jsonb_build_object('at', now(), 'ok', coalesce((p->>'ok')::boolean, false), 'err', left(p->>'err', 300), 'path', p->>'path',
+      'size', (p->>'size')::bigint, 'tables', (p->>'tables')::int, 'rows', (p->>'rows')::bigint, 'mailed', (p->>'mailed')::int, 'mail_err', left(p->>'mail_err', 200),
+      'files_new', coalesce((p->>'files_new')::int, 0), 'files_bytes', coalesce((p->>'files_bytes')::bigint, 0), 'files_err', left(p->>'files_err', 200));
+    if coalesce((p->>'ok')::boolean, false) then
+      insert into public.fm_backup_cfg(id) values (1) on conflict (id) do nothing;
+      update public.fm_backup_cfg set last = jsonb_build_object('at', now(), 'by', 'الخادم', 'how', 'server', 'size', (p->>'size')::bigint,
+        'tables', (p->>'tables')::int, 'rows', (p->>'rows')::bigint, 'enc', true, 'lite', false), updated_at = now() where id = 1;
+    end if;
+    insert into public.fm_audit_log(actor_name, action, target, details) values ('الخادم', 'backup_server', coalesce(p->>'path', ''), p - 'job');
+  else
+    l := l || jsonb_build_object('files_new', coalesce((l->>'files_new')::int, 0) + coalesce((p->>'files_new')::int, 0),
+      'files_bytes', coalesce((l->>'files_bytes')::bigint, 0) + coalesce((p->>'files_bytes')::bigint, 0), 'files_at', now(), 'files_err', left(p->>'files_err', 200));
+  end if;
+  update public.fm_backup_srv set last = l, running_at = null, more = coalesce((p->>'more')::boolean, false), updated_at = now() where id = 1;
+end $$;
+create or replace function public.fm_backup_srv_secret() returns text language sql stable security definer set search_path = public as $$
+  select hook from public.fm_backup_srv where id = 1 $$;
+
+create or replace function public.fm_backup_srv_kick() returns void language plpgsql security definer set search_path = public as $$
+declare c public.fm_backup_srv; rid bigint;
+begin
+  update public.fm_backup_srv set kicked_at = now() where id = 1 and fn_url is not null and coalesce(kicked_at, 'epoch') < now() - interval '30 seconds' returning * into c;
+  if not found then return; end if;
+  begin
+    execute 'select net.http_post(url := $1, body := ''{}''::jsonb, headers := $2, timeout_milliseconds := 150000)' into rid
+      using c.fn_url, jsonb_build_object('Content-Type','application/json','x-fm-hook', coalesce(c.hook,''))
+                     || case when c.anon_key is not null then jsonb_build_object('Authorization','Bearer ' || c.anon_key, 'apikey', c.anon_key) else '{}'::jsonb end;
+    update public.fm_backup_srv set last_req = rid where id = 1;
+  exception when others then null;
+  end;
+end $$;
+-- pg_cron every 10 min: kick when a backup is due / asked, or the files mirror is not finished
+create or replace function public.fm_backup_srv_tick() returns void language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from public.fm_backup_srv where id = 1 and fn_url is not null
+              and (running_at is null or running_at < now() - interval '15 minutes')
+              and (force or (enabled and next_at <= now()) or (more and files))) then
+    perform public.fm_backup_srv_kick();
+  end if;
+end $$;
+
+-- system admin
+create or replace function public.fm_backup_srv_get() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c public.fm_backup_srv; hs int; hc text; nf bigint; bf bigint; dbs jsonb;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  select * into c from public.fm_backup_srv where id = 1;
+  if c.last_req is not null then
+    begin execute 'select status_code, left(coalesce(content::text, error_msg, ''''), 300) from net._http_response where id = $1' into hs, hc using c.last_req;
+    exception when others then null; end;
+  end if;
+  select count(*), coalesce(sum(size), 0) into nf, bf from public.fm_backup_files;
+  begin
+    execute $q$select coalesce(jsonb_agg(jsonb_build_object('name', name, 'size', (metadata->>'size')::bigint, 'at', created_at) order by created_at desc), '[]')
+      from storage.objects where bucket_id = 'fm-backups' and name like 'db/%'$q$ into dbs;
+  exception when others then dbs := null; end;
+  return jsonb_build_object('enabled', c.enabled, 'freq', c.freq, 'dow', c.dow, 'hour', c.hour, 'keep', c.keep, 'files', c.files, 'to_admins', c.to_admins,
+    'to_ext', to_jsonb(c.to_ext), 'link_days', c.link_days, 'next_at', c.next_at, 'force', c.force, 'more', c.more, 'running_at', c.running_at,
+    'fn_url', c.fn_url, 'linked', c.fn_url is not null and c.hook is not null, 'last', c.last, 'to', to_jsonb(public.fm_backup_srv_to()),
+    'pass_set', coalesce((select pass is not null and pass <> '' from public.fm_backup_cfg where id = 1), false),
+    'pg_net', exists (select 1 from pg_extension where extname = 'pg_net'), 'pg_cron', exists (select 1 from pg_extension where extname = 'pg_cron'),
+    'http_status', hs, 'http_body', hc, 'mirror_n', nf, 'mirror_bytes', bf, 'dbs', dbs);
+end $$;
+create or replace function public.fm_backup_srv_set(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare ext text[]; x text; c public.fm_backup_srv;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  select coalesce(array_agg(distinct lower(btrim(v))), '{}') into ext from jsonb_array_elements_text(coalesce(p->'to_ext','[]')) v where btrim(v) <> '';
+  foreach x in array ext loop if x !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'invalid email: %', x; end if; end loop;
+  if cardinality(ext) > 10 then raise exception 'too many recipients'; end if;
+  update public.fm_backup_srv set enabled = coalesce((p->>'enabled')::boolean, enabled), freq = coalesce(p->>'freq', freq),
+    dow = coalesce((p->>'dow')::int, dow), hour = coalesce((p->>'hour')::int, hour), keep = coalesce((p->>'keep')::int, keep),
+    files = coalesce((p->>'files')::boolean, files), to_admins = coalesce((p->>'to_admins')::boolean, to_admins), to_ext = ext,
+    link_days = coalesce((p->>'link_days')::int, link_days), updated_at = now() where id = 1 returning * into c;
+  update public.fm_backup_srv set next_at = case when c.enabled then public.fm_report_next(c.freq, c.dow, null, c.hour, now()) end,
+    more = case when c.files then more else false end where id = 1;
+  insert into public.fm_audit_log(actor_name, action, target, details) values ((select coalesce(full_name, email) from public.profiles where id = auth.uid()), 'backup_server_set', '', p);
+  return public.fm_backup_srv_get();
+end $$;
+create or replace function public.fm_backup_srv_autoset(p jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  if length(coalesce(p->>'hook','')) < 24 then raise exception 'secret too short'; end if;
+  if coalesce(p->>'fn_url','') !~ '^https://[^ ]+$' then raise exception 'invalid url'; end if;
+  update public.fm_backup_srv set fn_url = p->>'fn_url', hook = p->>'hook', anon_key = coalesce(nullif(btrim(p->>'anon_key'), ''), anon_key), kicked_at = null where id = 1;
+  return true;
+end $$;
+-- «run now»: also used by the function's platform mode to check the person
+create or replace function public.fm_backup_srv_now() returns bigint language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  if not exists (select 1 from public.fm_backup_srv where id = 1 and fn_url is not null) then raise exception 'not linked'; end if;
+  if not exists (select 1 from public.fm_backup_cfg where id = 1 and coalesce(pass, '') <> '') then raise exception 'backup password not set'; end if;
+  update public.fm_backup_srv set force = true, kicked_at = null, running_at = case when running_at < now() - interval '15 minutes' then null else running_at end where id = 1;
+  perform public.fm_backup_srv_kick();
+  return (select last_req from public.fm_backup_srv where id = 1);
+end $$;
+create or replace function public.fm_backup_srv_can() returns boolean language sql stable security definer set search_path = public as $$ select public.fm_wipe_ok() $$;
+
+revoke all on function public.fm_backup_srv_tables(), public.fm_backup_srv_page(text, int, int), public.fm_backup_srv_objects(text, text, int), public.fm_backup_srv_copied(jsonb),
+  public.fm_backup_srv_old(int), public.fm_backup_srv_to(), public.fm_backup_srv_claim(), public.fm_backup_srv_result(jsonb), public.fm_backup_srv_secret(),
+  public.fm_backup_srv_kick(), public.fm_backup_srv_tick() from public, anon, authenticated;
+revoke all on function public.fm_backup_srv_get(), public.fm_backup_srv_set(jsonb), public.fm_backup_srv_autoset(jsonb), public.fm_backup_srv_now(), public.fm_backup_srv_can() from public, anon;
+grant execute on function public.fm_backup_srv_get(), public.fm_backup_srv_set(jsonb), public.fm_backup_srv_autoset(jsonb), public.fm_backup_srv_now(), public.fm_backup_srv_can() to authenticated;
+do $do$ begin
+  execute 'grant execute on function public.fm_backup_srv_tables(), public.fm_backup_srv_page(text, int, int), public.fm_backup_srv_objects(text, text, int), public.fm_backup_srv_copied(jsonb), public.fm_backup_srv_old(int), public.fm_backup_srv_claim(), public.fm_backup_srv_result(jsonb), public.fm_backup_srv_secret() to service_role';
+exception when undefined_object then null; end $do$;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-backup-srv'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-backup-srv'', ''*/10 * * * *'', ''select public.fm_backup_srv_tick()'')';
+  exception when others then raise notice 'pg_cron is not available: the server backup runs only with «▶️ نسخة الآن»'; end;
+end $do$;
+notify pgrst, 'reload schema';
