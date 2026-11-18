@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {db,users,rpc,asUser} from './pg_adapter.mjs';
-const sql=fs.readFileSync(new URL('../../supabase/migrations/202611170001_erp_project_foundation.sql',import.meta.url),'utf8');
+// V352: ERP001 is section 96 of supabase_setup.sql (already loaded by pg_adapter); re-applied below for the rerun check.
+const full=fs.readFileSync(new URL('../../supabase_setup.sql',import.meta.url),'utf8');
+const sql=full.slice(full.indexOf('-- ---------- 96)'));
 let count=0;
 async function test(name,fn){await fn();console.log('PASS',name);count++;}
 try {
