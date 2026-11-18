@@ -15558,3 +15558,134 @@ revoke all on function public.fm_erp_project_update(uuid,text,boolean,text),publ
 grant execute on function public.fm_erp_project_update(uuid,text,boolean,text),public.fm_erp_work_order_project_clear(uuid,integer,text),
  public.fm_erp_bulk_set(jsonb,uuid,text),public.fm_erp_regions() to authenticated;
 notify pgrst,'reload schema';
+
+
+-- ---------- 97) V353 — ERP: cost of each work order and project, with the source of every number ----------
+-- Policy (one place, shown in the page): a closed order's cost =
+--   store materials   = what actually left for it: custody «use» (−qty × unit_price) + store «out» moves with its wo_id (−qty × unit_price,
+--                       the V222 average cost); with no such move (warehouse part off, free-text items) the checklist «store» materials
+--                       q × price are used and the order is flagged «est»;
+--   direct purchases  = checklist «buy» materials q × price — left out when a contractor bill already charges the order's materials
+--                       (contract mat_mode buy / all), which then sit in «contractor»;
+--   contractor        = lines of approved / paid bills for the order (k wo with its wo_id, k mat with its code); pending bills apart;
+--   labour            = standard hours of the order type × hourly rate of the assignee's job title + approved overtime hours
+--                       recorded with the order code × rate × overtime factor (fm_settings.cost_rules; empty rates = 0).
+-- Rows read only; nothing is written. Who: admin, fm_scope_all titles, accountant (all regions); area manager (his regions).
+create or replace function public.fm_erp_cost_rules() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('rates', '{}'::jsonb, 'std', '{}'::jsonb, 'ot', 1.5)
+         || coalesce((select value from public.fm_settings where key = 'cost_rules' and jsonb_typeof(value) = 'object'), '{}'::jsonb) $$;
+create or replace function public.fm_erp_cost_can() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.fm_role() <> 'pending'
+     and (public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_my_pos() in ('accountant','area_manager')) $$;
+create or replace function public.fm_erp_cost_all() returns boolean language sql stable security definer set search_path = public as $$
+  select public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_my_pos() = 'accountant' $$;
+
+-- the cost of the given orders (internal): one row per order
+create or replace function public.fm_erp_cost_rows(p_ids uuid[]) returns table(wo_id uuid, mat_store numeric, mat_est boolean, mat_buy numeric,
+  contractor numeric, contractor_pending numeric, labour_std numeric, labour_ot numeric, std_hours numeric, ot_hours numeric, rate numeric, flags text[])
+language plpgsql stable security definer set search_path = public as $$
+declare R jsonb := public.fm_erp_cost_rules(); w record; ms numeric; mv numeric; mc numeric; mest numeric; mb numeric; ct numeric; cp numeric; bm text; bmat boolean;
+  hs numeric; ho numeric; rt numeric; fl text[];
+begin
+  for w in select o.id, o.code, o.type, o.checklist, o.assignee, coalesce(pr.job_title, '') jt from public.work_orders o left join public.profiles pr on pr.id = o.assignee
+            where o.id = any(p_ids) loop
+    fl := '{}';
+    select coalesce(sum(-m.qty * coalesce(m.unit_price,0)),0), count(*) into mv, mc from public.wo_stock_moves m where m.wo_id = w.id and m.kind = 'out';
+    select coalesce(sum(-c.qty * coalesce(c.unit_price,0)),0) + mv, count(*) + mc into ms, mc from public.wo_custody_moves c where c.wo_id = w.id and c.kind = 'use';
+    select coalesce(sum(coalesce(nullif(mt.m->>'q','')::numeric,0) * coalesce(nullif(mt.m->>'price','')::numeric,0)) filter (where coalesce(mt.m->>'src','store') = 'store'),0),
+           coalesce(sum(coalesce(nullif(mt.m->>'q','')::numeric,0) * coalesce(nullif(mt.m->>'price','')::numeric,0)) filter (where mt.m->>'src' = 'buy'),0)
+      into mest, mb
+      from jsonb_array_elements(case when jsonb_typeof(w.checklist) = 'array' then w.checklist else '[]' end) it(e)
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) mt(m)
+     where jsonb_typeof(mt.m) = 'object';
+    if mc = 0 and mest > 0 then ms := mest; fl := fl || 'est'::text; end if;
+    -- contractor lines (approved / paid) and pending ones; the contract's material mode
+    select coalesce(sum((l->>'a')::numeric) filter (where b.status in ('approved','paid')),0),
+           coalesce(sum((l->>'a')::numeric) filter (where b.status not in ('approved','paid','cancelled')),0),
+           bool_or(l->>'k' = 'mat')
+      into ct, cp, bmat
+      from public.fm_bills b cross join lateral jsonb_array_elements(case when jsonb_typeof(b.lines) = 'array' then b.lines else '[]' end) l
+     where b.status <> 'cancelled' and ((l->>'k' = 'wo' and l->>'wo_id' = w.id::text) or (l->>'k' = 'mat' and l->>'ref' = w.code));
+    select ctr.mat_mode into bm from public.fm_bill_wos bw join public.fm_bills bl on bl.id = bw.bill_id join public.fm_contracts ctr on ctr.id = bl.contract_id
+     where bw.wo_id = w.id and bl.status <> 'cancelled' limit 1;
+    if bm in ('buy','all') and mb > 0 then mb := 0; fl := fl || 'buy_in_bill'::text; end if;
+    if coalesce(bmat,false) and bm = 'all' and mc > 0 then fl := fl || 'mat_twice'::text; end if;
+    -- labour
+    rt := coalesce(nullif(R->'rates'->>w.jt,'')::numeric, 0);
+    hs := coalesce(nullif(R->'std'->>coalesce(w.type,''),'')::numeric, 0);
+    select coalesce(sum(coalesce(o.appr_hours, o.hours, 0)),0) into ho from public.fm_overtime o where o.wo_code = w.code and o.status = 'approved';
+    if rt = 0 and (hs > 0 or ho > 0) then fl := fl || 'no_rate'::text; end if;
+    wo_id := w.id; mat_store := round(ms,2); mat_est := 'est' = any(fl); mat_buy := round(mb,2); contractor := round(ct,2); contractor_pending := round(cp,2);
+    labour_std := round(hs * rt, 2); labour_ot := round(ho * rt * coalesce((R->>'ot')::numeric, 1.5), 2); std_hours := hs; ot_hours := ho; rate := rt; flags := fl;
+    return next;
+  end loop;
+end $$;
+
+-- the report: orders closed in the period (or, with p_wip, every order created in it), by project
+create or replace function public.fm_erp_cost(p_from date, p_to date, p_project uuid default null, p_wip boolean default false) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare ids uuid[]; out jsonb; f date := coalesce(p_from, date_trunc('month', now())::date); t date := coalesce(p_to, (now() at time zone 'Asia/Riyadh')::date);
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  if t < f or t - f > 400 then raise exception 'invalid period'; end if;
+  select coalesce(array_agg(o.id), '{}') into ids from public.work_orders o
+   left join public.fm_erp_work_order_projects l on l.wo_id = o.id
+   where (case when p_wip then (o.created_at at time zone 'Asia/Riyadh')::date between f and t and o.status not in ('cancelled','rejected')
+               else o.status = 'closed' and (coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh')::date between f and t end)
+     and (p_project is null or l.project_id = p_project)
+     and (public.fm_erp_cost_all() or public.fm_region_ok(o.region));
+  if cardinality(ids) > 20000 then raise exception 'too many orders'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', o.id, 'code', o.code, 'title', o.title, 'type', o.type, 'school', o.school, 'region', o.region,
+      'status', o.status, 'closed_at', o.closed_at, 'created_at', o.created_at, 'assignee', o.assignee_name, 'project_id', l.project_id, 'project', p.code,
+      'mat_store', c.mat_store, 'mat_est', c.mat_est, 'mat_buy', c.mat_buy, 'contractor', c.contractor, 'contractor_pending', c.contractor_pending,
+      'labour_std', c.labour_std, 'labour_ot', c.labour_ot, 'std_hours', c.std_hours, 'ot_hours', c.ot_hours, 'rate', c.rate,
+      'total', c.mat_store + c.mat_buy + c.contractor + c.labour_std + c.labour_ot, 'flags', to_jsonb(c.flags)) order by o.closed_at desc nulls last), '[]'::jsonb) into out
+    from public.fm_erp_cost_rows(ids) c join public.work_orders o on o.id = c.wo_id
+    left join public.fm_erp_work_order_projects l on l.wo_id = o.id left join public.fm_erp_projects p on p.id = l.project_id;
+  return jsonb_build_object('from', f, 'to', t, 'wip', p_wip, 'rows', out, 'rules', public.fm_erp_cost_rules(),
+    'projects', (select coalesce(jsonb_agg(jsonb_build_object('id', id, 'code', code, 'name', name, 'region', region, 'active', active) order by code), '[]'::jsonb) from public.fm_erp_projects),
+    'can_set', public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin');
+end $$;
+
+-- the source documents behind one order's cost
+create or replace function public.fm_erp_cost_wo(p_wo uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare o public.work_orders; R jsonb := public.fm_erp_cost_rules();
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  select * into o from public.work_orders where id = p_wo;
+  if not found or not (public.fm_erp_cost_all() or public.fm_region_ok(o.region)) then raise exception 'not allowed'; end if;
+  return jsonb_build_object(
+    'moves', (select coalesce(jsonb_agg(jsonb_build_object('at', m.at, 'src', 'store', 'item', w.name, 'qty', -m.qty, 'price', m.unit_price, 'value', round(-m.qty * coalesce(m.unit_price,0),2)) order by m.at), '[]'::jsonb)
+                from public.wo_stock_moves m left join public.wo_materials w on w.id = m.material_id where m.wo_id = p_wo and m.kind = 'out'),
+    'custody', (select coalesce(jsonb_agg(jsonb_build_object('at', c.at, 'src', 'custody', 'holder', c.holder_name, 'item', w.name, 'qty', -c.qty, 'price', c.unit_price, 'value', round(-c.qty * coalesce(c.unit_price,0),2)) order by c.at), '[]'::jsonb)
+                from public.wo_custody_moves c left join public.wo_materials w on w.id = c.material_id where c.wo_id = p_wo and c.kind = 'use'),
+    'checklist', (select coalesce(jsonb_agg(jsonb_build_object('item', it.e->>'t', 'name', mt.m->>'n', 'src', coalesce(mt.m->>'src','store'), 'qty', mt.m->>'q', 'price', mt.m->>'price',
+                   'value', round(coalesce(nullif(mt.m->>'q','')::numeric,0) * coalesce(nullif(mt.m->>'price','')::numeric,0),2))), '[]'::jsonb)
+                from jsonb_array_elements(case when jsonb_typeof(o.checklist) = 'array' then o.checklist else '[]' end) it(e)
+                cross join lateral jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) mt(m) where jsonb_typeof(mt.m) = 'object'),
+    'bills', (select coalesce(jsonb_agg(jsonb_build_object('code', b.code, 'month', b.month, 'status', b.status, 'k', l->>'k', 't', l->>'t', 'a', (l->>'a')::numeric)), '[]'::jsonb)
+                from public.fm_bills b cross join lateral jsonb_array_elements(case when jsonb_typeof(b.lines) = 'array' then b.lines else '[]' end) l
+               where b.status <> 'cancelled' and ((l->>'k' = 'wo' and l->>'wo_id' = p_wo::text) or (l->>'k' = 'mat' and l->>'ref' = o.code))),
+    'overtime', (select coalesce(jsonb_agg(jsonb_build_object('code', x.code, 'name', x.user_name, 'hours', coalesce(x.appr_hours, x.hours), 'status', x.status, 'from', x.start_at)), '[]'::jsonb)
+                from public.fm_overtime x where x.wo_code = o.code),
+    'rules', R, 'type', o.type, 'title', (select job_title from public.profiles where id = o.assignee));
+end $$;
+
+-- the system admin sets the labour rates: {rates: {job title: SAR/hour}, std: {order type: hours}, ot: factor}
+create or replace function public.fm_erp_cost_rules_set(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v jsonb; r jsonb := '{}'; s jsonb := '{}'; k text; x text;
+begin
+  if not (auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin')) then raise exception 'not allowed'; end if;
+  for k, x in select key, value from jsonb_each_text(case when jsonb_typeof(p->'rates') = 'object' then p->'rates' else '{}' end) loop
+    if k ~ '^[a-z_]{2,30}$' and x ~ '^\d+(\.\d+)?$' and x::numeric > 0 then r := r || jsonb_build_object(k, least(x::numeric, 10000)); end if; end loop;
+  for k, x in select key, value from jsonb_each_text(case when jsonb_typeof(p->'std') = 'object' then p->'std' else '{}' end) loop
+    if k ~ '^[a-z_]{2,30}$' and x ~ '^\d+(\.\d+)?$' and x::numeric > 0 then s := s || jsonb_build_object(k, least(x::numeric, 1000)); end if; end loop;
+  v := jsonb_build_object('rates', r, 'std', s, 'ot', least(greatest(coalesce((p->>'ot')::numeric, 1.5), 1), 5));
+  insert into public.fm_settings(key, value) values ('cost_rules', v) on conflict (key) do update set value = excluded.value, updated_at = now();
+  return v;
+end $$;
+
+revoke all on function public.fm_erp_cost_rules(), public.fm_erp_cost_all(), public.fm_erp_cost_rows(uuid[]) from public, anon, authenticated;
+revoke all on function public.fm_erp_cost_can(), public.fm_erp_cost(date, date, uuid, boolean), public.fm_erp_cost_wo(uuid), public.fm_erp_cost_rules_set(jsonb) from public, anon;
+grant execute on function public.fm_erp_cost_can(), public.fm_erp_cost(date, date, uuid, boolean), public.fm_erp_cost_wo(uuid), public.fm_erp_cost_rules_set(jsonb) to authenticated;
+notify pgrst, 'reload schema';
