@@ -16137,3 +16137,143 @@ revoke all on function public.fm_erp_rev_can(text), public.fm_erp_contract_set(u
 grant execute on function public.fm_erp_rev_can(text), public.fm_erp_contract_set(uuid, jsonb), public.fm_erp_claim_save(jsonb), public.fm_erp_claim_act(uuid, text, jsonb),
   public.fm_erp_collect(jsonb), public.fm_erp_collect_void(uuid, text), public.fm_erp_revenue(int) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 100) V356 — ERP: indirect costs (salaries, building expenses, vehicles, overhead) allocated to projects ----------
+-- A rule takes the indirect categories of one cost center (V186: labour = fm_cc_staff, exp = building expenses, vehicles, fuel,
+-- housing, telecom, tools, rent, overhead, other — never sub / mat / buy, which the V353 order cost already counts, nor revenue)
+-- and splits each month's amount over projects: «pct» = fixed shares (≤ 100 %, the rest stays unallocated), «orders» = by the
+-- number of orders of each target project closed that month (no closed order → unallocated). Two active rules may not take the
+-- same category of the same center in overlapping months. Nothing is written to the cost centers; the result feeds the margin.
+create table if not exists public.fm_erp_alloc_rules (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null check (length(btrim(name)) between 2 and 120),
+  center_id  uuid not null references public.fm_cc_centers(id) on delete cascade,
+  cats       text[] not null,
+  method     text not null default 'pct' check (method in ('pct','orders')),
+  targets    jsonb not null default '[]',      -- [{project_id, pct}]
+  from_month text not null check (from_month ~ '^\d{4}-\d{2}$'),
+  to_month   text check (to_month is null or to_month ~ '^\d{4}-\d{2}$'),
+  active     boolean not null default true,
+  note       text,
+  by_id      uuid default auth.uid() references public.profiles(id) on delete set null,
+  by_name    text,
+  at         timestamptz not null default now()
+);
+alter table public.fm_erp_alloc_rules enable row level security;
+revoke all on public.fm_erp_alloc_rules from public, anon, authenticated;
+
+create or replace function public.fm_erp_alloc_cats() returns text[] language sql immutable as $$
+  select array['labour','exp','vehicles','fuel','housing','telecom','tools','rent','overhead','other'] $$;
+create or replace function public.fm_erp_alloc_can_edit() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','accountant')) $$;
+
+-- p {id?, name, center_id, cats[], method, targets [{project_id, pct}], from_month, to_month?, active, note}
+create or replace function public.fm_erp_alloc_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare v uuid := nullif(p->>'id','')::uuid; cs text[]; t jsonb := '[]'; x jsonb; s numeric := 0; fm text := p->>'from_month'; tm text := nullif(p->>'to_month','');
+  meth text := coalesce(p->>'method','pct'); act boolean := coalesce((p->>'active')::boolean, true); cen uuid := nullif(p->>'center_id','')::uuid;
+begin
+  if not public.fm_erp_alloc_can_edit() then raise exception 'not allowed'; end if;
+  if not exists (select 1 from public.fm_cc_centers where id = cen) then raise exception 'center required'; end if;
+  select coalesce(array_agg(distinct c), '{}') into cs from jsonb_array_elements_text(case when jsonb_typeof(p->'cats') = 'array' then p->'cats' else '[]' end) c where c = any(public.fm_erp_alloc_cats());
+  if cardinality(cs) = 0 then raise exception 'categories required'; end if;
+  if meth not in ('pct','orders') then raise exception 'invalid method'; end if;
+  if coalesce(fm,'') !~ '^\d{4}-\d{2}$' or (tm is not null and (tm !~ '^\d{4}-\d{2}$' or tm < fm)) then raise exception 'invalid period'; end if;
+  for x in select e from jsonb_array_elements(case when jsonb_typeof(p->'targets') = 'array' then p->'targets' else '[]' end) e loop
+    if not exists (select 1 from public.fm_erp_projects where id = nullif(x->>'project_id','')::uuid) then raise exception 'project not found'; end if;
+    if t @> jsonb_build_array(jsonb_build_object('project_id', x->>'project_id')) then raise exception 'duplicate project'; end if;
+    if meth = 'pct' then
+      if coalesce((x->>'pct')::numeric, 0) <= 0 then raise exception 'invalid share'; end if;
+      s := s + (x->>'pct')::numeric;
+      t := t || jsonb_build_array(jsonb_build_object('project_id', x->>'project_id', 'pct', round((x->>'pct')::numeric, 2)));
+    else t := t || jsonb_build_array(jsonb_build_object('project_id', x->>'project_id')); end if;
+  end loop;
+  if jsonb_array_length(t) = 0 then raise exception 'projects required'; end if;
+  if s > 100.0001 then raise exception 'shares over 100'; end if;
+  if act and exists (select 1 from public.fm_erp_alloc_rules r where r.active and r.center_id = cen and r.id is distinct from v and r.cats && cs
+       and r.from_month <= coalesce(tm, '9999-12') and coalesce(r.to_month, '9999-12') >= fm) then raise exception 'overlapping rule'; end if;
+  if v is null then
+    insert into public.fm_erp_alloc_rules(name, center_id, cats, method, targets, from_month, to_month, active, note, by_name)
+    values (btrim(p->>'name'), cen, cs, meth, t, fm, tm, act, left(nullif(btrim(coalesce(p->>'note','')),''),500), public.fm_me_name()) returning id into v;
+  else
+    update public.fm_erp_alloc_rules set name = btrim(p->>'name'), center_id = cen, cats = cs, method = meth, targets = t, from_month = fm, to_month = tm, active = act,
+      note = left(nullif(btrim(coalesce(p->>'note','')),''),500) where id = v;
+    if not found then raise exception 'rule not found'; end if;
+  end if;
+  insert into public.fm_audit_log(actor_name, action, target, details) values (public.fm_me_name(), 'erp_alloc_rule', v::text, p);
+  return v;
+end $$;
+create or replace function public.fm_erp_alloc_del(p_id uuid) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_erp_alloc_can_edit() then raise exception 'not allowed'; end if;
+  delete from public.fm_erp_alloc_rules where id = p_id;
+  insert into public.fm_audit_log(actor_name, action, target) values (public.fm_me_name(), 'erp_alloc_del', p_id::text);
+end $$;
+
+-- the allocation of a year (internal): one row per rule × month × project (project null = unallocated)
+create or replace function public.fm_erp_alloc_rows(p_year int) returns table(rule_id uuid, m int, project_id uuid, cat text, amount numeric)
+language plpgsql stable security definer set search_path = public as $$
+declare r public.fm_erp_alloc_rules; mo int; tot numeric; ym text; n int; k jsonb; sh numeric; done numeric; c text; act jsonb;
+begin
+  -- the cost centers' indirect actuals of the year, once: {"<center>|<month>|<cat>": amount}
+  select coalesce(jsonb_object_agg(x.k, x.v), '{}') into act from (
+    select a.center_id::text || '|' || a.m || '|' || a.cat k, sum(a.amount) v from public.fm_cc_actuals(p_year) a where a.cat = any(public.fm_erp_alloc_cats()) group by 1) x;
+  for r in select * from public.fm_erp_alloc_rules where active loop
+    for mo in 1..12 loop
+      ym := p_year || '-' || lpad(mo::text, 2, '0');
+      continue when ym < r.from_month or ym > coalesce(r.to_month, '9999-12');
+      for c in select unnest(r.cats) loop
+        tot := coalesce((act->>(r.center_id::text || '|' || mo || '|' || c))::numeric, 0);
+        continue when tot = 0;
+        done := 0;
+        if r.method = 'pct' then
+          for k in select e from jsonb_array_elements(r.targets) e loop
+            sh := round(tot * (k->>'pct')::numeric / 100, 2); done := done + sh;
+            rule_id := r.id; m := mo; project_id := (k->>'project_id')::uuid; cat := c; amount := sh; return next;
+          end loop;
+        else
+          select count(*) into n from public.work_orders o join public.fm_erp_work_order_projects l on l.wo_id = o.id
+           where o.status = 'closed' and to_char(coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh', 'YYYY-MM') = ym
+             and l.project_id in (select (e->>'project_id')::uuid from jsonb_array_elements(r.targets) e);
+          if n > 0 then
+            for k in select e from jsonb_array_elements(r.targets) e loop
+              select round(tot * count(*)::numeric / n, 2) into sh from public.work_orders o join public.fm_erp_work_order_projects l on l.wo_id = o.id
+               where o.status = 'closed' and to_char(coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh', 'YYYY-MM') = ym and l.project_id = (k->>'project_id')::uuid;
+              done := done + sh;
+              rule_id := r.id; m := mo; project_id := (k->>'project_id')::uuid; cat := c; amount := sh; return next;
+            end loop;
+          end if;
+        end if;
+        if tot - done > 0.005 then rule_id := r.id; m := mo; project_id := null; cat := c; amount := round(tot - done, 2); return next; end if;
+      end loop;
+    end loop;
+  end loop;
+end $$;
+
+create or replace function public.fm_erp_alloc(p_year int) returns jsonb language plpgsql security definer set search_path = public as $$
+declare y int := coalesce(p_year, extract(year from now())::int); cc boolean := public.fm_cc_can('view');
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  return jsonb_build_object('year', y, 'cc', cc, 'can_edit', public.fm_erp_alloc_can_edit(), 'cats', to_jsonb(public.fm_erp_alloc_cats()),
+    'rules', (select coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'name', r.name, 'center_id', r.center_id, 'center', c.name, 'center_code', c.code, 'cats', r.cats, 'method', r.method,
+        'targets', r.targets, 'from', r.from_month, 'to', r.to_month, 'active', r.active, 'note', r.note, 'by', r.by_name, 'at', r.at) order by r.at), '[]'::jsonb)
+        from public.fm_erp_alloc_rules r join public.fm_cc_centers c on c.id = r.center_id),
+    'centers', case when cc then (select coalesce(jsonb_agg(jsonb_build_object('id', id, 'code', code, 'name', name, 'region', region) order by code), '[]'::jsonb) from public.fm_cc_centers) else '[]'::jsonb end,
+    'projects', (select coalesce(jsonb_agg(jsonb_build_object('id', id, 'code', code, 'name', name, 'region', region) order by code), '[]'::jsonb) from public.fm_erp_projects where public.fm_erp_rev_sees(id)),
+    'rows', case when cc then (select coalesce(jsonb_agg(jsonb_build_object('rule', a.rule_id, 'm', a.m, 'project_id', a.project_id, 'cat', a.cat, 'amount', a.amount)), '[]'::jsonb)
+        from public.fm_erp_alloc_rows(y) a where a.project_id is null or public.fm_erp_rev_sees(a.project_id)) else '[]'::jsonb end);
+end $$;
+
+-- V355 revenue now also returns the allocated indirect cost per project × month (only for those who see the cost centers)
+create or replace function public.fm_erp_revenue_alloc(p_year int) returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  if not public.fm_cc_can('view') then return jsonb_build_object('ok', false, 'rows', '[]'::jsonb); end if;
+  return jsonb_build_object('ok', true, 'rows', (select coalesce(jsonb_agg(jsonb_build_object('project_id', x.project_id, 'month', x.ym, 'alloc', x.v)), '[]'::jsonb) from (
+    select a.project_id, coalesce(p_year, extract(year from now())::int) || '-' || lpad(a.m::text, 2, '0') ym, round(sum(a.amount), 2) v
+      from public.fm_erp_alloc_rows(coalesce(p_year, extract(year from now())::int)) a where a.project_id is not null and public.fm_erp_rev_sees(a.project_id) group by 1, 2) x));
+end $$;
+
+revoke all on function public.fm_erp_alloc_cats(), public.fm_erp_alloc_rows(int) from public, anon, authenticated;
+revoke all on function public.fm_erp_alloc_can_edit(), public.fm_erp_alloc_save(jsonb), public.fm_erp_alloc_del(uuid), public.fm_erp_alloc(int), public.fm_erp_revenue_alloc(int) from public, anon;
+grant execute on function public.fm_erp_alloc_can_edit(), public.fm_erp_alloc_save(jsonb), public.fm_erp_alloc_del(uuid), public.fm_erp_alloc(int), public.fm_erp_revenue_alloc(int) to authenticated;
+notify pgrst, 'reload schema';
