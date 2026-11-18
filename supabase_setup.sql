@@ -16712,3 +16712,81 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: project budget alerts are not pushed'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 104) V361 — ERP: expected cash flow (what the owner owes in, what suppliers / contractors are owed out) ----------
+-- Read only. Each open document becomes a dated item: firm = an obligation that is fixed (invoiced claim, accepted supplier invoice,
+-- approved contractor bill), possible = still under review (certified claim not invoiced yet, new supplier invoice, submitted /
+-- reviewed bill). Expected date = the document date + the terms in fm_settings.erp_cash {owner_days 60, supplier_days 30,
+-- sub_days 30, pay_day 27, salaries true, opening, opening_date}; salaries of the V186 staff (when visible) are one outflow per
+-- month on pay_day. The browser groups the items into weeks (overdue ones in the first).
+create or replace function public.fm_erp_cash_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('owner_days', 60, 'supplier_days', 30, 'sub_days', 30, 'pay_day', 27, 'salaries', true, 'opening', null, 'opening_date', null)
+         || coalesce((select value from public.fm_settings where key = 'erp_cash' and jsonb_typeof(value) = 'object'), '{}'::jsonb) $$;
+create or replace function public.fm_erp_cash_cfg_set(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v jsonb;
+begin
+  if not public.fm_acct_can_set() then raise exception 'not allowed'; end if;
+  v := jsonb_build_object('owner_days', least(greatest(coalesce((p->>'owner_days')::int, 60), 0), 365), 'supplier_days', least(greatest(coalesce((p->>'supplier_days')::int, 30), 0), 365),
+    'sub_days', least(greatest(coalesce((p->>'sub_days')::int, 30), 0), 365), 'pay_day', least(greatest(coalesce((p->>'pay_day')::int, 27), 1), 28),
+    'salaries', coalesce((p->>'salaries')::boolean, true), 'opening', case when nullif(p->>'opening','') is null then null else round((p->>'opening')::numeric, 2) end,
+    'opening_date', case when nullif(p->>'opening_date','') is null then null else (p->>'opening_date')::date end);
+  insert into public.fm_settings(key, value) values ('erp_cash', v) on conflict (key) do update set value = excluded.value, updated_at = now();
+  return v;
+end $$;
+
+create or replace function public.fm_erp_cash() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare cfg jsonb := public.fm_erp_cash_cfg(); od int; sd int; bd int; I jsonb := '[]'; r record; today date := (now() at time zone 'Asia/Riyadh')::date;
+        sal numeric := null; skipped text[] := '{}'; cc boolean := false;
+begin
+  if not public.fm_acct_can() then raise exception 'not allowed'; end if;
+  od := (cfg->>'owner_days')::int; sd := (cfg->>'supplier_days')::int; bd := (cfg->>'sub_days')::int;
+  begin   -- owner: invoiced claims still due (firm), certified not invoiced (possible)
+    for r in select c.*, p.code pcode,
+                    (select max((h->>'at')::timestamptz) from jsonb_array_elements(c.history) h where h->>'act' = 'certify') cert_at
+               from public.fm_erp_owner_claims c join public.fm_erp_projects p on p.id = c.project_id where c.status in ('certified','invoiced') loop
+      if r.status = 'invoiced' then
+        if round(r.certified * (1 + coalesce(r.vat_pct,0) / 100) - coalesce(r.collected,0), 2) > 0 then
+          I := I || jsonb_build_array(jsonb_build_object('dir','in','firm',true,'k','claim','date', coalesce(r.invoice_date, today) + od,
+            'amount', round(r.certified * (1 + coalesce(r.vat_pct,0) / 100) - coalesce(r.collected,0), 2), 'ref', coalesce(r.invoice_no, r.code), 'party', r.pcode, 'doc', r.code));
+        end if;
+      else
+        I := I || jsonb_build_array(jsonb_build_object('dir','in','firm',false,'k','claim_cert','date', greatest(today, coalesce((r.cert_at at time zone 'Asia/Riyadh')::date, today)) + od,
+          'amount', round(coalesce(r.certified, r.amount) * (1 + coalesce(r.vat_pct,0) / 100), 2), 'ref', r.code, 'party', r.pcode, 'doc', r.code));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'claim'; end;
+  begin   -- suppliers: accepted invoices (firm, the unpaid rest), new invoices (possible)
+    for r in select i.*, s.name sname from public.wo_supplier_invoices i join public.wo_suppliers s on s.id = i.supplier_id where i.status in ('new','accepted') loop
+      if r.status = 'accepted' and r.amount - coalesce(r.paid_amount,0) > 0 then
+        I := I || jsonb_build_array(jsonb_build_object('dir','out','firm',true,'k','sinv','date', coalesce(r.invoice_date, (r.dec_at at time zone 'Asia/Riyadh')::date, today) + sd,
+          'amount', round(r.amount - coalesce(r.paid_amount,0), 2), 'ref', r.invoice_no, 'party', r.sname, 'doc', r.code));
+      elsif r.status = 'new' then
+        I := I || jsonb_build_array(jsonb_build_object('dir','out','firm',false,'k','sinv_new','date', coalesce(r.invoice_date, (r.at at time zone 'Asia/Riyadh')::date) + sd,
+          'amount', r.amount, 'ref', r.invoice_no, 'party', r.sname, 'doc', r.code));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'sinv'; end;
+  begin   -- contractor bills: approved (firm), submitted / reviewed (possible)
+    for r in select b.*, coalesce(c.contractor_name, c.name) cname,
+                    (select max((h->>'at')::timestamptz) from jsonb_array_elements(b.history) h where h->>'a' = 'approve') appr_at
+               from public.fm_bills b join public.fm_contracts c on c.id = b.contract_id where b.status in ('submitted','reviewed','approved') and b.total > 0 loop
+      I := I || jsonb_build_array(jsonb_build_object('dir','out','firm', r.status = 'approved','k', case when r.status = 'approved' then 'bill' else 'bill_rev' end,
+        'date', coalesce((r.appr_at at time zone 'Asia/Riyadh')::date, (r.updated_at at time zone 'Asia/Riyadh')::date, today) + bd,
+        'amount', r.total, 'ref', r.code, 'party', r.cname, 'doc', r.code || ' — ' || r.month));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'bill'; end;
+  if coalesce((cfg->>'salaries')::boolean, true) then
+    begin cc := public.fm_cc_can('salaries'); exception when others then cc := false; end;
+    if cc then
+      begin
+        select round(sum((coalesce(salary,0) + coalesce(housing,0) + coalesce(transport,0) + coalesce(other,0)) * (1 + coalesce(gosi_pct,0) / 100)), 2) into sal
+          from public.fm_cc_staff where coalesce(active, true) and (end_date is null or end_date >= today);
+      exception when undefined_table or undefined_column then skipped := skipped || 'salaries'; end;
+    end if;
+  end if;
+  return jsonb_build_object('today', today, 'cfg', cfg, 'can_set', public.fm_acct_can_set(), 'salaries', sal, 'skipped', to_jsonb(skipped),
+    'items', coalesce((select jsonb_agg(x order by x->>'date') from jsonb_array_elements(I) x), '[]'::jsonb));
+end $$;
+revoke all on function public.fm_erp_cash_cfg(), public.fm_erp_cash_cfg_set(jsonb), public.fm_erp_cash() from public, anon;
+grant execute on function public.fm_erp_cash_cfg(), public.fm_erp_cash_cfg_set(jsonb), public.fm_erp_cash() to authenticated;
+notify pgrst, 'reload schema';
