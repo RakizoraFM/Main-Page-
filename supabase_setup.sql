@@ -19041,3 +19041,103 @@ begin
   return id_;
 end $$;
 notify pgrst, 'reload schema';
+
+-- ---------- 119) V380 — duplicate photos: the same picture uploaded on more than one work order ----------
+-- Each work-order photo gets a fingerprint computed on the device when it is uploaded (dHash = 64-bit difference hash of a
+-- 9×8 grey thumbnail, survives re-compression and resizing; sha = SHA-256 of the uploaded JPEG). fm_photo_dups lists the
+-- photos whose fingerprint equals or is within 4 bits of a photo on ANOTHER order (four 16-bit bands find the candidates).
+alter table public.wo_photos add column if not exists phash text;
+alter table public.wo_photos add column if not exists sha   text;
+create index if not exists wo_photos_phash_idx on public.wo_photos (phash) where phash is not null;
+create index if not exists wo_photos_sha_idx on public.wo_photos (sha) where sha is not null;
+create table if not exists public.fm_photo_dup_reviews (
+  k text primary key, status text not null check (status in ('ok','action')), note text, by_id uuid default auth.uid(), by_name text, at timestamptz not null default now()
+);
+alter table public.fm_photo_dup_reviews enable row level security;
+revoke all on public.fm_photo_dup_reviews from anon, authenticated;
+
+create or replace function public.fm_photo_hash(p_id uuid, p_phash text, p_sha text) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare r record;
+begin
+  if auth.uid() is null then raise exception 'not allowed'; end if;
+  if p_phash is not null and p_phash !~ '^([0-9a-f]{16}|-)$' then raise exception 'bad hash'; end if;
+  if p_sha is not null and p_sha !~ '^[0-9a-f]{64}$' then raise exception 'bad hash'; end if;
+  select * into r from public.wo_photos where id = p_id;
+  if not found then return false; end if;
+  -- the uploader, or anyone who may see the order (the platform backfills old photos)
+  if r.by_id is distinct from auth.uid() and not public.fm_wo_can_see(r.wo_id) then raise exception 'not allowed'; end if;
+  update public.wo_photos set phash = coalesce(p_phash, phash), sha = coalesce(p_sha, sha) where id = p_id;
+  return true;
+end $$;
+
+create or replace function public.fm_photo_dups(p_days int default 90) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare d int := greatest(7, least(coalesce(p_days, 90), 400)); res jsonb;
+begin
+  if auth.uid() is null or not (public.fm_flag_can() or public.fm_scope_all() or public.fm_role() in ('admin','manager','engineer')) then raise exception 'not allowed'; end if;
+  with ph as (
+    select p.id, p.wo_id, p.kind, p.tag, p.item, p.path, p.at, p.by_name, p.phash, p.sha,
+           case when p.phash ~ '^[0-9a-f]{16}$' then ('x' || p.phash)::bit(64) end as b, w.code, w.school, w.region, w.assignee_name, w.title
+    from public.wo_photos p join public.work_orders w on w.id = p.wo_id
+    where p.at >= now() - make_interval(days => d) and (p.phash ~ '^[0-9a-f]{16}$' or p.sha is not null)
+      and public.fm_wo_can_see(p.wo_id)
+  ), band as (
+    select id, substr(phash, 1, 4) as v, 1 as n from ph where b is not null and phash not in ('0000000000000000','ffffffffffffffff') union all
+    select id, substr(phash, 5, 4), 2 from ph where b is not null and phash not in ('0000000000000000','ffffffffffffffff') union all
+    select id, substr(phash, 9, 4), 3 from ph where b is not null and phash not in ('0000000000000000','ffffffffffffffff') union all
+    select id, substr(phash, 13, 4), 4 from ph where b is not null and phash not in ('0000000000000000','ffffffffffffffff')
+  ), cand as (
+    select distinct least(a.id::text, b.id::text) as x, greatest(a.id::text, b.id::text) as y
+    from band a join band b on a.n = b.n and a.v = b.v and a.id <> b.id
+    union
+    select least(a.id::text, b.id::text), greatest(a.id::text, b.id::text)
+    from ph a join ph b on a.sha = b.sha and a.id <> b.id
+  ), pairs as (
+    select a.*, b.id as id2, b.wo_id as wo2, b.code as code2, b.school as school2, b.region as region2, b.assignee_name as as2,
+           b.kind as kind2, b.item as item2, b.path as path2, b.at as at2, b.by_name as by2,
+           case when a.sha is not null and a.sha = b.sha then 0 when a.b is not null and b.b is not null then bit_count(a.b # b.b) else 99 end as dist
+    from cand c join ph a on a.id::text = c.x join ph b on b.id::text = c.y
+    where a.wo_id <> b.wo_id
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'k', least(p.id::text, p.id2::text) || ':' || greatest(p.id::text, p.id2::text), 'dist', p.dist, 'same_file', p.dist = 0 and p.sha is not null,
+      'a', jsonb_build_object('id', p.id, 'wo', p.wo_id, 'code', p.code, 'school', p.school, 'region', p.region, 'who', p.assignee_name, 'kind', p.kind, 'item', p.item, 'path', p.path, 'at', p.at, 'by', p.by_name),
+      'b', jsonb_build_object('id', p.id2, 'wo', p.wo2, 'code', p.code2, 'school', p.school2, 'region', p.region2, 'who', p.as2, 'kind', p.kind2, 'item', p.item2, 'path', p.path2, 'at', p.at2, 'by', p.by2),
+      'other_school', coalesce(p.school, '') <> coalesce(p.school2, ''),
+      'rv', (select jsonb_build_object('status', r.status, 'note', r.note, 'by', r.by_name, 'at', r.at) from public.fm_photo_dup_reviews r
+             where r.k = least(p.id::text, p.id2::text) || ':' || greatest(p.id::text, p.id2::text))
+    ) order by p.dist, greatest(p.at, p.at2) desc), '[]'::jsonb) into res
+  from (select * from pairs where dist <= 4 order by dist limit 500) p;
+  return jsonb_build_object('days', d, 'pairs', res,
+    'hashed', (select count(*) from public.wo_photos where at >= now() - make_interval(days => d) and phash ~ '^[0-9a-f]{16}$'),
+    'unhashed', (select count(*) from public.wo_photos where at >= now() - make_interval(days => d) and phash is null),
+    'can_review', public.fm_flag_can());
+end $$;
+
+-- photos without a fingerprint (for the platform backfill); '-' = the device could not read it
+create or replace function public.fm_photo_unhashed(p_days int default 90, p_limit int default 200) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'path', p.path)), '[]'::jsonb)
+  from (select p.id, p.path from public.wo_photos p
+        where p.phash is null and p.at >= now() - make_interval(days => greatest(7, least(coalesce(p_days, 90), 400)))
+          and auth.uid() is not null and public.fm_wo_can_see(p.wo_id)
+        order by p.at desc limit greatest(1, least(coalesce(p_limit, 200), 500))) p
+$$;
+
+create or replace function public.fm_photo_dup_review(p_k text, p_status text, p_note text) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_flag_can() then raise exception 'not allowed'; end if;
+  if p_k !~ '^[0-9a-f-]{36}:[0-9a-f-]{36}$' then raise exception 'bad key'; end if;
+  if p_status is null then delete from public.fm_photo_dup_reviews where k = p_k; return true; end if;
+  if p_status not in ('ok','action') then raise exception 'bad status'; end if;
+  if length(coalesce(trim(p_note), '')) < 3 then raise exception 'note required'; end if;
+  insert into public.fm_photo_dup_reviews (k, status, note, by_id, by_name)
+  values (p_k, p_status, trim(p_note), auth.uid(), (select full_name from public.profiles where id = auth.uid()))
+  on conflict (k) do update set status = excluded.status, note = excluded.note, by_id = excluded.by_id, by_name = excluded.by_name, at = now();
+  return true;
+end $$;
+revoke all on function public.fm_photo_hash(uuid, text, text), public.fm_photo_dups(int), public.fm_photo_unhashed(int, int), public.fm_photo_dup_review(text, text, text) from public, anon;
+grant execute on function public.fm_photo_hash(uuid, text, text), public.fm_photo_dups(int), public.fm_photo_unhashed(int, int), public.fm_photo_dup_review(text, text, text) to authenticated;
+notify pgrst, 'reload schema';
