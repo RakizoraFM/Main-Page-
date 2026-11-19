@@ -19141,3 +19141,95 @@ end $$;
 revoke all on function public.fm_photo_hash(uuid, text, text), public.fm_photo_dups(int), public.fm_photo_unhashed(int, int), public.fm_photo_dup_review(text, text, text) from public, anon;
 grant execute on function public.fm_photo_hash(uuid, text, text), public.fm_photo_dups(int), public.fm_photo_unhashed(int, int), public.fm_photo_dup_review(text, text, text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 120) V382 — response deadline for school principals' requests: reminder, escalation, response time ----------
+-- first_at = when the request first left «new» (accepted / in progress / done / rejected). A new request still waiting after
+-- `hours` (urgent: `urgent_hours`) sends a reminder to the school's staff (fm_school_staff_ids); after `esc_hours` (urgent:
+-- `urgent_esc`) it escalates to the area managers of the region and the project / ops managers. Push, else WhatsApp
+-- (fm_alert_send). Settings fm_settings.sr_sla {enabled true, hours 4, esc_hours 24, urgent_hours 1, urgent_esc 4}.
+alter table public.fm_school_requests add column if not exists first_at timestamptz;
+alter table public.fm_school_requests add column if not exists first_by_name text;
+alter table public.fm_school_requests add column if not exists esc_level int not null default 0;
+alter table public.fm_school_requests add column if not exists esc_at timestamptz;
+do $do$ begin
+  update public.fm_school_requests set first_at = coalesce(updated_at, created_at), first_by_name = handled_by_name
+   where first_at is null and status <> 'new';
+exception when others then null; end $do$;
+
+create or replace function public.fm_sr_first_stamp() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if old.status = 'new' and new.status <> 'new' and new.first_at is null then
+    new.first_at := now();
+    new.first_by_name := coalesce(new.handled_by_name, (select coalesce(full_name, email) from public.profiles where id = auth.uid()));
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_sr_first_stamp on public.fm_school_requests;
+create trigger fm_sr_first_stamp before update of status on public.fm_school_requests for each row execute function public.fm_sr_first_stamp();
+
+create or replace function public.fm_sr_sla_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', true, 'hours', 4, 'esc_hours', 24, 'urgent_hours', 1, 'urgent_esc', 4)
+      || coalesce((select value from public.fm_settings where key = 'sr_sla'), '{}'::jsonb)
+$$;
+
+create or replace function public.fm_v382_sr_run() returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_sr_sla_cfg(); r record; age numeric; h1 numeric; h2 numeric; ids uuid[]; u uuid; n int := 0; t text; b text;
+begin
+  if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+  for r in select * from public.fm_school_requests where status = 'new' and esc_level < 2 order by created_at limit 500 loop
+    age := extract(epoch from now() - r.created_at) / 3600;
+    h1 := case when r.urgency = 'urgent' then coalesce((c->>'urgent_hours')::numeric, 1) else coalesce((c->>'hours')::numeric, 4) end;
+    h2 := case when r.urgency = 'urgent' then coalesce((c->>'urgent_esc')::numeric, 4) else coalesce((c->>'esc_hours')::numeric, 24) end;
+    if age >= h2 then
+      t := '🔺 تصعيد: طلب مدرسة بلا رد ' || round(age)::text || ' ساعة';
+      b := coalesce(r.code, '') || ' — ' || r.school_name || ' — ' || left(r.description, 120);
+      for u in select p.id from public.profiles p
+                where p.active and (p.job_title in ('project_manager','ops_manager')
+                   or (p.job_title = 'area_manager' and (r.region is null or coalesce(array_length(p.regions, 1), 0) = 0 or r.region = any(p.regions)))) loop
+        perform public.fm_alert_send(u, 'sr_new', t, b, 'sr', 'sr-esc-' || r.id::text, true);
+      end loop;
+      update public.fm_school_requests set esc_level = 2, esc_at = now() where id = r.id;
+      n := n + 1;
+    elsif r.esc_level = 0 and age >= h1 then
+      ids := coalesce(public.fm_school_staff_ids(r.bkey, r.school_name, r.region), '{}');
+      t := '⏰ طلب مدرسة بانتظار الرد: ' || coalesce(r.code, '');
+      b := r.school_name || ' — ' || left(r.description, 120) || ' (منذ ' || round(age)::text || ' ساعة)';
+      foreach u in array ids loop perform public.fm_alert_send(u, 'sr_new', t, b, 'sr', 'sr-rem-' || r.id::text, true); end loop;
+      update public.fm_school_requests set esc_level = 1, esc_at = now() where id = r.id;
+      n := n + 1;
+    end if;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_v382_sr_run() from public, anon, authenticated;
+revoke all on function public.fm_sr_first_stamp() from public, anon, authenticated;
+
+-- response-time figures for the platform page (same schools as fm_school_req_list)
+create or replace function public.fm_sr_sla_stats(p_days int default 30) returns jsonb language sql stable security definer set search_path = public as $$
+  with c as (select public.fm_sr_sla_cfg() v),
+  r as (select q.*, extract(epoch from coalesce(q.first_at, now()) - q.created_at) / 3600 as h,
+               case when q.urgency = 'urgent' then coalesce(((select v from c)->>'urgent_hours')::numeric, 1) else coalesce(((select v from c)->>'hours')::numeric, 4) end as lim
+          from public.fm_school_requests q
+         where public.fm_role() in ('admin','manager','staff','viewer','engineer','supervisor')
+           and q.bkey in (select bkey from public.fm_my_schools())
+           and q.created_at > now() - make_interval(days => greatest(1, least(coalesce(p_days, 30), 365))))
+  select jsonb_build_object('cfg', (select v from c), 'days', greatest(1, least(coalesce(p_days, 30), 365)),
+    'n', count(*), 'answered', count(*) filter (where first_at is not null),
+    'avg_h', round(avg(h) filter (where first_at is not null)::numeric, 1),
+    'median_h', round((percentile_cont(0.5) within group (order by h) filter (where first_at is not null))::numeric, 1),
+    'on_time', count(*) filter (where first_at is not null and h <= lim),
+    'waiting', count(*) filter (where status = 'new'), 'late', count(*) filter (where status = 'new' and h > lim),
+    'escalated', count(*) filter (where esc_level >= 2),
+    'late_codes', coalesce(jsonb_agg(jsonb_build_object('code', code, 'h', round(h::numeric, 1), 'esc', esc_level)) filter (where status = 'new' and h > lim), '[]'::jsonb),
+    'by', coalesce((select jsonb_agg(x order by x->>'name') from (select jsonb_build_object('name', coalesce(first_by_name, '—'), 'n', count(*), 'avg_h', round(avg(h)::numeric, 1),
+                    'on_time', count(*) filter (where h <= lim)) x from r where first_at is not null group by first_by_name) z), '[]'::jsonb))
+  from r
+$$;
+grant execute on function public.fm_sr_sla_stats(int) to authenticated;
+revoke all on function public.fm_sr_sla_stats(int) from anon;
+
+do $do$ begin
+  perform cron.unschedule('fm-v382-sr') where exists (select 1 from cron.job where jobname = 'fm-v382-sr');
+  perform cron.schedule('fm-v382-sr', '*/15 * * * *', 'select public.fm_v382_sr_run()');
+exception when others then raise notice 'pg_cron not available: %', sqlerrm; end $do$;
+notify pgrst, 'reload schema';
