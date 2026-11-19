@@ -17061,3 +17061,1983 @@ revoke all on function public.fm_ret_held(uuid) from public, anon, authenticated
 revoke all on function public.fm_ret_list(), public.fm_ret_release(uuid, numeric, date, text), public.fm_ret_act(uuid, text, jsonb), public.fm_acct_journal(date, date), public.fm_erp_cash() from public, anon;
 grant execute on function public.fm_ret_list(), public.fm_ret_release(uuid, numeric, date, text), public.fm_ret_act(uuid, text, jsonb), public.fm_acct_journal(date, date), public.fm_erp_cash() to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 106) V365 — server backup without opening the platform; Storage files mirrored ----------
+-- The Edge Function fm-backup (pg_cron fm-backup-srv every 10 min → fm_backup_srv_tick → pg_net) reads every table with the
+-- service role (the same tables as the V351 page), writes one encrypted .fmbak file (V351 format and password) into the
+-- private bucket fm-backups (db/…), keeps the newest `keep` files, mirrors new / changed Storage files of the other buckets
+-- into fm-backups/files/<bucket>/<path> (a deleted original stays in the mirror), and e-mails a download link (signed URL)
+-- to the system admins and the outside addresses. A run that runs out of time continues the files on the next tick.
+create table if not exists public.fm_backup_srv (
+  id int primary key default 1 check (id = 1),
+  enabled boolean not null default false,
+  freq text not null default 'weekly' check (freq in ('daily','weekly')),
+  dow int not null default 5 check (dow between 0 and 6),
+  hour int not null default 2 check (hour between 0 and 23),
+  keep int not null default 8 check (keep between 1 and 60),
+  files boolean not null default true,
+  to_admins boolean not null default true,
+  to_ext text[] not null default '{}',
+  link_days int not null default 7 check (link_days between 1 and 30),
+  next_at timestamptz,
+  force boolean not null default false,
+  more boolean not null default false,
+  running_at timestamptz,
+  fn_url text, hook text, anon_key text, kicked_at timestamptz, last_req bigint,
+  last jsonb,
+  updated_at timestamptz not null default now());
+alter table public.fm_backup_srv enable row level security;
+revoke all on public.fm_backup_srv from anon, authenticated;
+insert into public.fm_backup_srv(id) values (1) on conflict (id) do nothing;
+
+create table if not exists public.fm_backup_files (
+  bucket text not null, name text not null, size bigint, src_updated timestamptz, copied_at timestamptz not null default now(),
+  primary key (bucket, name));
+alter table public.fm_backup_files enable row level security;
+revoke all on public.fm_backup_files from anon, authenticated;
+
+-- the V351 page never reads / restores these two either
+create or replace function public.fm_backup_skip() returns text[] language sql immutable as $$
+  select array['fm_backup_cfg','fm_push_cfg','fm_wa_cfg','fm_report_cfg','fm_plan','fm_push_subs','fm_push_queue','fm_wa_queue','fm_backup_srv','fm_backup_files'] $$;
+
+do $do$ begin
+  insert into storage.buckets (id, name, public) values ('fm-backups','fm-backups', false) on conflict (id) do nothing;
+exception when others then raise notice 'bucket fm-backups: %', sqlerrm; end $do$;
+
+-- service role: the tables and their pages (same as fm_backup_tables / fm_backup_page, without the person check)
+create or replace function public.fm_backup_srv_tables() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r record; n bigint; out jsonb := '[]';
+begin
+  for r in select c.relname, c.reltuples from pg_class c join pg_namespace s on s.oid = c.relnamespace
+           where s.nspname = 'public' and c.relkind in ('r','p') and not c.relispartition and not c.relname = any(public.fm_backup_skip())
+           order by c.relname loop
+    if r.reltuples > 300000 then n := r.reltuples::bigint; else execute format('select count(*) from public.%I', r.relname) into n; end if;
+    out := out || jsonb_build_object('t', r.relname, 'n', n);
+  end loop;
+  return out;
+end $$;
+create or replace function public.fm_backup_srv_page(p_table text, p_offset int, p_limit int) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ord text; r jsonb;
+begin
+  if not public.fm_backup_ok_table(p_table) then raise exception 'unknown table'; end if;
+  select string_agg(format('%I', a.attname), ',' order by k.ord) into ord
+    from pg_index i, unnest(i.indkey) with ordinality k(attnum, ord), pg_attribute a
+   where i.indrelid = ('public.' || quote_ident(p_table))::regclass and i.indisprimary and a.attrelid = i.indrelid and a.attnum = k.attnum;
+  execute format('select coalesce(jsonb_agg(to_jsonb(x)), ''[]'') from (select * from public.%I order by %s offset %s limit %s) x',
+                 p_table, coalesce(ord, 'ctid'), greatest(coalesce(p_offset,0),0), least(greatest(coalesce(p_limit,500),1),2000)) into r;
+  return r;
+end $$;
+
+-- Storage files not yet mirrored (or changed since), in name order after (bucket, name)
+create or replace function public.fm_backup_srv_objects(p_bucket text, p_name text, p_n int) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r jsonb;
+begin
+  begin
+    execute $q$select coalesce(jsonb_agg(jsonb_build_object('b', x.bucket_id, 'n', x.name, 's', x.sz, 'u', x.updated_at) order by x.bucket_id, x.name), '[]')
+      from (select o.bucket_id, o.name, (o.metadata->>'size')::bigint sz, coalesce(o.updated_at, o.created_at) updated_at from storage.objects o
+            where o.bucket_id <> 'fm-backups' and o.name not like '%/.emptyFolderPlaceholder'
+              and (o.bucket_id, o.name) > (coalesce($1,''), coalesce($2,''))
+              and not exists (select 1 from public.fm_backup_files f where f.bucket = o.bucket_id and f.name = o.name
+                              and f.src_updated >= coalesce(o.updated_at, o.created_at))
+            order by o.bucket_id, o.name limit $3) x$q$ into r using p_bucket, p_name, least(greatest(coalesce(p_n,100),1),500);
+  exception when others then r := '[]'; end;
+  return r;
+end $$;
+create or replace function public.fm_backup_srv_copied(p jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  insert into public.fm_backup_files(bucket, name, size, src_updated, copied_at)
+  select x->>'b', x->>'n', (x->>'s')::bigint, (x->>'u')::timestamptz, now() from jsonb_array_elements(coalesce(p,'[]')) x
+  on conflict (bucket, name) do update set size = excluded.size, src_updated = excluded.src_updated, copied_at = now();
+  get diagnostics n = row_count; return n;
+end $$;
+-- database backups to delete (all but the newest `keep`)
+create or replace function public.fm_backup_srv_old(p_keep int) returns text[] language plpgsql stable security definer set search_path = public as $$
+declare r text[];
+begin
+  begin
+    execute $q$select coalesce(array_agg(name), '{}') from (select name from storage.objects where bucket_id = 'fm-backups' and name like 'db/%'
+      order by created_at desc offset $1) x$q$ into r using greatest(coalesce(p_keep,8),1);
+  exception when others then r := '{}'; end;
+  return r;
+end $$;
+
+-- recipients: the system admins (when to_admins) + outside addresses
+create or replace function public.fm_backup_srv_to() returns text[] language sql stable security definer set search_path = public as $$
+  select coalesce(array_agg(distinct e), '{}') from (
+    select lower(p.email) e from public.profiles p, public.fm_backup_srv c
+     where c.id = 1 and c.to_admins and p.role = 'admin' and p.job_title = 'sysadmin' and p.active is not false and p.deleted_at is null and p.email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    union select lower(x) from public.fm_backup_srv c, unnest(c.to_ext) x where c.id = 1 and x ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$') t $$;
+
+-- the function asks for work: 'db' (due or asked now; then the files) or 'files' (the mirror is not finished yet)
+create or replace function public.fm_backup_srv_claim() returns jsonb language plpgsql security definer set search_path = public as $$
+declare c public.fm_backup_srv; job text;
+begin
+  select * into c from public.fm_backup_srv where id = 1 for update;
+  if not found then return jsonb_build_object('job', null); end if;
+  if c.running_at is not null and c.running_at > now() - interval '15 minutes' then return jsonb_build_object('job', null, 'why', 'running'); end if;
+  if c.force or (c.enabled and c.next_at is not null and c.next_at <= now()) then job := 'db';
+  elsif c.more and c.files then job := 'files';
+  else return jsonb_build_object('job', null); end if;
+  update public.fm_backup_srv set running_at = now(), force = false,
+    next_at = case when job = 'db' and c.enabled then public.fm_report_next(c.freq, c.dow, null, c.hour, now()) else next_at end where id = 1;
+  return jsonb_build_object('job', job, 'files', c.files, 'keep', c.keep, 'link_days', c.link_days, 'to', to_jsonb(public.fm_backup_srv_to()),
+    'pass', (select pass from public.fm_backup_cfg where id = 1), 'mail', public.fm_setting('mail'),
+    'company', (select company from public.fm_plan limit 1), 'last', c.last);
+exception when undefined_table or undefined_column or undefined_function then
+  update public.fm_backup_srv set running_at = now(), force = false where id = 1;
+  return jsonb_build_object('job', coalesce(job, 'db'), 'files', c.files, 'keep', c.keep, 'link_days', c.link_days, 'to', to_jsonb(public.fm_backup_srv_to()),
+    'pass', (select pass from public.fm_backup_cfg where id = 1), 'mail', '{}'::jsonb, 'company', null, 'last', c.last);
+end $$;
+-- the function's result: p {job, ok, err, path, size, tables, rows, files_new, files_bytes, more, mailed, mail_err}
+create or replace function public.fm_backup_srv_result(p jsonb) returns void language plpgsql security definer set search_path = public as $$
+declare c public.fm_backup_srv; l jsonb;
+begin
+  select * into c from public.fm_backup_srv where id = 1;
+  l := coalesce(c.last, '{}'::jsonb);
+  if p->>'job' = 'db' then
+    l := jsonb_build_object('at', now(), 'ok', coalesce((p->>'ok')::boolean, false), 'err', left(p->>'err', 300), 'path', p->>'path',
+      'size', (p->>'size')::bigint, 'tables', (p->>'tables')::int, 'rows', (p->>'rows')::bigint, 'mailed', (p->>'mailed')::int, 'mail_err', left(p->>'mail_err', 200),
+      'files_new', coalesce((p->>'files_new')::int, 0), 'files_bytes', coalesce((p->>'files_bytes')::bigint, 0), 'files_err', left(p->>'files_err', 200));
+    if coalesce((p->>'ok')::boolean, false) then
+      insert into public.fm_backup_cfg(id) values (1) on conflict (id) do nothing;
+      update public.fm_backup_cfg set last = jsonb_build_object('at', now(), 'by', 'الخادم', 'how', 'server', 'size', (p->>'size')::bigint,
+        'tables', (p->>'tables')::int, 'rows', (p->>'rows')::bigint, 'enc', true, 'lite', false), updated_at = now() where id = 1;
+    end if;
+    insert into public.fm_audit_log(actor_name, action, target, details) values ('الخادم', 'backup_server', coalesce(p->>'path', ''), p - 'job');
+  else
+    l := l || jsonb_build_object('files_new', coalesce((l->>'files_new')::int, 0) + coalesce((p->>'files_new')::int, 0),
+      'files_bytes', coalesce((l->>'files_bytes')::bigint, 0) + coalesce((p->>'files_bytes')::bigint, 0), 'files_at', now(), 'files_err', left(p->>'files_err', 200));
+  end if;
+  update public.fm_backup_srv set last = l, running_at = null, more = coalesce((p->>'more')::boolean, false), updated_at = now() where id = 1;
+end $$;
+create or replace function public.fm_backup_srv_secret() returns text language sql stable security definer set search_path = public as $$
+  select hook from public.fm_backup_srv where id = 1 $$;
+
+create or replace function public.fm_backup_srv_kick() returns void language plpgsql security definer set search_path = public as $$
+declare c public.fm_backup_srv; rid bigint;
+begin
+  update public.fm_backup_srv set kicked_at = now() where id = 1 and fn_url is not null and coalesce(kicked_at, 'epoch') < now() - interval '30 seconds' returning * into c;
+  if not found then return; end if;
+  begin
+    execute 'select net.http_post(url := $1, body := ''{}''::jsonb, headers := $2, timeout_milliseconds := 150000)' into rid
+      using c.fn_url, jsonb_build_object('Content-Type','application/json','x-fm-hook', coalesce(c.hook,''))
+                     || case when c.anon_key is not null then jsonb_build_object('Authorization','Bearer ' || c.anon_key, 'apikey', c.anon_key) else '{}'::jsonb end;
+    update public.fm_backup_srv set last_req = rid where id = 1;
+  exception when others then null;
+  end;
+end $$;
+-- pg_cron every 10 min: kick when a backup is due / asked, or the files mirror is not finished
+create or replace function public.fm_backup_srv_tick() returns void language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from public.fm_backup_srv where id = 1 and fn_url is not null
+              and (running_at is null or running_at < now() - interval '15 minutes')
+              and (force or (enabled and next_at <= now()) or (more and files))) then
+    perform public.fm_backup_srv_kick();
+  end if;
+end $$;
+
+-- system admin
+create or replace function public.fm_backup_srv_get() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c public.fm_backup_srv; hs int; hc text; nf bigint; bf bigint; dbs jsonb;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  select * into c from public.fm_backup_srv where id = 1;
+  if c.last_req is not null then
+    begin execute 'select status_code, left(coalesce(content::text, error_msg, ''''), 300) from net._http_response where id = $1' into hs, hc using c.last_req;
+    exception when others then null; end;
+  end if;
+  select count(*), coalesce(sum(size), 0) into nf, bf from public.fm_backup_files;
+  begin
+    execute $q$select coalesce(jsonb_agg(jsonb_build_object('name', name, 'size', (metadata->>'size')::bigint, 'at', created_at) order by created_at desc), '[]')
+      from storage.objects where bucket_id = 'fm-backups' and name like 'db/%'$q$ into dbs;
+  exception when others then dbs := null; end;
+  return jsonb_build_object('enabled', c.enabled, 'freq', c.freq, 'dow', c.dow, 'hour', c.hour, 'keep', c.keep, 'files', c.files, 'to_admins', c.to_admins,
+    'to_ext', to_jsonb(c.to_ext), 'link_days', c.link_days, 'next_at', c.next_at, 'force', c.force, 'more', c.more, 'running_at', c.running_at,
+    'fn_url', c.fn_url, 'linked', c.fn_url is not null and c.hook is not null, 'last', c.last, 'to', to_jsonb(public.fm_backup_srv_to()),
+    'pass_set', coalesce((select pass is not null and pass <> '' from public.fm_backup_cfg where id = 1), false),
+    'pg_net', exists (select 1 from pg_extension where extname = 'pg_net'), 'pg_cron', exists (select 1 from pg_extension where extname = 'pg_cron'),
+    'http_status', hs, 'http_body', hc, 'mirror_n', nf, 'mirror_bytes', bf, 'dbs', dbs);
+end $$;
+create or replace function public.fm_backup_srv_set(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare ext text[]; x text; c public.fm_backup_srv;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  select coalesce(array_agg(distinct lower(btrim(v))), '{}') into ext from jsonb_array_elements_text(coalesce(p->'to_ext','[]')) v where btrim(v) <> '';
+  foreach x in array ext loop if x !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'invalid email: %', x; end if; end loop;
+  if cardinality(ext) > 10 then raise exception 'too many recipients'; end if;
+  update public.fm_backup_srv set enabled = coalesce((p->>'enabled')::boolean, enabled), freq = coalesce(p->>'freq', freq),
+    dow = coalesce((p->>'dow')::int, dow), hour = coalesce((p->>'hour')::int, hour), keep = coalesce((p->>'keep')::int, keep),
+    files = coalesce((p->>'files')::boolean, files), to_admins = coalesce((p->>'to_admins')::boolean, to_admins), to_ext = ext,
+    link_days = coalesce((p->>'link_days')::int, link_days), updated_at = now() where id = 1 returning * into c;
+  update public.fm_backup_srv set next_at = case when c.enabled then public.fm_report_next(c.freq, c.dow, null, c.hour, now()) end,
+    more = case when c.files then more else false end where id = 1;
+  insert into public.fm_audit_log(actor_name, action, target, details) values ((select coalesce(full_name, email) from public.profiles where id = auth.uid()), 'backup_server_set', '', p);
+  return public.fm_backup_srv_get();
+end $$;
+create or replace function public.fm_backup_srv_autoset(p jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  if length(coalesce(p->>'hook','')) < 24 then raise exception 'secret too short'; end if;
+  if coalesce(p->>'fn_url','') !~ '^https://[^ ]+$' then raise exception 'invalid url'; end if;
+  update public.fm_backup_srv set fn_url = p->>'fn_url', hook = p->>'hook', anon_key = coalesce(nullif(btrim(p->>'anon_key'), ''), anon_key), kicked_at = null where id = 1;
+  return true;
+end $$;
+-- «run now»: also used by the function's platform mode to check the person
+create or replace function public.fm_backup_srv_now() returns bigint language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  if not exists (select 1 from public.fm_backup_srv where id = 1 and fn_url is not null) then raise exception 'not linked'; end if;
+  if not exists (select 1 from public.fm_backup_cfg where id = 1 and coalesce(pass, '') <> '') then raise exception 'backup password not set'; end if;
+  update public.fm_backup_srv set force = true, kicked_at = null, running_at = case when running_at < now() - interval '15 minutes' then null else running_at end where id = 1;
+  perform public.fm_backup_srv_kick();
+  return (select last_req from public.fm_backup_srv where id = 1);
+end $$;
+create or replace function public.fm_backup_srv_can() returns boolean language sql stable security definer set search_path = public as $$ select public.fm_wipe_ok() $$;
+
+revoke all on function public.fm_backup_srv_tables(), public.fm_backup_srv_page(text, int, int), public.fm_backup_srv_objects(text, text, int), public.fm_backup_srv_copied(jsonb),
+  public.fm_backup_srv_old(int), public.fm_backup_srv_to(), public.fm_backup_srv_claim(), public.fm_backup_srv_result(jsonb), public.fm_backup_srv_secret(),
+  public.fm_backup_srv_kick(), public.fm_backup_srv_tick() from public, anon, authenticated;
+revoke all on function public.fm_backup_srv_get(), public.fm_backup_srv_set(jsonb), public.fm_backup_srv_autoset(jsonb), public.fm_backup_srv_now(), public.fm_backup_srv_can() from public, anon;
+grant execute on function public.fm_backup_srv_get(), public.fm_backup_srv_set(jsonb), public.fm_backup_srv_autoset(jsonb), public.fm_backup_srv_now(), public.fm_backup_srv_can() to authenticated;
+do $do$ begin
+  execute 'grant execute on function public.fm_backup_srv_tables(), public.fm_backup_srv_page(text, int, int), public.fm_backup_srv_objects(text, text, int), public.fm_backup_srv_copied(jsonb), public.fm_backup_srv_old(int), public.fm_backup_srv_claim(), public.fm_backup_srv_result(jsonb), public.fm_backup_srv_secret() to service_role';
+exception when undefined_object then null; end $do$;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-backup-srv'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-backup-srv'', ''*/10 * * * *'', ''select public.fm_backup_srv_tick()'')';
+  exception when others then raise notice 'pg_cron is not available: the server backup runs only with «▶️ نسخة الآن»'; end;
+end $do$;
+notify pgrst, 'reload schema';
+
+-- ---------- 107) V367 — scheduled reports per region: each region's copy goes to that region's people ----------
+-- A schedule whose params carry split = true makes one run per region (fm_report_runs.region): the data are built with
+-- params.region = that region, and the recipients are the schedule's own list + the active accounts whose job title is in
+-- params.split_titles (default area_manager, area_engineer) and whose regions include it. Regions = the regions of those
+-- people (else riyadh, qassim). Without split nothing changes.
+alter table public.fm_report_runs add column if not exists region text;
+
+create or replace function public.fm_report_titles(p jsonb) returns text[] language sql immutable as $$
+  select case when jsonb_typeof(p->'split_titles') = 'array' and jsonb_array_length(p->'split_titles') > 0
+              then array(select jsonb_array_elements_text(p->'split_titles')) else array['area_manager','area_engineer'] end $$;
+create or replace function public.fm_report_regions(p jsonb) returns text[] language sql stable security definer set search_path = public as $$
+  select coalesce(nullif(array(select distinct r from public.profiles pr, unnest(coalesce(pr.regions, '{}')) r
+                   where pr.active is not false and pr.deleted_at is null and pr.job_title = any(public.fm_report_titles(p)) and coalesce(r, '') <> '' order by 1), '{}'),
+                  array['riyadh','qassim']) $$;
+-- recipients of one run: the schedule's list + (split) the region's people
+create or replace function public.fm_report_to_run(us uuid[], ex text[], p jsonb, rg text) returns text[] language sql stable security definer set search_path = public as $$
+  select coalesce(array_agg(distinct e), '{}') from (
+    select unnest(public.fm_report_to(us, ex)) e
+    union select lower(pr.email) from public.profiles pr
+     where rg is not null and pr.active is not false and pr.deleted_at is null and pr.role <> 'pending'
+       and pr.job_title = any(public.fm_report_titles(p)) and rg = any(coalesce(pr.regions, '{}'))
+       and pr.email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$') x where e is not null $$;
+create or replace function public.fm_report_rn(rg text) returns text language sql immutable as $$
+  select case rg when 'riyadh' then 'الرياض' when 'qassim' then 'القصيم' else rg end $$;
+create or replace function public.fm_report_params(p jsonb, rg text) returns jsonb language sql immutable as $$
+  select case when rg is null then coalesce(p, '{}'::jsonb) else coalesce(p, '{}'::jsonb) || jsonb_build_object('region', rg) end $$;
+-- insert the run(s) of a schedule; returns the first id
+create or replace function public.fm_report_make_runs(s public.fm_report_schedules, p_due timestamptz, p_manual boolean, p_by text) returns uuid language plpgsql security definer set search_path = public as $$
+declare rid uuid; first uuid; rg text; st text := case when s.kind like 'p:%' then 'wait' else 'queued' end;
+begin
+  if coalesce((s.params->>'split')::boolean, false) then
+    foreach rg in array public.fm_report_regions(s.params) loop
+      insert into public.fm_report_runs(sched_id, kind, due_at, status, manual, by_name, region) values (s.id, s.kind, p_due, st, coalesce(p_manual, false), p_by, rg) returning id into rid;
+      first := coalesce(first, rid);
+    end loop;
+  else
+    insert into public.fm_report_runs(sched_id, kind, due_at, status, manual, by_name) values (s.id, s.kind, p_due, st, coalesce(p_manual, false), p_by) returning id into first;
+  end if;
+  return first;
+end $$;
+
+create or replace function public.fm_report_due() returns int language plpgsql security definer set search_path = public as $$
+declare s public.fm_report_schedules; n int := 0;
+begin
+  for s in select r.* from public.fm_report_schedules r
+           where r.active and r.next_at is not null and r.next_at <= now()
+             and exists (select 1 from public.profiles p where p.id = r.owner and p.active is not false and p.role <> 'pending')
+           for update of r skip locked loop
+    perform public.fm_report_make_runs(s, s.next_at, false, null);
+    update public.fm_report_schedules set next_at = public.fm_report_next(s.freq, s.dow, s.dom, s.hour, greatest(now(), s.next_at)) where id = s.id;
+    n := n + 1;
+  end loop;
+  update public.fm_report_runs set status = 'expired', err = 'لم تُفتح المنصة خلال 3 أيام لتجهيز التقرير' where status = 'wait' and created_at < now() - interval '3 days';
+  update public.fm_report_runs set status = 'queued' where status = 'sending' and claimed_at < now() - interval '15 minutes' and tries < 3 and kind not like 'p:%';
+  update public.fm_report_runs set status = 'wait' where status = 'sending' and claimed_at < now() - interval '15 minutes' and kind like 'p:%' and created_at > now() - interval '3 days';
+  if exists (select 1 from public.fm_report_runs where status = 'queued') then perform public.fm_report_kick(); end if;
+  return n;
+end $$;
+
+create or replace function public.fm_report_claim(n int default 5) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r record; outv jsonb := '[]'; dat jsonb; tl text[]; pr jsonb;
+begin
+  for r in select x.id rid, x.region xr, s.name sname, s.kind skind, s.params sparams, s.to_users su, s.to_ext se
+           from public.fm_report_runs x join public.fm_report_schedules s on s.id = x.sched_id
+           where x.status = 'queued' and x.tries < 3 order by x.created_at limit greatest(1, least(coalesce(n, 5), 20))
+           for update of x skip locked loop
+    tl := public.fm_report_to_run(r.su, r.se, r.sparams, r.xr);
+    if coalesce(cardinality(tl), 0) = 0 then
+      update public.fm_report_runs set status = 'failed', err = 'لا يوجد بريد صالح للمستلمين' where id = r.rid;
+      update public.fm_report_schedules set last_at = now(), last_status = 'failed', last_err = 'لا يوجد بريد صالح للمستلمين' where id = (select sched_id from public.fm_report_runs where id = r.rid);
+      continue;
+    end if;
+    pr := public.fm_report_params(r.sparams, r.xr);
+    begin dat := public.fm_report_data(r.skind, pr); exception when others then dat := jsonb_build_object('error', sqlerrm); end;
+    update public.fm_report_runs set status = 'sending', tries = tries + 1, claimed_at = now(), to_list = tl where id = r.rid;
+    outv := outv || jsonb_build_array(jsonb_build_object('id', r.rid, 'name', r.sname || coalesce(' — ' || public.fm_report_rn(r.xr), ''), 'kind', r.skind, 'params', pr, 'to', to_jsonb(tl), 'data', dat));
+  end loop;
+  return jsonb_build_object('runs', outv, 'cfg', coalesce(public.fm_setting('mail'), '{}'::jsonb));
+end $$;
+
+create or replace function public.fm_report_wait() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_report_can() then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'sched_id', s.id, 'name', s.name || coalesce(' — ' || public.fm_report_rn(x.region), ''), 'kind', s.kind, 'params', public.fm_report_params(s.params, x.region),
+      'region', x.region, 'freq', s.freq, 'due_at', x.due_at, 'mine', s.owner = auth.uid()) order by x.created_at)
+    from public.fm_report_runs x join public.fm_report_schedules s on s.id = x.sched_id
+    where x.status = 'wait' and x.created_at > now() - interval '3 days' and (s.owner = auth.uid() or public.fm_role() = 'admin')), '[]'::jsonb);
+end $$;
+
+create or replace function public.fm_report_client_begin(p_run uuid) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s public.fm_report_schedules; tl text[]; rg text;
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  select r.* into s from public.fm_report_schedules r join public.fm_report_runs x on x.sched_id = r.id where x.id = p_run;
+  if not found then raise exception 'not found'; end if;
+  select x.region into rg from public.fm_report_runs x where x.id = p_run;
+  if s.owner is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  tl := public.fm_report_to_run(s.to_users, s.to_ext, s.params, rg);
+  if coalesce(cardinality(tl), 0) = 0 then raise exception 'no recipients'; end if;
+  update public.fm_report_runs set status = 'sending', tries = tries + 1, claimed_at = now(), to_list = tl where id = p_run and status = 'wait';
+  if not found then raise exception 'taken'; end if;
+  return jsonb_build_object('id', p_run, 'name', s.name || coalesce(' — ' || public.fm_report_rn(rg), ''), 'kind', s.kind, 'params', public.fm_report_params(s.params, rg), 'to', to_jsonb(tl), 'cfg', coalesce(public.fm_setting('mail'), '{}'::jsonb));
+end $$;
+
+create or replace function public.fm_report_send_now(p_id uuid) returns uuid language plpgsql security definer set search_path = public as $$
+declare s public.fm_report_schedules; rid uuid;
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  select * into s from public.fm_report_schedules where id = p_id;
+  if not found then raise exception 'not found'; end if;
+  if s.owner is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  if (select count(distinct date_trunc('second', created_at)) from public.fm_report_runs where manual and created_at > now() - interval '1 day' and sched_id = p_id) >= 10 then raise exception 'too many today'; end if;
+  rid := public.fm_report_make_runs(s, now(), true, (select full_name from public.profiles where id = auth.uid()));
+  if s.kind not like 'p:%' then perform public.fm_report_kick(); end if;
+  return rid;
+end $$;
+
+-- the regions and the people a split schedule would reach (page preview)
+create or replace function public.fm_report_split_preview(p jsonb) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare rg text; outv jsonb := '[]';
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  foreach rg in array public.fm_report_regions(p) loop
+    outv := outv || jsonb_build_array(jsonb_build_object('region', rg, 'to', to_jsonb(public.fm_report_to_run('{}', '{}', p, rg))));
+  end loop;
+  return outv;
+end $$;
+create or replace function public.fm_report_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare rid uuid := nullif(p->>'id', '')::uuid; nm text := btrim(coalesce(p->>'name', '')); kd text := btrim(coalesce(p->>'kind', ''));
+  fq text := coalesce(p->>'freq', 'weekly'); dw int := nullif(p->>'dow', '')::int; dm int := nullif(p->>'dom', '')::int; hr int := coalesce(nullif(p->>'hour', '')::int, 7);
+  us uuid[] := coalesce(array(select jsonb_array_elements_text(coalesce(p->'to_users', '[]'::jsonb))::uuid), '{}');
+  ex text[] := coalesce(array(select lower(btrim(e)) from jsonb_array_elements_text(coalesce(p->'to_ext', '[]'::jsonb)) e where btrim(e) <> ''), '{}');
+  ow uuid; nm2 text;
+begin
+  if not public.fm_report_can() then raise exception 'not allowed'; end if;
+  if length(nm) < 2 or length(nm) > 120 then raise exception 'invalid name'; end if;
+  if kd !~ '^(wo_open|wo_period|stock_low|sla_due|school_req|attendance|weekly|issue_req|p:[a-z0-9_]{1,30})$' then raise exception 'invalid report'; end if;
+  if fq not in ('daily','weekly','monthly') or hr not between 0 and 23 then raise exception 'invalid schedule'; end if;
+  if fq = 'weekly' and (dw is null or dw not between 0 and 6) then raise exception 'invalid schedule'; end if;
+  if fq = 'monthly' and (dm is null or dm not between 1 and 31) then raise exception 'invalid schedule'; end if;
+  if cardinality(us) > 30 or cardinality(ex) > 20 then raise exception 'too many recipients'; end if;
+  if exists (select 1 from unnest(ex) e where e !~* '^[^@\s]+@[^@\s]+\.[^@\s]+$') then raise exception 'invalid email'; end if;
+  if cardinality(us) + cardinality(ex) = 0 and not coalesce((p->'params'->>'split')::boolean, false) then raise exception 'no recipients'; end if;
+  if coalesce((p->'params'->>'split')::boolean, false) and exists (select 1 from jsonb_array_elements_text(coalesce(p->'params'->'split_titles', '[]'::jsonb)) t where t not in ('area_manager','area_engineer','supervisor','storekeeper','accountant','owner_rep','qa_manager','hse_manager','contractor')) then raise exception 'invalid titles'; end if;
+  if rid is null then
+    select full_name into nm2 from public.profiles where id = auth.uid();
+    insert into public.fm_report_schedules(name, kind, params, freq, dow, dom, hour, to_users, to_ext, active, owner, owner_name, next_at)
+    values (nm, kd, coalesce(p->'params', '{}'::jsonb), fq, dw, dm, hr, us, ex, coalesce((p->>'active')::boolean, true), auth.uid(), nm2,
+            public.fm_report_next(fq, dw, dm, hr, now())) returning id into rid;
+  else
+    select owner into ow from public.fm_report_schedules where id = rid for update;
+    if not found then raise exception 'not found'; end if;
+    if ow is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+    update public.fm_report_schedules set name = nm, kind = kd, params = coalesce(p->'params', '{}'::jsonb), freq = fq, dow = dw, dom = dm, hour = hr,
+      to_users = us, to_ext = ex, active = coalesce((p->>'active')::boolean, active), next_at = public.fm_report_next(fq, dw, dm, hr, now()), updated_at = now() where id = rid;
+  end if;
+  return rid;
+end $$;
+
+revoke all on function public.fm_report_titles(jsonb), public.fm_report_regions(jsonb), public.fm_report_to_run(uuid[], text[], jsonb, text), public.fm_report_params(jsonb, text),
+  public.fm_report_make_runs(public.fm_report_schedules, timestamptz, boolean, text) from public, anon, authenticated;
+revoke all on function public.fm_report_split_preview(jsonb) from public, anon;
+grant execute on function public.fm_report_split_preview(jsonb) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 108) V368 — workforce: monthly snapshot and monthly bonus register ----------
+-- (1) fm_wf_snaps: one row per region × month with the counts the platform shows (computed in the browser from the
+--     workforce register, which lives in the original Excel rows). Anyone who reads the region may save the CURRENT
+--     Riyadh month (the latest save of the month wins); past months are frozen. Keys are whitelisted numbers.
+-- (2) fm_wf_bonuses (BN-YYYY-####) + fm_wf_bonus_caps (region × month cap, 0 = no cap): a proposal (managers of the
+--     region, area engineer / supervisor of the region) → approve / reject by a manager of the region (fm233_manage),
+--     never the proposer (admin excepted); approve refuses going over the month's cap («cap exceeded»). RLS on, no
+--     policies, no grants: RPCs only.
+create table if not exists public.fm_wf_snaps (
+  region text not null check (region in ('riyadh','qassim')),
+  month text not null check (month ~ '^\d{4}-\d{2}$'),
+  stats jsonb not null default '{}'::jsonb,
+  by_id uuid default auth.uid(), at timestamptz not null default now(),
+  primary key (region, month));
+alter table public.fm_wf_snaps enable row level security;
+revoke all on public.fm_wf_snaps from anon, authenticated;
+
+create or replace function public.fm_wf_month() returns text language sql stable as $$ select to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM') $$;
+create or replace function public.fm_wf_snap_save(p_region text, p_stats jsonb) returns text language plpgsql security definer set search_path = public as $$
+declare k text; st jsonb := '{}'::jsonb; m text := public.fm_wf_month();
+begin
+  if not public.fm233_read(p_region) then raise exception 'not allowed'; end if;
+  foreach k in array array['total','active','staff','contractors','vacant','plan_req','plan_act','gap','unassigned','teams','expiring','expired','missing_code','field'] loop
+    if jsonb_typeof(p_stats->k) = 'number' and (p_stats->>k)::numeric between 0 and 1000000 then st := st || jsonb_build_object(k, round((p_stats->>k)::numeric)); end if;
+  end loop;
+  insert into public.fm_wf_snaps(region, month, stats, by_id, at) values (p_region, m, st, auth.uid(), now())
+  on conflict (region, month) do update set stats = excluded.stats, by_id = excluded.by_id, at = now();
+  return m;
+end $$;
+create or replace function public.fm_wf_snap_list(p_months int default 12) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('region', region, 'month', month, 'stats', stats, 'at', at) order by month, region), '[]'::jsonb)
+  from public.fm_wf_snaps where public.fm233_read(region)
+   and month >= to_char((now() at time zone 'Asia/Riyadh') - make_interval(months => least(greatest(coalesce(p_months, 12), 1), 36)), 'YYYY-MM') $$;
+
+create table if not exists public.fm_wf_bonus_caps (
+  region text not null check (region in ('riyadh','qassim')), month text not null check (month ~ '^\d{4}-\d{2}$'),
+  cap numeric not null default 0 check (cap >= 0), by_id uuid default auth.uid(), at timestamptz not null default now(),
+  primary key (region, month));
+create table if not exists public.fm_wf_bonuses (
+  id uuid primary key default gen_random_uuid(),
+  code text unique,
+  region text not null check (region in ('riyadh','qassim')),
+  month text not null check (month ~ '^\d{4}-\d{2}$'),
+  person_id uuid references public.fm_people334(id) on delete set null,
+  person_name text not null check (length(btrim(person_name)) between 2 and 160),
+  employee_code text not null default '',
+  job_title text not null default '',
+  kind text not null default 'bonus' check (kind in ('bonus','incentive','allowance','other')),
+  amount numeric not null check (amount > 0 and amount <= 1000000),
+  reason text not null check (length(btrim(reason)) between 3 and 1000),
+  status text not null default 'pending' check (status in ('pending','approved','rejected','cancelled')),
+  by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(),
+  dec_by uuid, dec_name text, dec_at timestamptz, dec_note text);
+create index if not exists fm_wf_bonuses_m on public.fm_wf_bonuses(region, month, status);
+alter table public.fm_wf_bonuses enable row level security;
+alter table public.fm_wf_bonus_caps enable row level security;
+revoke all on public.fm_wf_bonuses, public.fm_wf_bonus_caps from anon, authenticated;
+
+create or replace function public.fm_wf_bonus_prop(r text) returns boolean language sql stable security definer set search_path = public as $$
+  select public.fm233_manage(r) or coalesce(auth.uid() is not null and public.fm_role() <> 'pending'
+    and public.fm_my_pos() in ('area_engineer','supervisor') and public.fm_region_ok(r), false) $$;
+create or replace function public.fm_wf_bonus_used(r text, m text) returns numeric language sql stable security definer set search_path = public as $$
+  select coalesce(sum(amount), 0) from public.fm_wf_bonuses where region = r and month = m and status = 'approved' $$;
+
+create or replace function public.fm_wf_bonus_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare r text := p->>'region'; m text := coalesce(nullif(p->>'month', ''), public.fm_wf_month()); pid uuid := nullif(p->>'person_id', '')::uuid;
+  pr public.fm_people334; nm text := btrim(coalesce(p->>'person_name', '')); rid uuid; cd text;
+begin
+  if r not in ('riyadh','qassim') or not public.fm_wf_bonus_prop(r) then raise exception 'not allowed'; end if;
+  if m !~ '^\d{4}-\d{2}$' or m < to_char((now() at time zone 'Asia/Riyadh') - interval '2 months', 'YYYY-MM') or m > public.fm_wf_month() then raise exception 'invalid month'; end if;
+  if pid is not null then
+    select * into pr from public.fm_people334 where id = pid and region = r;
+    if not found then raise exception 'person not found'; end if;
+    nm := pr.full_name;
+  end if;
+  if (select count(*) from public.fm_wf_bonuses where by_id = auth.uid() and at > now() - interval '1 day') >= 200 then raise exception 'too many today'; end if;
+  cd := 'BN-' || to_char(now() at time zone 'Asia/Riyadh', 'YYYY') || '-' || lpad((coalesce((select count(*) from public.fm_wf_bonuses where code like 'BN-' || to_char(now() at time zone 'Asia/Riyadh', 'YYYY') || '-%'), 0) + 1)::text, 4, '0');
+  insert into public.fm_wf_bonuses(code, region, month, person_id, person_name, employee_code, job_title, kind, amount, reason, by_name)
+  values (cd, r, m, pid, nm, coalesce(pr.employee_code, left(btrim(coalesce(p->>'employee_code', '')), 80)), coalesce(pr.job_title, left(btrim(coalesce(p->>'job_title', '')), 160)),
+          coalesce(nullif(p->>'kind', ''), 'bonus'), (p->>'amount')::numeric, btrim(coalesce(p->>'reason', '')), (select full_name from public.profiles where id = auth.uid()))
+  returning id into rid;
+  insert into public.fm_audit_log(actor_name, action, target, details) values ((select coalesce(full_name, email) from public.profiles where id = auth.uid()), 'wf_bonus_new', cd, jsonb_build_object('amount', p->>'amount', 'person', nm));
+  return rid;
+end $$;
+
+create or replace function public.fm_wf_bonus_act(p_id uuid, p_action text, p_note text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare b public.fm_wf_bonuses; capv numeric; used numeric; nm text := (select full_name from public.profiles where id = auth.uid());
+begin
+  select * into b from public.fm_wf_bonuses where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if p_action = 'cancel' then
+    if b.status <> 'pending' or (b.by_id is distinct from auth.uid() and not public.fm233_manage(b.region)) then raise exception 'not allowed'; end if;
+    update public.fm_wf_bonuses set status = 'cancelled', dec_by = auth.uid(), dec_name = nm, dec_at = now(), dec_note = left(p_note, 500) where id = p_id;
+  elsif p_action in ('approve','reject') then
+    if not public.fm233_manage(b.region) then raise exception 'not allowed'; end if;
+    if b.by_id = auth.uid() and public.fm_role() <> 'admin' then raise exception 'self approval'; end if;
+    if b.status <> 'pending' and not (p_action = 'reject' and b.status = 'approved') then raise exception 'not pending'; end if;
+    if p_action = 'reject' and length(btrim(coalesce(p_note, ''))) < 3 then raise exception 'note required'; end if;
+    if p_action = 'approve' then
+      perform pg_advisory_xact_lock(hashtext('fm_wf_bonus:' || b.region || ':' || b.month));
+      select cap into capv from public.fm_wf_bonus_caps where region = b.region and month = b.month;
+      used := public.fm_wf_bonus_used(b.region, b.month);
+      if coalesce(capv, 0) > 0 and used + b.amount > capv then raise exception 'cap exceeded: % of %', used + b.amount, capv; end if;
+    end if;
+    update public.fm_wf_bonuses set status = case when p_action = 'approve' then 'approved' else 'rejected' end, dec_by = auth.uid(), dec_name = nm, dec_at = now(), dec_note = left(p_note, 500) where id = p_id;
+  else raise exception 'invalid action'; end if;
+  insert into public.fm_audit_log(actor_name, action, target, details) values (coalesce(nm, ''), 'wf_bonus_' || p_action, b.code, jsonb_build_object('amount', b.amount, 'note', p_note));
+  return jsonb_build_object('ok', true, 'used', public.fm_wf_bonus_used(b.region, b.month));
+end $$;
+
+create or replace function public.fm_wf_bonus_cap_set(p_region text, p_month text, p_cap numeric) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm233_manage(p_region) then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' or coalesce(p_cap, -1) < 0 then raise exception 'invalid'; end if;
+  insert into public.fm_wf_bonus_caps(region, month, cap) values (p_region, p_month, p_cap) on conflict (region, month) do update set cap = excluded.cap, by_id = auth.uid(), at = now();
+end $$;
+
+create or replace function public.fm_wf_bonus_list(p_month text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare m text := coalesce(nullif(p_month, ''), public.fm_wf_month()); regs jsonb := '[]'; r text;
+begin
+  foreach r in array array['riyadh','qassim'] loop
+    if public.fm233_read(r) or public.fm_wf_bonus_prop(r) then
+      regs := regs || jsonb_build_array(jsonb_build_object('region', r, 'cap', coalesce((select cap from public.fm_wf_bonus_caps where region = r and month = m), 0),
+        'used', public.fm_wf_bonus_used(r, m), 'pending', (select coalesce(sum(amount), 0) from public.fm_wf_bonuses where region = r and month = m and status = 'pending'),
+        'can_prop', public.fm_wf_bonus_prop(r), 'can_dec', public.fm233_manage(r)));
+    end if;
+  end loop;
+  return jsonb_build_object('month', m, 'regions', regs, 'me', auth.uid(), 'rows', coalesce((select jsonb_agg(to_jsonb(b) order by b.at desc) from public.fm_wf_bonuses b where b.month = m and (public.fm233_read(b.region) or b.by_id = auth.uid())), '[]'::jsonb));
+end $$;
+
+revoke all on function public.fm_wf_bonus_prop(text), public.fm_wf_bonus_used(text, text) from public, anon, authenticated;
+revoke all on function public.fm_wf_snap_save(text, jsonb), public.fm_wf_snap_list(int), public.fm_wf_bonus_save(jsonb), public.fm_wf_bonus_act(uuid, text, text),
+  public.fm_wf_bonus_cap_set(text, text, numeric), public.fm_wf_bonus_list(text) from public, anon;
+grant execute on function public.fm_wf_snap_save(text, jsonb), public.fm_wf_snap_list(int), public.fm_wf_bonus_save(jsonb), public.fm_wf_bonus_act(uuid, text, text),
+  public.fm_wf_bonus_cap_set(text, text, numeric), public.fm_wf_bonus_list(text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 109) V369 — workforce bonuses in the cost centre and the journal; bonus people for the field; attendance by team ----------
+-- (1) fm_wf_bonuses.appr_at / unappr_at (trigger fm_wf_bonus_stamp): when a bonus became approved and when an approved one was
+--     rejected afterwards, so an exported journal stays right. (2) fm_cc_actuals adds approved bonuses as «labour» (src bonus) of
+--     fm_cc_route(region, 'labour') in the bonus month. (3) Accounts cost_lab / payroll; fm_acct_more(from, to) = entries added after
+--     V362 (bonus: Dr cost_lab / Cr payroll on the approval date; bonus_v: the reversal on the rejection date) — fm_acct_journal calls it.
+-- (4) fm_wf_bonus_people(region) → active people (name, code, job title, team) for those who may propose (field app).
+-- (5) fm_wf_att(region, day) → each active person of the workforce register with the account matched (employee code = profiles.emp_no,
+--     else Arabic-normalised full name / person_names, only when exactly one account fits) and that day's fm_att (first in, last out,
+--     visits), grouped by team on the client. fm233_read(region).
+alter table public.fm_wf_bonuses add column if not exists appr_at timestamptz;
+alter table public.fm_wf_bonuses add column if not exists unappr_at timestamptz;
+update public.fm_wf_bonuses set appr_at = coalesce(dec_at, at) where status = 'approved' and appr_at is null;
+create or replace function public.fm_wf_bonus_stamp() returns trigger language plpgsql as $$
+begin
+  if new.status = 'approved' and old.status is distinct from 'approved' then new.appr_at := now(); new.unappr_at := null; end if;
+  if old.status = 'approved' and new.status <> 'approved' then new.unappr_at := now(); end if;
+  return new;
+end $$;
+drop trigger if exists fm_wf_bonus_stamp on public.fm_wf_bonuses;
+create trigger fm_wf_bonus_stamp before update of status on public.fm_wf_bonuses for each row execute function public.fm_wf_bonus_stamp();
+
+create or replace function public.fm_cc_actuals(p_year int) returns table(center_id uuid, m int, cat text, src text, bkey text, amount numeric)
+language plpgsql stable security definer set search_path = public as $$
+declare a date := make_date(p_year,1,1); b date := make_date(p_year+1,1,1); cur int := case when extract(year from current_date) = p_year then extract(month from current_date)::int when p_year < extract(year from current_date) then 12 else 0 end;
+begin
+  if auth.uid() is not null and not public.fm_cc_can('view') then return; end if;
+  return query
+  with sdb as (   -- building key → region, from the school DB
+    select public.fm_bkey(x->>'buildingId', x->>'school') bk, x->>'region' reg
+      from public.app_kv k, jsonb_array_elements(case when jsonb_typeof(k.value) = 'array' then k.value when jsonb_typeof(k.value) = 'string' and left(k.value #>> '{}',1) = '[' then (k.value #>> '{}')::jsonb else '[]' end) x
+     where k.key = 'fm_school_master_db_v1'),
+  billed as (select bw.wo_id, ct.mat_mode from public.fm_bill_wos bw join public.fm_bills bl on bl.id = bw.bill_id join public.fm_contracts ct on ct.id = bl.contract_id where bl.status <> 'cancelled'),
+  mats as (     -- materials of orders closed in the year
+    select o.region, public.fm_bkey(o.building_id, o.school) bk, extract(month from (coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh'))::int mm,
+           coalesce(mt.m->>'src','store') srcm, coalesce(nullif(mt.m->>'q','')::numeric,0) * coalesce(nullif(mt.m->>'price','')::numeric,0) v, bd.mat_mode
+      from public.work_orders o
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(o.checklist) = 'array' then o.checklist else '[]' end) it(e)
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) mt(m)
+      left join billed bd on bd.wo_id = o.id
+     where o.status = 'closed' and coalesce(o.closed_at, o.updated_at) >= a and coalesce(o.closed_at, o.updated_at) < b and jsonb_typeof(mt.m) = 'object'),
+  exps as (     -- expenses spread over the months of the year and their schools
+    select e.*, gs::date mon from public.fm_expenses e
+      cross join lateral generate_series(date_trunc('month', greatest(e.start_on, a))::date, date_trunc('month', least(coalesce(e.end_on, b - 1), b - 1))::date, interval '1 month') gs
+     where e.active and e.cancelled_by is null and e.start_on < b and coalesce(e.end_on, b) >= a and (e.kind = 'monthly' or date_trunc('month', e.start_on) = gs)),
+  exp_rows as (
+    select x.region reg, null::text bk, extract(month from x.mon)::int mm, x.amount v from exps x where x.scope = 'region'
+    union all
+    select coalesce(s.reg, x.region), k.bk, extract(month from x.mon)::int, case when x.split = 'each' then x.amount else x.amount / greatest(cardinality(x.schools),1) end
+      from exps x cross join lateral unnest(x.schools) k(bk) left join sdb s on s.bk = k.bk where x.scope <> 'region'),
+  staff_rows as (
+    select s.center_id cid, mm, round((s.salary + s.housing + s.transport + s.other) * (1 + s.gosi_pct / 100)
+           * greatest(0, (least(coalesce(s.end_date, make_date(p_year,mm,1) + interval '1 month' - interval '1 day')::date, (make_date(p_year,mm,1) + interval '1 month' - interval '1 day')::date)
+                        - greatest(coalesce(s.start_date, make_date(p_year,mm,1)), make_date(p_year,mm,1)) + 1))::numeric
+           / extract(day from make_date(p_year,mm,1) + interval '1 month' - interval '1 day'), 2) v
+      from public.fm_cc_staff s cross join generate_series(1, greatest(cur,0)) mm where s.active),
+  ent as (select e.* from public.fm_cc_entries e where not e.cancelled and e.month like p_year || '-%'),
+  allrows as (
+    select coalesce(ct.cc_id, public.fm_cc_route(ct.region, 'sub')) cid, substr(bl.month,6,2)::int mm, 'sub'::text c, 'bill'::text s, null::text bk, (bl.gross - bl.deductions) v
+      from public.fm_bills bl join public.fm_contracts ct on ct.id = bl.contract_id where bl.status in ('approved','paid') and bl.month like p_year || '-%'
+    union all
+    select public.fm_cc_route(x.region, case when x.srcm = 'buy' then 'buy' else 'mat' end), x.mm, case when x.srcm = 'buy' then 'buy' else 'mat' end, 'wo', x.bk, x.v
+      from mats x where x.v > 0 and not (x.srcm = 'buy' and coalesce(x.mat_mode,'') in ('buy','all')) and not (x.srcm <> 'buy' and coalesce(x.mat_mode,'') = 'all')
+    union all
+    select public.fm_cc_route(r.reg, 'exp'), r.mm, 'exp', 'exp', r.bk, r.v from exp_rows r
+    union all
+    select sr.cid, sr.mm, 'labour', 'staff', null, sr.v from staff_rows sr where sr.v > 0
+    union all
+    select e.center_id, substr(e.month,6,2)::int, e.cat, 'entry', e.bkey, case when e.kind = 'rev' and e.cat = 'client_ded' then -abs(e.amount) when e.kind = 'rev' then e.amount else e.amount end from ent e
+    union all     -- V369: approved workforce bonuses → labour of the region's center (month of the bonus)
+    select public.fm_cc_route(wb.region, 'labour'), substr(wb.month,6,2)::int, 'labour', 'bonus', null, wb.amount
+      from public.fm_wf_bonuses wb where wb.status = 'approved' and wb.month like p_year || '-%'
+    union all     -- the monthly contract value when no «contract» entry was made for that center and month
+    select c.id, mm, 'contract', 'auto', null, c.rev_monthly from public.fm_cc_centers c cross join generate_series(1, greatest(cur,0)) mm
+     where c.active and c.rev_monthly > 0 and (c.rev_from is null or make_date(p_year,mm,1) >= date_trunc('month', c.rev_from)) and (c.rev_to is null or make_date(p_year,mm,1) <= c.rev_to)
+       and not exists(select 1 from ent e where e.center_id = c.id and e.kind = 'rev' and e.cat = 'contract' and substr(e.month,6,2)::int = mm))
+  select r.cid, r.mm, r.c, r.s, r.bk, round(sum(r.v),2) from allrows r group by 1,2,3,4,5;
+end $$;
+
+create or replace function public.fm_acct_keys() returns text[] language sql immutable as $$
+  select array['receivable','revenue','vat_out','vat_in','bank','cash','ap','ap_sub','retention','inventory','expense','cost_mat','cost_sub','cost_lab','payroll'] $$;
+create or replace function public.fm_acct_can() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant','dept_manager','project_manager')) $$;
+create or replace function public.fm_acct_can_set() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant')) $$;
+create or replace function public.fm_acct_map() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'receivable', jsonb_build_object('code','1130','name','ذمم مدينة — المالك'), 'revenue', jsonb_build_object('code','4100','name','إيرادات عقود الصيانة'),
+    'vat_out', jsonb_build_object('code','2310','name','ضريبة القيمة المضافة — مخرجات'), 'vat_in', jsonb_build_object('code','1350','name','ضريبة القيمة المضافة — مدخلات'),
+    'bank', jsonb_build_object('code','1120','name','البنك'), 'cash', jsonb_build_object('code','1110','name','الصندوق'),
+    'ap', jsonb_build_object('code','2110','name','ذمم دائنة — الموردون'), 'ap_sub', jsonb_build_object('code','2120','name','ذمم دائنة — مقاولو الباطن'),
+    'retention', jsonb_build_object('code','2130','name','محتجزات مقاولي الباطن'), 'inventory', jsonb_build_object('code','1140','name','مخزون قطع الغيار'),
+    'expense', jsonb_build_object('code','5900','name','مشتريات بدون طلب شراء'), 'cost_mat', jsonb_build_object('code','5110','name','تكلفة المواد المستخدمة'),
+    'cost_sub', jsonb_build_object('code','5120','name','تكلفة مقاولي الباطن'),
+    'cost_lab', jsonb_build_object('code','5130','name','تكلفة المكافآت والحوافز'), 'payroll', jsonb_build_object('code','2140','name','مكافآت مستحقة للموظفين'))
+    || coalesce((select value from public.fm_settings where key = 'acct_map' and jsonb_typeof(value) = 'object'), '{}'::jsonb) $$;
+
+create or replace function public.fm_acct_more(p_from date, p_to date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ents jsonb := '[]'; r record; tz text := 'Asia/Riyadh'; skipped text[] := '{}';
+  kl jsonb := jsonb_build_object('bonus','مكافأة','incentive','حافز','allowance','بدل','other','مستحق');
+begin
+  begin
+    for r in select b.* from public.fm_wf_bonuses b where b.appr_at is not null and (
+               (b.appr_at at time zone tz)::date between p_from and p_to or (b.unappr_at is not null and (b.unappr_at at time zone tz)::date between p_from and p_to)) loop
+      if (r.appr_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','bonus','date',(r.appr_at at time zone tz)::date,'ref',r.code,
+          'desc',coalesce(kl->>r.kind,'مكافأة')||' '||r.person_name||coalesce(' ('||nullif(r.employee_code,'')||')','')||' — '||r.month,'dim',r.region,
+          'lines', jsonb_build_array(jsonb_build_object('a','cost_lab','dr',r.amount,'cr',0), jsonb_build_object('a','payroll','dr',0,'cr',r.amount))));
+      end if;
+      if r.unappr_at is not null and (r.unappr_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','bonus_v','date',(r.unappr_at at time zone tz)::date,'ref',r.code,
+          'desc','عكس '||coalesce(kl->>r.kind,'مكافأة')||' ملغاة '||r.person_name||coalesce(' — '||r.dec_note,''),'dim',r.region,
+          'lines', jsonb_build_array(jsonb_build_object('a','payroll','dr',r.amount,'cr',0), jsonb_build_object('a','cost_lab','dr',0,'cr',r.amount))));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'bonus'; end;
+  return jsonb_build_object('entries', ents, 'skipped', to_jsonb(skipped));
+end $$;
+
+create or replace function public.fm_acct_journal(p_from date, p_to date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ents jsonb := '[]'; r record; tz text := 'Asia/Riyadh'; v numeric; n numeric; acc text; skipped text[] := '{}'; xm jsonb;
+begin
+  if not public.fm_acct_can() then raise exception 'not allowed'; end if;
+  if p_from is null or p_to is null or p_to < p_from or p_to - p_from > 400 then raise exception 'invalid period'; end if;
+  -- 1) owner claims invoiced: receivable / revenue + output VAT
+  begin
+    for r in select c.*, p.code pcode from public.fm_erp_owner_claims c join public.fm_erp_projects p on p.id = c.project_id
+              where c.status in ('invoiced') and c.invoice_date between p_from and p_to and coalesce(c.certified,0) > 0 loop
+      n := round(r.certified, 2); v := round(r.certified * coalesce(r.vat_pct,0) / 100, 2);
+      ents := ents || jsonb_build_array(jsonb_build_object('src','claim','date',r.invoice_date,'ref',coalesce(r.invoice_no, r.code),'desc','مستخلص المالك '||r.code||' — '||r.month,'dim',r.pcode,
+        'lines', jsonb_build_array(jsonb_build_object('a','receivable','dr',n+v,'cr',0), jsonb_build_object('a','revenue','dr',0,'cr',n))
+                 || case when v > 0 then jsonb_build_array(jsonb_build_object('a','vat_out','dr',0,'cr',v)) else '[]'::jsonb end));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'claim'; end;
+  -- 2) collections from the owner
+  begin
+    for r in select x.*, p.code pcode, c.code ccode from public.fm_erp_collections x join public.fm_erp_owner_claims c on c.id = x.claim_id join public.fm_erp_projects p on p.id = x.project_id
+              where (x.status = 'posted' or (x.status = 'void' and x.void_at is not null)) and x.rc_date between p_from and p_to loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      ents := ents || jsonb_build_array(jsonb_build_object('src','collect','date',r.rc_date,'ref',coalesce(nullif(r.ref,''), r.code),'desc','تحصيل '||r.code||' على '||r.ccode,'dim',r.pcode,
+        'lines', jsonb_build_array(jsonb_build_object('a',acc,'dr',r.amount,'cr',0), jsonb_build_object('a','receivable','dr',0,'cr',r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'collect'; end;
+  -- 3) supplier invoices accepted: inventory (or expense without a purchase request) + input VAT / supplier
+  begin
+    for r in select i.*, s.name sname, st.region sreg from public.wo_supplier_invoices i join public.wo_suppliers s on s.id = i.supplier_id
+               left join public.wo_purchase_requests pr on pr.id = i.po_id left join public.wo_stores st on st.id = pr.store_id
+              where i.status in ('accepted','paid') and i.dec_at is not null and (i.dec_at at time zone tz)::date between p_from and p_to loop
+      v := round(coalesce(r.vat,0), 2); n := round(r.amount - v, 2);
+      ents := ents || jsonb_build_array(jsonb_build_object('src','sinv','date',(r.dec_at at time zone tz)::date,'ref',r.invoice_no,'desc','فاتورة المورد '||r.sname||' '||r.code||coalesce(' — '||r.po_code,''),'dim',coalesce(r.sreg,''),
+        'lines', jsonb_build_array(jsonb_build_object('a',case when r.po_id is null then 'expense' else 'inventory' end,'dr',n,'cr',0))
+                 || case when v > 0 then jsonb_build_array(jsonb_build_object('a','vat_in','dr',v,'cr',0)) else '[]'::jsonb end
+                 || jsonb_build_array(jsonb_build_object('a','ap','dr',0,'cr',r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'sinv'; end;
+  -- 4) supplier payments
+  begin
+    for r in select x.*, s.name sname from public.wo_supplier_payments x join public.wo_suppliers s on s.id = x.supplier_id
+              where (x.status = 'posted' or (x.status = 'void' and x.void_at is not null)) and x.pay_date between p_from and p_to loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      ents := ents || jsonb_build_array(jsonb_build_object('src','spay','date',r.pay_date,'ref',coalesce(nullif(r.ref,''), r.code),'desc','دفعة للمورد '||r.sname||' '||r.code,'dim','',
+        'lines', jsonb_build_array(jsonb_build_object('a','ap','dr',r.amount,'cr',0), jsonb_build_object('a',acc,'dr',0,'cr',r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'spay'; end;
+  -- 5) contractor bills approved (date of the approval step) and 6) paid
+  begin
+    for r in select b.*, c.code ccode, coalesce(c.contractor_name,'') cname, c.region creg,
+                    (select max((h->>'at')::timestamptz) from jsonb_array_elements(b.history) h where h->>'a' = 'approve') appr_at
+               from public.fm_bills b join public.fm_contracts c on c.id = b.contract_id where b.status in ('approved','paid') loop
+      if r.appr_at is not null and (r.appr_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','bill','date',(r.appr_at at time zone tz)::date,'ref',r.code,'desc','مستخلص '||r.cname||' '||r.ccode||' — '||r.month,'dim',coalesce(r.creg,''),
+          'lines', jsonb_build_array(jsonb_build_object('a','cost_sub','dr',r.net,'cr',0))
+                   || case when r.vat > 0 then jsonb_build_array(jsonb_build_object('a','vat_in','dr',r.vat,'cr',0)) else '[]'::jsonb end
+                   || case when r.retention > 0 then jsonb_build_array(jsonb_build_object('a','retention','dr',0,'cr',r.retention)) else '[]'::jsonb end
+                   || jsonb_build_array(jsonb_build_object('a','ap_sub','dr',0,'cr',r.total))));
+      end if;
+      if r.status = 'paid' and r.paid_at is not null and (r.paid_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','billpay','date',(r.paid_at at time zone tz)::date,'ref',coalesce(nullif(r.pay_ref,''), r.code),'desc','صرف مستخلص '||r.cname||' '||r.code,'dim',coalesce(r.creg,''),
+          'lines', jsonb_build_array(jsonb_build_object('a','ap_sub','dr',r.total,'cr',0), jsonb_build_object('a','bank','dr',0,'cr',r.total))));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'bill'; end;
+  -- V362: reversals on the void date of collections / supplier payments voided after they were posted
+  begin
+    for r in select x.*, p.code pcode, c.code ccode from public.fm_erp_collections x join public.fm_erp_owner_claims c on c.id = x.claim_id join public.fm_erp_projects p on p.id = x.project_id
+              where x.status = 'void' and x.void_at is not null and (x.void_at at time zone tz)::date between p_from and p_to loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      ents := ents || jsonb_build_array(jsonb_build_object('src','collect_v','date',(r.void_at at time zone tz)::date,'ref',r.code,'desc','عكس تحصيل ملغى '||r.code||' على '||r.ccode||coalesce(' — '||r.void_reason,''),'dim',r.pcode,
+        'lines', jsonb_build_array(jsonb_build_object('a','receivable','dr',r.amount,'cr',0), jsonb_build_object('a',acc,'dr',0,'cr',r.amount))));
+    end loop;
+    for r in select x.*, s.name sname from public.wo_supplier_payments x join public.wo_suppliers s on s.id = x.supplier_id
+              where x.status = 'void' and x.void_at is not null and (x.void_at at time zone tz)::date between p_from and p_to loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      ents := ents || jsonb_build_array(jsonb_build_object('src','spay_v','date',(r.void_at at time zone tz)::date,'ref',r.code,'desc','عكس دفعة ملغاة للمورد '||r.sname||' '||r.code||coalesce(' — '||r.void_reason,''),'dim','',
+        'lines', jsonb_build_array(jsonb_build_object('a',acc,'dr',r.amount,'cr',0), jsonb_build_object('a','ap','dr',0,'cr',r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'void'; end;
+  -- V362: retention released to contractors (paid), and its reversal when a paid release is voided
+  begin
+    for r in select x.*, ct.code ccode, coalesce(ct.contractor_name, ct.name) cname, ct.region creg from public.fm_ret_releases x join public.fm_contracts ct on ct.id = x.contract_id
+              where x.pay_date is not null and x.status in ('paid','void') loop
+      if r.pay_date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','retrel','date',r.pay_date,'ref',coalesce(nullif(r.pay_ref,''), r.code),'desc','إفراج محتجزات '||r.cname||' '||r.ccode||' ('||r.code||')','dim',coalesce(r.creg,''),
+          'lines', jsonb_build_array(jsonb_build_object('a','retention','dr',r.amount,'cr',0), jsonb_build_object('a','bank','dr',0,'cr',r.amount))));
+      end if;
+      if r.status = 'void' and r.void_at is not null and (r.void_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','retrel_v','date',(r.void_at at time zone tz)::date,'ref',r.code,'desc','عكس إفراج محتجزات ملغى '||r.code||coalesce(' — '||r.void_reason,''),'dim',coalesce(r.creg,''),
+          'lines', jsonb_build_array(jsonb_build_object('a','bank','dr',r.amount,'cr',0), jsonb_build_object('a','retention','dr',0,'cr',r.amount))));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'retrel'; end;
+  -- 7) materials used (store «out» moves + custody «use»), one entry per month and region, dated the month's last day in the period
+  begin
+    for r in with u as (
+               select (m.at at time zone tz)::date d, coalesce(st.region,'') reg, -m.qty * coalesce(m.unit_price, mt.price, 0) val
+                 from public.wo_stock_moves m join public.wo_stores st on st.id = m.store_id left join public.wo_materials mt on mt.id = m.material_id
+                where m.kind = 'out' and m.qty < 0 and (m.at at time zone tz)::date between p_from and p_to
+               union all
+               select (c.at at time zone tz)::date, coalesce(st.region,''), -c.qty * coalesce(c.unit_price, mt.price, 0)
+                 from public.wo_custody_moves c left join public.wo_stores st on st.id = c.store_id left join public.wo_materials mt on mt.id = c.material_id
+                where c.kind = 'use' and c.qty < 0 and (c.at at time zone tz)::date between p_from and p_to)
+             select to_char(d,'YYYY-MM') mo, reg, round(sum(val),2) val, least(p_to, (date_trunc('month', min(d)) + interval '1 month - 1 day')::date) dd from u group by 1, 2 having round(sum(val),2) > 0 order by 1, 2 loop
+      ents := ents || jsonb_build_array(jsonb_build_object('src','cons','date',r.dd,'ref','MAT-'||r.mo,'desc','مواد مستخدمة في أوامر العمل '||r.mo,'dim',r.reg,
+        'lines', jsonb_build_array(jsonb_build_object('a','cost_mat','dr',r.val,'cr',0), jsonb_build_object('a','inventory','dr',0,'cr',r.val))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'cons'; end;
+  -- V369: later additions live in fm_acct_more (redefine that one, not this function)
+  xm := public.fm_acct_more(p_from, p_to);
+  ents := ents || coalesce(xm->'entries', '[]'::jsonb);
+  skipped := skipped || coalesce((select array_agg(x) from jsonb_array_elements_text(coalesce(xm->'skipped','[]'::jsonb)) x), '{}');
+  return jsonb_build_object('from', p_from, 'to', p_to, 'map', public.fm_acct_map(), 'can_set', public.fm_acct_can_set(), 'skipped', to_jsonb(skipped),
+    'entries', coalesce((select jsonb_agg(e order by e->>'date', e->>'src', e->>'ref') from jsonb_array_elements(ents) e), '[]'::jsonb),
+    'exports', coalesce((select jsonb_agg(jsonb_build_object('from', x.d_from, 'to', x.d_to, 'n', x.n, 'debit', x.debit, 'fmt', x.fmt, 'by', x.by_name, 'at', x.at) order by x.at desc)
+                           from public.fm_acct_exports x where x.d_from <= p_to and x.d_to >= p_from), '[]'::jsonb));
+end $$;
+
+create or replace function public.fm_wf_bonus_people(p_region text) returns jsonb language sql stable security definer set search_path = public as $$
+  select case when not public.fm_wf_bonus_prop(p_region) then null else coalesce((
+    select jsonb_agg(jsonb_build_object('id', p.id, 'name', p.full_name, 'code', p.employee_code, 'job', p.job_title, 'team', coalesce(t.name,'')) order by p.full_name)
+      from public.fm_people334 p left join public.fm_teams334 t on t.id = p.team_id where p.region = p_region and p.active), '[]'::jsonb) end $$;
+
+create or replace function public.fm_wf_att(p_region text, p_day date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare d date := coalesce(p_day, (now() at time zone 'Asia/Riyadh')::date);
+begin
+  if not public.fm233_read(p_region) then raise exception 'not allowed'; end if;
+  return jsonb_build_object('day', d, 'region', p_region, 'people', coalesce((
+    with acc as (
+      select pr.id, nullif(btrim(coalesce(pr.emp_no,'')),'') emp, public.fm_sdb_n(pr.full_name) fn,
+             coalesce((select array_agg(public.fm_sdb_n(x)) from unnest(coalesce(pr.person_names,'{}')) x), '{}') pn
+        from public.profiles pr where pr.active and coalesce(pr.deleted_at, null) is null),
+    pp as (
+      select p.*, t.name tname, t.category tcat,
+             (select array_agg(a.id) from acc a where a.emp is not null and p.employee_code <> '' and lower(a.emp) = lower(btrim(p.employee_code))) by_code,
+             (select array_agg(a.id) from acc a where a.fn = public.fm_sdb_n(p.full_name) or public.fm_sdb_n(p.full_name) = any(a.pn)) by_name
+        from public.fm_people334 p left join public.fm_teams334 t on t.id = p.team_id where p.region = p_region and p.active),
+    m as (select pp.*, case when cardinality(by_code) = 1 then by_code[1] when by_code is null and cardinality(by_name) = 1 then by_name[1] end uid,
+                 case when cardinality(by_code) > 1 or (by_code is null and cardinality(by_name) > 1) then true else false end amb from pp)
+    select jsonb_agg(jsonb_build_object('id', m.id, 'name', m.full_name, 'code', m.employee_code, 'job', m.job_title, 'team_id', m.team_id, 'team', coalesce(m.tname,''),
+             'cat', coalesce(m.tcat,''), 'acc', m.uid is not null, 'amb', m.amb,
+             'in', (select min(a.at) from public.fm_att a where a.user_id = m.uid and a.day = d and a.kind = 'in'),
+             'out', (select max(a.at) from public.fm_att a where a.user_id = m.uid and a.day = d and a.kind = 'out'),
+             'visits', (select count(*) from public.fm_att a where a.user_id = m.uid and a.day = d and a.kind = 'visit'),
+             'any', exists(select 1 from public.fm_att a where a.user_id = m.uid and a.day = d)) order by m.tname nulls last, m.full_name)
+      from m), '[]'::jsonb));
+end $$;
+
+revoke all on function public.fm_acct_more(date, date) from public, anon, authenticated;
+revoke all on function public.fm_wf_bonus_stamp() from public, anon, authenticated;
+revoke all on function public.fm_wf_bonus_people(text), public.fm_wf_att(text, date), public.fm_acct_journal(date, date), public.fm_acct_map(), public.fm_acct_keys() from public, anon;
+grant execute on function public.fm_wf_bonus_people(text), public.fm_wf_att(text, date), public.fm_acct_journal(date, date), public.fm_acct_map(), public.fm_acct_keys() to authenticated;
+revoke all on function public.fm_cc_actuals(int) from public, anon, authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 110) V370 — overtime cost in the cost centre and the journal; the monthly payroll file and payment batches ----------
+-- (1) fm_overtime.cost / rate / no_rate: stamped when an entry becomes approved (trigger fm_ot_cost_stamp) = approved hours ×
+--     fm_erp_cost_rules().rates[job title] × ot (1.5); no rate → cost 0 and no_rate. Existing approved rows are back-filled.
+--     fm_cc_actuals adds them as labour (src ot); fm_acct_more adds `ot` (Dr cost_lab / Cr payroll on the approval date).
+-- (2) fm_pay_batches (PB-YYYY-####): one payment batch = the approved, unpaid bonuses and overtime entries the accountant ticks
+--     for a month; fm_wf_bonuses.paid_batch / fm_overtime.paid_batch. Journal: `pay` (Dr payroll / Cr bank | cash on pay_date) and
+--     `pay_v` (its reversal on the void date). A paid bonus / overtime entry can no longer change status (guards).
+-- (3) fm_pay_can() = admin, sysadmin, accountant (pay / void); read = fm_acct_can(). fm_payroll(month) → people with their bonuses /
+--     overtime (paid or not) + batches; fm_payroll_pay(month, p {bonus_ids[], ot_ids[], pay_date, method, ref, note});
+--     fm_payroll_void(batch, reason).
+alter table public.fm_overtime add column if not exists cost numeric(12,2);
+alter table public.fm_overtime add column if not exists rate numeric(10,2);
+alter table public.fm_overtime add column if not exists no_rate boolean not null default false;
+create or replace function public.fm_ot_rate(p_user uuid) returns numeric language sql stable security definer set search_path = public as $$
+  select nullif(public.fm_erp_cost_rules()->'rates'->>coalesce((select job_title from public.profiles where id = p_user), ''), '')::numeric $$;
+create or replace function public.fm_ot_cost_stamp() returns trigger language plpgsql security definer set search_path = public as $$
+declare r numeric;
+begin
+  if new.status = 'approved' and (old.status is distinct from 'approved' or new.appr_hours is distinct from old.appr_hours) then
+    r := public.fm_ot_rate(new.user_id);
+    new.rate := r; new.no_rate := r is null;
+    new.cost := round(coalesce(new.appr_hours, new.hours, 0) * coalesce(r, 0) * coalesce(nullif(public.fm_erp_cost_rules()->>'ot','')::numeric, 1.5), 2);
+  elsif new.status <> 'approved' then new.cost := null; new.rate := null; new.no_rate := false;
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_ot_cost_stamp on public.fm_overtime;
+create trigger fm_ot_cost_stamp before update of status, appr_hours on public.fm_overtime for each row execute function public.fm_ot_cost_stamp();
+do $do$ begin
+  update public.fm_overtime o set rate = public.fm_ot_rate(o.user_id), no_rate = public.fm_ot_rate(o.user_id) is null,
+         cost = round(coalesce(o.appr_hours, o.hours, 0) * coalesce(public.fm_ot_rate(o.user_id), 0) * coalesce(nullif(public.fm_erp_cost_rules()->>'ot','')::numeric, 1.5), 2)
+   where o.status = 'approved' and o.cost is null;
+exception when others then null; end $do$;
+
+create sequence if not exists public.fm_pay_seq;
+create table if not exists public.fm_pay_batches (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null default ('PB-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_pay_seq')::text, 4, '0')),
+  month text not null check (month ~ '^\d{4}-\d{2}$'),
+  pay_date date not null,
+  method text not null default 'bank' check (method in ('bank','cash')),
+  ref text, note text,
+  n_bonus int not null default 0, bonus_amount numeric(14,2) not null default 0,
+  n_ot int not null default 0, ot_hours numeric(10,2) not null default 0, ot_amount numeric(14,2) not null default 0,
+  total numeric(14,2) not null default 0,
+  status text not null default 'posted' check (status in ('posted','void')),
+  by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(),
+  void_at timestamptz, void_by uuid, void_reason text);
+alter table public.fm_pay_batches enable row level security;
+revoke all on public.fm_pay_batches from anon, authenticated;
+alter table public.fm_wf_bonuses add column if not exists paid_batch uuid references public.fm_pay_batches(id) on delete set null;
+alter table public.fm_overtime add column if not exists paid_batch uuid references public.fm_pay_batches(id) on delete set null;
+
+-- two small guards (the tables differ in their amount column)
+create or replace function public.fm_wf_bonus_paid_guard() returns trigger language plpgsql as $$
+begin
+  if old.paid_batch is not null and new.paid_batch is not distinct from old.paid_batch and (new.status is distinct from old.status or new.amount is distinct from old.amount) then
+    raise exception 'already paid'; end if;
+  return new;
+end $$;
+drop trigger if exists fm_wf_bonus_paid_guard on public.fm_wf_bonuses;
+create trigger fm_wf_bonus_paid_guard before update on public.fm_wf_bonuses for each row execute function public.fm_wf_bonus_paid_guard();
+create or replace function public.fm_ot_paid_guard() returns trigger language plpgsql as $$
+begin
+  if old.paid_batch is not null and new.paid_batch is not distinct from old.paid_batch and (new.status is distinct from old.status or new.appr_hours is distinct from old.appr_hours) then
+    raise exception 'already paid'; end if;
+  return new;
+end $$;
+drop trigger if exists fm_ot_paid_guard on public.fm_overtime;
+create trigger fm_ot_paid_guard before update on public.fm_overtime for each row execute function public.fm_ot_paid_guard();
+
+create or replace function public.fm_pay_can() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant')), false) $$;
+
+create or replace function public.fm_payroll(p_month text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_acct_can() then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  return jsonb_build_object('month', p_month, 'can_pay', public.fm_pay_can(), 'rules', public.fm_erp_cost_rules(),
+    'bonuses', coalesce((select jsonb_agg(jsonb_build_object('id', b.id, 'code', b.code, 'region', b.region, 'person_id', b.person_id, 'name', b.person_name,
+        'emp', b.employee_code, 'job', b.job_title, 'kind', b.kind, 'amount', b.amount, 'reason', b.reason, 'paid', b.paid_batch,
+        'pcode', (select code from public.fm_pay_batches x where x.id = b.paid_batch)) order by b.person_name)
+      from public.fm_wf_bonuses b where b.month = p_month and b.status = 'approved'), '[]'::jsonb),
+    'ot', coalesce((select jsonb_agg(jsonb_build_object('id', o.id, 'code', o.code, 'region', o.region, 'user_id', o.user_id, 'name', coalesce(pr.full_name, o.user_name),
+        'emp', coalesce(pr.emp_no, ''), 'job', coalesce(pr.job_title, ''), 'kind', o.kind, 'hours', coalesce(o.appr_hours, o.hours), 'rate', o.rate, 'cost', o.cost,
+        'no_rate', o.no_rate, 'start', o.start_at, 'paid', o.paid_batch, 'pcode', (select code from public.fm_pay_batches x where x.id = o.paid_batch)) order by pr.full_name, o.start_at)
+      from public.fm_overtime o left join public.profiles pr on pr.id = o.user_id where o.month = p_month and o.status = 'approved'), '[]'::jsonb),
+    'batches', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc) from public.fm_pay_batches x where x.month = p_month), '[]'::jsonb));
+end $$;
+
+create or replace function public.fm_payroll_pay(p_month text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare bid uuid; bids uuid[] := '{}'; oids uuid[] := '{}'; nb int; no int; ba numeric; oh numeric; oa numeric; d date; cd text;
+begin
+  if not public.fm_pay_can() then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  select coalesce(array_agg(x::uuid), '{}') into bids from jsonb_array_elements_text(coalesce(p->'bonus_ids','[]')) x;
+  select coalesce(array_agg(x::uuid), '{}') into oids from jsonb_array_elements_text(coalesce(p->'ot_ids','[]')) x;
+  if cardinality(bids) + cardinality(oids) = 0 then raise exception 'nothing selected'; end if;
+  d := coalesce(nullif(p->>'pay_date','')::date, (now() at time zone 'Asia/Riyadh')::date);
+  perform pg_advisory_xact_lock(hashtext('fm_payroll:' || p_month));
+  select count(*), coalesce(sum(amount),0) into nb, ba from public.fm_wf_bonuses where id = any(bids) and month = p_month and status = 'approved' and paid_batch is null;
+  if nb <> cardinality(bids) then raise exception 'bonus not payable'; end if;
+  select count(*), coalesce(sum(coalesce(appr_hours, hours)),0), coalesce(sum(cost),0) into no, oh, oa from public.fm_overtime where id = any(oids) and month = p_month and status = 'approved' and paid_batch is null;
+  if no <> cardinality(oids) then raise exception 'overtime not payable'; end if;
+  insert into public.fm_pay_batches(month, pay_date, method, ref, note, n_bonus, bonus_amount, n_ot, ot_hours, ot_amount, total, by_name)
+  values (p_month, d, case when p->>'method' = 'cash' then 'cash' else 'bank' end, left(nullif(btrim(coalesce(p->>'ref','')),''),120), left(nullif(btrim(coalesce(p->>'note','')),''),500),
+          nb, ba, no, oh, oa, ba + oa, (select full_name from public.profiles where id = auth.uid()))
+  returning id, code into bid, cd;
+  update public.fm_wf_bonuses set paid_batch = bid where id = any(bids);
+  update public.fm_overtime set paid_batch = bid where id = any(oids);
+  insert into public.fm_audit_log(actor_name, action, target, details) values ((select full_name from public.profiles where id = auth.uid()), 'pay_batch', cd, jsonb_build_object('month', p_month, 'total', ba + oa));
+  return jsonb_build_object('id', bid, 'code', cd, 'total', ba + oa);
+end $$;
+
+create or replace function public.fm_payroll_void(p_id uuid, p_reason text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare b public.fm_pay_batches;
+begin
+  if not public.fm_pay_can() then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p_reason,''))) < 3 then raise exception 'reason required'; end if;
+  select * into b from public.fm_pay_batches where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if b.status <> 'posted' then raise exception 'not posted'; end if;
+  update public.fm_wf_bonuses set paid_batch = null where paid_batch = p_id;
+  update public.fm_overtime set paid_batch = null where paid_batch = p_id;
+  update public.fm_pay_batches set status = 'void', void_at = now(), void_by = auth.uid(), void_reason = left(btrim(p_reason),500) where id = p_id;
+  insert into public.fm_audit_log(actor_name, action, target, details) values ((select full_name from public.profiles where id = auth.uid()), 'pay_void', b.code, jsonb_build_object('reason', p_reason));
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.fm_cc_actuals(p_year int) returns table(center_id uuid, m int, cat text, src text, bkey text, amount numeric)
+language plpgsql stable security definer set search_path = public as $$
+declare a date := make_date(p_year,1,1); b date := make_date(p_year+1,1,1); cur int := case when extract(year from current_date) = p_year then extract(month from current_date)::int when p_year < extract(year from current_date) then 12 else 0 end;
+begin
+  if auth.uid() is not null and not public.fm_cc_can('view') then return; end if;
+  return query
+  with sdb as (   -- building key → region, from the school DB
+    select public.fm_bkey(x->>'buildingId', x->>'school') bk, x->>'region' reg
+      from public.app_kv k, jsonb_array_elements(case when jsonb_typeof(k.value) = 'array' then k.value when jsonb_typeof(k.value) = 'string' and left(k.value #>> '{}',1) = '[' then (k.value #>> '{}')::jsonb else '[]' end) x
+     where k.key = 'fm_school_master_db_v1'),
+  billed as (select bw.wo_id, ct.mat_mode from public.fm_bill_wos bw join public.fm_bills bl on bl.id = bw.bill_id join public.fm_contracts ct on ct.id = bl.contract_id where bl.status <> 'cancelled'),
+  mats as (     -- materials of orders closed in the year
+    select o.region, public.fm_bkey(o.building_id, o.school) bk, extract(month from (coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh'))::int mm,
+           coalesce(mt.m->>'src','store') srcm, coalesce(nullif(mt.m->>'q','')::numeric,0) * coalesce(nullif(mt.m->>'price','')::numeric,0) v, bd.mat_mode
+      from public.work_orders o
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(o.checklist) = 'array' then o.checklist else '[]' end) it(e)
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) mt(m)
+      left join billed bd on bd.wo_id = o.id
+     where o.status = 'closed' and coalesce(o.closed_at, o.updated_at) >= a and coalesce(o.closed_at, o.updated_at) < b and jsonb_typeof(mt.m) = 'object'),
+  exps as (     -- expenses spread over the months of the year and their schools
+    select e.*, gs::date mon from public.fm_expenses e
+      cross join lateral generate_series(date_trunc('month', greatest(e.start_on, a))::date, date_trunc('month', least(coalesce(e.end_on, b - 1), b - 1))::date, interval '1 month') gs
+     where e.active and e.cancelled_by is null and e.start_on < b and coalesce(e.end_on, b) >= a and (e.kind = 'monthly' or date_trunc('month', e.start_on) = gs)),
+  exp_rows as (
+    select x.region reg, null::text bk, extract(month from x.mon)::int mm, x.amount v from exps x where x.scope = 'region'
+    union all
+    select coalesce(s.reg, x.region), k.bk, extract(month from x.mon)::int, case when x.split = 'each' then x.amount else x.amount / greatest(cardinality(x.schools),1) end
+      from exps x cross join lateral unnest(x.schools) k(bk) left join sdb s on s.bk = k.bk where x.scope <> 'region'),
+  staff_rows as (
+    select s.center_id cid, mm, round((s.salary + s.housing + s.transport + s.other) * (1 + s.gosi_pct / 100)
+           * greatest(0, (least(coalesce(s.end_date, make_date(p_year,mm,1) + interval '1 month' - interval '1 day')::date, (make_date(p_year,mm,1) + interval '1 month' - interval '1 day')::date)
+                        - greatest(coalesce(s.start_date, make_date(p_year,mm,1)), make_date(p_year,mm,1)) + 1))::numeric
+           / extract(day from make_date(p_year,mm,1) + interval '1 month' - interval '1 day'), 2) v
+      from public.fm_cc_staff s cross join generate_series(1, greatest(cur,0)) mm where s.active),
+  ent as (select e.* from public.fm_cc_entries e where not e.cancelled and e.month like p_year || '-%'),
+  allrows as (
+    select coalesce(ct.cc_id, public.fm_cc_route(ct.region, 'sub')) cid, substr(bl.month,6,2)::int mm, 'sub'::text c, 'bill'::text s, null::text bk, (bl.gross - bl.deductions) v
+      from public.fm_bills bl join public.fm_contracts ct on ct.id = bl.contract_id where bl.status in ('approved','paid') and bl.month like p_year || '-%'
+    union all
+    select public.fm_cc_route(x.region, case when x.srcm = 'buy' then 'buy' else 'mat' end), x.mm, case when x.srcm = 'buy' then 'buy' else 'mat' end, 'wo', x.bk, x.v
+      from mats x where x.v > 0 and not (x.srcm = 'buy' and coalesce(x.mat_mode,'') in ('buy','all')) and not (x.srcm <> 'buy' and coalesce(x.mat_mode,'') = 'all')
+    union all
+    select public.fm_cc_route(r.reg, 'exp'), r.mm, 'exp', 'exp', r.bk, r.v from exp_rows r
+    union all
+    select sr.cid, sr.mm, 'labour', 'staff', null, sr.v from staff_rows sr where sr.v > 0
+    union all
+    select e.center_id, substr(e.month,6,2)::int, e.cat, 'entry', e.bkey, case when e.kind = 'rev' and e.cat = 'client_ded' then -abs(e.amount) when e.kind = 'rev' then e.amount else e.amount end from ent e
+    union all     -- V369: approved workforce bonuses → labour of the region's center (month of the bonus)
+    select public.fm_cc_route(wb.region, 'labour'), substr(wb.month,6,2)::int, 'labour', 'bonus', null, wb.amount
+      from public.fm_wf_bonuses wb where wb.status = 'approved' and wb.month like p_year || '-%'
+    union all     -- V370: approved overtime (cost stamped at approval) → labour of the region's center (month of the work)
+    select public.fm_cc_route(ot.region, 'labour'), substr(ot.month,6,2)::int, 'labour', 'ot', null, ot.cost
+      from public.fm_overtime ot where ot.status = 'approved' and coalesce(ot.cost,0) > 0 and ot.month like p_year || '-%'
+    union all     -- the monthly contract value when no «contract» entry was made for that center and month
+    select c.id, mm, 'contract', 'auto', null, c.rev_monthly from public.fm_cc_centers c cross join generate_series(1, greatest(cur,0)) mm
+     where c.active and c.rev_monthly > 0 and (c.rev_from is null or make_date(p_year,mm,1) >= date_trunc('month', c.rev_from)) and (c.rev_to is null or make_date(p_year,mm,1) <= c.rev_to)
+       and not exists(select 1 from ent e where e.center_id = c.id and e.kind = 'rev' and e.cat = 'contract' and substr(e.month,6,2)::int = mm))
+  select r.cid, r.mm, r.c, r.s, r.bk, round(sum(r.v),2) from allrows r group by 1,2,3,4,5;
+end $$;
+
+create or replace function public.fm_acct_more(p_from date, p_to date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ents jsonb := '[]'; r record; tz text := 'Asia/Riyadh'; skipped text[] := '{}'; acc text;
+  kl jsonb := jsonb_build_object('bonus','مكافأة','incentive','حافز','allowance','بدل','other','مستحق');
+  okl jsonb := jsonb_build_object('after_hours','بعد الدوام','emergency','طوارئ','weekend','عطلة أسبوعية','holiday','إجازة رسمية');
+begin
+  begin
+    for r in select b.* from public.fm_wf_bonuses b where b.appr_at is not null and (
+               (b.appr_at at time zone tz)::date between p_from and p_to or (b.unappr_at is not null and (b.unappr_at at time zone tz)::date between p_from and p_to)) loop
+      if (r.appr_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','bonus','date',(r.appr_at at time zone tz)::date,'ref',r.code,
+          'desc',coalesce(kl->>r.kind,'مكافأة')||' '||r.person_name||coalesce(' ('||nullif(r.employee_code,'')||')','')||' — '||r.month,'dim',r.region,
+          'lines', jsonb_build_array(jsonb_build_object('a','cost_lab','dr',r.amount,'cr',0), jsonb_build_object('a','payroll','dr',0,'cr',r.amount))));
+      end if;
+      if r.unappr_at is not null and (r.unappr_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','bonus_v','date',(r.unappr_at at time zone tz)::date,'ref',r.code,
+          'desc','عكس '||coalesce(kl->>r.kind,'مكافأة')||' ملغاة '||r.person_name||coalesce(' — '||r.dec_note,''),'dim',r.region,
+          'lines', jsonb_build_array(jsonb_build_object('a','payroll','dr',r.amount,'cr',0), jsonb_build_object('a','cost_lab','dr',0,'cr',r.amount))));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'bonus'; end;
+  -- V370: approved overtime (cost stamped at approval) on the approval date
+  begin
+    for r in select o.*, coalesce(pr.full_name, o.user_name) nm from public.fm_overtime o left join public.profiles pr on pr.id = o.user_id
+              where o.status = 'approved' and coalesce(o.cost,0) > 0 and o.dec_at is not null and (o.dec_at at time zone tz)::date between p_from and p_to loop
+      ents := ents || jsonb_build_array(jsonb_build_object('src','ot','date',(r.dec_at at time zone tz)::date,'ref',r.code,
+        'desc','عمل إضافي ('||coalesce(okl->>r.kind,'')||') '||coalesce(r.nm,'')||' — '||coalesce(r.appr_hours, r.hours)||' س','dim',coalesce(r.region,''),
+        'lines', jsonb_build_array(jsonb_build_object('a','cost_lab','dr',r.cost,'cr',0), jsonb_build_object('a','payroll','dr',0,'cr',r.cost))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'ot'; end;
+  -- V370: payment batches and their reversal
+  begin
+    for r in select x.* from public.fm_pay_batches x where x.total > 0 and (x.pay_date between p_from and p_to or (x.status = 'void' and x.void_at is not null and (x.void_at at time zone tz)::date between p_from and p_to)) loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      if r.pay_date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','pay','date',r.pay_date,'ref',coalesce(nullif(r.ref,''), r.code),'desc','صرف مكافآت وعمل إضافي '||r.month||' ('||r.code||')','dim','',
+          'lines', jsonb_build_array(jsonb_build_object('a','payroll','dr',r.total,'cr',0), jsonb_build_object('a',acc,'dr',0,'cr',r.total))));
+      end if;
+      if r.status = 'void' and r.void_at is not null and (r.void_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','pay_v','date',(r.void_at at time zone tz)::date,'ref',r.code,'desc','عكس دفعة رواتب ملغاة '||r.code||coalesce(' — '||r.void_reason,''),'dim','',
+          'lines', jsonb_build_array(jsonb_build_object('a',acc,'dr',r.total,'cr',0), jsonb_build_object('a','payroll','dr',0,'cr',r.total))));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'pay'; end;
+  return jsonb_build_object('entries', ents, 'skipped', to_jsonb(skipped));
+end $$;
+
+revoke all on function public.fm_acct_more(date, date), public.fm_cc_actuals(int), public.fm_ot_rate(uuid), public.fm_ot_cost_stamp(),
+  public.fm_wf_bonus_paid_guard(), public.fm_ot_paid_guard() from public, anon, authenticated;
+revoke all on function public.fm_pay_can(), public.fm_payroll(text), public.fm_payroll_pay(text, jsonb), public.fm_payroll_void(uuid, text) from public, anon;
+grant execute on function public.fm_pay_can(), public.fm_payroll(text), public.fm_payroll_pay(text, jsonb), public.fm_payroll_void(uuid, text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 111) V371 — morning absence alert, workforce document expiry, abnormal meter readings ----------
+-- fm_settings.att_alert {enabled true, hour 8 (Riyadh), days [0..4] (Sun–Thu), titles [supervisor, contractor, area_engineer],
+--   recent 30}: once a day after `hour`, every active account with one of those titles that used attendance in the last `recent`
+--   days, is not on leave (fm_tk_leave) and has no fm_att row today → one push «att_absent» to his reports_to (names) and one
+--   summary to the area managers of his regions. Hash attabs.
+-- fm_settings.wf_docs {enabled true, days [30, 7, 0]}: qualifications (fm_workforce337_qualifications.expires_on) and contracts
+--   (fm_people334.contract_end_date) of active people reaching 30 / 7 / 0 days → push «wf_doc» to the area managers of the region,
+--   the project / ops managers and the person's own account (emp_no = employee_code); each item × level once (fm_wf_doc_sent).
+-- fm_settings.meter_alert {enabled true, pct 50, auto_wo true}: trigger fm_meter_spike (after insert / update of reading on
+--   fm_meter_reads): use = reading − the previous month's (reset → skipped) above (1 + pct %) × the average of up to 6 earlier uses
+--   → fm_meter_alerts row; with auto_wo an inspection order (type repair, priority عالي, due 3 days) created by the school's engineer
+--   account for its supervisor account (school DB names → fm_tk_person); push «meter» to both and the area managers. Never blocks
+--   the reading. fm_meter_alerts_list(days), fm_meter_alert_close(id, note).
+-- pg_cron fm-v371-tick every 15 min → fm_v371_tick() (each job once a day, fm_daily_runs).
+create table if not exists public.fm_daily_runs (job text not null, day date not null, at timestamptz not null default now(), n int, primary key (job, day));
+alter table public.fm_daily_runs enable row level security;
+revoke all on public.fm_daily_runs from anon, authenticated;
+
+create or replace function public.fm_att_alert_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', true, 'hour', 8, 'days', jsonb_build_array(0,1,2,3,4), 'titles', jsonb_build_array('supervisor','contractor','area_engineer'), 'recent', 30)
+         || coalesce((select value from public.fm_settings where key = 'att_alert' and jsonb_typeof(value) = 'object'), '{}'::jsonb) $$;
+
+create or replace function public.fm_v371_absent(p_force boolean default false) returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_att_alert_cfg(); tz text := 'Asia/Riyadh'; nowr timestamp := now() at time zone tz; d date := (now() at time zone tz)::date;
+  r record; n int := 0; rg text;
+begin
+  if not p_force then
+    if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+    if extract(hour from nowr) < coalesce((c->>'hour')::int, 8) then return 0; end if;
+    if not (extract(dow from d)::int = any(array(select (jsonb_array_elements_text(coalesce(c->'days','[0,1,2,3,4]')))::int))) then return 0; end if;
+    if exists(select 1 from public.fm_daily_runs where job = 'att_absent' and day = d) then return 0; end if;
+  end if;
+  create temp table if not exists fm371_abs(id uuid, name text, boss uuid, regions text[]) on commit drop;
+  delete from fm371_abs;
+  insert into fm371_abs
+  select p.id, coalesce(nullif(p.full_name,''), p.email), p.reports_to, coalesce(p.regions,'{}')
+    from public.profiles p
+   where p.active and p.deleted_at is null and p.job_title = any(array(select jsonb_array_elements_text(coalesce(c->'titles','[]'))))
+     and exists(select 1 from public.fm_att a where a.user_id = p.id and a.day >= d - coalesce((c->>'recent')::int, 30) and a.day < d)
+     and not exists(select 1 from public.fm_att a where a.user_id = p.id and a.day = d)
+     and public.fm_tk_leave(p.id) is null;
+  for r in select boss, array_agg(name order by name) names from fm371_abs where boss is not null group by boss loop
+    perform public.fm_push_add(r.boss, 'att_absent', '🕒 لم يسجّلوا بدء الدوام (' || cardinality(r.names) || ')',
+      array_to_string(r.names[1:12], '، ') || case when cardinality(r.names) > 12 then ' …' else '' end, 'attabs', 'attabs-' || d, false);
+    n := n + 1;
+  end loop;
+  for rg in select distinct unnest(regions) from fm371_abs loop
+    for r in select p.id from public.profiles p where p.active and p.job_title = 'area_manager' and rg = any(coalesce(p.regions,'{}')) loop
+      perform public.fm_push_add(r.id, 'att_absent', '🕒 لم يسجّلوا بدء الدوام — ' || case rg when 'riyadh' then 'الرياض' when 'qassim' then 'القصيم' else rg end,
+        (select count(*) || ' شخص: ' || array_to_string((array_agg(name order by name))[1:10], '، ') from fm371_abs where rg = any(regions)), 'attabs', 'attabs-' || rg || '-' || d, false);
+    end loop;
+  end loop;
+  insert into public.fm_daily_runs(job, day, n) values ('att_absent', d, (select count(*) from fm371_abs)) on conflict (job, day) do update set n = excluded.n, at = now();
+  return (select count(*) from fm371_abs);
+end $$;
+
+create table if not exists public.fm_wf_doc_sent (k text primary key, at timestamptz not null default now());
+alter table public.fm_wf_doc_sent enable row level security;
+revoke all on public.fm_wf_doc_sent from anon, authenticated;
+create or replace function public.fm_v371_docs() returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := jsonb_build_object('enabled', true, 'days', jsonb_build_array(30,7,0)) || coalesce((select value from public.fm_settings where key = 'wf_docs' and jsonb_typeof(value) = 'object'), '{}'::jsonb);
+  d date := (now() at time zone 'Asia/Riyadh')::date; r record; u uuid; n int := 0; lv int; lvs int[]; v_k text; ttl text;
+begin
+  if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+  if exists(select 1 from public.fm_daily_runs where job = 'wf_docs' and day = d) then return 0; end if;
+  lvs := array(select (jsonb_array_elements_text(coalesce(c->'days','[30,7,0]')))::int order by 1 desc);
+  for r in
+    select 'q:' || q.id k0, q.region, p.full_name, p.employee_code, q.title what, q.expires_on exp from public.fm_workforce337_qualifications q join public.fm_people334 p on p.id = q.person_id
+     where p.active and q.expires_on is not null and q.expires_on <= d + 30 and q.expires_on >= d - 1
+    union all
+    select 'c:' || p.id, p.region, p.full_name, p.employee_code, 'نهاية العقد', p.contract_end_date from public.fm_people334 p
+     where p.active and p.contract_end_date is not null and p.contract_end_date <= d + 30 and p.contract_end_date >= d - 1
+  loop
+    lv := null;
+    select min(x) into lv from unnest(lvs) x where r.exp - d <= x;
+    if lv is null then continue; end if;
+    v_k := r.k0 || ':' || r.exp || ':' || lv;
+    if exists(select 1 from public.fm_wf_doc_sent where fm_wf_doc_sent.k = v_k) then continue; end if;
+    insert into public.fm_wf_doc_sent(k) values (v_k);
+    ttl := case when r.exp < d then '⛔ انتهى: ' when r.exp = d then '⛔ ينتهي اليوم: ' else '📄 ينتهي بعد ' || (r.exp - d) || ' يوم: ' end || r.what;
+    for u in select p.id from public.profiles p where p.active and (p.job_title in ('project_manager','ops_manager') or (p.job_title = 'area_manager' and r.region = any(coalesce(p.regions,'{}'))))
+             union select p.id from public.profiles p where p.active and coalesce(r.employee_code,'') <> '' and lower(btrim(coalesce(p.emp_no,''))) = lower(btrim(r.employee_code)) loop
+      perform public.fm_push_add(u, 'wf_doc', ttl, r.full_name || ' — ' || to_char(r.exp, 'YYYY-MM-DD'), 'wfdoc', 'wfdoc-' || r.k0, false);
+    end loop;
+    n := n + 1;
+  end loop;
+  insert into public.fm_daily_runs(job, day, n) values ('wf_docs', d, n) on conflict (job, day) do update set n = excluded.n, at = now();
+  return n;
+end $$;
+
+create or replace function public.fm_meter_alert_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', true, 'pct', 50, 'auto_wo', true)
+         || coalesce((select value from public.fm_settings where key = 'meter_alert' and jsonb_typeof(value) = 'object'), '{}'::jsonb) $$;
+create table if not exists public.fm_meter_alerts (
+  id uuid primary key default gen_random_uuid(),
+  meter_id uuid not null references public.fm_meters(id) on delete cascade,
+  read_id uuid references public.fm_meter_reads(id) on delete cascade,
+  month text not null, use numeric(14,2), avg numeric(14,2), pct numeric(8,1),
+  wo_id uuid, wo_code text, status text not null default 'open' check (status in ('open','closed')),
+  note text, closed_by uuid, closed_name text, closed_at timestamptz, at timestamptz not null default now(),
+  unique (meter_id, month));
+alter table public.fm_meter_alerts enable row level security;
+revoke all on public.fm_meter_alerts from anon, authenticated;
+
+create or replace function public.fm_meter_spike() returns trigger language plpgsql security definer set search_path = public as $$
+declare c jsonb; m public.fm_meters; prev numeric; u numeric; a numeric; s jsonb; sup uuid; eng uuid; wid uuid; wcode text; aid uuid; who uuid; kn text;
+begin
+  begin
+    c := public.fm_meter_alert_cfg();
+    if not coalesce((c->>'enabled')::boolean, true) or new.reset then return new; end if;
+    select * into m from public.fm_meters where id = new.meter_id;
+    select reading into prev from public.fm_meter_reads where meter_id = new.meter_id and month < new.month order by month desc limit 1;
+    if prev is null then return new; end if;
+    u := new.reading - prev; if u <= 0 then return new; end if;
+    select avg(x.use) into a from (
+      select r.reading - lag(r.reading) over (order by r.month) use, r.reset, r.month from public.fm_meter_reads r where r.meter_id = new.meter_id and r.month < new.month) x
+     where x.use is not null and x.use > 0 and not x.reset and x.month >= to_char(to_date(new.month || '-01','YYYY-MM-DD') - interval '7 months','YYYY-MM');
+    if a is null or a <= 0 or u <= a * (1 + coalesce((c->>'pct')::numeric, 50) / 100) then return new; end if;
+    insert into public.fm_meter_alerts(meter_id, read_id, month, use, avg, pct) values (new.meter_id, new.id, new.month, u, round(a,2), round((u / a - 1) * 100, 1))
+      on conflict (meter_id, month) do update set read_id = excluded.read_id, use = excluded.use, avg = excluded.avg, pct = excluded.pct
+      returning id into aid;
+    if (select wo_id from public.fm_meter_alerts where id = aid) is not null then return new; end if;
+    s := public.fm_sdb_row(m.bkey);
+    sup := public.fm_tk_person(s->>'supervisor'); eng := public.fm_tk_person(regexp_replace(coalesce(s->>'engineer',''), '\s+-\s+.*$', ''));
+    kn := case when m.kind = 'elec' then 'الكهرباء' else 'المياه' end;
+    if coalesce((c->>'auto_wo')::boolean, true) and sup is not null then
+      who := coalesce(eng, (select p.id from public.profiles p where p.active and p.job_title = 'area_manager' and m.region = any(coalesce(p.regions,'{}')) order by p.created_at limit 1));
+      begin
+        if who is not null then
+          wid := public.fm_wo_create_as(who, jsonb_build_object('title', '⚡ فحص ارتفاع استهلاك ' || kn || ' — ' || m.school_name, 'type', 'repair', 'priority', 'عالي',
+            'region', m.region, 'school', m.school_name, 'building_id', s->>'buildingId', 'due_at', (now() + interval '3 days')::text,
+            'description', 'قراءة ' || new.month || ': استهلاك ' || u || ' مقابل متوسط ' || round(a,2) || ' (+' || round((u / a - 1) * 100) || '%). عداد ' || coalesce(m.number,'') || '. افحص التسرّب أو الأحمال.',
+            'checklist', jsonb_build_array(jsonb_build_object('t','تحقق من قراءة العداد وصوّرها','done',false), jsonb_build_object('t', case when m.kind = 'water' then 'افحص الخزانات والمواسير ودورات المياه بحثاً عن تسرّب' else 'افحص الأحمال والمكيفات والإنارة العاملة خارج الدوام' end,'done',false),
+                                           jsonb_build_object('t','سجّل السبب والإجراء المتخذ','done',false)),
+            'assignee', sup::text, 'approver', case when eng is not null and eng <> who then eng::text end));
+          select code into wcode from public.work_orders where id = wid;
+          update public.fm_meter_alerts set wo_id = wid, wo_code = wcode where id = aid;
+        end if;
+      exception when others then wid := null; end;
+    end if;
+    for who in select x from unnest(array[sup, eng]) x where x is not null union
+               select p.id from public.profiles p where p.active and p.job_title = 'area_manager' and m.region = any(coalesce(p.regions,'{}')) loop
+      perform public.fm_push_add(who, 'meter', '⚡ استهلاك ' || kn || ' مرتفع — ' || m.school_name, '+' || round((u / a - 1) * 100) || '% عن المتوسط' || coalesce(' • ' || wcode, ''),
+        case when wid is not null then 'wo=' || wid else 'meter' end, 'meter-' || new.meter_id, false);
+    end loop;
+  exception when others then null; end;
+  return new;
+end $$;
+drop trigger if exists fm_meter_spike on public.fm_meter_reads;
+create trigger fm_meter_spike after insert or update of reading on public.fm_meter_reads for each row execute function public.fm_meter_spike();
+
+create or replace function public.fm_meter_alerts_list(p_days int default 180) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', a.id, 'meter_id', a.meter_id, 'school', m.school_name, 'kind', m.kind, 'number', m.number, 'region', m.region, 'month', a.month,
+     'use', a.use, 'avg', a.avg, 'pct', a.pct, 'wo_id', a.wo_id, 'wo_code', a.wo_code, 'status', a.status, 'note', a.note, 'closed_name', a.closed_name, 'at', a.at) order by a.at desc), '[]'::jsonb)
+    from public.fm_meter_alerts a join public.fm_meters m on m.id = a.meter_id
+   where a.at > now() - make_interval(days => least(greatest(coalesce(p_days,180),7),730))
+     and (public.fm_meter_keys(false) is null or m.bkey = any(public.fm_meter_keys(false))) $$;
+create or replace function public.fm_meter_alert_close(p_id uuid, p_note text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare a public.fm_meter_alerts; m public.fm_meters;
+begin
+  select * into a from public.fm_meter_alerts where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  select * into m from public.fm_meters where id = a.meter_id;
+  if not (public.fm_meter_keys(true) is null or m.bkey = any(public.fm_meter_keys(true))) then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  update public.fm_meter_alerts set status = 'closed', note = left(btrim(p_note),500), closed_by = auth.uid(), closed_name = (select full_name from public.profiles where id = auth.uid()), closed_at = now() where id = p_id;
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.fm_v371_tick() returns jsonb language plpgsql security definer set search_path = public as $$
+declare a int; b int;
+begin
+  begin a := public.fm_v371_absent(false); exception when others then a := -1; end;
+  begin
+    if extract(hour from now() at time zone 'Asia/Riyadh') >= 7 then b := public.fm_v371_docs(); end if;
+  exception when others then b := -1; end;
+  return jsonb_build_object('absent', a, 'docs', b);
+end $$;
+-- the system admin: send the absence alert now (test / a late morning)
+create or replace function public.fm_att_alert_now() returns int language plpgsql security definer set search_path = public as $$
+begin
+  if not (public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin') then raise exception 'not allowed'; end if;
+  return public.fm_v371_absent(true);
+end $$;
+
+revoke all on function public.fm_v371_absent(boolean), public.fm_v371_docs(), public.fm_meter_spike(), public.fm_v371_tick() from public, anon, authenticated;
+revoke all on function public.fm_att_alert_cfg(), public.fm_meter_alert_cfg(), public.fm_meter_alerts_list(int), public.fm_meter_alert_close(uuid, text), public.fm_att_alert_now() from public, anon;
+grant execute on function public.fm_att_alert_cfg(), public.fm_meter_alert_cfg(), public.fm_meter_alerts_list(int), public.fm_meter_alert_close(uuid, text), public.fm_att_alert_now() to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v371-tick'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v371-tick'', ''*/15 * * * *'', ''select public.fm_v371_tick()'')';
+  exception when others then raise notice 'pg_cron is not available: absence / document alerts are not sent'; end;
+end $do$;
+notify pgrst, 'reload schema';
+
+-- ---------- 112) V372 — contractor headcount commitment against the workforce register; monthly employee scorecard ----------
+-- (1) fm_contracts.staff_req [{job, n, rate}] (required people per job title and the deduction per missing person per month),
+--     written by fm_contract_staff_set(contract, rows ≤ 30) (fm_bill_can('contract', region)). fm_wf_contract_check(month, contract?)
+--     (fm_bill_can('read', region)): per contract with staff_req, active people of the register in the contract's region (all when
+--     the contract has none) employed by the contractor (fm_sdb_n containment either way on employer / contractor_name), working
+--     within the month (start_date ≤ month end, contract_end_date null or ≥ month start), per job (normalised containment) → req,
+--     act, miss, rate, ded = miss × rate; the V184 bill editor adds them as direct deductions on request.
+-- (2) fm_scorecard(month) → one row per active account the caller may judge (self; admin / fm_scope_all: all; area manager: his
+--     regions; others: fm_is_under) with: work orders due in the month (wo_due) / done on time (wo_ontime) / done in the month (wo_done)
+--     / returned (wo_ret), attendance days (att_days) and working days Sun–Thu up to today (work_days), school rating (avg of his
+--     q_supervisor / q_engineer × 20, n), badges, ideas (approved / implemented decided in the month, points), approved overtime hours.
+--     Each part in its own exception block (missing table → null). Ticket figures are added by the platform from the loaded tickets.
+alter table public.fm_contracts add column if not exists staff_req jsonb not null default '[]';
+create or replace function public.fm_contract_staff_set(p_contract uuid, p_rows jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts; v jsonb;
+begin
+  select * into c from public.fm_contracts where id = p_contract for update;
+  if not found then raise exception 'not found'; end if;
+  if not public.fm_bill_can('contract', c.region) then raise exception 'not allowed'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 30 then raise exception 'invalid rows'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('job', left(btrim(x->>'job'),120), 'n', greatest(0, round((x->>'n')::numeric)), 'rate', greatest(0, coalesce(nullif(x->>'rate','')::numeric,0)))), '[]')
+    into v from jsonb_array_elements(p_rows) x where length(btrim(coalesce(x->>'job',''))) >= 2 and coalesce(nullif(x->>'n','')::numeric,0) > 0;
+  update public.fm_contracts set staff_req = v where id = p_contract;
+  return v;
+end $$;
+
+create or replace function public.fm_wf_contract_check(p_month text, p_contract uuid default null) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare a date; b date; out jsonb := '[]'; c record; r jsonb; lines jsonb; act int; tot numeric; names jsonb;
+begin
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  a := to_date(p_month || '-01', 'YYYY-MM-DD'); b := (a + interval '1 month - 1 day')::date;
+  for c in select * from public.fm_contracts where active and jsonb_array_length(coalesce(staff_req,'[]')) > 0 and (p_contract is null or id = p_contract) order by code loop
+    if not public.fm_bill_can('read', c.region) then continue; end if;
+    lines := '[]'; tot := 0;
+    for r in select * from jsonb_array_elements(c.staff_req) loop
+      select count(*), coalesce(jsonb_agg(p.full_name order by p.full_name), '[]') into act, names from public.fm_people334 p
+       where (c.region is null or p.region = c.region)
+         and coalesce(p.start_date, a) <= b and (p.contract_end_date is null or p.contract_end_date >= a)
+         and (p.active or (p.contract_end_date is not null and p.contract_end_date >= a))
+         and (public.fm_sdb_n(p.employer) like '%' || public.fm_sdb_n(c.contractor_name) || '%' or public.fm_sdb_n(c.contractor_name) like '%' || public.fm_sdb_n(p.employer) || '%')
+         and length(public.fm_sdb_n(p.employer)) >= 2
+         and (public.fm_sdb_n(p.job_title) like '%' || public.fm_sdb_n(r->>'job') || '%' or public.fm_sdb_n(r->>'job') like '%' || public.fm_sdb_n(p.job_title) || '%');
+      lines := lines || jsonb_build_array(jsonb_build_object('job', r->>'job', 'req', (r->>'n')::int, 'act', act, 'miss', greatest(0, (r->>'n')::int - act),
+        'rate', coalesce((r->>'rate')::numeric, 0), 'ded', greatest(0, (r->>'n')::int - act) * coalesce((r->>'rate')::numeric, 0), 'names', names));
+      tot := tot + greatest(0, (r->>'n')::int - act) * coalesce((r->>'rate')::numeric, 0);
+    end loop;
+    out := out || jsonb_build_array(jsonb_build_object('id', c.id, 'code', c.code, 'name', c.name, 'contractor', c.contractor_name, 'region', c.region,
+      'lines', lines, 'ded', tot, 'req', (select coalesce(sum((x->>'req')::int),0) from jsonb_array_elements(lines) x), 'act', (select coalesce(sum(least((x->>'act')::int,(x->>'req')::int)),0) from jsonb_array_elements(lines) x),
+      'can_edit', public.fm_bill_can('contract', c.region)));
+  end loop;
+  return jsonb_build_object('month', p_month, 'rows', out,
+    'all', coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'code', x.code, 'name', x.name, 'contractor', x.contractor_name, 'region', x.region, 'staff_req', x.staff_req,
+       'can_edit', public.fm_bill_can('contract', x.region)) order by x.code) from public.fm_contracts x where x.active and public.fm_bill_can('read', x.region)), '[]'::jsonb));
+end $$;
+
+create or replace function public.fm_scorecard(p_month text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare a date; b date; ts timestamptz; te timestamptz; me uuid := auth.uid(); allv boolean; pos text := public.fm_my_pos(); ids uuid[]; res jsonb := '{}'; wd int; x jsonb;
+begin
+  if me is null or public.fm_role() in ('pending') then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  a := to_date(p_month || '-01', 'YYYY-MM-DD'); b := (a + interval '1 month - 1 day')::date;
+  ts := (a::timestamp) at time zone 'Asia/Riyadh'; te := ((b + 1)::timestamp) at time zone 'Asia/Riyadh';
+  allv := public.fm_role() = 'admin' or public.fm_scope_all();
+  select coalesce(array_agg(p.id), '{}') into ids from public.profiles p
+   where p.active and p.deleted_at is null and p.role not in ('pending')
+     and (p.id = me or allv or (pos = 'area_manager' and exists(select 1 from unnest(coalesce(p.regions,'{}')) r where public.fm_region_ok(r))) or public.fm_is_under(p.id, me));
+  select count(*) into wd from generate_series(a, least(b, (now() at time zone 'Asia/Riyadh')::date), interval '1 day') g where extract(dow from g) between 0 and 4;
+  res := (select jsonb_object_agg(p.id::text, jsonb_build_object('id', p.id, 'name', coalesce(nullif(p.full_name,''), p.email), 'job', p.job_title, 'emp', coalesce(p.emp_no,''),
+           'regions', to_jsonb(coalesce(p.regions,'{}')), 'names', to_jsonb(coalesce(p.person_names,'{}')), 'work_days', wd)) from public.profiles p where p.id = any(ids));
+  begin
+    for x in select jsonb_build_object('id', w.assignee, 'wo_due', count(*) filter (where w.due_at >= ts and w.due_at < te and w.status <> 'cancelled'),
+               'wo_ontime', count(*) filter (where w.due_at >= ts and w.due_at < te and w.status in ('done','closed') and coalesce(w.done_at, w.closed_at) <= w.due_at),
+               'wo_done', count(*) filter (where coalesce(w.done_at, w.closed_at) >= ts and coalesce(w.done_at, w.closed_at) < te and w.status in ('done','closed'))) j
+              from public.work_orders w where w.assignee = any(ids) group by w.assignee loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+    for x in select jsonb_build_object('id', w.assignee, 'wo_ret', count(*)) j from public.wo_events e join public.work_orders w on w.id = e.wo_id
+              where e.type = 'return' and e.at >= ts and e.at < te and w.assignee = any(ids) group by w.assignee loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  begin
+    for x in select jsonb_build_object('id', t.user_id, 'att_days', count(distinct t.day)) from public.fm_att t where t.user_id = any(ids) and t.day between a and b group by t.user_id loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  begin
+    for x in select jsonb_build_object('id', u, 'rating', round(avg(v)::numeric * 20, 1), 'rating_n', count(*)) from (
+               select supervisor_id u, q_supervisor v from public.fm_eng_ratings where created_at >= ts and created_at < te and q_supervisor is not null
+               union all select engineer_id, q_engineer from public.fm_eng_ratings where created_at >= ts and created_at < te and q_engineer is not null) q
+              where u = any(ids) group by u loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  begin
+    for x in select jsonb_build_object('id', g.user_id, 'badges', count(*)) from public.fm_badges g
+              where g.user_id = any(ids) and not g.revoked and (g.period = p_month or (g.period is null and g.at >= ts and g.at < te)) group by g.user_id loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  begin
+    for x in select jsonb_build_object('id', i.by_id, 'ideas', count(*), 'idea_pts', coalesce(sum(i.points),0)) from public.fm_ideas i
+              where i.by_id = any(ids) and i.status in ('approved','implemented') and coalesce(i.impl_at, i.decided_at) >= ts and coalesce(i.impl_at, i.decided_at) < te group by i.by_id loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  begin
+    for x in select jsonb_build_object('id', o.user_id, 'ot_hours', sum(coalesce(o.appr_hours, o.hours))) from public.fm_overtime o
+              where o.user_id = any(ids) and o.status = 'approved' and o.month = p_month group by o.user_id loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  return jsonb_build_object('month', p_month, 'work_days', wd, 'me', me, 'rows', coalesce((select jsonb_agg(v order by v->>'name') from jsonb_each(coalesce(res,'{}')) e(k, v)), '[]'::jsonb));
+end $$;
+
+revoke all on function public.fm_contract_staff_set(uuid, jsonb), public.fm_wf_contract_check(text, uuid), public.fm_scorecard(text) from public, anon;
+grant execute on function public.fm_contract_staff_set(uuid, jsonb), public.fm_wf_contract_check(text, uuid), public.fm_scorecard(text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 113) V373 — electronic sign-off by the owner's representative (monthly report, owner claim) ----------
+-- fm_signoffs (SO-YYYY-####, kind monthly | claim, ref = 'YYYY-MM|region' or the claim id, title, summary (key figures ≤ 8000 chars),
+-- status pending / approved / rejected / cancelled, req_*, dec_*, sign (PNG data URL ≤ 150 000, approve only), note; one pending per
+-- kind + ref; RLS on, no policies, no grants). Request: fm_signoff_can_req(kind) — monthly: admin, sysadmin, dept / project / ops /
+-- area managers; claim: fm_erp_rev_can('edit') — and only while an active owner_rep exists («no owner rep»); push «signoff» (hash
+-- signoff) to the owner reps. Decide: fm_signoff_act(id, approve (sign required) | reject (note ≥ 3) | cancel (the requester / admin))
+-- — approve / reject only by an active owner_rep (never by another title); push to the requester; a claim's history gets
+-- {a:'owner_sign'|'owner_reject'} and a project event. fm_signoff_list(days) (owner_rep and the requesting titles), fm_signoff_get(id).
+create sequence if not exists public.fm_signoff_seq;
+create table if not exists public.fm_signoffs (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null default ('SO-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_signoff_seq')::text, 4, '0')),
+  kind text not null check (kind in ('monthly','claim')),
+  ref text not null, title text not null, summary jsonb not null default '{}',
+  status text not null default 'pending' check (status in ('pending','approved','rejected','cancelled')),
+  req_by uuid default auth.uid(), req_name text, req_at timestamptz not null default now(),
+  dec_by uuid, dec_name text, dec_at timestamptz, sign text check (sign is null or length(sign) <= 150000), note text);
+create unique index if not exists fm_signoffs_one_pending on public.fm_signoffs(kind, ref) where status = 'pending';
+alter table public.fm_signoffs enable row level security;
+revoke all on public.fm_signoffs from anon, authenticated;
+
+create or replace function public.fm_signoff_can_req(p_kind text) returns boolean language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then return false; end if;
+  if p_kind = 'monthly' then return public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','area_manager'); end if;
+  if p_kind = 'claim' then begin return public.fm_erp_rev_can('edit'); exception when undefined_function then return false; end; end if;
+  return false;
+end $$;
+create or replace function public.fm_signoff_is_rep() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select active and job_title = 'owner_rep' from public.profiles where id = auth.uid()), false) $$;
+
+create or replace function public.fm_signoff_request(p_kind text, p_ref text, p_title text, p_summary jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare nid uuid; cd text; u uuid; nm text := (select full_name from public.profiles where id = auth.uid());
+begin
+  if not public.fm_signoff_can_req(p_kind) then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p_ref,''))) < 3 or length(btrim(coalesce(p_title,''))) < 3 then raise exception 'invalid'; end if;
+  if p_kind = 'claim' and not exists(select 1 from public.fm_erp_owner_claims where id::text = p_ref and status in ('submitted','certified','invoiced')) then raise exception 'claim not ready'; end if;
+  if length(coalesce(p_summary,'{}')::text) > 8000 then raise exception 'summary too large'; end if;
+  if not exists(select 1 from public.profiles where active and job_title = 'owner_rep') then raise exception 'no owner rep'; end if;
+  if exists(select 1 from public.fm_signoffs where kind = p_kind and ref = p_ref and status = 'pending') then raise exception 'already pending'; end if;
+  insert into public.fm_signoffs(kind, ref, title, summary, req_name) values (p_kind, btrim(p_ref), left(btrim(p_title),300), coalesce(p_summary,'{}'), nm) returning id, code into nid, cd;
+  for u in select id from public.profiles where active and job_title = 'owner_rep' loop
+    perform public.fm_push_add(u, 'signoff', '✍️ بانتظار اعتمادك: ' || left(btrim(p_title),120), cd || ' — ' || coalesce(nm,''), 'signoff', 'so-' || nid, false);
+  end loop;
+  return jsonb_build_object('id', nid, 'code', cd);
+end $$;
+
+create or replace function public.fm_signoff_act(p_id uuid, p_action text, p_sign text, p_note text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s public.fm_signoffs; nm text := (select full_name from public.profiles where id = auth.uid()); cl record;
+begin
+  select * into s from public.fm_signoffs where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if s.status <> 'pending' then raise exception 'not pending'; end if;
+  if p_action = 'cancel' then
+    if s.req_by is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+    update public.fm_signoffs set status = 'cancelled', dec_by = auth.uid(), dec_name = nm, dec_at = now(), note = left(btrim(coalesce(p_note,'')),1000) where id = p_id;
+    return jsonb_build_object('ok', true);
+  end if;
+  if not public.fm_signoff_is_rep() then raise exception 'owner rep only'; end if;
+  if p_action = 'approve' then
+    if coalesce(p_sign,'') !~ '^data:image/png;base64,' or length(p_sign) > 150000 then raise exception 'sign required'; end if;
+    update public.fm_signoffs set status = 'approved', dec_by = auth.uid(), dec_name = nm, dec_at = now(), sign = p_sign, note = left(btrim(coalesce(p_note,'')),1000) where id = p_id;
+  elsif p_action = 'reject' then
+    if length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+    update public.fm_signoffs set status = 'rejected', dec_by = auth.uid(), dec_name = nm, dec_at = now(), note = left(btrim(p_note),1000) where id = p_id;
+  else raise exception 'invalid action'; end if;
+  if s.kind = 'claim' then
+    begin
+      select * into cl from public.fm_erp_owner_claims where id::text = s.ref;
+      if found then
+        update public.fm_erp_owner_claims set history = coalesce(history,'[]'::jsonb) || jsonb_build_array(jsonb_build_object('a', case when p_action = 'approve' then 'owner_sign' else 'owner_reject' end, 'by', nm, 'at', now(), 'note', p_note, 'so', s.code)) where id = cl.id;
+        insert into public.fm_erp_project_events(project_id, actor, action, entity_id, reason, new_value) values (cl.project_id, auth.uid(), case when p_action = 'approve' then 'claim_owner_sign' else 'claim_owner_reject' end, cl.id, coalesce(nullif(btrim(p_note),''), s.code), jsonb_build_object('claim', cl.code, 'so', s.code));
+      end if;
+    exception when others then null; end;
+  end if;
+  if s.req_by is not null then
+    perform public.fm_push_add(s.req_by, 'signoff', case when p_action = 'approve' then '✅ اعتمدت الجهة المالكة: ' else '⛔ لم تعتمد الجهة المالكة: ' end || left(s.title,120), coalesce(nm,'') || coalesce(' — ' || p_note,''), 'signoff', 'so-' || s.id, false);
+  end if;
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.fm_signoff_list(p_days int default 365) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not (public.fm_signoff_is_rep() or public.fm_signoff_can_req('monthly') or public.fm_signoff_can_req('claim') or public.fm_role() = 'admin') then raise exception 'not allowed'; end if;
+  return jsonb_build_object('rep', public.fm_signoff_is_rep(), 'can_monthly', public.fm_signoff_can_req('monthly'), 'can_claim', public.fm_signoff_can_req('claim'),
+    'has_rep', exists(select 1 from public.profiles where active and job_title = 'owner_rep'), 'me', auth.uid(),
+    'rows', coalesce((select jsonb_agg(to_jsonb(s) - 'sign' || jsonb_build_object('signed', s.sign is not null) order by (s.status = 'pending') desc, s.req_at desc)
+      from public.fm_signoffs s where s.req_at > now() - make_interval(days => least(greatest(coalesce(p_days,365),7),1100))), '[]'::jsonb));
+end $$;
+create or replace function public.fm_signoff_get(p_id uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not (public.fm_signoff_is_rep() or public.fm_signoff_can_req('monthly') or public.fm_signoff_can_req('claim') or public.fm_role() = 'admin') then raise exception 'not allowed'; end if;
+  return (select to_jsonb(s) from public.fm_signoffs s where s.id = p_id);
+end $$;
+
+revoke all on function public.fm_signoff_can_req(text), public.fm_signoff_is_rep(), public.fm_signoff_request(text, text, text, jsonb), public.fm_signoff_act(uuid, text, text, text),
+  public.fm_signoff_list(int), public.fm_signoff_get(uuid) from public, anon;
+grant execute on function public.fm_signoff_can_req(text), public.fm_signoff_is_rep(), public.fm_signoff_request(text, text, text, jsonb), public.fm_signoff_act(uuid, text, text, text),
+  public.fm_signoff_list(int), public.fm_signoff_get(uuid) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 114) V374 — the automatic alerts also by WhatsApp for people without a phone notification ----------
+-- fm_alert_send(user, kind, title, body, hash, tag, self) = fm_push_add; when that sends nothing because the person has no device
+-- (or push is off for the company) and he did not turn the kind off, and fm_settings.wa.templates has a template for the kind
+-- (att_absent / wf_doc / meter, body {{1}} name, {{2}} title, {{3}} details), it queues a WhatsApp message to profiles.phone
+-- (fm_wa_add: once per kind + tag in 10 minutes). fm_v371_absent, fm_v371_docs and fm_meter_spike are redefined to use it.
+create or replace function public.fm_alert_send(p_user uuid, p_kind text, p_title text, p_body text, p_hash text, p_tag text, p_self boolean default false)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare ok boolean := false; pr public.profiles;
+begin
+  begin ok := public.fm_push_add(p_user, p_kind, p_title, p_body, p_hash, p_tag, p_self); exception when others then ok := false; end;
+  if coalesce(ok, false) then return true; end if;
+  begin
+    select * into pr from public.profiles where id = p_user;
+    if pr.id is null or not pr.active or coalesce(btrim(pr.phone),'') = '' then return false; end if;
+    if exists(select 1 from public.fm_push_subs where user_id = p_user) and coalesce((public.fm_setting('push')->>'enabled')::boolean, false) then return false; end if;
+    if exists(select 1 from public.fm_push_prefs where user_id = p_user and p_kind = any(off)) then return false; end if;
+    perform public.fm_wa_add(pr.phone, p_kind, array[coalesce(nullif(pr.full_name,''), 'زميلنا'), left(coalesce(p_title,''), 120), left(coalesce(p_body,''), 500)], p_kind, coalesce(p_tag, p_kind) || ':' || p_user);
+    return true;
+  exception when others then return false; end;
+end $$;
+revoke all on function public.fm_alert_send(uuid, text, text, text, text, text, boolean) from public, anon, authenticated;
+
+create or replace function public.fm_v371_absent(p_force boolean default false) returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_att_alert_cfg(); tz text := 'Asia/Riyadh'; nowr timestamp := now() at time zone tz; d date := (now() at time zone tz)::date;
+  r record; n int := 0; rg text;
+begin
+  if not p_force then
+    if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+    if extract(hour from nowr) < coalesce((c->>'hour')::int, 8) then return 0; end if;
+    if not (extract(dow from d)::int = any(array(select (jsonb_array_elements_text(coalesce(c->'days','[0,1,2,3,4]')))::int))) then return 0; end if;
+    if exists(select 1 from public.fm_daily_runs where job = 'att_absent' and day = d) then return 0; end if;
+  end if;
+  create temp table if not exists fm371_abs(id uuid, name text, boss uuid, regions text[]) on commit drop;
+  delete from fm371_abs;
+  insert into fm371_abs
+  select p.id, coalesce(nullif(p.full_name,''), p.email), p.reports_to, coalesce(p.regions,'{}')
+    from public.profiles p
+   where p.active and p.deleted_at is null and p.job_title = any(array(select jsonb_array_elements_text(coalesce(c->'titles','[]'))))
+     and exists(select 1 from public.fm_att a where a.user_id = p.id and a.day >= d - coalesce((c->>'recent')::int, 30) and a.day < d)
+     and not exists(select 1 from public.fm_att a where a.user_id = p.id and a.day = d)
+     and public.fm_tk_leave(p.id) is null;
+  for r in select boss, array_agg(name order by name) names from fm371_abs where boss is not null group by boss loop
+    perform public.fm_alert_send(r.boss, 'att_absent', '🕒 لم يسجّلوا بدء الدوام (' || cardinality(r.names) || ')',
+      array_to_string(r.names[1:12], '، ') || case when cardinality(r.names) > 12 then ' …' else '' end, 'attabs', 'attabs-' || d, false);
+    n := n + 1;
+  end loop;
+  for rg in select distinct unnest(regions) from fm371_abs loop
+    for r in select p.id from public.profiles p where p.active and p.job_title = 'area_manager' and rg = any(coalesce(p.regions,'{}')) loop
+      perform public.fm_alert_send(r.id, 'att_absent', '🕒 لم يسجّلوا بدء الدوام — ' || case rg when 'riyadh' then 'الرياض' when 'qassim' then 'القصيم' else rg end,
+        (select count(*) || ' شخص: ' || array_to_string((array_agg(name order by name))[1:10], '، ') from fm371_abs where rg = any(regions)), 'attabs', 'attabs-' || rg || '-' || d, false);
+    end loop;
+  end loop;
+  insert into public.fm_daily_runs(job, day, n) values ('att_absent', d, (select count(*) from fm371_abs)) on conflict (job, day) do update set n = excluded.n, at = now();
+  return (select count(*) from fm371_abs);
+end $$;
+
+create or replace function public.fm_v371_docs() returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := jsonb_build_object('enabled', true, 'days', jsonb_build_array(30,7,0)) || coalesce((select value from public.fm_settings where key = 'wf_docs' and jsonb_typeof(value) = 'object'), '{}'::jsonb);
+  d date := (now() at time zone 'Asia/Riyadh')::date; r record; u uuid; n int := 0; lv int; lvs int[]; v_k text; ttl text;
+begin
+  if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+  if exists(select 1 from public.fm_daily_runs where job = 'wf_docs' and day = d) then return 0; end if;
+  lvs := array(select (jsonb_array_elements_text(coalesce(c->'days','[30,7,0]')))::int order by 1 desc);
+  for r in
+    select 'q:' || q.id k0, q.region, p.full_name, p.employee_code, q.title what, q.expires_on exp from public.fm_workforce337_qualifications q join public.fm_people334 p on p.id = q.person_id
+     where p.active and q.expires_on is not null and q.expires_on <= d + 30 and q.expires_on >= d - 1
+    union all
+    select 'c:' || p.id, p.region, p.full_name, p.employee_code, 'نهاية العقد', p.contract_end_date from public.fm_people334 p
+     where p.active and p.contract_end_date is not null and p.contract_end_date <= d + 30 and p.contract_end_date >= d - 1
+  loop
+    lv := null;
+    select min(x) into lv from unnest(lvs) x where r.exp - d <= x;
+    if lv is null then continue; end if;
+    v_k := r.k0 || ':' || r.exp || ':' || lv;
+    if exists(select 1 from public.fm_wf_doc_sent where fm_wf_doc_sent.k = v_k) then continue; end if;
+    insert into public.fm_wf_doc_sent(k) values (v_k);
+    ttl := case when r.exp < d then '⛔ انتهى: ' when r.exp = d then '⛔ ينتهي اليوم: ' else '📄 ينتهي بعد ' || (r.exp - d) || ' يوم: ' end || r.what;
+    for u in select p.id from public.profiles p where p.active and (p.job_title in ('project_manager','ops_manager') or (p.job_title = 'area_manager' and r.region = any(coalesce(p.regions,'{}'))))
+             union select p.id from public.profiles p where p.active and coalesce(r.employee_code,'') <> '' and lower(btrim(coalesce(p.emp_no,''))) = lower(btrim(r.employee_code)) loop
+      perform public.fm_alert_send(u, 'wf_doc', ttl, r.full_name || ' — ' || to_char(r.exp, 'YYYY-MM-DD'), 'wfdoc', 'wfdoc-' || r.k0, false);
+    end loop;
+    n := n + 1;
+  end loop;
+  insert into public.fm_daily_runs(job, day, n) values ('wf_docs', d, n) on conflict (job, day) do update set n = excluded.n, at = now();
+  return n;
+end $$;
+
+create or replace function public.fm_meter_spike() returns trigger language plpgsql security definer set search_path = public as $$
+declare c jsonb; m public.fm_meters; prev numeric; u numeric; a numeric; s jsonb; sup uuid; eng uuid; wid uuid; wcode text; aid uuid; who uuid; kn text;
+begin
+  begin
+    c := public.fm_meter_alert_cfg();
+    if not coalesce((c->>'enabled')::boolean, true) or new.reset then return new; end if;
+    select * into m from public.fm_meters where id = new.meter_id;
+    select reading into prev from public.fm_meter_reads where meter_id = new.meter_id and month < new.month order by month desc limit 1;
+    if prev is null then return new; end if;
+    u := new.reading - prev; if u <= 0 then return new; end if;
+    select avg(x.use) into a from (
+      select r.reading - lag(r.reading) over (order by r.month) use, r.reset, r.month from public.fm_meter_reads r where r.meter_id = new.meter_id and r.month < new.month) x
+     where x.use is not null and x.use > 0 and not x.reset and x.month >= to_char(to_date(new.month || '-01','YYYY-MM-DD') - interval '7 months','YYYY-MM');
+    if a is null or a <= 0 or u <= a * (1 + coalesce((c->>'pct')::numeric, 50) / 100) then return new; end if;
+    insert into public.fm_meter_alerts(meter_id, read_id, month, use, avg, pct) values (new.meter_id, new.id, new.month, u, round(a,2), round((u / a - 1) * 100, 1))
+      on conflict (meter_id, month) do update set read_id = excluded.read_id, use = excluded.use, avg = excluded.avg, pct = excluded.pct
+      returning id into aid;
+    if (select wo_id from public.fm_meter_alerts where id = aid) is not null then return new; end if;
+    s := public.fm_sdb_row(m.bkey);
+    sup := public.fm_tk_person(s->>'supervisor'); eng := public.fm_tk_person(regexp_replace(coalesce(s->>'engineer',''), '\s+-\s+.*$', ''));
+    kn := case when m.kind = 'elec' then 'الكهرباء' else 'المياه' end;
+    if coalesce((c->>'auto_wo')::boolean, true) and sup is not null then
+      who := coalesce(eng, (select p.id from public.profiles p where p.active and p.job_title = 'area_manager' and m.region = any(coalesce(p.regions,'{}')) order by p.created_at limit 1));
+      begin
+        if who is not null then
+          wid := public.fm_wo_create_as(who, jsonb_build_object('title', '⚡ فحص ارتفاع استهلاك ' || kn || ' — ' || m.school_name, 'type', 'repair', 'priority', 'عالي',
+            'region', m.region, 'school', m.school_name, 'building_id', s->>'buildingId', 'due_at', (now() + interval '3 days')::text,
+            'description', 'قراءة ' || new.month || ': استهلاك ' || u || ' مقابل متوسط ' || round(a,2) || ' (+' || round((u / a - 1) * 100) || '%). عداد ' || coalesce(m.number,'') || '. افحص التسرّب أو الأحمال.',
+            'checklist', jsonb_build_array(jsonb_build_object('t','تحقق من قراءة العداد وصوّرها','done',false), jsonb_build_object('t', case when m.kind = 'water' then 'افحص الخزانات والمواسير ودورات المياه بحثاً عن تسرّب' else 'افحص الأحمال والمكيفات والإنارة العاملة خارج الدوام' end,'done',false),
+                                           jsonb_build_object('t','سجّل السبب والإجراء المتخذ','done',false)),
+            'assignee', sup::text, 'approver', case when eng is not null and eng <> who then eng::text end));
+          select code into wcode from public.work_orders where id = wid;
+          update public.fm_meter_alerts set wo_id = wid, wo_code = wcode where id = aid;
+        end if;
+      exception when others then wid := null; end;
+    end if;
+    for who in select x from unnest(array[sup, eng]) x where x is not null union
+               select p.id from public.profiles p where p.active and p.job_title = 'area_manager' and m.region = any(coalesce(p.regions,'{}')) loop
+      perform public.fm_alert_send(who, 'meter', '⚡ استهلاك ' || kn || ' مرتفع — ' || m.school_name, '+' || round((u / a - 1) * 100) || '% عن المتوسط' || coalesce(' • ' || wcode, ''),
+        case when wid is not null then 'wo=' || wid else 'meter' end, 'meter-' || new.meter_id, false);
+    end loop;
+  exception when others then null; end;
+  return new;
+end $$;
+
+revoke all on function public.fm_v371_absent(boolean), public.fm_v371_docs(), public.fm_meter_spike() from public, anon, authenticated;
+notify pgrst, 'reload schema';
+-- V374: a marker the readiness page probes to know section 114 ran
+create or replace function public.fm_v374_ok() returns boolean language sql stable as $$ select true $$;
+grant execute on function public.fm_v374_ok() to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 115) V375 — leave requests from the field app, approved by the manager with the deputy set on approval ----------
+-- fm_leave_requests (LV-YYYY-####, user, kind annual / sick / emergency / other, from_on / to_on (≤ 60 days, not before yesterday),
+-- reason, note, status pending / approved / rejected / cancelled, deputy / deputy_name (set when approved), dec_*; RLS on, no
+-- policies, no grants; no overlap with another pending / approved leave of the same person). fm_leave_can(user) = the person's
+-- reports_to, the managers above him (fm_is_under_base), admin / sysadmin / project / ops manager, area manager of his regions —
+-- never himself. fm_leave_request(p) → push «leave» (hash leave) to reports_to (else the area managers of his regions);
+-- fm_leave_act(id, approve {deputy?} | reject {note} | cancel (owner, pending)) — approve with a deputy runs fm_deputy_assign
+-- (from 00:00 to 24:00 Riyadh), so the orders move to the deputy (V166); a supervisor / contractor (no deputy rules) is approved
+-- without one. fm_leave_list(days) {me, rows (mine + those I may decide, can), candidates (fm_deputy_candidates)}. The morning
+-- absence alert (fm_v371_absent, redefined) skips people on an approved leave today.
+create sequence if not exists public.fm_leave_seq;
+create table if not exists public.fm_leave_requests (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null default ('LV-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_leave_seq')::text, 4, '0')),
+  user_id uuid not null references public.profiles(id) on delete cascade, user_name text,
+  kind text not null default 'annual' check (kind in ('annual','sick','emergency','other')),
+  from_on date not null, to_on date not null, reason text, note text,
+  status text not null default 'pending' check (status in ('pending','approved','rejected','cancelled')),
+  deputy uuid references public.profiles(id) on delete set null, deputy_name text, deputy_rec uuid,
+  dec_by uuid, dec_name text, dec_at timestamptz, dec_note text, at timestamptz not null default now(),
+  check (to_on >= from_on));
+alter table public.fm_leave_requests enable row level security;
+revoke all on public.fm_leave_requests from anon, authenticated;
+
+create or replace function public.fm_leave_can(p_user uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(p_user <> auth.uid() and exists(select 1 from public.profiles me, public.profiles pr where me.id = auth.uid() and me.active and pr.id = p_user and (
+    pr.reports_to = me.id or public.fm_is_under_base(pr.id, me.id) or me.role = 'admin' or me.job_title in ('sysadmin','project_manager','ops_manager')
+    or (me.job_title = 'area_manager' and coalesce(pr.regions,'{}') && coalesce(me.regions,'{}')))), false) $$;
+
+create or replace function public.fm_leave_request(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare a date := nullif(p->>'from','')::date; b date := nullif(p->>'to','')::date; me public.profiles; nid uuid; cd text; u uuid; r text;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not me.active or me.role in ('pending','viewer') then raise exception 'not allowed'; end if;
+  if a is null or b is null or b < a or b - a > 60 or a < (now() at time zone 'Asia/Riyadh')::date - 1 then raise exception 'invalid period'; end if;
+  if exists(select 1 from public.fm_leave_requests where user_id = me.id and status in ('pending','approved') and from_on <= b and to_on >= a) then raise exception 'overlap'; end if;
+  if (select count(*) from public.fm_leave_requests where user_id = me.id and at > now() - interval '1 day') >= 10 then raise exception 'too many today'; end if;
+  insert into public.fm_leave_requests(user_id, user_name, kind, from_on, to_on, reason, note)
+  values (me.id, coalesce(nullif(me.full_name,''), me.email), case when p->>'kind' in ('annual','sick','emergency','other') then p->>'kind' else 'annual' end, a, b,
+          left(nullif(btrim(coalesce(p->>'reason','')),''),500), left(nullif(btrim(coalesce(p->>'note','')),''),500))
+  returning id, code into nid, cd;
+  if me.reports_to is not null then
+    perform public.fm_push_add(me.reports_to, 'leave', '🏖️ طلب إجازة: ' || coalesce(me.full_name,''), a || ' → ' || b || coalesce(' — ' || nullif(btrim(p->>'reason'),''), ''), 'leave', 'lv-' || nid, false);
+  else
+    for u in select x.id from public.profiles x where x.active and x.job_title = 'area_manager' and coalesce(x.regions,'{}') && coalesce(me.regions,'{}') loop
+      perform public.fm_push_add(u, 'leave', '🏖️ طلب إجازة: ' || coalesce(me.full_name,''), a || ' → ' || b, 'leave', 'lv-' || nid, false);
+    end loop;
+  end if;
+  return jsonb_build_object('id', nid, 'code', cd);
+end $$;
+
+create or replace function public.fm_leave_act(p_id uuid, p_action text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare l public.fm_leave_requests; nm text := (select full_name from public.profiles where id = auth.uid()); dp uuid := nullif(p->>'deputy','')::uuid; res jsonb; dn text;
+begin
+  select * into l from public.fm_leave_requests where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if l.status <> 'pending' and not (p_action = 'cancel' and l.status = 'approved' and l.from_on > (now() at time zone 'Asia/Riyadh')::date) then raise exception 'not pending'; end if;
+  if p_action = 'cancel' then
+    if l.user_id <> auth.uid() and not public.fm_leave_can(l.user_id) then raise exception 'not allowed'; end if;
+    if l.deputy_rec is not null then update public.fm_deputies set active = false, ended_at = now() where id = l.deputy_rec and active; perform public.fm_deputy_apply(); end if;
+    update public.fm_leave_requests set status = 'cancelled', dec_by = auth.uid(), dec_name = nm, dec_at = now() where id = p_id;
+    return jsonb_build_object('ok', true);
+  end if;
+  if not public.fm_leave_can(l.user_id) then raise exception 'not allowed'; end if;
+  if p_action = 'reject' then
+    if length(btrim(coalesce(p->>'note',''))) < 3 then raise exception 'note required'; end if;
+    update public.fm_leave_requests set status = 'rejected', dec_by = auth.uid(), dec_name = nm, dec_at = now(), dec_note = left(btrim(p->>'note'),500) where id = p_id;
+  elsif p_action = 'approve' then
+    if dp is not null then
+      res := public.fm_deputy_assign(l.user_id, dp, (l.from_on::timestamp) at time zone 'Asia/Riyadh', ((l.to_on + 1)::timestamp) at time zone 'Asia/Riyadh', 'إجازة ' || l.code, l.reason);
+      select coalesce(full_name, email) into dn from public.profiles where id = dp;
+    end if;
+    update public.fm_leave_requests set status = 'approved', dec_by = auth.uid(), dec_name = nm, dec_at = now(), dec_note = left(nullif(btrim(coalesce(p->>'note','')),''),500),
+      deputy = dp, deputy_name = dn, deputy_rec = nullif(res->>'id','')::uuid where id = p_id;
+  else raise exception 'invalid action'; end if;
+  perform public.fm_push_add(l.user_id, 'leave', case when p_action = 'approve' then '✅ اعتُمدت إجازتك ' else '⛔ لم تُعتمد إجازتك ' end || l.from_on || ' → ' || l.to_on,
+    coalesce(nm,'') || coalesce(' — النائب: ' || dn, '') || coalesce(' — ' || nullif(btrim(p->>'note'),''), ''), 'leave', 'lv-' || l.id, false);
+  return jsonb_build_object('ok', true, 'deputy', res);
+end $$;
+
+create or replace function public.fm_leave_list(p_days int default 120) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  return jsonb_build_object('me', auth.uid(),
+    'rows', coalesce((select jsonb_agg(to_jsonb(l) || jsonb_build_object('can', public.fm_leave_can(l.user_id), 'mine', l.user_id = auth.uid(),
+        'title', (select job_title from public.profiles where id = l.user_id)) order by (l.status = 'pending') desc, l.from_on desc)
+      from public.fm_leave_requests l where l.at > now() - make_interval(days => least(greatest(coalesce(p_days,120),7),730)) and (l.user_id = auth.uid() or public.fm_leave_can(l.user_id))), '[]'::jsonb),
+    'candidates', coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.full_name, 'title', c.job_title)) from public.fm_deputy_candidates() c), '[]'::jsonb));
+end $$;
+
+create or replace function public.fm_v371_absent(p_force boolean default false) returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_att_alert_cfg(); tz text := 'Asia/Riyadh'; nowr timestamp := now() at time zone tz; d date := (now() at time zone tz)::date;
+  r record; n int := 0; rg text;
+begin
+  if not p_force then
+    if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+    if extract(hour from nowr) < coalesce((c->>'hour')::int, 8) then return 0; end if;
+    if not (extract(dow from d)::int = any(array(select (jsonb_array_elements_text(coalesce(c->'days','[0,1,2,3,4]')))::int))) then return 0; end if;
+    if exists(select 1 from public.fm_daily_runs where job = 'att_absent' and day = d) then return 0; end if;
+  end if;
+  create temp table if not exists fm371_abs(id uuid, name text, boss uuid, regions text[]) on commit drop;
+  delete from fm371_abs;
+  insert into fm371_abs
+  select p.id, coalesce(nullif(p.full_name,''), p.email), p.reports_to, coalesce(p.regions,'{}')
+    from public.profiles p
+   where p.active and p.deleted_at is null and p.job_title = any(array(select jsonb_array_elements_text(coalesce(c->'titles','[]'))))
+     and exists(select 1 from public.fm_att a where a.user_id = p.id and a.day >= d - coalesce((c->>'recent')::int, 30) and a.day < d)
+     and not exists(select 1 from public.fm_att a where a.user_id = p.id and a.day = d)
+     and public.fm_tk_leave(p.id) is null
+     and not exists(select 1 from public.fm_leave_requests lr where lr.user_id = p.id and lr.status = 'approved' and d between lr.from_on and lr.to_on);
+  for r in select boss, array_agg(name order by name) names from fm371_abs where boss is not null group by boss loop
+    perform public.fm_alert_send(r.boss, 'att_absent', '🕒 لم يسجّلوا بدء الدوام (' || cardinality(r.names) || ')',
+      array_to_string(r.names[1:12], '، ') || case when cardinality(r.names) > 12 then ' …' else '' end, 'attabs', 'attabs-' || d, false);
+    n := n + 1;
+  end loop;
+  for rg in select distinct unnest(regions) from fm371_abs loop
+    for r in select p.id from public.profiles p where p.active and p.job_title = 'area_manager' and rg = any(coalesce(p.regions,'{}')) loop
+      perform public.fm_alert_send(r.id, 'att_absent', '🕒 لم يسجّلوا بدء الدوام — ' || case rg when 'riyadh' then 'الرياض' when 'qassim' then 'القصيم' else rg end,
+        (select count(*) || ' شخص: ' || array_to_string((array_agg(name order by name))[1:10], '، ') from fm371_abs where rg = any(regions)), 'attabs', 'attabs-' || rg || '-' || d, false);
+    end loop;
+  end loop;
+  insert into public.fm_daily_runs(job, day, n) values ('att_absent', d, (select count(*) from fm371_abs)) on conflict (job, day) do update set n = excluded.n, at = now();
+  return (select count(*) from fm371_abs);
+end $$;
+
+revoke all on function public.fm_v371_absent(boolean) from public, anon, authenticated;
+revoke all on function public.fm_leave_can(uuid), public.fm_leave_request(jsonb), public.fm_leave_act(uuid, text, jsonb), public.fm_leave_list(int) from public, anon;
+grant execute on function public.fm_leave_can(uuid), public.fm_leave_request(jsonb), public.fm_leave_act(uuid, text, jsonb), public.fm_leave_list(int) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 116) V376 — closing an accounting month ----------
+-- fm_periods (month: status open / closed, closed_*, note) + append-only fm_period_log (close / reopen, reason, by). While a month is
+-- closed, triggers refuse in that month: a new / edited / cancelled / returned contractor bill (approving and paying it stay allowed),
+-- workforce bonuses and overtime of the month (new, decided again), payroll batches (new, void), owner claims (new, amount changed,
+-- cancelled; invoicing / collecting stay allowed), owner collections and supplier payments dated in the month (new, void), cost-centre
+-- entries of the month (new, cancelled). The message names the month. Close: admin, sysadmin, accountant (fm_acct_can_set) — only a
+-- past or the current month; reopen: admin / sysadmin with a reason (≥ 5). fm_period_closed(month), fm_periods_list(months).
+create table if not exists public.fm_periods (month text primary key check (month ~ '^\d{4}-\d{2}$'), status text not null default 'open' check (status in ('open','closed')),
+  closed_by uuid, closed_name text, closed_at timestamptz, note text);
+create table if not exists public.fm_period_log (id bigint generated always as identity primary key, month text not null, action text not null check (action in ('close','reopen')),
+  reason text, by_id uuid default auth.uid(), by_name text, at timestamptz not null default now());
+alter table public.fm_periods enable row level security; alter table public.fm_period_log enable row level security;
+revoke all on public.fm_periods, public.fm_period_log from anon, authenticated;
+create or replace function public.fm_period_closed(p_month text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select status = 'closed' from public.fm_periods where month = p_month), false) $$;
+create or replace function public.fm_period_chk(p_month text) returns void language plpgsql stable security definer set search_path = public as $$
+begin
+  if p_month is not null and public.fm_period_closed(p_month) then
+    raise exception 'الشهر % مقفل محاسبياً — لا يمكن التعديل فيه إلا بعد إعادة فتحه من مدير النظام (period closed)', p_month using errcode = 'P0001';
+  end if;
+end $$;
+create or replace function public.fm_period_guard() returns trigger language plpgsql security definer set search_path = public as $$
+declare o jsonb := case when tg_op in ('UPDATE','DELETE') then to_jsonb(old) end; n jsonb := case when tg_op in ('INSERT','UPDATE') then to_jsonb(new) end; m text;
+begin
+  if coalesce(current_setting('fm.wipe', true), '') = '1' then return coalesce(new, old); end if;  -- the V190 / V329 reset
+  if tg_table_name = 'fm_bills' then
+    m := coalesce(n->>'month', o->>'month');
+    if tg_op = 'INSERT' or tg_op = 'DELETE' or (n->'lines') is distinct from (o->'lines') or (n->>'total') is distinct from (o->>'total')
+       or (n->>'status' in ('cancelled','draft','returned') and n->>'status' is distinct from o->>'status') then perform public.fm_period_chk(m); end if;
+  elsif tg_table_name in ('fm_wf_bonuses','fm_overtime') then
+    m := coalesce(n->>'month', o->>'month');
+    if tg_op <> 'UPDATE' or (n->>'status') is distinct from (o->>'status') or (n->>'amount') is distinct from (o->>'amount') or (n->>'appr_hours') is distinct from (o->>'appr_hours') then perform public.fm_period_chk(m); end if;
+  elsif tg_table_name = 'fm_pay_batches' then
+    m := coalesce(n->>'month', o->>'month');
+    if tg_op <> 'UPDATE' or (n->>'status') is distinct from (o->>'status') then perform public.fm_period_chk(m); end if;
+  elsif tg_table_name = 'fm_erp_owner_claims' then
+    m := coalesce(n->>'month', o->>'month');
+    if tg_op <> 'UPDATE' or (n->>'amount') is distinct from (o->>'amount') or (n->>'certified') is distinct from (o->>'certified') or (n->>'status' = 'cancelled' and o->>'status' <> 'cancelled') then perform public.fm_period_chk(m); end if;
+  elsif tg_table_name in ('fm_erp_collections','wo_supplier_payments') then
+    m := to_char(coalesce(n->>case when tg_table_name = 'fm_erp_collections' then 'rc_date' else 'pay_date' end, o->>case when tg_table_name = 'fm_erp_collections' then 'rc_date' else 'pay_date' end)::date, 'YYYY-MM');
+    if tg_op <> 'UPDATE' or (n->>'status') is distinct from (o->>'status') or (n->>'amount') is distinct from (o->>'amount') then perform public.fm_period_chk(m); end if;
+  elsif tg_table_name = 'fm_cc_entries' then
+    m := coalesce(n->>'month', o->>'month');
+    if tg_op <> 'UPDATE' or (n->>'cancelled') is distinct from (o->>'cancelled') or (n->>'amount') is distinct from (o->>'amount') then perform public.fm_period_chk(m); end if;
+  end if;
+  return coalesce(new, old);
+end $$;
+do $do$ declare t text; begin
+  foreach t in array array['fm_bills','fm_wf_bonuses','fm_overtime','fm_pay_batches','fm_erp_owner_claims','fm_erp_collections','wo_supplier_payments','fm_cc_entries'] loop
+    begin
+      execute format('drop trigger if exists fm_period_guard on public.%I', t);
+      execute format('create trigger fm_period_guard before insert or update or delete on public.%I for each row execute function public.fm_period_guard()', t);
+    exception when undefined_table then null; end;
+  end loop;
+end $do$;
+
+create or replace function public.fm_period_close(p_month text, p_note text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare nm text := (select full_name from public.profiles where id = auth.uid());
+begin
+  if not public.fm_acct_can_set() then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' or p_month > to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM') then raise exception 'invalid month'; end if;
+  insert into public.fm_periods(month, status, closed_by, closed_name, closed_at, note) values (p_month, 'closed', auth.uid(), nm, now(), left(nullif(btrim(coalesce(p_note,'')),''),500))
+    on conflict (month) do update set status = 'closed', closed_by = auth.uid(), closed_name = nm, closed_at = now(), note = excluded.note;
+  insert into public.fm_period_log(month, action, reason, by_name) values (p_month, 'close', p_note, nm);
+  insert into public.fm_audit_log(actor_name, action, target, details) values (coalesce(nm,''), 'period_close', p_month, jsonb_build_object('note', p_note));
+  return jsonb_build_object('ok', true);
+end $$;
+create or replace function public.fm_period_reopen(p_month text, p_reason text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare nm text := (select full_name from public.profiles where id = auth.uid());
+begin
+  if not (public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin') then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p_reason,''))) < 5 then raise exception 'reason required'; end if;
+  update public.fm_periods set status = 'open' where month = p_month and status = 'closed';
+  if not found then raise exception 'not closed'; end if;
+  insert into public.fm_period_log(month, action, reason, by_name) values (p_month, 'reopen', btrim(p_reason), nm);
+  insert into public.fm_audit_log(actor_name, action, target, details) values (coalesce(nm,''), 'period_reopen', p_month, jsonb_build_object('reason', p_reason));
+  return jsonb_build_object('ok', true);
+end $$;
+create or replace function public.fm_periods_list(p_months int default 18) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ms text[];
+begin
+  if not public.fm_acct_can() then raise exception 'not allowed'; end if;
+  ms := array(select to_char(date_trunc('month', now() at time zone 'Asia/Riyadh') - make_interval(months => g), 'YYYY-MM') from generate_series(0, least(greatest(coalesce(p_months,18),1),60) - 1) g);
+  return jsonb_build_object('can_close', public.fm_acct_can_set(), 'can_reopen', public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin',
+    'rows', (select jsonb_agg(jsonb_build_object('month', m, 'status', coalesce(p.status,'open'), 'closed_name', p.closed_name, 'closed_at', p.closed_at, 'note', p.note,
+       'bills', (select count(*) from public.fm_bills b where b.month = m and b.status <> 'cancelled'),
+       'bills_open', (select count(*) from public.fm_bills b where b.month = m and b.status in ('draft','submitted','reviewed','returned')),
+       'bonus_pending', (select count(*) from public.fm_wf_bonuses x where x.month = m and x.status = 'pending'),
+       'ot_pending', (select count(*) from public.fm_overtime x where x.month = m and x.status = 'pending'),
+       'unpaid', (select count(*) from public.fm_wf_bonuses x where x.month = m and x.status = 'approved' and x.paid_batch is null) + (select count(*) from public.fm_overtime x where x.month = m and x.status = 'approved' and x.paid_batch is null and coalesce(x.cost,0) > 0)) order by m desc)
+      from unnest(ms) m left join public.fm_periods p on p.month = m),
+    'log', coalesce((select jsonb_agg(to_jsonb(l) order by l.at desc) from (select * from public.fm_period_log order by at desc limit 60) l), '[]'::jsonb));
+end $$;
+revoke all on function public.fm_period_guard(), public.fm_period_chk(text) from public, anon, authenticated;
+revoke all on function public.fm_period_closed(text), public.fm_period_close(text, text), public.fm_period_reopen(text, text), public.fm_periods_list(int) from public, anon;
+grant execute on function public.fm_period_closed(text), public.fm_period_close(text, text), public.fm_period_reopen(text, text), public.fm_periods_list(int) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 117) V377 — contractor portal (private link per contract, no account) and objections to deductions ----------
+-- fm_contractor_links (one active 64-hex token per contract) + fm_bill_objections (OB-YYYY-####, contract, bill, line text, amount,
+-- text 5–1500, status open / accepted / rejected / answered, response, dec_*; RLS on, no policies, no grants). Staff:
+-- fm_contractor_link_make(contract, renew) / _revoke(contract) / fm_contractor_links_list() (fm_bill_can('contract', region));
+-- fm_bill_objections_list(days) and fm_bill_objection_act(id, accept | reject | answer, response ≥ 3) (fm_bill_can('review' or
+-- 'approve', region)); accepting does NOT change the bill — the preparer edits it (a returned / draft bill) by hand. Anon:
+-- fm_contractor_portal(token) {contract, bills (not draft / cancelled: totals, status, deduction / KPI / penalty lines with their
+-- text), retention held (fm_ret_held when section 105 ran), objections}, fm_contractor_objection(token, p {bill_id, line, text})
+-- (≤ 10 a day per link; push kind «bill» hash bill to the contract's reviewers: accountants, project / ops managers, area managers
+-- of the region).
+create table if not exists public.fm_contractor_links (
+  id uuid primary key default gen_random_uuid(), contract_id uuid not null references public.fm_contracts(id) on delete cascade,
+  token text not null unique, active boolean not null default true, created_by uuid default auth.uid(), created_at timestamptz not null default now(), last_used_at timestamptz);
+create unique index if not exists fm_contractor_links_one on public.fm_contractor_links(contract_id) where active;
+create sequence if not exists public.fm_objection_seq;
+create table if not exists public.fm_bill_objections (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null default ('OB-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_objection_seq')::text, 4, '0')),
+  contract_id uuid not null references public.fm_contracts(id) on delete cascade, bill_id uuid references public.fm_bills(id) on delete cascade,
+  line text, amount numeric(14,2), text text not null check (length(btrim(text)) between 5 and 1500),
+  status text not null default 'open' check (status in ('open','accepted','rejected','answered')),
+  response text, dec_by uuid, dec_name text, dec_at timestamptz, at timestamptz not null default now());
+alter table public.fm_contractor_links enable row level security; alter table public.fm_bill_objections enable row level security;
+revoke all on public.fm_contractor_links, public.fm_bill_objections from anon, authenticated;
+
+create or replace function public.fm_ct_token(p_token text) returns public.fm_contracts language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts;
+begin
+  select ct.* into c from public.fm_contractor_links l join public.fm_contracts ct on ct.id = l.contract_id where l.token = lower(btrim(coalesce(p_token,''))) and l.active;
+  if c.id is null then raise exception 'invalid link'; end if;
+  update public.fm_contractor_links set last_used_at = now() where token = lower(btrim(p_token)) and active;
+  return c;
+end $$;
+
+create or replace function public.fm_contractor_link_make(p_contract uuid, p_renew boolean default false) returns text language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts; t text;
+begin
+  select * into c from public.fm_contracts where id = p_contract;
+  if c.id is null or not public.fm_bill_can('contract', c.region) then raise exception 'not allowed'; end if;
+  if not p_renew then select token into t from public.fm_contractor_links where contract_id = p_contract and active; if t is not null then return t; end if; end if;
+  update public.fm_contractor_links set active = false where contract_id = p_contract and active;
+  t := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+  insert into public.fm_contractor_links(contract_id, token) values (p_contract, t);
+  return t;
+end $$;
+create or replace function public.fm_contractor_link_revoke(p_contract uuid) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_bill_can('contract', (select region from public.fm_contracts where id = p_contract)) then raise exception 'not allowed'; end if;
+  update public.fm_contractor_links set active = false where contract_id = p_contract and active;
+end $$;
+create or replace function public.fm_contractor_links_list() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'code', c.code, 'name', c.name, 'contractor', c.contractor_name, 'region', c.region,
+    'phone', (select phone from public.profiles where id = c.contractor_id), 'token', l.token, 'last_used_at', l.last_used_at,
+    'open', (select count(*) from public.fm_bill_objections o where o.contract_id = c.id and o.status = 'open')) order by c.code), '[]'::jsonb)
+    from public.fm_contracts c left join public.fm_contractor_links l on l.contract_id = c.id and l.active
+   where c.active and public.fm_bill_can('contract', c.region) $$;
+
+create or replace function public.fm_contractor_portal(p_token text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts; held numeric;
+begin
+  c := public.fm_ct_token(p_token);
+  begin execute 'select public.fm_ret_held($1)' into held using c.id; exception when others then held := null; end;
+  return jsonb_build_object('company', coalesce((select company from public.fm_plan limit 1), ''),
+    'contract', jsonb_build_object('code', c.code, 'name', c.name, 'contractor', c.contractor_name, 'region', c.region, 'start', c.start_date, 'end', c.end_date,
+      'monthly', c.monthly_fixed, 'retention_pct', c.retention_pct, 'vat_pct', c.vat_pct, 'held', held),
+    'bills', coalesce((select jsonb_agg(jsonb_build_object('id', b.id, 'code', b.code, 'month', b.month, 'status', b.status, 'gross', b.gross, 'deductions', b.deductions,
+        'net', b.net, 'vat', b.vat, 'retention', b.retention, 'total', b.total, 'paid_at', b.paid_at,
+        'lines', coalesce((select jsonb_agg(jsonb_build_object('i', q.i - 1, 'k', q.x->>'k', 't', q.x->>'t', 'q', q.x->>'q', 'p', q.x->>'p', 'a', coalesce(nullif(q.x->>'a','')::numeric, coalesce(nullif(q.x->>'q','')::numeric,0) * coalesce(nullif(q.x->>'p','')::numeric,0))))
+           from jsonb_array_elements(case when jsonb_typeof(b.lines) = 'array' then b.lines else '[]' end) with ordinality q(x, i) where q.x->>'k' in ('ded','kpi','pen')), '[]'::jsonb)) order by b.month desc)
+      from public.fm_bills b where b.contract_id = c.id and b.status not in ('draft','cancelled')), '[]'::jsonb),
+    'objections', coalesce((select jsonb_agg(jsonb_build_object('code', o.code, 'bill', (select code from public.fm_bills where id = o.bill_id), 'line', o.line, 'amount', o.amount,
+        'text', o.text, 'status', o.status, 'response', o.response, 'at', o.at, 'dec_at', o.dec_at) order by o.at desc) from public.fm_bill_objections o where o.contract_id = c.id), '[]'::jsonb));
+end $$;
+
+create or replace function public.fm_contractor_objection(p_token text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts; b public.fm_bills; ln jsonb; nid uuid; cd text; u uuid;
+begin
+  c := public.fm_ct_token(p_token);
+  if (select count(*) from public.fm_bill_objections where contract_id = c.id and at > now() - interval '1 day') >= 10 then raise exception 'too many today'; end if;
+  select * into b from public.fm_bills where id = nullif(p->>'bill_id','')::uuid and contract_id = c.id and status not in ('draft','cancelled');
+  if b.id is null then raise exception 'bill not found'; end if;
+  if length(btrim(coalesce(p->>'text',''))) < 5 then raise exception 'text required'; end if;
+  if nullif(p->>'line','') is not null then
+    select x into ln from jsonb_array_elements(case when jsonb_typeof(b.lines) = 'array' then b.lines else '[]' end) with ordinality q(x, i) where q.i - 1 = (p->>'line')::int;
+  end if;
+  insert into public.fm_bill_objections(contract_id, bill_id, line, amount, text)
+  values (c.id, b.id, left(ln->>'t', 300), case when ln is not null then coalesce(nullif(ln->>'a','')::numeric, coalesce(nullif(ln->>'q','')::numeric,0) * coalesce(nullif(ln->>'p','')::numeric,0)) end, left(btrim(p->>'text'), 1500))
+  returning id, code into nid, cd;
+  for u in select x.id from public.profiles x where x.active and (x.job_title in ('accountant','project_manager','ops_manager') or (x.job_title = 'area_manager' and c.region = any(coalesce(x.regions,'{}')))) loop
+    perform public.fm_push_add(u, 'bill', '📝 اعتراض من المقاول ' || c.contractor_name, b.code || coalesce(' — ' || left(ln->>'t',80), '') || ': ' || left(btrim(p->>'text'), 120), 'bill', 'ob-' || nid, true);
+  end loop;
+  return jsonb_build_object('code', cd);
+end $$;
+
+create or replace function public.fm_bill_objections_list(p_days int default 180) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', o.id, 'code', o.code, 'contract', c.code, 'contractor', c.contractor_name, 'region', c.region, 'bill', b.code, 'bill_status', b.status,
+     'month', b.month, 'line', o.line, 'amount', o.amount, 'text', o.text, 'status', o.status, 'response', o.response, 'dec_name', o.dec_name, 'at', o.at,
+     'can', public.fm_bill_can('review', c.region) or public.fm_bill_can('approve', c.region)) order by (o.status = 'open') desc, o.at desc), '[]'::jsonb)
+    from public.fm_bill_objections o join public.fm_contracts c on c.id = o.contract_id left join public.fm_bills b on b.id = o.bill_id
+   where o.at > now() - make_interval(days => least(greatest(coalesce(p_days,180),7),730)) and public.fm_bill_can('read', c.region) $$;
+create or replace function public.fm_bill_objection_act(p_id uuid, p_action text, p_response text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare o public.fm_bill_objections; r text;
+begin
+  select * into o from public.fm_bill_objections where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  r := (select region from public.fm_contracts where id = o.contract_id);
+  if not (public.fm_bill_can('review', r) or public.fm_bill_can('approve', r)) then raise exception 'not allowed'; end if;
+  if p_action not in ('accept','reject','answer') then raise exception 'invalid action'; end if;
+  if length(btrim(coalesce(p_response,''))) < 3 then raise exception 'response required'; end if;
+  update public.fm_bill_objections set status = case p_action when 'accept' then 'accepted' when 'reject' then 'rejected' else 'answered' end,
+    response = left(btrim(p_response), 1500), dec_by = auth.uid(), dec_name = (select full_name from public.profiles where id = auth.uid()), dec_at = now() where id = p_id;
+  return jsonb_build_object('ok', true);
+end $$;
+revoke all on function public.fm_ct_token(text) from public, anon, authenticated;
+revoke all on function public.fm_contractor_link_make(uuid, boolean), public.fm_contractor_link_revoke(uuid), public.fm_contractor_links_list(), public.fm_bill_objections_list(int), public.fm_bill_objection_act(uuid, text, text) from public, anon;
+grant execute on function public.fm_contractor_link_make(uuid, boolean), public.fm_contractor_link_revoke(uuid), public.fm_contractor_links_list(), public.fm_bill_objections_list(int), public.fm_bill_objection_act(uuid, text, text) to authenticated;
+revoke all on function public.fm_contractor_portal(text), public.fm_contractor_objection(text, jsonb) from public;
+grant execute on function public.fm_contractor_portal(text), public.fm_contractor_objection(text, jsonb) to anon, authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 118) V378 — the AI assistant may also suggest preventive-maintenance frequencies (task «ppm») ----------
+-- fm_ai_begin accepts the kind ppm (same daily limit). The platform page «🧠 تواتر الصيانة الوقائية» works without the AI too (a rule
+-- per building × system from the 12-month fault count); the Edge Function fm-ai gains SCHEMAS.ppm / SYSTEM.ppm — redeploy it.
+create or replace function public.fm_ai_begin(p_kind text) returns bigint language plpgsql security definer set search_path = public as $$
+declare s jsonb := coalesce(public.fm_setting('ai'), '{}'); lim int := greatest(1, least(coalesce(nullif(s->>'daily_limit','')::int, 30), 1000)); id_ bigint;
+begin
+  if auth.uid() is null or public.fm_role() in ('pending') or public.fm_role() is null then raise exception 'not allowed'; end if;
+  if not coalesce((s->>'enabled')::boolean, false) then raise exception 'ai disabled'; end if;
+  if p_kind not in ('classify','summary','recurring','ppm') then raise exception 'invalid kind'; end if;
+  if (select count(*) from public.fm_ai_usage where user_id = auth.uid() and day = (now() at time zone 'Asia/Riyadh')::date) >= lim then raise exception 'daily limit reached'; end if;
+  insert into public.fm_ai_usage (user_id, kind) values (auth.uid(), p_kind) returning id into id_;
+  return id_;
+end $$;
+notify pgrst, 'reload schema';
