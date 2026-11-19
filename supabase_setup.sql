@@ -19483,3 +19483,118 @@ do $do$ begin
   perform cron.schedule('fm-v386-daily', '25 5 * * *', 'select public.fm_v386_daily()');
 exception when others then raise notice 'pg_cron not available: %', sqlerrm; end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 123) V387 — archive tickets older than N years; their monthly numbers stay for the reports ----------
+-- The system admin (or a regional uploader) moves the tickets of a region created before a cutoff (at least 1 year back)
+-- from `tickets` to `tickets_archive` in one call; the platform sends that region's monthly figures for the archived
+-- months (received, closed, breached, SLA %, average close hours, top categories — computed with the platform's own SLA
+-- rules before the move) into `fm_ticket_archive_stats`. Archived tickets can be looked up by number and a month restored.
+-- While `fm_settings.tk_archive.block_reimport` (default true) is on, re-uploading an archived ticket does not bring it back.
+create table if not exists public.tickets_archive (like public.tickets including defaults);
+alter table public.tickets_archive add column if not exists archived_at timestamptz not null default now();
+alter table public.tickets_archive add column if not exists archived_by uuid;
+do $do$ begin
+  alter table public.tickets_archive add primary key (region, ticket_id);
+exception when others then null; end $do$;
+create index if not exists tickets_archive_created_idx on public.tickets_archive (region, created_at);
+create table if not exists public.fm_ticket_archive_stats (
+  region text not null, month text not null check (month ~ '^\d{4}-\d{2}$'), stats jsonb not null, n int not null default 0,
+  at timestamptz not null default now(), by_name text, primary key (region, month)
+);
+alter table public.tickets_archive enable row level security;
+alter table public.fm_ticket_archive_stats enable row level security;
+revoke all on public.tickets_archive, public.fm_ticket_archive_stats from anon, authenticated;
+create or replace function public.fm_wipe_parts() returns jsonb language sql immutable as $$
+  select jsonb_build_object(
+    'tickets',    jsonb_build_array('fm_breach_reason_log','fm_breach_reasons','fm_tk_assign_log','fm_tk_assign','fm_sla_pauses',
+                                    'fm_tk_close_rev','fm_tk_audits','fm_close_review_events','fm_close_reviews','fm_sla_inbox231',
+                                    'fm_sla_watch','fm_sla_watch_meta','fm_sla_morning','fm_ticket_imports232','fm_weekly_sent','fm_weekly',
+                                    'ticket_photos','ticket_events','ticket_work','tickets','tickets_archive','fm_ticket_archive_stats'),
+    'schooldb',   jsonb_build_array(),
+    'wo',         jsonb_build_array('wo_audits','wo_photos','wo_events','fm_bill_wos','work_orders','wo_schedules'),
+    'wh_moves',   jsonb_build_array('wo_serials','wo_purchase_requests','wo_issue_requests','wo_custody_counts','wo_custody_moves','wo_custody','wo_stock_lots','wo_stock_moves','wo_stock'),
+    'wh_catalog', jsonb_build_array('wo_material_photos','wo_supplier_prices','wo_suppliers','wo_materials','wo_stores'),
+    'eng',        jsonb_build_array('fm_eng_ratings','fm_eng_rate_links','fm_eng_audit','fm_eng_observations','fm_eng_logs','fm_eng_assignments'),
+    'portal',     jsonb_build_array('fm_school_requests','fm_school_links'),
+    'costs',      jsonb_build_array('fm_expenses','fm_budgets'),
+    'bill',       jsonb_build_array('fm_bill_wos','fm_bills','fm_contracts'),
+    'cc',         jsonb_build_array('fm_cc_entries','fm_cc_budget','fm_cc_staff','fm_cc_centers'),
+    'misc',       jsonb_build_array('fm_news','fm_push_queue','fm_activity')) $$;
+
+create or replace function public.fm_tk_archive_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('years', 2, 'block_reimport', true) || coalesce((select value from public.fm_settings where key = 'tk_archive'), '{}'::jsonb)
+$$;
+create or replace function public.fm_tk_archive_can(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or exists (select 1 from public.profiles where id = auth.uid() and active and job_title = 'sysadmin')
+     or public.fm_can_upload(p_region))
+$$;
+create or replace function public.fm_tk_archive_preview(p_region text, p_before date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_tk_archive_can(p_region) then raise exception 'not allowed'; end if;
+  return jsonb_build_object('live', (select count(*) from public.tickets where region = p_region),
+    'to_move', (select count(*) from public.tickets where region = p_region and created_at < p_before),
+    'no_date', (select count(*) from public.tickets where region = p_region and created_at is null),
+    'archived', (select count(*) from public.tickets_archive where region = p_region),
+    'months', coalesce((select jsonb_agg(jsonb_build_object('month', month, 'n', n, 'at', at) order by month) from public.fm_ticket_archive_stats where region = p_region), '[]'::jsonb),
+    'cfg', public.fm_tk_archive_cfg());
+end $$;
+create or replace function public.fm_tk_archive_run(p_region text, p_before date, p_stats jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare n int; m jsonb; nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid());
+begin
+  if not public.fm_tk_archive_can(p_region) then raise exception 'not allowed'; end if;
+  if p_before is null or p_before > ((now() at time zone 'Asia/Riyadh')::date - interval '1 year')::date then raise exception 'cutoff too recent'; end if;
+  perform pg_advisory_xact_lock(hashtext('fm_tk_archive:' || p_region));
+  for m in select * from jsonb_array_elements(coalesce(p_stats, '[]'::jsonb)) loop
+    if (m->>'month') ~ '^\d{4}-\d{2}$' and (m->>'month') <= to_char(p_before - 1, 'YYYY-MM') then
+      insert into public.fm_ticket_archive_stats (region, month, stats, n, by_name) values (p_region, m->>'month', m, coalesce((m->>'rec')::int, 0), nm)
+      on conflict (region, month) do update set stats = excluded.stats, n = excluded.n, at = now(), by_name = excluded.by_name;
+    end if;
+  end loop;
+  with moved as (delete from public.tickets t where t.region = p_region and t.created_at < p_before returning t.*)
+  insert into public.tickets_archive select mv.*, now(), auth.uid() from moved mv
+  on conflict (region, ticket_id) do update set raw = excluded.raw, status = excluded.status, archived_at = now();
+  get diagnostics n = row_count;
+  insert into public.fm_audit_log (actor_name, action, target, details) values (nm, 'tickets_archive', p_region, jsonb_build_object('before', p_before, 'n', n));
+  return jsonb_build_object('moved', n);
+end $$;
+create or replace function public.fm_tk_archive_restore(p_region text, p_month text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare n int; nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid());
+begin
+  if not public.fm_tk_archive_can(p_region) then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'bad month'; end if;
+  perform set_config('fm.tk_restore', '1', true);
+  with back as (delete from public.tickets_archive a where a.region = p_region and to_char(a.created_at at time zone 'Asia/Riyadh', 'YYYY-MM') = p_month returning a.*)
+  insert into public.tickets (region, ticket_id, school, building_id, supervisor, engineer, contractor, priority, sub_category, status, created_at, raw, uploaded_at, uploaded_by)
+  select region, ticket_id, school, building_id, supervisor, engineer, contractor, priority, sub_category, status, created_at, raw, uploaded_at, uploaded_by from back
+  on conflict (region, ticket_id) do nothing;
+  get diagnostics n = row_count;
+  delete from public.fm_ticket_archive_stats where region = p_region and month = p_month;
+  insert into public.fm_audit_log (actor_name, action, target, details) values (nm, 'tickets_restore', p_region, jsonb_build_object('month', p_month, 'n', n));
+  return jsonb_build_object('restored', n);
+end $$;
+-- archived figures per month (anyone who reads the region's tickets) and one archived ticket by number
+create or replace function public.fm_tk_archive_stats(p_region text) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('month', month, 'stats', stats, 'at', at) order by month), '[]'::jsonb)
+  from public.fm_ticket_archive_stats where region = p_region and auth.uid() is not null and public.fm_role() not in ('pending')
+$$;
+create or replace function public.fm_tk_archive_get(p_region text, p_id text) returns jsonb language sql stable security definer set search_path = public as $$
+  select to_jsonb(a) - 'uploaded_by' - 'archived_by' from public.tickets_archive a
+   where a.region = p_region and a.ticket_id = trim(p_id) and auth.uid() is not null and public.fm_role() in ('admin','manager','staff','viewer','engineer')
+$$;
+-- re-uploading an archived ticket does not bring it back (unless the setting is off or a restore runs)
+create or replace function public.fm_tk_archive_block() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if coalesce(current_setting('fm.tk_restore', true), '') = '1' then return new; end if;
+  if coalesce((public.fm_tk_archive_cfg()->>'block_reimport')::boolean, true)
+     and exists (select 1 from public.tickets_archive a where a.region = new.region and a.ticket_id = new.ticket_id) then return null; end if;
+  return new;
+exception when others then return new;
+end $$;
+drop trigger if exists fm_tk_archive_block on public.tickets;
+create trigger fm_tk_archive_block before insert on public.tickets for each row execute function public.fm_tk_archive_block();
+revoke all on function public.fm_tk_archive_block(), public.fm_tk_archive_can(text) from public, anon, authenticated;
+revoke all on function public.fm_tk_archive_cfg(), public.fm_tk_archive_preview(text, date), public.fm_tk_archive_run(text, date, jsonb), public.fm_tk_archive_restore(text, text), public.fm_tk_archive_stats(text), public.fm_tk_archive_get(text, text) from public, anon;
+grant execute on function public.fm_tk_archive_cfg(), public.fm_tk_archive_preview(text, date), public.fm_tk_archive_run(text, date, jsonb), public.fm_tk_archive_restore(text, text), public.fm_tk_archive_stats(text), public.fm_tk_archive_get(text, text) to authenticated;
+notify pgrst, 'reload schema';
