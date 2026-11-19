@@ -18319,3 +18319,223 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: absence / document alerts are not sent'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 112) V372 — contractor headcount commitment against the workforce register; monthly employee scorecard ----------
+-- (1) fm_contracts.staff_req [{job, n, rate}] (required people per job title and the deduction per missing person per month),
+--     written by fm_contract_staff_set(contract, rows ≤ 30) (fm_bill_can('contract', region)). fm_wf_contract_check(month, contract?)
+--     (fm_bill_can('read', region)): per contract with staff_req, active people of the register in the contract's region (all when
+--     the contract has none) employed by the contractor (fm_sdb_n containment either way on employer / contractor_name), working
+--     within the month (start_date ≤ month end, contract_end_date null or ≥ month start), per job (normalised containment) → req,
+--     act, miss, rate, ded = miss × rate; the V184 bill editor adds them as direct deductions on request.
+-- (2) fm_scorecard(month) → one row per active account the caller may judge (self; admin / fm_scope_all: all; area manager: his
+--     regions; others: fm_is_under) with: work orders due in the month (wo_due) / done on time (wo_ontime) / done in the month (wo_done)
+--     / returned (wo_ret), attendance days (att_days) and working days Sun–Thu up to today (work_days), school rating (avg of his
+--     q_supervisor / q_engineer × 20, n), badges, ideas (approved / implemented decided in the month, points), approved overtime hours.
+--     Each part in its own exception block (missing table → null). Ticket figures are added by the platform from the loaded tickets.
+alter table public.fm_contracts add column if not exists staff_req jsonb not null default '[]';
+create or replace function public.fm_contract_staff_set(p_contract uuid, p_rows jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts; v jsonb;
+begin
+  select * into c from public.fm_contracts where id = p_contract for update;
+  if not found then raise exception 'not found'; end if;
+  if not public.fm_bill_can('contract', c.region) then raise exception 'not allowed'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 30 then raise exception 'invalid rows'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object('job', left(btrim(x->>'job'),120), 'n', greatest(0, round((x->>'n')::numeric)), 'rate', greatest(0, coalesce(nullif(x->>'rate','')::numeric,0)))), '[]')
+    into v from jsonb_array_elements(p_rows) x where length(btrim(coalesce(x->>'job',''))) >= 2 and coalesce(nullif(x->>'n','')::numeric,0) > 0;
+  update public.fm_contracts set staff_req = v where id = p_contract;
+  return v;
+end $$;
+
+create or replace function public.fm_wf_contract_check(p_month text, p_contract uuid default null) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare a date; b date; out jsonb := '[]'; c record; r jsonb; lines jsonb; act int; tot numeric; names jsonb;
+begin
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  a := to_date(p_month || '-01', 'YYYY-MM-DD'); b := (a + interval '1 month - 1 day')::date;
+  for c in select * from public.fm_contracts where active and jsonb_array_length(coalesce(staff_req,'[]')) > 0 and (p_contract is null or id = p_contract) order by code loop
+    if not public.fm_bill_can('read', c.region) then continue; end if;
+    lines := '[]'; tot := 0;
+    for r in select * from jsonb_array_elements(c.staff_req) loop
+      select count(*), coalesce(jsonb_agg(p.full_name order by p.full_name), '[]') into act, names from public.fm_people334 p
+       where (c.region is null or p.region = c.region)
+         and coalesce(p.start_date, a) <= b and (p.contract_end_date is null or p.contract_end_date >= a)
+         and (p.active or (p.contract_end_date is not null and p.contract_end_date >= a))
+         and (public.fm_sdb_n(p.employer) like '%' || public.fm_sdb_n(c.contractor_name) || '%' or public.fm_sdb_n(c.contractor_name) like '%' || public.fm_sdb_n(p.employer) || '%')
+         and length(public.fm_sdb_n(p.employer)) >= 2
+         and (public.fm_sdb_n(p.job_title) like '%' || public.fm_sdb_n(r->>'job') || '%' or public.fm_sdb_n(r->>'job') like '%' || public.fm_sdb_n(p.job_title) || '%');
+      lines := lines || jsonb_build_array(jsonb_build_object('job', r->>'job', 'req', (r->>'n')::int, 'act', act, 'miss', greatest(0, (r->>'n')::int - act),
+        'rate', coalesce((r->>'rate')::numeric, 0), 'ded', greatest(0, (r->>'n')::int - act) * coalesce((r->>'rate')::numeric, 0), 'names', names));
+      tot := tot + greatest(0, (r->>'n')::int - act) * coalesce((r->>'rate')::numeric, 0);
+    end loop;
+    out := out || jsonb_build_array(jsonb_build_object('id', c.id, 'code', c.code, 'name', c.name, 'contractor', c.contractor_name, 'region', c.region,
+      'lines', lines, 'ded', tot, 'req', (select coalesce(sum((x->>'req')::int),0) from jsonb_array_elements(lines) x), 'act', (select coalesce(sum(least((x->>'act')::int,(x->>'req')::int)),0) from jsonb_array_elements(lines) x),
+      'can_edit', public.fm_bill_can('contract', c.region)));
+  end loop;
+  return jsonb_build_object('month', p_month, 'rows', out,
+    'all', coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'code', x.code, 'name', x.name, 'contractor', x.contractor_name, 'region', x.region, 'staff_req', x.staff_req,
+       'can_edit', public.fm_bill_can('contract', x.region)) order by x.code) from public.fm_contracts x where x.active and public.fm_bill_can('read', x.region)), '[]'::jsonb));
+end $$;
+
+create or replace function public.fm_scorecard(p_month text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare a date; b date; ts timestamptz; te timestamptz; me uuid := auth.uid(); allv boolean; pos text := public.fm_my_pos(); ids uuid[]; res jsonb := '{}'; wd int; x jsonb;
+begin
+  if me is null or public.fm_role() in ('pending') then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'invalid month'; end if;
+  a := to_date(p_month || '-01', 'YYYY-MM-DD'); b := (a + interval '1 month - 1 day')::date;
+  ts := (a::timestamp) at time zone 'Asia/Riyadh'; te := ((b + 1)::timestamp) at time zone 'Asia/Riyadh';
+  allv := public.fm_role() = 'admin' or public.fm_scope_all();
+  select coalesce(array_agg(p.id), '{}') into ids from public.profiles p
+   where p.active and p.deleted_at is null and p.role not in ('pending')
+     and (p.id = me or allv or (pos = 'area_manager' and exists(select 1 from unnest(coalesce(p.regions,'{}')) r where public.fm_region_ok(r))) or public.fm_is_under(p.id, me));
+  select count(*) into wd from generate_series(a, least(b, (now() at time zone 'Asia/Riyadh')::date), interval '1 day') g where extract(dow from g) between 0 and 4;
+  res := (select jsonb_object_agg(p.id::text, jsonb_build_object('id', p.id, 'name', coalesce(nullif(p.full_name,''), p.email), 'job', p.job_title, 'emp', coalesce(p.emp_no,''),
+           'regions', to_jsonb(coalesce(p.regions,'{}')), 'names', to_jsonb(coalesce(p.person_names,'{}')), 'work_days', wd)) from public.profiles p where p.id = any(ids));
+  begin
+    for x in select jsonb_build_object('id', w.assignee, 'wo_due', count(*) filter (where w.due_at >= ts and w.due_at < te and w.status <> 'cancelled'),
+               'wo_ontime', count(*) filter (where w.due_at >= ts and w.due_at < te and w.status in ('done','closed') and coalesce(w.done_at, w.closed_at) <= w.due_at),
+               'wo_done', count(*) filter (where coalesce(w.done_at, w.closed_at) >= ts and coalesce(w.done_at, w.closed_at) < te and w.status in ('done','closed'))) j
+              from public.work_orders w where w.assignee = any(ids) group by w.assignee loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+    for x in select jsonb_build_object('id', w.assignee, 'wo_ret', count(*)) j from public.wo_events e join public.work_orders w on w.id = e.wo_id
+              where e.type = 'return' and e.at >= ts and e.at < te and w.assignee = any(ids) group by w.assignee loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  begin
+    for x in select jsonb_build_object('id', t.user_id, 'att_days', count(distinct t.day)) from public.fm_att t where t.user_id = any(ids) and t.day between a and b group by t.user_id loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  begin
+    for x in select jsonb_build_object('id', u, 'rating', round(avg(v)::numeric * 20, 1), 'rating_n', count(*)) from (
+               select supervisor_id u, q_supervisor v from public.fm_eng_ratings where created_at >= ts and created_at < te and q_supervisor is not null
+               union all select engineer_id, q_engineer from public.fm_eng_ratings where created_at >= ts and created_at < te and q_engineer is not null) q
+              where u = any(ids) group by u loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  begin
+    for x in select jsonb_build_object('id', g.user_id, 'badges', count(*)) from public.fm_badges g
+              where g.user_id = any(ids) and not g.revoked and (g.period = p_month or (g.period is null and g.at >= ts and g.at < te)) group by g.user_id loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  begin
+    for x in select jsonb_build_object('id', i.by_id, 'ideas', count(*), 'idea_pts', coalesce(sum(i.points),0)) from public.fm_ideas i
+              where i.by_id = any(ids) and i.status in ('approved','implemented') and coalesce(i.impl_at, i.decided_at) >= ts and coalesce(i.impl_at, i.decided_at) < te group by i.by_id loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  begin
+    for x in select jsonb_build_object('id', o.user_id, 'ot_hours', sum(coalesce(o.appr_hours, o.hours))) from public.fm_overtime o
+              where o.user_id = any(ids) and o.status = 'approved' and o.month = p_month group by o.user_id loop
+      res := jsonb_set(res, array[x->>'id'], (res->(x->>'id')) || (x - 'id'));
+    end loop;
+  exception when undefined_table or undefined_column then null; end;
+  return jsonb_build_object('month', p_month, 'work_days', wd, 'me', me, 'rows', coalesce((select jsonb_agg(v order by v->>'name') from jsonb_each(coalesce(res,'{}')) e(k, v)), '[]'::jsonb));
+end $$;
+
+revoke all on function public.fm_contract_staff_set(uuid, jsonb), public.fm_wf_contract_check(text, uuid), public.fm_scorecard(text) from public, anon;
+grant execute on function public.fm_contract_staff_set(uuid, jsonb), public.fm_wf_contract_check(text, uuid), public.fm_scorecard(text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 113) V373 — electronic sign-off by the owner's representative (monthly report, owner claim) ----------
+-- fm_signoffs (SO-YYYY-####, kind monthly | claim, ref = 'YYYY-MM|region' or the claim id, title, summary (key figures ≤ 8000 chars),
+-- status pending / approved / rejected / cancelled, req_*, dec_*, sign (PNG data URL ≤ 150 000, approve only), note; one pending per
+-- kind + ref; RLS on, no policies, no grants). Request: fm_signoff_can_req(kind) — monthly: admin, sysadmin, dept / project / ops /
+-- area managers; claim: fm_erp_rev_can('edit') — and only while an active owner_rep exists («no owner rep»); push «signoff» (hash
+-- signoff) to the owner reps. Decide: fm_signoff_act(id, approve (sign required) | reject (note ≥ 3) | cancel (the requester / admin))
+-- — approve / reject only by an active owner_rep (never by another title); push to the requester; a claim's history gets
+-- {a:'owner_sign'|'owner_reject'} and a project event. fm_signoff_list(days) (owner_rep and the requesting titles), fm_signoff_get(id).
+create sequence if not exists public.fm_signoff_seq;
+create table if not exists public.fm_signoffs (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null default ('SO-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_signoff_seq')::text, 4, '0')),
+  kind text not null check (kind in ('monthly','claim')),
+  ref text not null, title text not null, summary jsonb not null default '{}',
+  status text not null default 'pending' check (status in ('pending','approved','rejected','cancelled')),
+  req_by uuid default auth.uid(), req_name text, req_at timestamptz not null default now(),
+  dec_by uuid, dec_name text, dec_at timestamptz, sign text check (sign is null or length(sign) <= 150000), note text);
+create unique index if not exists fm_signoffs_one_pending on public.fm_signoffs(kind, ref) where status = 'pending';
+alter table public.fm_signoffs enable row level security;
+revoke all on public.fm_signoffs from anon, authenticated;
+
+create or replace function public.fm_signoff_can_req(p_kind text) returns boolean language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then return false; end if;
+  if p_kind = 'monthly' then return public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','area_manager'); end if;
+  if p_kind = 'claim' then begin return public.fm_erp_rev_can('edit'); exception when undefined_function then return false; end; end if;
+  return false;
+end $$;
+create or replace function public.fm_signoff_is_rep() returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select active and job_title = 'owner_rep' from public.profiles where id = auth.uid()), false) $$;
+
+create or replace function public.fm_signoff_request(p_kind text, p_ref text, p_title text, p_summary jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare nid uuid; cd text; u uuid; nm text := (select full_name from public.profiles where id = auth.uid());
+begin
+  if not public.fm_signoff_can_req(p_kind) then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p_ref,''))) < 3 or length(btrim(coalesce(p_title,''))) < 3 then raise exception 'invalid'; end if;
+  if p_kind = 'claim' and not exists(select 1 from public.fm_erp_owner_claims where id::text = p_ref and status in ('submitted','certified','invoiced')) then raise exception 'claim not ready'; end if;
+  if length(coalesce(p_summary,'{}')::text) > 8000 then raise exception 'summary too large'; end if;
+  if not exists(select 1 from public.profiles where active and job_title = 'owner_rep') then raise exception 'no owner rep'; end if;
+  if exists(select 1 from public.fm_signoffs where kind = p_kind and ref = p_ref and status = 'pending') then raise exception 'already pending'; end if;
+  insert into public.fm_signoffs(kind, ref, title, summary, req_name) values (p_kind, btrim(p_ref), left(btrim(p_title),300), coalesce(p_summary,'{}'), nm) returning id, code into nid, cd;
+  for u in select id from public.profiles where active and job_title = 'owner_rep' loop
+    perform public.fm_push_add(u, 'signoff', '✍️ بانتظار اعتمادك: ' || left(btrim(p_title),120), cd || ' — ' || coalesce(nm,''), 'signoff', 'so-' || nid, false);
+  end loop;
+  return jsonb_build_object('id', nid, 'code', cd);
+end $$;
+
+create or replace function public.fm_signoff_act(p_id uuid, p_action text, p_sign text, p_note text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s public.fm_signoffs; nm text := (select full_name from public.profiles where id = auth.uid()); cl record;
+begin
+  select * into s from public.fm_signoffs where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if s.status <> 'pending' then raise exception 'not pending'; end if;
+  if p_action = 'cancel' then
+    if s.req_by is distinct from auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+    update public.fm_signoffs set status = 'cancelled', dec_by = auth.uid(), dec_name = nm, dec_at = now(), note = left(btrim(coalesce(p_note,'')),1000) where id = p_id;
+    return jsonb_build_object('ok', true);
+  end if;
+  if not public.fm_signoff_is_rep() then raise exception 'owner rep only'; end if;
+  if p_action = 'approve' then
+    if coalesce(p_sign,'') !~ '^data:image/png;base64,' or length(p_sign) > 150000 then raise exception 'sign required'; end if;
+    update public.fm_signoffs set status = 'approved', dec_by = auth.uid(), dec_name = nm, dec_at = now(), sign = p_sign, note = left(btrim(coalesce(p_note,'')),1000) where id = p_id;
+  elsif p_action = 'reject' then
+    if length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+    update public.fm_signoffs set status = 'rejected', dec_by = auth.uid(), dec_name = nm, dec_at = now(), note = left(btrim(p_note),1000) where id = p_id;
+  else raise exception 'invalid action'; end if;
+  if s.kind = 'claim' then
+    begin
+      select * into cl from public.fm_erp_owner_claims where id::text = s.ref;
+      if found then
+        update public.fm_erp_owner_claims set history = coalesce(history,'[]'::jsonb) || jsonb_build_array(jsonb_build_object('a', case when p_action = 'approve' then 'owner_sign' else 'owner_reject' end, 'by', nm, 'at', now(), 'note', p_note, 'so', s.code)) where id = cl.id;
+        insert into public.fm_erp_project_events(project_id, actor, action, entity_id, reason, new_value) values (cl.project_id, auth.uid(), case when p_action = 'approve' then 'claim_owner_sign' else 'claim_owner_reject' end, cl.id, coalesce(nullif(btrim(p_note),''), s.code), jsonb_build_object('claim', cl.code, 'so', s.code));
+      end if;
+    exception when others then null; end;
+  end if;
+  if s.req_by is not null then
+    perform public.fm_push_add(s.req_by, 'signoff', case when p_action = 'approve' then '✅ اعتمدت الجهة المالكة: ' else '⛔ لم تعتمد الجهة المالكة: ' end || left(s.title,120), coalesce(nm,'') || coalesce(' — ' || p_note,''), 'signoff', 'so-' || s.id, false);
+  end if;
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.fm_signoff_list(p_days int default 365) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not (public.fm_signoff_is_rep() or public.fm_signoff_can_req('monthly') or public.fm_signoff_can_req('claim') or public.fm_role() = 'admin') then raise exception 'not allowed'; end if;
+  return jsonb_build_object('rep', public.fm_signoff_is_rep(), 'can_monthly', public.fm_signoff_can_req('monthly'), 'can_claim', public.fm_signoff_can_req('claim'),
+    'has_rep', exists(select 1 from public.profiles where active and job_title = 'owner_rep'), 'me', auth.uid(),
+    'rows', coalesce((select jsonb_agg(to_jsonb(s) - 'sign' || jsonb_build_object('signed', s.sign is not null) order by (s.status = 'pending') desc, s.req_at desc)
+      from public.fm_signoffs s where s.req_at > now() - make_interval(days => least(greatest(coalesce(p_days,365),7),1100))), '[]'::jsonb));
+end $$;
+create or replace function public.fm_signoff_get(p_id uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not (public.fm_signoff_is_rep() or public.fm_signoff_can_req('monthly') or public.fm_signoff_can_req('claim') or public.fm_role() = 'admin') then raise exception 'not allowed'; end if;
+  return (select to_jsonb(s) from public.fm_signoffs s where s.id = p_id);
+end $$;
+
+revoke all on function public.fm_signoff_can_req(text), public.fm_signoff_is_rep(), public.fm_signoff_request(text, text, text, jsonb), public.fm_signoff_act(uuid, text, text, text),
+  public.fm_signoff_list(int), public.fm_signoff_get(uuid) from public, anon;
+grant execute on function public.fm_signoff_can_req(text), public.fm_signoff_is_rep(), public.fm_signoff_request(text, text, text, jsonb), public.fm_signoff_act(uuid, text, text, text),
+  public.fm_signoff_list(int), public.fm_signoff_get(uuid) to authenticated;
+notify pgrst, 'reload schema';
