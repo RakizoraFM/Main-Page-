@@ -18906,3 +18906,123 @@ revoke all on function public.fm_period_guard(), public.fm_period_chk(text) from
 revoke all on function public.fm_period_closed(text), public.fm_period_close(text, text), public.fm_period_reopen(text, text), public.fm_periods_list(int) from public, anon;
 grant execute on function public.fm_period_closed(text), public.fm_period_close(text, text), public.fm_period_reopen(text, text), public.fm_periods_list(int) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 117) V377 — contractor portal (private link per contract, no account) and objections to deductions ----------
+-- fm_contractor_links (one active 64-hex token per contract) + fm_bill_objections (OB-YYYY-####, contract, bill, line text, amount,
+-- text 5–1500, status open / accepted / rejected / answered, response, dec_*; RLS on, no policies, no grants). Staff:
+-- fm_contractor_link_make(contract, renew) / _revoke(contract) / fm_contractor_links_list() (fm_bill_can('contract', region));
+-- fm_bill_objections_list(days) and fm_bill_objection_act(id, accept | reject | answer, response ≥ 3) (fm_bill_can('review' or
+-- 'approve', region)); accepting does NOT change the bill — the preparer edits it (a returned / draft bill) by hand. Anon:
+-- fm_contractor_portal(token) {contract, bills (not draft / cancelled: totals, status, deduction / KPI / penalty lines with their
+-- text), retention held (fm_ret_held when section 105 ran), objections}, fm_contractor_objection(token, p {bill_id, line, text})
+-- (≤ 10 a day per link; push kind «bill» hash bill to the contract's reviewers: accountants, project / ops managers, area managers
+-- of the region).
+create table if not exists public.fm_contractor_links (
+  id uuid primary key default gen_random_uuid(), contract_id uuid not null references public.fm_contracts(id) on delete cascade,
+  token text not null unique, active boolean not null default true, created_by uuid default auth.uid(), created_at timestamptz not null default now(), last_used_at timestamptz);
+create unique index if not exists fm_contractor_links_one on public.fm_contractor_links(contract_id) where active;
+create sequence if not exists public.fm_objection_seq;
+create table if not exists public.fm_bill_objections (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null default ('OB-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_objection_seq')::text, 4, '0')),
+  contract_id uuid not null references public.fm_contracts(id) on delete cascade, bill_id uuid references public.fm_bills(id) on delete cascade,
+  line text, amount numeric(14,2), text text not null check (length(btrim(text)) between 5 and 1500),
+  status text not null default 'open' check (status in ('open','accepted','rejected','answered')),
+  response text, dec_by uuid, dec_name text, dec_at timestamptz, at timestamptz not null default now());
+alter table public.fm_contractor_links enable row level security; alter table public.fm_bill_objections enable row level security;
+revoke all on public.fm_contractor_links, public.fm_bill_objections from anon, authenticated;
+
+create or replace function public.fm_ct_token(p_token text) returns public.fm_contracts language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts;
+begin
+  select ct.* into c from public.fm_contractor_links l join public.fm_contracts ct on ct.id = l.contract_id where l.token = lower(btrim(coalesce(p_token,''))) and l.active;
+  if c.id is null then raise exception 'invalid link'; end if;
+  update public.fm_contractor_links set last_used_at = now() where token = lower(btrim(p_token)) and active;
+  return c;
+end $$;
+
+create or replace function public.fm_contractor_link_make(p_contract uuid, p_renew boolean default false) returns text language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts; t text;
+begin
+  select * into c from public.fm_contracts where id = p_contract;
+  if c.id is null or not public.fm_bill_can('contract', c.region) then raise exception 'not allowed'; end if;
+  if not p_renew then select token into t from public.fm_contractor_links where contract_id = p_contract and active; if t is not null then return t; end if; end if;
+  update public.fm_contractor_links set active = false where contract_id = p_contract and active;
+  t := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+  insert into public.fm_contractor_links(contract_id, token) values (p_contract, t);
+  return t;
+end $$;
+create or replace function public.fm_contractor_link_revoke(p_contract uuid) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_bill_can('contract', (select region from public.fm_contracts where id = p_contract)) then raise exception 'not allowed'; end if;
+  update public.fm_contractor_links set active = false where contract_id = p_contract and active;
+end $$;
+create or replace function public.fm_contractor_links_list() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'code', c.code, 'name', c.name, 'contractor', c.contractor_name, 'region', c.region,
+    'phone', (select phone from public.profiles where id = c.contractor_id), 'token', l.token, 'last_used_at', l.last_used_at,
+    'open', (select count(*) from public.fm_bill_objections o where o.contract_id = c.id and o.status = 'open')) order by c.code), '[]'::jsonb)
+    from public.fm_contracts c left join public.fm_contractor_links l on l.contract_id = c.id and l.active
+   where c.active and public.fm_bill_can('contract', c.region) $$;
+
+create or replace function public.fm_contractor_portal(p_token text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts; held numeric;
+begin
+  c := public.fm_ct_token(p_token);
+  begin execute 'select public.fm_ret_held($1)' into held using c.id; exception when others then held := null; end;
+  return jsonb_build_object('company', coalesce((select company from public.fm_plan limit 1), ''),
+    'contract', jsonb_build_object('code', c.code, 'name', c.name, 'contractor', c.contractor_name, 'region', c.region, 'start', c.start_date, 'end', c.end_date,
+      'monthly', c.monthly_fixed, 'retention_pct', c.retention_pct, 'vat_pct', c.vat_pct, 'held', held),
+    'bills', coalesce((select jsonb_agg(jsonb_build_object('id', b.id, 'code', b.code, 'month', b.month, 'status', b.status, 'gross', b.gross, 'deductions', b.deductions,
+        'net', b.net, 'vat', b.vat, 'retention', b.retention, 'total', b.total, 'paid_at', b.paid_at,
+        'lines', coalesce((select jsonb_agg(jsonb_build_object('i', q.i - 1, 'k', q.x->>'k', 't', q.x->>'t', 'q', q.x->>'q', 'p', q.x->>'p', 'a', coalesce(nullif(q.x->>'a','')::numeric, coalesce(nullif(q.x->>'q','')::numeric,0) * coalesce(nullif(q.x->>'p','')::numeric,0))))
+           from jsonb_array_elements(case when jsonb_typeof(b.lines) = 'array' then b.lines else '[]' end) with ordinality q(x, i) where q.x->>'k' in ('ded','kpi','pen')), '[]'::jsonb)) order by b.month desc)
+      from public.fm_bills b where b.contract_id = c.id and b.status not in ('draft','cancelled')), '[]'::jsonb),
+    'objections', coalesce((select jsonb_agg(jsonb_build_object('code', o.code, 'bill', (select code from public.fm_bills where id = o.bill_id), 'line', o.line, 'amount', o.amount,
+        'text', o.text, 'status', o.status, 'response', o.response, 'at', o.at, 'dec_at', o.dec_at) order by o.at desc) from public.fm_bill_objections o where o.contract_id = c.id), '[]'::jsonb));
+end $$;
+
+create or replace function public.fm_contractor_objection(p_token text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare c public.fm_contracts; b public.fm_bills; ln jsonb; nid uuid; cd text; u uuid;
+begin
+  c := public.fm_ct_token(p_token);
+  if (select count(*) from public.fm_bill_objections where contract_id = c.id and at > now() - interval '1 day') >= 10 then raise exception 'too many today'; end if;
+  select * into b from public.fm_bills where id = nullif(p->>'bill_id','')::uuid and contract_id = c.id and status not in ('draft','cancelled');
+  if b.id is null then raise exception 'bill not found'; end if;
+  if length(btrim(coalesce(p->>'text',''))) < 5 then raise exception 'text required'; end if;
+  if nullif(p->>'line','') is not null then
+    select x into ln from jsonb_array_elements(case when jsonb_typeof(b.lines) = 'array' then b.lines else '[]' end) with ordinality q(x, i) where q.i - 1 = (p->>'line')::int;
+  end if;
+  insert into public.fm_bill_objections(contract_id, bill_id, line, amount, text)
+  values (c.id, b.id, left(ln->>'t', 300), case when ln is not null then coalesce(nullif(ln->>'a','')::numeric, coalesce(nullif(ln->>'q','')::numeric,0) * coalesce(nullif(ln->>'p','')::numeric,0)) end, left(btrim(p->>'text'), 1500))
+  returning id, code into nid, cd;
+  for u in select x.id from public.profiles x where x.active and (x.job_title in ('accountant','project_manager','ops_manager') or (x.job_title = 'area_manager' and c.region = any(coalesce(x.regions,'{}')))) loop
+    perform public.fm_push_add(u, 'bill', '📝 اعتراض من المقاول ' || c.contractor_name, b.code || coalesce(' — ' || left(ln->>'t',80), '') || ': ' || left(btrim(p->>'text'), 120), 'bill', 'ob-' || nid, true);
+  end loop;
+  return jsonb_build_object('code', cd);
+end $$;
+
+create or replace function public.fm_bill_objections_list(p_days int default 180) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', o.id, 'code', o.code, 'contract', c.code, 'contractor', c.contractor_name, 'region', c.region, 'bill', b.code, 'bill_status', b.status,
+     'month', b.month, 'line', o.line, 'amount', o.amount, 'text', o.text, 'status', o.status, 'response', o.response, 'dec_name', o.dec_name, 'at', o.at,
+     'can', public.fm_bill_can('review', c.region) or public.fm_bill_can('approve', c.region)) order by (o.status = 'open') desc, o.at desc), '[]'::jsonb)
+    from public.fm_bill_objections o join public.fm_contracts c on c.id = o.contract_id left join public.fm_bills b on b.id = o.bill_id
+   where o.at > now() - make_interval(days => least(greatest(coalesce(p_days,180),7),730)) and public.fm_bill_can('read', c.region) $$;
+create or replace function public.fm_bill_objection_act(p_id uuid, p_action text, p_response text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare o public.fm_bill_objections; r text;
+begin
+  select * into o from public.fm_bill_objections where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  r := (select region from public.fm_contracts where id = o.contract_id);
+  if not (public.fm_bill_can('review', r) or public.fm_bill_can('approve', r)) then raise exception 'not allowed'; end if;
+  if p_action not in ('accept','reject','answer') then raise exception 'invalid action'; end if;
+  if length(btrim(coalesce(p_response,''))) < 3 then raise exception 'response required'; end if;
+  update public.fm_bill_objections set status = case p_action when 'accept' then 'accepted' when 'reject' then 'rejected' else 'answered' end,
+    response = left(btrim(p_response), 1500), dec_by = auth.uid(), dec_name = (select full_name from public.profiles where id = auth.uid()), dec_at = now() where id = p_id;
+  return jsonb_build_object('ok', true);
+end $$;
+revoke all on function public.fm_ct_token(text) from public, anon, authenticated;
+revoke all on function public.fm_contractor_link_make(uuid, boolean), public.fm_contractor_link_revoke(uuid), public.fm_contractor_links_list(), public.fm_bill_objections_list(int), public.fm_bill_objection_act(uuid, text, text) from public, anon;
+grant execute on function public.fm_contractor_link_make(uuid, boolean), public.fm_contractor_link_revoke(uuid), public.fm_contractor_links_list(), public.fm_bill_objections_list(int), public.fm_bill_objection_act(uuid, text, text) to authenticated;
+revoke all on function public.fm_contractor_portal(text), public.fm_contractor_objection(text, jsonb) from public;
+grant execute on function public.fm_contractor_portal(text), public.fm_contractor_objection(text, jsonb) to anon, authenticated;
+notify pgrst, 'reload schema';

@@ -4,7 +4,7 @@
 // page is served at its own address instead: the body of «/start» with status 200, no redirect.
 // Optional: env variable CANONICAL_HOST (e.g. app.example.com) sends visitors of any other host
 // (the *.pages.dev address) to it, keeping the path, query and hash.
-const PAGES = new Set(['index', 'field', 'start', 'rate', 'school', 'supplier', 'saas', 'try']);
+const PAGES = new Set(['index', 'field', 'start', 'rate', 'school', 'supplier', 'contractor', 'saas', 'try']);
 
 export default {
   async fetch(request, env) {
