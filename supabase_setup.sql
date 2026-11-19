@@ -18678,3 +18678,133 @@ notify pgrst, 'reload schema';
 create or replace function public.fm_v374_ok() returns boolean language sql stable as $$ select true $$;
 grant execute on function public.fm_v374_ok() to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 115) V375 — leave requests from the field app, approved by the manager with the deputy set on approval ----------
+-- fm_leave_requests (LV-YYYY-####, user, kind annual / sick / emergency / other, from_on / to_on (≤ 60 days, not before yesterday),
+-- reason, note, status pending / approved / rejected / cancelled, deputy / deputy_name (set when approved), dec_*; RLS on, no
+-- policies, no grants; no overlap with another pending / approved leave of the same person). fm_leave_can(user) = the person's
+-- reports_to, the managers above him (fm_is_under_base), admin / sysadmin / project / ops manager, area manager of his regions —
+-- never himself. fm_leave_request(p) → push «leave» (hash leave) to reports_to (else the area managers of his regions);
+-- fm_leave_act(id, approve {deputy?} | reject {note} | cancel (owner, pending)) — approve with a deputy runs fm_deputy_assign
+-- (from 00:00 to 24:00 Riyadh), so the orders move to the deputy (V166); a supervisor / contractor (no deputy rules) is approved
+-- without one. fm_leave_list(days) {me, rows (mine + those I may decide, can), candidates (fm_deputy_candidates)}. The morning
+-- absence alert (fm_v371_absent, redefined) skips people on an approved leave today.
+create sequence if not exists public.fm_leave_seq;
+create table if not exists public.fm_leave_requests (
+  id uuid primary key default gen_random_uuid(),
+  code text unique not null default ('LV-' || to_char(now() at time zone 'Asia/Riyadh','YYYY') || '-' || lpad(nextval('public.fm_leave_seq')::text, 4, '0')),
+  user_id uuid not null references public.profiles(id) on delete cascade, user_name text,
+  kind text not null default 'annual' check (kind in ('annual','sick','emergency','other')),
+  from_on date not null, to_on date not null, reason text, note text,
+  status text not null default 'pending' check (status in ('pending','approved','rejected','cancelled')),
+  deputy uuid references public.profiles(id) on delete set null, deputy_name text, deputy_rec uuid,
+  dec_by uuid, dec_name text, dec_at timestamptz, dec_note text, at timestamptz not null default now(),
+  check (to_on >= from_on));
+alter table public.fm_leave_requests enable row level security;
+revoke all on public.fm_leave_requests from anon, authenticated;
+
+create or replace function public.fm_leave_can(p_user uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(p_user <> auth.uid() and exists(select 1 from public.profiles me, public.profiles pr where me.id = auth.uid() and me.active and pr.id = p_user and (
+    pr.reports_to = me.id or public.fm_is_under_base(pr.id, me.id) or me.role = 'admin' or me.job_title in ('sysadmin','project_manager','ops_manager')
+    or (me.job_title = 'area_manager' and coalesce(pr.regions,'{}') && coalesce(me.regions,'{}')))), false) $$;
+
+create or replace function public.fm_leave_request(p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare a date := nullif(p->>'from','')::date; b date := nullif(p->>'to','')::date; me public.profiles; nid uuid; cd text; u uuid; r text;
+begin
+  select * into me from public.profiles where id = auth.uid();
+  if me.id is null or not me.active or me.role in ('pending','viewer') then raise exception 'not allowed'; end if;
+  if a is null or b is null or b < a or b - a > 60 or a < (now() at time zone 'Asia/Riyadh')::date - 1 then raise exception 'invalid period'; end if;
+  if exists(select 1 from public.fm_leave_requests where user_id = me.id and status in ('pending','approved') and from_on <= b and to_on >= a) then raise exception 'overlap'; end if;
+  if (select count(*) from public.fm_leave_requests where user_id = me.id and at > now() - interval '1 day') >= 10 then raise exception 'too many today'; end if;
+  insert into public.fm_leave_requests(user_id, user_name, kind, from_on, to_on, reason, note)
+  values (me.id, coalesce(nullif(me.full_name,''), me.email), case when p->>'kind' in ('annual','sick','emergency','other') then p->>'kind' else 'annual' end, a, b,
+          left(nullif(btrim(coalesce(p->>'reason','')),''),500), left(nullif(btrim(coalesce(p->>'note','')),''),500))
+  returning id, code into nid, cd;
+  if me.reports_to is not null then
+    perform public.fm_push_add(me.reports_to, 'leave', '🏖️ طلب إجازة: ' || coalesce(me.full_name,''), a || ' → ' || b || coalesce(' — ' || nullif(btrim(p->>'reason'),''), ''), 'leave', 'lv-' || nid, false);
+  else
+    for u in select x.id from public.profiles x where x.active and x.job_title = 'area_manager' and coalesce(x.regions,'{}') && coalesce(me.regions,'{}') loop
+      perform public.fm_push_add(u, 'leave', '🏖️ طلب إجازة: ' || coalesce(me.full_name,''), a || ' → ' || b, 'leave', 'lv-' || nid, false);
+    end loop;
+  end if;
+  return jsonb_build_object('id', nid, 'code', cd);
+end $$;
+
+create or replace function public.fm_leave_act(p_id uuid, p_action text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare l public.fm_leave_requests; nm text := (select full_name from public.profiles where id = auth.uid()); dp uuid := nullif(p->>'deputy','')::uuid; res jsonb; dn text;
+begin
+  select * into l from public.fm_leave_requests where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if l.status <> 'pending' and not (p_action = 'cancel' and l.status = 'approved' and l.from_on > (now() at time zone 'Asia/Riyadh')::date) then raise exception 'not pending'; end if;
+  if p_action = 'cancel' then
+    if l.user_id <> auth.uid() and not public.fm_leave_can(l.user_id) then raise exception 'not allowed'; end if;
+    if l.deputy_rec is not null then update public.fm_deputies set active = false, ended_at = now() where id = l.deputy_rec and active; perform public.fm_deputy_apply(); end if;
+    update public.fm_leave_requests set status = 'cancelled', dec_by = auth.uid(), dec_name = nm, dec_at = now() where id = p_id;
+    return jsonb_build_object('ok', true);
+  end if;
+  if not public.fm_leave_can(l.user_id) then raise exception 'not allowed'; end if;
+  if p_action = 'reject' then
+    if length(btrim(coalesce(p->>'note',''))) < 3 then raise exception 'note required'; end if;
+    update public.fm_leave_requests set status = 'rejected', dec_by = auth.uid(), dec_name = nm, dec_at = now(), dec_note = left(btrim(p->>'note'),500) where id = p_id;
+  elsif p_action = 'approve' then
+    if dp is not null then
+      res := public.fm_deputy_assign(l.user_id, dp, (l.from_on::timestamp) at time zone 'Asia/Riyadh', ((l.to_on + 1)::timestamp) at time zone 'Asia/Riyadh', 'إجازة ' || l.code, l.reason);
+      select coalesce(full_name, email) into dn from public.profiles where id = dp;
+    end if;
+    update public.fm_leave_requests set status = 'approved', dec_by = auth.uid(), dec_name = nm, dec_at = now(), dec_note = left(nullif(btrim(coalesce(p->>'note','')),''),500),
+      deputy = dp, deputy_name = dn, deputy_rec = nullif(res->>'id','')::uuid where id = p_id;
+  else raise exception 'invalid action'; end if;
+  perform public.fm_push_add(l.user_id, 'leave', case when p_action = 'approve' then '✅ اعتُمدت إجازتك ' else '⛔ لم تُعتمد إجازتك ' end || l.from_on || ' → ' || l.to_on,
+    coalesce(nm,'') || coalesce(' — النائب: ' || dn, '') || coalesce(' — ' || nullif(btrim(p->>'note'),''), ''), 'leave', 'lv-' || l.id, false);
+  return jsonb_build_object('ok', true, 'deputy', res);
+end $$;
+
+create or replace function public.fm_leave_list(p_days int default 120) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  return jsonb_build_object('me', auth.uid(),
+    'rows', coalesce((select jsonb_agg(to_jsonb(l) || jsonb_build_object('can', public.fm_leave_can(l.user_id), 'mine', l.user_id = auth.uid(),
+        'title', (select job_title from public.profiles where id = l.user_id)) order by (l.status = 'pending') desc, l.from_on desc)
+      from public.fm_leave_requests l where l.at > now() - make_interval(days => least(greatest(coalesce(p_days,120),7),730)) and (l.user_id = auth.uid() or public.fm_leave_can(l.user_id))), '[]'::jsonb),
+    'candidates', coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.full_name, 'title', c.job_title)) from public.fm_deputy_candidates() c), '[]'::jsonb));
+end $$;
+
+create or replace function public.fm_v371_absent(p_force boolean default false) returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_att_alert_cfg(); tz text := 'Asia/Riyadh'; nowr timestamp := now() at time zone tz; d date := (now() at time zone tz)::date;
+  r record; n int := 0; rg text;
+begin
+  if not p_force then
+    if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+    if extract(hour from nowr) < coalesce((c->>'hour')::int, 8) then return 0; end if;
+    if not (extract(dow from d)::int = any(array(select (jsonb_array_elements_text(coalesce(c->'days','[0,1,2,3,4]')))::int))) then return 0; end if;
+    if exists(select 1 from public.fm_daily_runs where job = 'att_absent' and day = d) then return 0; end if;
+  end if;
+  create temp table if not exists fm371_abs(id uuid, name text, boss uuid, regions text[]) on commit drop;
+  delete from fm371_abs;
+  insert into fm371_abs
+  select p.id, coalesce(nullif(p.full_name,''), p.email), p.reports_to, coalesce(p.regions,'{}')
+    from public.profiles p
+   where p.active and p.deleted_at is null and p.job_title = any(array(select jsonb_array_elements_text(coalesce(c->'titles','[]'))))
+     and exists(select 1 from public.fm_att a where a.user_id = p.id and a.day >= d - coalesce((c->>'recent')::int, 30) and a.day < d)
+     and not exists(select 1 from public.fm_att a where a.user_id = p.id and a.day = d)
+     and public.fm_tk_leave(p.id) is null
+     and not exists(select 1 from public.fm_leave_requests lr where lr.user_id = p.id and lr.status = 'approved' and d between lr.from_on and lr.to_on);
+  for r in select boss, array_agg(name order by name) names from fm371_abs where boss is not null group by boss loop
+    perform public.fm_alert_send(r.boss, 'att_absent', '🕒 لم يسجّلوا بدء الدوام (' || cardinality(r.names) || ')',
+      array_to_string(r.names[1:12], '، ') || case when cardinality(r.names) > 12 then ' …' else '' end, 'attabs', 'attabs-' || d, false);
+    n := n + 1;
+  end loop;
+  for rg in select distinct unnest(regions) from fm371_abs loop
+    for r in select p.id from public.profiles p where p.active and p.job_title = 'area_manager' and rg = any(coalesce(p.regions,'{}')) loop
+      perform public.fm_alert_send(r.id, 'att_absent', '🕒 لم يسجّلوا بدء الدوام — ' || case rg when 'riyadh' then 'الرياض' when 'qassim' then 'القصيم' else rg end,
+        (select count(*) || ' شخص: ' || array_to_string((array_agg(name order by name))[1:10], '، ') from fm371_abs where rg = any(regions)), 'attabs', 'attabs-' || rg || '-' || d, false);
+    end loop;
+  end loop;
+  insert into public.fm_daily_runs(job, day, n) values ('att_absent', d, (select count(*) from fm371_abs)) on conflict (job, day) do update set n = excluded.n, at = now();
+  return (select count(*) from fm371_abs);
+end $$;
+
+revoke all on function public.fm_v371_absent(boolean) from public, anon, authenticated;
+revoke all on function public.fm_leave_can(uuid), public.fm_leave_request(jsonb), public.fm_leave_act(uuid, text, jsonb), public.fm_leave_list(int) from public, anon;
+grant execute on function public.fm_leave_can(uuid), public.fm_leave_request(jsonb), public.fm_leave_act(uuid, text, jsonb), public.fm_leave_list(int) to authenticated;
+notify pgrst, 'reload schema';
