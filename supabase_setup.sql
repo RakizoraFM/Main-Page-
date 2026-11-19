@@ -18808,3 +18808,101 @@ revoke all on function public.fm_v371_absent(boolean) from public, anon, authent
 revoke all on function public.fm_leave_can(uuid), public.fm_leave_request(jsonb), public.fm_leave_act(uuid, text, jsonb), public.fm_leave_list(int) from public, anon;
 grant execute on function public.fm_leave_can(uuid), public.fm_leave_request(jsonb), public.fm_leave_act(uuid, text, jsonb), public.fm_leave_list(int) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 116) V376 — closing an accounting month ----------
+-- fm_periods (month: status open / closed, closed_*, note) + append-only fm_period_log (close / reopen, reason, by). While a month is
+-- closed, triggers refuse in that month: a new / edited / cancelled / returned contractor bill (approving and paying it stay allowed),
+-- workforce bonuses and overtime of the month (new, decided again), payroll batches (new, void), owner claims (new, amount changed,
+-- cancelled; invoicing / collecting stay allowed), owner collections and supplier payments dated in the month (new, void), cost-centre
+-- entries of the month (new, cancelled). The message names the month. Close: admin, sysadmin, accountant (fm_acct_can_set) — only a
+-- past or the current month; reopen: admin / sysadmin with a reason (≥ 5). fm_period_closed(month), fm_periods_list(months).
+create table if not exists public.fm_periods (month text primary key check (month ~ '^\d{4}-\d{2}$'), status text not null default 'open' check (status in ('open','closed')),
+  closed_by uuid, closed_name text, closed_at timestamptz, note text);
+create table if not exists public.fm_period_log (id bigint generated always as identity primary key, month text not null, action text not null check (action in ('close','reopen')),
+  reason text, by_id uuid default auth.uid(), by_name text, at timestamptz not null default now());
+alter table public.fm_periods enable row level security; alter table public.fm_period_log enable row level security;
+revoke all on public.fm_periods, public.fm_period_log from anon, authenticated;
+create or replace function public.fm_period_closed(p_month text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select status = 'closed' from public.fm_periods where month = p_month), false) $$;
+create or replace function public.fm_period_chk(p_month text) returns void language plpgsql stable security definer set search_path = public as $$
+begin
+  if p_month is not null and public.fm_period_closed(p_month) then
+    raise exception 'الشهر % مقفل محاسبياً — لا يمكن التعديل فيه إلا بعد إعادة فتحه من مدير النظام (period closed)', p_month using errcode = 'P0001';
+  end if;
+end $$;
+create or replace function public.fm_period_guard() returns trigger language plpgsql security definer set search_path = public as $$
+declare o jsonb := case when tg_op in ('UPDATE','DELETE') then to_jsonb(old) end; n jsonb := case when tg_op in ('INSERT','UPDATE') then to_jsonb(new) end; m text;
+begin
+  if coalesce(current_setting('fm.wipe', true), '') = '1' then return coalesce(new, old); end if;  -- the V190 / V329 reset
+  if tg_table_name = 'fm_bills' then
+    m := coalesce(n->>'month', o->>'month');
+    if tg_op = 'INSERT' or tg_op = 'DELETE' or (n->'lines') is distinct from (o->'lines') or (n->>'total') is distinct from (o->>'total')
+       or (n->>'status' in ('cancelled','draft','returned') and n->>'status' is distinct from o->>'status') then perform public.fm_period_chk(m); end if;
+  elsif tg_table_name in ('fm_wf_bonuses','fm_overtime') then
+    m := coalesce(n->>'month', o->>'month');
+    if tg_op <> 'UPDATE' or (n->>'status') is distinct from (o->>'status') or (n->>'amount') is distinct from (o->>'amount') or (n->>'appr_hours') is distinct from (o->>'appr_hours') then perform public.fm_period_chk(m); end if;
+  elsif tg_table_name = 'fm_pay_batches' then
+    m := coalesce(n->>'month', o->>'month');
+    if tg_op <> 'UPDATE' or (n->>'status') is distinct from (o->>'status') then perform public.fm_period_chk(m); end if;
+  elsif tg_table_name = 'fm_erp_owner_claims' then
+    m := coalesce(n->>'month', o->>'month');
+    if tg_op <> 'UPDATE' or (n->>'amount') is distinct from (o->>'amount') or (n->>'certified') is distinct from (o->>'certified') or (n->>'status' = 'cancelled' and o->>'status' <> 'cancelled') then perform public.fm_period_chk(m); end if;
+  elsif tg_table_name in ('fm_erp_collections','wo_supplier_payments') then
+    m := to_char(coalesce(n->>case when tg_table_name = 'fm_erp_collections' then 'rc_date' else 'pay_date' end, o->>case when tg_table_name = 'fm_erp_collections' then 'rc_date' else 'pay_date' end)::date, 'YYYY-MM');
+    if tg_op <> 'UPDATE' or (n->>'status') is distinct from (o->>'status') or (n->>'amount') is distinct from (o->>'amount') then perform public.fm_period_chk(m); end if;
+  elsif tg_table_name = 'fm_cc_entries' then
+    m := coalesce(n->>'month', o->>'month');
+    if tg_op <> 'UPDATE' or (n->>'cancelled') is distinct from (o->>'cancelled') or (n->>'amount') is distinct from (o->>'amount') then perform public.fm_period_chk(m); end if;
+  end if;
+  return coalesce(new, old);
+end $$;
+do $do$ declare t text; begin
+  foreach t in array array['fm_bills','fm_wf_bonuses','fm_overtime','fm_pay_batches','fm_erp_owner_claims','fm_erp_collections','wo_supplier_payments','fm_cc_entries'] loop
+    begin
+      execute format('drop trigger if exists fm_period_guard on public.%I', t);
+      execute format('create trigger fm_period_guard before insert or update or delete on public.%I for each row execute function public.fm_period_guard()', t);
+    exception when undefined_table then null; end;
+  end loop;
+end $do$;
+
+create or replace function public.fm_period_close(p_month text, p_note text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare nm text := (select full_name from public.profiles where id = auth.uid());
+begin
+  if not public.fm_acct_can_set() then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' or p_month > to_char(now() at time zone 'Asia/Riyadh', 'YYYY-MM') then raise exception 'invalid month'; end if;
+  insert into public.fm_periods(month, status, closed_by, closed_name, closed_at, note) values (p_month, 'closed', auth.uid(), nm, now(), left(nullif(btrim(coalesce(p_note,'')),''),500))
+    on conflict (month) do update set status = 'closed', closed_by = auth.uid(), closed_name = nm, closed_at = now(), note = excluded.note;
+  insert into public.fm_period_log(month, action, reason, by_name) values (p_month, 'close', p_note, nm);
+  insert into public.fm_audit_log(actor_name, action, target, details) values (coalesce(nm,''), 'period_close', p_month, jsonb_build_object('note', p_note));
+  return jsonb_build_object('ok', true);
+end $$;
+create or replace function public.fm_period_reopen(p_month text, p_reason text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare nm text := (select full_name from public.profiles where id = auth.uid());
+begin
+  if not (public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin') then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p_reason,''))) < 5 then raise exception 'reason required'; end if;
+  update public.fm_periods set status = 'open' where month = p_month and status = 'closed';
+  if not found then raise exception 'not closed'; end if;
+  insert into public.fm_period_log(month, action, reason, by_name) values (p_month, 'reopen', btrim(p_reason), nm);
+  insert into public.fm_audit_log(actor_name, action, target, details) values (coalesce(nm,''), 'period_reopen', p_month, jsonb_build_object('reason', p_reason));
+  return jsonb_build_object('ok', true);
+end $$;
+create or replace function public.fm_periods_list(p_months int default 18) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ms text[];
+begin
+  if not public.fm_acct_can() then raise exception 'not allowed'; end if;
+  ms := array(select to_char(date_trunc('month', now() at time zone 'Asia/Riyadh') - make_interval(months => g), 'YYYY-MM') from generate_series(0, least(greatest(coalesce(p_months,18),1),60) - 1) g);
+  return jsonb_build_object('can_close', public.fm_acct_can_set(), 'can_reopen', public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin',
+    'rows', (select jsonb_agg(jsonb_build_object('month', m, 'status', coalesce(p.status,'open'), 'closed_name', p.closed_name, 'closed_at', p.closed_at, 'note', p.note,
+       'bills', (select count(*) from public.fm_bills b where b.month = m and b.status <> 'cancelled'),
+       'bills_open', (select count(*) from public.fm_bills b where b.month = m and b.status in ('draft','submitted','reviewed','returned')),
+       'bonus_pending', (select count(*) from public.fm_wf_bonuses x where x.month = m and x.status = 'pending'),
+       'ot_pending', (select count(*) from public.fm_overtime x where x.month = m and x.status = 'pending'),
+       'unpaid', (select count(*) from public.fm_wf_bonuses x where x.month = m and x.status = 'approved' and x.paid_batch is null) + (select count(*) from public.fm_overtime x where x.month = m and x.status = 'approved' and x.paid_batch is null and coalesce(x.cost,0) > 0)) order by m desc)
+      from unnest(ms) m left join public.fm_periods p on p.month = m),
+    'log', coalesce((select jsonb_agg(to_jsonb(l) order by l.at desc) from (select * from public.fm_period_log order by at desc limit 60) l), '[]'::jsonb));
+end $$;
+revoke all on function public.fm_period_guard(), public.fm_period_chk(text) from public, anon, authenticated;
+revoke all on function public.fm_period_closed(text), public.fm_period_close(text, text), public.fm_period_reopen(text, text), public.fm_periods_list(int) from public, anon;
+grant execute on function public.fm_period_closed(text), public.fm_period_close(text, text), public.fm_period_reopen(text, text), public.fm_periods_list(int) to authenticated;
+notify pgrst, 'reload schema';
