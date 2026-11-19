@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 rm -rf dist && mkdir -p dist
-cp index.html field.html start.html rate.html school.html supplier.html contractor.html saas.html try.html dist/
+cp index.html field.html start.html rate.html school.html supplier.html contractor.html owner.html saas.html try.html dist/
 # Public marketing pages linked from the shared header must be present in the Pages artifact.
 cp services.html rakizora.html solvix.html partners.html contact.html dist/
 cp integrations.html dist/

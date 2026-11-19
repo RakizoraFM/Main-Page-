@@ -9,7 +9,7 @@
 'use strict';
 const SHELL = 'fm-shell-v330', PAGES = 'fm-pages', LIBS = 'fm-libs', TILES = 'fm-tiles', TILE_MAX = 3000;
 const SHELL_FILES = ['start.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
-const APP_PAGES = new Set(['start.html', 'index.html', 'field.html', 'school.html', 'rate.html', 'try.html', 'saas.html', 'supplier.html', 'contractor.html']);
+const APP_PAGES = new Set(['start.html', 'index.html', 'field.html', 'school.html', 'rate.html', 'try.html', 'saas.html', 'supplier.html', 'contractor.html', 'owner.html']);
 const LIB_HOST = /^(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)$/;
 const TILE_HOST = /(^|\.)tile\.openstreetmap\.org$/;
 const at = (p) => new URL(p, self.registration.scope).href;

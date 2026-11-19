@@ -19233,3 +19233,121 @@ do $do$ begin
   perform cron.schedule('fm-v382-sr', '*/15 * * * *', 'select public.fm_v382_sr_run()');
 exception when others then raise notice 'pg_cron not available: %', sqlerrm; end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 121) V383 — read-only link for the owner (no account): published reports, requests and work-order figures ----------
+-- A private link owner.html?k=<64 hex> per person of the owner side (name, regions — empty = all, end date). The platform
+-- PUBLISHES a report (client dashboard / monthly report HTML made in the browser) for a month and region; the link shows
+-- the published reports of its regions plus live counts of school requests and work orders (6 months). Nothing else.
+create table if not exists public.fm_owner_links (
+  id uuid primary key default gen_random_uuid(), token text not null unique, name text not null, regions text[] not null default '{}',
+  active boolean not null default true, expires_at date, created_by uuid default auth.uid(), created_by_name text,
+  created_at timestamptz not null default now(), last_used_at timestamptz, uses int not null default 0
+);
+create table if not exists public.fm_owner_snaps (
+  id uuid primary key default gen_random_uuid(), month text not null check (month ~ '^\d{4}-\d{2}$'), region text not null default '',
+  kind text not null check (kind in ('client','monthly')), title text, html text not null check (length(html) <= 4000000),
+  by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(), unique (month, region, kind)
+);
+alter table public.fm_owner_links enable row level security;
+alter table public.fm_owner_snaps enable row level security;
+revoke all on public.fm_owner_links, public.fm_owner_snaps from anon, authenticated;
+
+create or replace function public.fm_owner_can() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or exists (select 1 from public.profiles where id = auth.uid() and active
+    and job_title in ('sysadmin','dept_manager','project_manager','ops_manager')))
+$$;
+create or replace function public.fm_owner_link_make(p_name text, p_regions text[], p_until date) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare t text := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', ''); r public.fm_owner_links;
+begin
+  if not public.fm_owner_can() then raise exception 'not allowed'; end if;
+  if length(coalesce(trim(p_name), '')) < 2 then raise exception 'name required'; end if;
+  if p_until is not null and p_until < current_date then raise exception 'bad date'; end if;
+  insert into public.fm_owner_links (token, name, regions, expires_at, created_by_name)
+  values (t, trim(p_name), coalesce(p_regions, '{}'), p_until, (select coalesce(full_name, email) from public.profiles where id = auth.uid()))
+  returning * into r;
+  insert into public.fm_audit_log (actor_name, action, target, details) values (r.created_by_name, 'owner_link', r.id::text, jsonb_build_object('name', r.name, 'regions', r.regions, 'until', r.expires_at));
+  return to_jsonb(r);
+end $$;
+create or replace function public.fm_owner_link_revoke(p_id uuid) returns boolean language plpgsql security definer set search_path = public as $$
+begin if not public.fm_owner_can() then raise exception 'not allowed'; end if;
+  update public.fm_owner_links set active = false where id = p_id; return found; end $$;
+create or replace function public.fm_owner_links_list() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin if not public.fm_owner_can() then raise exception 'not allowed'; end if;
+  return jsonb_build_object(
+    'links', coalesce((select jsonb_agg(to_jsonb(l) order by l.active desc, l.created_at desc) from public.fm_owner_links l), '[]'::jsonb),
+    'snaps', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'month', s.month, 'region', s.region, 'kind', s.kind, 'title', s.title, 'by', s.by_name, 'at', s.at, 'size', length(s.html)) order by s.month desc, s.kind) from public.fm_owner_snaps s), '[]'::jsonb));
+end $$;
+create or replace function public.fm_owner_snap_publish(p_month text, p_region text, p_kind text, p_title text, p_html text) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare id_ uuid;
+begin
+  if not public.fm_owner_can() then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' or p_kind not in ('client','monthly') then raise exception 'bad report'; end if;
+  if p_html is null or length(p_html) < 50 or length(p_html) > 4000000 then raise exception 'bad report'; end if;
+  insert into public.fm_owner_snaps (month, region, kind, title, html, by_name)
+  values (p_month, coalesce(p_region, ''), p_kind, left(p_title, 200), p_html, (select coalesce(full_name, email) from public.profiles where id = auth.uid()))
+  on conflict (month, region, kind) do update set html = excluded.html, title = excluded.title, by_id = auth.uid(), by_name = excluded.by_name, at = now()
+  returning id into id_;
+  return id_;
+end $$;
+create or replace function public.fm_owner_snap_del(p_id uuid) returns boolean language plpgsql security definer set search_path = public as $$
+begin if not public.fm_owner_can() then raise exception 'not allowed'; end if; delete from public.fm_owner_snaps where id = p_id; return found; end $$;
+
+create or replace function public.fm_owner_tok(p_token text) returns public.fm_owner_links language plpgsql security definer set search_path = public as $$
+declare l public.fm_owner_links;
+begin
+  select * into l from public.fm_owner_links where token = lower(trim(p_token)) and active and (expires_at is null or expires_at >= current_date);
+  if not found then raise exception 'invalid link'; end if;
+  update public.fm_owner_links set last_used_at = now(), uses = uses + 1 where id = l.id;
+  return l;
+end $$;
+create or replace function public.fm_owner_portal(p_token text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare l public.fm_owner_links := public.fm_owner_tok(p_token); since date := (date_trunc('month', now() at time zone 'Asia/Riyadh') - interval '5 months')::date;
+  allr boolean := coalesce(array_length(l.regions, 1), 0) = 0; reqs jsonb := '[]'; wos jsonb := '[]';
+begin
+  begin
+    select coalesce(jsonb_agg(x order by x->>'m'), '[]') into reqs from (
+      select jsonb_build_object('m', to_char(created_at at time zone 'Asia/Riyadh', 'YYYY-MM'), 'n', count(*),
+        'done', count(*) filter (where status = 'done'), 'open', count(*) filter (where status in ('new','accepted','in_progress')),
+        'rejected', count(*) filter (where status = 'rejected'),
+        'reply_h', round((avg(extract(epoch from first_at - created_at) / 3600) filter (where first_at is not null))::numeric, 1),
+        'rating', round(avg(rating)::numeric, 1)) x
+      from public.fm_school_requests where created_at >= since and (allr or region = any(l.regions)) group by 1) q;
+  exception when others then reqs := '[]'; end;
+  begin
+    select coalesce(jsonb_agg(x order by x->>'m'), '[]') into wos from (
+      select jsonb_build_object('m', m, 'created', sum(c), 'closed', sum(cl), 'pm_due', sum(pd), 'pm_done', sum(pdn)) x from (
+        select to_char(created_at at time zone 'Asia/Riyadh', 'YYYY-MM') m, 1 c, 0 cl, 0 pd, 0 pdn from public.work_orders
+          where created_at >= since and status not in ('cancelled','rejected') and (allr or region = any(l.regions))
+        union all select to_char(closed_at at time zone 'Asia/Riyadh', 'YYYY-MM'), 0, 1, 0, 0 from public.work_orders
+          where closed_at >= since and status = 'closed' and (allr or region = any(l.regions))
+        union all select to_char(due_at at time zone 'Asia/Riyadh', 'YYYY-MM'), 0, 0, 1, case when status = 'closed' then 1 else 0 end from public.work_orders
+          where type = 'preventive' and due_at >= since and status not in ('cancelled','rejected') and (allr or region = any(l.regions))
+      ) z group by m) q;
+  exception when others then wos := '[]'; end;
+  return jsonb_build_object('name', l.name, 'regions', l.regions, 'until', l.expires_at,
+    'company', (select company from public.fm_plan limit 1),
+    'snaps', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'month', s.month, 'region', s.region, 'kind', s.kind, 'title', s.title, 'at', s.at) order by s.month desc, s.kind)
+       from public.fm_owner_snaps s where allr or s.region = '' or s.region = any(l.regions)), '[]'::jsonb),
+    'requests', reqs, 'orders', wos,
+    'open_now', jsonb_build_object(
+       'requests', (select count(*) from public.fm_school_requests where status in ('new','accepted','in_progress') and (allr or region = any(l.regions))),
+       'orders', (select count(*) from public.work_orders where status in ('assigned','accepted','in_progress','returned','done') and (allr or region = any(l.regions))),
+       'late', (select count(*) from public.work_orders where status in ('assigned','accepted','in_progress','returned') and due_at < now() and (allr or region = any(l.regions)))));
+exception when undefined_table or undefined_column then
+  return jsonb_build_object('name', l.name, 'regions', l.regions, 'until', l.expires_at, 'snaps', '[]'::jsonb, 'requests', reqs, 'orders', wos);
+end $$;
+create or replace function public.fm_owner_snap(p_token text, p_id uuid) returns jsonb language plpgsql security definer set search_path = public as $$
+declare l public.fm_owner_links := public.fm_owner_tok(p_token); s public.fm_owner_snaps;
+begin
+  select * into s from public.fm_owner_snaps where id = p_id;
+  if not found or not (coalesce(array_length(l.regions, 1), 0) = 0 or s.region = '' or s.region = any(l.regions)) then raise exception 'not found'; end if;
+  return jsonb_build_object('title', s.title, 'month', s.month, 'region', s.region, 'kind', s.kind, 'at', s.at, 'html', s.html);
+end $$;
+revoke all on function public.fm_owner_can(), public.fm_owner_link_make(text, text[], date), public.fm_owner_link_revoke(uuid), public.fm_owner_links_list(),
+  public.fm_owner_snap_publish(text, text, text, text, text), public.fm_owner_snap_del(uuid), public.fm_owner_tok(text), public.fm_owner_portal(text), public.fm_owner_snap(text, uuid) from public;
+grant execute on function public.fm_owner_can(), public.fm_owner_link_make(text, text[], date), public.fm_owner_link_revoke(uuid), public.fm_owner_links_list(),
+  public.fm_owner_snap_publish(text, text, text, text, text), public.fm_owner_snap_del(uuid) to authenticated;
+grant execute on function public.fm_owner_portal(text), public.fm_owner_snap(text, uuid) to anon, authenticated;
+notify pgrst, 'reload schema';
