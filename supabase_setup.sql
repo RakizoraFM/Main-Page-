@@ -19351,3 +19351,135 @@ grant execute on function public.fm_owner_can(), public.fm_owner_link_make(text,
   public.fm_owner_snap_publish(text, text, text, text, text), public.fm_owner_snap_del(uuid) to authenticated;
 grant execute on function public.fm_owner_portal(text), public.fm_owner_snap(text, uuid) to anon, authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 122) V386 — expiry dates of consumables (lots) and first-expiry-first-out ----------
+-- An item marked `exp_track` keeps lots per store (quantity left, expiry date). Lots are recorded when the goods arrive
+-- (fm_lot_add). Every outgoing stock move of a tracked item (out / issue / transfer / dispose / claim_out) takes its quantity
+-- from the lots of that store with the EARLIEST expiry first (trigger fm_lot_fefo); an incoming transfer creates a lot with
+-- the expiry of the lots it left. Daily (pg_cron fm-v386-daily 05:25 UTC): push wh_exp to the keepers of the region for lots
+-- expiring within the item's warn days (default 30) and once when a lot has expired with quantity left.
+alter table public.wo_materials add column if not exists exp_track boolean not null default false;
+alter table public.wo_materials add column if not exists exp_warn int not null default 30;
+create table if not exists public.wo_stock_lots (
+  id uuid primary key default gen_random_uuid(), store_id uuid not null references public.wo_stores(id) on delete cascade,
+  material_id uuid not null references public.wo_materials(id) on delete cascade, qty_in numeric(14,3) not null check (qty_in > 0),
+  qty_left numeric(14,3) not null check (qty_left >= 0), expiry date not null, lot_no text, ref text, note text,
+  by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(), warned text
+);
+create index if not exists wo_stock_lots_fefo_idx on public.wo_stock_lots (store_id, material_id, expiry) where qty_left > 0;
+alter table public.wo_stock_lots enable row level security;
+drop policy if exists p_lots_read on public.wo_stock_lots;
+create policy p_lots_read on public.wo_stock_lots for select using (public.fm_role() in ('admin','manager','staff','engineer','viewer'));
+revoke all on public.wo_stock_lots from anon, authenticated;
+grant select on public.wo_stock_lots to authenticated;
+
+create or replace function public.fm_mat_exp_set(p_id uuid, p_on boolean, p_warn int) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_wh_edit() then raise exception 'not allowed'; end if;
+  update public.wo_materials set exp_track = coalesce(p_on, exp_track), exp_warn = greatest(1, least(coalesce(p_warn, exp_warn), 365)) where id = p_id;
+  return found;
+end $$;
+
+create or replace function public.fm_lot_add(p_store uuid, p_material uuid, p_qty numeric, p_expiry date, p_lot text, p_ref text, p_note text) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; id_ uuid;
+begin
+  select * into st from public.wo_stores where id = p_store;
+  if not found or auth.uid() is null or not (public.fm_stock_can(st.region) or public.fm_wh_keeper(p_store)) then raise exception 'not allowed'; end if;
+  if coalesce(p_qty, 0) <= 0 then raise exception 'qty required'; end if;
+  if p_expiry is null then raise exception 'expiry required'; end if;
+  if not exists (select 1 from public.wo_materials where id = p_material) then raise exception 'item not found'; end if;
+  update public.wo_materials set exp_track = true where id = p_material and not exp_track;
+  insert into public.wo_stock_lots (store_id, material_id, qty_in, qty_left, expiry, lot_no, ref, note, by_name)
+  values (p_store, p_material, p_qty, p_qty, p_expiry, nullif(trim(p_lot), ''), nullif(trim(p_ref), ''), nullif(trim(p_note), ''),
+          (select coalesce(full_name, email) from public.profiles where id = auth.uid()))
+  returning id into id_;
+  return id_;
+end $$;
+-- correct a lot (count / wrong date); quantity may only go down to 0 or be re-set within what came in
+create or replace function public.fm_lot_edit(p_id uuid, p_left numeric, p_expiry date, p_note text) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare l public.wo_stock_lots; st public.wo_stores;
+begin
+  select * into l from public.wo_stock_lots where id = p_id for update;
+  if not found then return false; end if;
+  select * into st from public.wo_stores where id = l.store_id;
+  if auth.uid() is null or not (public.fm_stock_can(st.region) or public.fm_wh_keeper(l.store_id)) then raise exception 'not allowed'; end if;
+  if p_left is not null and (p_left < 0 or p_left > l.qty_in) then raise exception 'bad qty'; end if;
+  update public.wo_stock_lots set qty_left = coalesce(p_left, qty_left), expiry = coalesce(p_expiry, expiry),
+    note = coalesce(nullif(trim(p_note), ''), note), warned = case when p_expiry is not null and p_expiry <> l.expiry then null else warned end where id = p_id;
+  return true;
+end $$;
+
+create or replace function public.fm_lot_fefo() returns trigger language plpgsql security definer set search_path = public as $$
+declare need numeric; l record; take numeric; ex date;
+begin
+  begin
+    if not exists (select 1 from public.wo_materials where id = new.material_id and exp_track) then return new; end if;
+    if new.qty < 0 and new.kind in ('out','issue','transfer','dispose','claim_out','adjust','scrap') then
+      need := -new.qty;
+      for l in select id, qty_left from public.wo_stock_lots where store_id = new.store_id and material_id = new.material_id and qty_left > 0
+               order by expiry, at for update loop
+        exit when need <= 0;
+        take := least(need, l.qty_left);
+        update public.wo_stock_lots set qty_left = qty_left - take where id = l.id;
+        need := need - take;
+      end loop;
+    elsif new.qty > 0 and new.kind = 'transfer' and new.ref is not null then
+      -- an incoming transfer takes the earliest expiry of the source lots of the same transfer reference (best effort)
+      select min(x.expiry) into ex from public.wo_stock_lots x join public.wo_stock_moves m
+        on m.ref = new.ref and m.material_id = new.material_id and m.qty < 0 and m.store_id = x.store_id
+       where x.material_id = new.material_id;
+      if ex is not null then
+        insert into public.wo_stock_lots (store_id, material_id, qty_in, qty_left, expiry, ref, note, by_name)
+        values (new.store_id, new.material_id, new.qty, new.qty, ex, new.ref, 'تحويل', new.by_name);
+      end if;
+    end if;
+  exception when others then null;
+  end;
+  return new;
+end $$;
+drop trigger if exists fm_lot_fefo on public.wo_stock_moves;
+create trigger fm_lot_fefo after insert on public.wo_stock_moves for each row execute function public.fm_lot_fefo();
+
+create or replace function public.fm_lots_list(p_days int default 3650) returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'can', public.fm_wh_edit() or exists (select 1 from public.wo_stores s where s.active and (public.fm_stock_can(s.region) or public.fm_wh_keeper(s.id))),
+    'lots', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'store_id', l.store_id, 'store', s.name, 'region', s.region, 'material_id', l.material_id,
+        'name', m.name, 'code', m.code, 'unit', m.unit, 'qty_in', l.qty_in, 'qty_left', l.qty_left, 'expiry', l.expiry, 'lot_no', l.lot_no, 'ref', l.ref, 'note', l.note,
+        'by', l.by_name, 'at', l.at, 'days', l.expiry - (now() at time zone 'Asia/Riyadh')::date, 'warn', m.exp_warn) order by l.expiry, s.name)
+      from public.wo_stock_lots l join public.wo_stores s on s.id = l.store_id join public.wo_materials m on m.id = l.material_id
+      where public.fm_role() in ('admin','manager','staff','engineer','viewer')
+        and (l.qty_left > 0 or l.at > now() - make_interval(days => greatest(1, least(coalesce(p_days, 3650), 3650))))), '[]'::jsonb),
+    'tracked', coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name, 'code', m.code, 'unit', m.unit, 'warn', m.exp_warn,
+        'bal', (select coalesce(jsonb_agg(jsonb_build_object('store_id', k.store_id, 'qty', k.qty)), '[]'::jsonb) from public.wo_stock k where k.material_id = m.id and k.qty <> 0)))
+      from public.wo_materials m where m.exp_track and public.fm_role() in ('admin','manager','staff','engineer','viewer')), '[]'::jsonb))
+$$;
+
+create or replace function public.fm_v386_daily() returns int language plpgsql security definer set search_path = public as $$
+declare r record; k uuid; n int := 0; lvl text;
+begin
+  for r in select l.*, m.name mname, m.exp_warn, s.region, s.name sname, l.expiry - (now() at time zone 'Asia/Riyadh')::date as d
+             from public.wo_stock_lots l join public.wo_materials m on m.id = l.material_id join public.wo_stores s on s.id = l.store_id
+            where l.qty_left > 0 and l.expiry - (now() at time zone 'Asia/Riyadh')::date <= m.exp_warn loop
+    lvl := case when r.d < 0 then 'exp' when r.d <= 7 then '7' else 'warn' end;
+    continue when r.warned = lvl;
+    for k in select * from public.fm_wh_keepers_of(r.region) loop
+      perform public.fm_alert_send(k, 'wh_exp', case when r.d < 0 then '⛔ صنف منتهي الصلاحية: ' else '⏳ صلاحية تقترب: ' end || r.mname,
+        r.sname || ' — ' || trim(to_char(r.qty_left, 'FM999999990.###')) || ' — ' || case when r.d < 0 then 'انتهت ' || r.expiry::text else 'تنتهي ' || r.expiry::text || ' (بعد ' || r.d || ' يوم)' end,
+        'wh=exp', 'exp-' || r.id::text, true);
+    end loop;
+    update public.wo_stock_lots set warned = lvl where id = r.id;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_v386_daily(), public.fm_lot_fefo() from public, anon, authenticated;
+revoke all on function public.fm_mat_exp_set(uuid, boolean, int), public.fm_lot_add(uuid, uuid, numeric, date, text, text, text), public.fm_lot_edit(uuid, numeric, date, text), public.fm_lots_list(int) from public, anon;
+grant execute on function public.fm_mat_exp_set(uuid, boolean, int), public.fm_lot_add(uuid, uuid, numeric, date, text, text, text), public.fm_lot_edit(uuid, numeric, date, text), public.fm_lots_list(int) to authenticated;
+do $do$ begin
+  perform cron.unschedule('fm-v386-daily') where exists (select 1 from cron.job where jobname = 'fm-v386-daily');
+  perform cron.schedule('fm-v386-daily', '25 5 * * *', 'select public.fm_v386_daily()');
+exception when others then raise notice 'pg_cron not available: %', sqlerrm; end $do$;
+notify pgrst, 'reload schema';
