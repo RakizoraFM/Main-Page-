@@ -18539,3 +18539,142 @@ revoke all on function public.fm_signoff_can_req(text), public.fm_signoff_is_rep
 grant execute on function public.fm_signoff_can_req(text), public.fm_signoff_is_rep(), public.fm_signoff_request(text, text, text, jsonb), public.fm_signoff_act(uuid, text, text, text),
   public.fm_signoff_list(int), public.fm_signoff_get(uuid) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 114) V374 — the automatic alerts also by WhatsApp for people without a phone notification ----------
+-- fm_alert_send(user, kind, title, body, hash, tag, self) = fm_push_add; when that sends nothing because the person has no device
+-- (or push is off for the company) and he did not turn the kind off, and fm_settings.wa.templates has a template for the kind
+-- (att_absent / wf_doc / meter, body {{1}} name, {{2}} title, {{3}} details), it queues a WhatsApp message to profiles.phone
+-- (fm_wa_add: once per kind + tag in 10 minutes). fm_v371_absent, fm_v371_docs and fm_meter_spike are redefined to use it.
+create or replace function public.fm_alert_send(p_user uuid, p_kind text, p_title text, p_body text, p_hash text, p_tag text, p_self boolean default false)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare ok boolean := false; pr public.profiles;
+begin
+  begin ok := public.fm_push_add(p_user, p_kind, p_title, p_body, p_hash, p_tag, p_self); exception when others then ok := false; end;
+  if coalesce(ok, false) then return true; end if;
+  begin
+    select * into pr from public.profiles where id = p_user;
+    if pr.id is null or not pr.active or coalesce(btrim(pr.phone),'') = '' then return false; end if;
+    if exists(select 1 from public.fm_push_subs where user_id = p_user) and coalesce((public.fm_setting('push')->>'enabled')::boolean, false) then return false; end if;
+    if exists(select 1 from public.fm_push_prefs where user_id = p_user and p_kind = any(off)) then return false; end if;
+    perform public.fm_wa_add(pr.phone, p_kind, array[coalesce(nullif(pr.full_name,''), 'زميلنا'), left(coalesce(p_title,''), 120), left(coalesce(p_body,''), 500)], p_kind, coalesce(p_tag, p_kind) || ':' || p_user);
+    return true;
+  exception when others then return false; end;
+end $$;
+revoke all on function public.fm_alert_send(uuid, text, text, text, text, text, boolean) from public, anon, authenticated;
+
+create or replace function public.fm_v371_absent(p_force boolean default false) returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_att_alert_cfg(); tz text := 'Asia/Riyadh'; nowr timestamp := now() at time zone tz; d date := (now() at time zone tz)::date;
+  r record; n int := 0; rg text;
+begin
+  if not p_force then
+    if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+    if extract(hour from nowr) < coalesce((c->>'hour')::int, 8) then return 0; end if;
+    if not (extract(dow from d)::int = any(array(select (jsonb_array_elements_text(coalesce(c->'days','[0,1,2,3,4]')))::int))) then return 0; end if;
+    if exists(select 1 from public.fm_daily_runs where job = 'att_absent' and day = d) then return 0; end if;
+  end if;
+  create temp table if not exists fm371_abs(id uuid, name text, boss uuid, regions text[]) on commit drop;
+  delete from fm371_abs;
+  insert into fm371_abs
+  select p.id, coalesce(nullif(p.full_name,''), p.email), p.reports_to, coalesce(p.regions,'{}')
+    from public.profiles p
+   where p.active and p.deleted_at is null and p.job_title = any(array(select jsonb_array_elements_text(coalesce(c->'titles','[]'))))
+     and exists(select 1 from public.fm_att a where a.user_id = p.id and a.day >= d - coalesce((c->>'recent')::int, 30) and a.day < d)
+     and not exists(select 1 from public.fm_att a where a.user_id = p.id and a.day = d)
+     and public.fm_tk_leave(p.id) is null;
+  for r in select boss, array_agg(name order by name) names from fm371_abs where boss is not null group by boss loop
+    perform public.fm_alert_send(r.boss, 'att_absent', '🕒 لم يسجّلوا بدء الدوام (' || cardinality(r.names) || ')',
+      array_to_string(r.names[1:12], '، ') || case when cardinality(r.names) > 12 then ' …' else '' end, 'attabs', 'attabs-' || d, false);
+    n := n + 1;
+  end loop;
+  for rg in select distinct unnest(regions) from fm371_abs loop
+    for r in select p.id from public.profiles p where p.active and p.job_title = 'area_manager' and rg = any(coalesce(p.regions,'{}')) loop
+      perform public.fm_alert_send(r.id, 'att_absent', '🕒 لم يسجّلوا بدء الدوام — ' || case rg when 'riyadh' then 'الرياض' when 'qassim' then 'القصيم' else rg end,
+        (select count(*) || ' شخص: ' || array_to_string((array_agg(name order by name))[1:10], '، ') from fm371_abs where rg = any(regions)), 'attabs', 'attabs-' || rg || '-' || d, false);
+    end loop;
+  end loop;
+  insert into public.fm_daily_runs(job, day, n) values ('att_absent', d, (select count(*) from fm371_abs)) on conflict (job, day) do update set n = excluded.n, at = now();
+  return (select count(*) from fm371_abs);
+end $$;
+
+create or replace function public.fm_v371_docs() returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := jsonb_build_object('enabled', true, 'days', jsonb_build_array(30,7,0)) || coalesce((select value from public.fm_settings where key = 'wf_docs' and jsonb_typeof(value) = 'object'), '{}'::jsonb);
+  d date := (now() at time zone 'Asia/Riyadh')::date; r record; u uuid; n int := 0; lv int; lvs int[]; v_k text; ttl text;
+begin
+  if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+  if exists(select 1 from public.fm_daily_runs where job = 'wf_docs' and day = d) then return 0; end if;
+  lvs := array(select (jsonb_array_elements_text(coalesce(c->'days','[30,7,0]')))::int order by 1 desc);
+  for r in
+    select 'q:' || q.id k0, q.region, p.full_name, p.employee_code, q.title what, q.expires_on exp from public.fm_workforce337_qualifications q join public.fm_people334 p on p.id = q.person_id
+     where p.active and q.expires_on is not null and q.expires_on <= d + 30 and q.expires_on >= d - 1
+    union all
+    select 'c:' || p.id, p.region, p.full_name, p.employee_code, 'نهاية العقد', p.contract_end_date from public.fm_people334 p
+     where p.active and p.contract_end_date is not null and p.contract_end_date <= d + 30 and p.contract_end_date >= d - 1
+  loop
+    lv := null;
+    select min(x) into lv from unnest(lvs) x where r.exp - d <= x;
+    if lv is null then continue; end if;
+    v_k := r.k0 || ':' || r.exp || ':' || lv;
+    if exists(select 1 from public.fm_wf_doc_sent where fm_wf_doc_sent.k = v_k) then continue; end if;
+    insert into public.fm_wf_doc_sent(k) values (v_k);
+    ttl := case when r.exp < d then '⛔ انتهى: ' when r.exp = d then '⛔ ينتهي اليوم: ' else '📄 ينتهي بعد ' || (r.exp - d) || ' يوم: ' end || r.what;
+    for u in select p.id from public.profiles p where p.active and (p.job_title in ('project_manager','ops_manager') or (p.job_title = 'area_manager' and r.region = any(coalesce(p.regions,'{}'))))
+             union select p.id from public.profiles p where p.active and coalesce(r.employee_code,'') <> '' and lower(btrim(coalesce(p.emp_no,''))) = lower(btrim(r.employee_code)) loop
+      perform public.fm_alert_send(u, 'wf_doc', ttl, r.full_name || ' — ' || to_char(r.exp, 'YYYY-MM-DD'), 'wfdoc', 'wfdoc-' || r.k0, false);
+    end loop;
+    n := n + 1;
+  end loop;
+  insert into public.fm_daily_runs(job, day, n) values ('wf_docs', d, n) on conflict (job, day) do update set n = excluded.n, at = now();
+  return n;
+end $$;
+
+create or replace function public.fm_meter_spike() returns trigger language plpgsql security definer set search_path = public as $$
+declare c jsonb; m public.fm_meters; prev numeric; u numeric; a numeric; s jsonb; sup uuid; eng uuid; wid uuid; wcode text; aid uuid; who uuid; kn text;
+begin
+  begin
+    c := public.fm_meter_alert_cfg();
+    if not coalesce((c->>'enabled')::boolean, true) or new.reset then return new; end if;
+    select * into m from public.fm_meters where id = new.meter_id;
+    select reading into prev from public.fm_meter_reads where meter_id = new.meter_id and month < new.month order by month desc limit 1;
+    if prev is null then return new; end if;
+    u := new.reading - prev; if u <= 0 then return new; end if;
+    select avg(x.use) into a from (
+      select r.reading - lag(r.reading) over (order by r.month) use, r.reset, r.month from public.fm_meter_reads r where r.meter_id = new.meter_id and r.month < new.month) x
+     where x.use is not null and x.use > 0 and not x.reset and x.month >= to_char(to_date(new.month || '-01','YYYY-MM-DD') - interval '7 months','YYYY-MM');
+    if a is null or a <= 0 or u <= a * (1 + coalesce((c->>'pct')::numeric, 50) / 100) then return new; end if;
+    insert into public.fm_meter_alerts(meter_id, read_id, month, use, avg, pct) values (new.meter_id, new.id, new.month, u, round(a,2), round((u / a - 1) * 100, 1))
+      on conflict (meter_id, month) do update set read_id = excluded.read_id, use = excluded.use, avg = excluded.avg, pct = excluded.pct
+      returning id into aid;
+    if (select wo_id from public.fm_meter_alerts where id = aid) is not null then return new; end if;
+    s := public.fm_sdb_row(m.bkey);
+    sup := public.fm_tk_person(s->>'supervisor'); eng := public.fm_tk_person(regexp_replace(coalesce(s->>'engineer',''), '\s+-\s+.*$', ''));
+    kn := case when m.kind = 'elec' then 'الكهرباء' else 'المياه' end;
+    if coalesce((c->>'auto_wo')::boolean, true) and sup is not null then
+      who := coalesce(eng, (select p.id from public.profiles p where p.active and p.job_title = 'area_manager' and m.region = any(coalesce(p.regions,'{}')) order by p.created_at limit 1));
+      begin
+        if who is not null then
+          wid := public.fm_wo_create_as(who, jsonb_build_object('title', '⚡ فحص ارتفاع استهلاك ' || kn || ' — ' || m.school_name, 'type', 'repair', 'priority', 'عالي',
+            'region', m.region, 'school', m.school_name, 'building_id', s->>'buildingId', 'due_at', (now() + interval '3 days')::text,
+            'description', 'قراءة ' || new.month || ': استهلاك ' || u || ' مقابل متوسط ' || round(a,2) || ' (+' || round((u / a - 1) * 100) || '%). عداد ' || coalesce(m.number,'') || '. افحص التسرّب أو الأحمال.',
+            'checklist', jsonb_build_array(jsonb_build_object('t','تحقق من قراءة العداد وصوّرها','done',false), jsonb_build_object('t', case when m.kind = 'water' then 'افحص الخزانات والمواسير ودورات المياه بحثاً عن تسرّب' else 'افحص الأحمال والمكيفات والإنارة العاملة خارج الدوام' end,'done',false),
+                                           jsonb_build_object('t','سجّل السبب والإجراء المتخذ','done',false)),
+            'assignee', sup::text, 'approver', case when eng is not null and eng <> who then eng::text end));
+          select code into wcode from public.work_orders where id = wid;
+          update public.fm_meter_alerts set wo_id = wid, wo_code = wcode where id = aid;
+        end if;
+      exception when others then wid := null; end;
+    end if;
+    for who in select x from unnest(array[sup, eng]) x where x is not null union
+               select p.id from public.profiles p where p.active and p.job_title = 'area_manager' and m.region = any(coalesce(p.regions,'{}')) loop
+      perform public.fm_alert_send(who, 'meter', '⚡ استهلاك ' || kn || ' مرتفع — ' || m.school_name, '+' || round((u / a - 1) * 100) || '% عن المتوسط' || coalesce(' • ' || wcode, ''),
+        case when wid is not null then 'wo=' || wid else 'meter' end, 'meter-' || new.meter_id, false);
+    end loop;
+  exception when others then null; end;
+  return new;
+end $$;
+
+revoke all on function public.fm_v371_absent(boolean), public.fm_v371_docs(), public.fm_meter_spike() from public, anon, authenticated;
+notify pgrst, 'reload schema';
+-- V374: a marker the readiness page probes to know section 114 ran
+create or replace function public.fm_v374_ok() returns boolean language sql stable as $$ select true $$;
+grant execute on function public.fm_v374_ok() to authenticated;
+notify pgrst, 'reload schema';
