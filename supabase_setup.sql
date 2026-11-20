@@ -21058,3 +21058,98 @@ end $$;
 revoke all on function public.fm_source_tickets_done(uuid, int, text) from public, anon;
 grant execute on function public.fm_source_tickets_done(uuid, int, text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 141) V415 — emergency on-call roster: an urgent ticket not received in 30 minutes goes to the on-call person, then to his manager ----------
+-- fm_oncall: shifts (region '' = every region, person, from_at → to_at). fm_settings.oncall {enabled true, wait_min 30}.
+-- fm_v415_oncall() (pg_cron fm-v415-oncall every 5 min): open urgent tickets (priority طارئ / حرج / عاجل / urgent / critical / emergency,
+-- created 30 min – 12 h ago, status not closed / cancelled) that nobody received yet (no ticket_work stage beyond «received» and no
+-- acknowledged fm_tk_assign) — while a shift covers now — level 1 after wait_min → the people on call; level 2 after 2 × wait_min →
+-- each one's reports_to (else the area managers of the region). fm_alert_send (push, else WhatsApp), once per ticket and level (fm_oncall_alerts).
+create table if not exists public.fm_oncall (
+  id uuid primary key default gen_random_uuid(), region text not null default '', user_id uuid not null references public.profiles(id) on delete cascade,
+  from_at timestamptz not null, to_at timestamptz not null check (to_at > from_at), note text, by_id uuid default auth.uid(), by_name text, at timestamptz not null default now()
+);
+create index if not exists fm_oncall_time_idx on public.fm_oncall (from_at, to_at);
+create table if not exists public.fm_oncall_alerts (
+  region text not null, ticket_id text not null, level int not null, at timestamptz not null default now(), sent_to uuid[], school text, priority text,
+  primary key (region, ticket_id, level)
+);
+alter table public.fm_oncall enable row level security; alter table public.fm_oncall_alerts enable row level security;
+revoke all on public.fm_oncall, public.fm_oncall_alerts from anon, authenticated;
+create or replace function public.fm_oncall_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', true, 'wait_min', 30) || coalesce(public.fm_setting('oncall'), '{}'::jsonb) $$;
+create or replace function public.fm_oncall_can(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager','dept_manager')
+    or (public.fm_my_pos() in ('area_manager','area_engineer') and coalesce(p_region,'') <> '' and public.fm_region_ok(p_region))) $$;
+create or replace function public.fm_oncall_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare v uuid := public.fm_uuid_or_null(p->>'id'); o public.fm_oncall; rg text := coalesce(btrim(p->>'region'),''); u uuid := public.fm_uuid_or_null(p->>'user_id');
+  f timestamptz; t timestamptz; nm text;
+begin
+  if v is not null then select * into o from public.fm_oncall where id = v; if not found then raise exception 'not found'; end if;
+    if not public.fm_oncall_can(o.region) then raise exception 'not allowed'; end if;
+    if coalesce(p->>'delete','') = 'true' then delete from public.fm_oncall where id = v; return v; end if; end if;
+  if not public.fm_oncall_can(rg) then raise exception 'not allowed'; end if;
+  f := (p->>'from')::timestamptz; t := (p->>'to')::timestamptz;
+  if f is null or t is null or t <= f or t - f > interval '14 days' then raise exception 'invalid period'; end if;
+  if not exists (select 1 from public.profiles where id = u and active and role not in ('pending','viewer')) then raise exception 'invalid person'; end if;
+  select coalesce(full_name, email) into nm from public.profiles where id = auth.uid();
+  if v is null then insert into public.fm_oncall (region, user_id, from_at, to_at, note, by_name) values (rg, u, f, t, left(p->>'note',300), nm) returning id into v;
+  else update public.fm_oncall set region = rg, user_id = u, from_at = f, to_at = t, note = left(p->>'note',300) where id = v; end if;
+  return v;
+end $$;
+create or replace function public.fm_oncall_list(p_days int default 30) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare d int := greatest(1, least(coalesce(p_days,30), 120));
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  return jsonb_build_object('cfg', public.fm_oncall_cfg(), 'can_admin', public.fm_role() = 'admin',
+    'shifts', coalesce((select jsonb_agg(jsonb_build_object('id', o.id, 'region', o.region, 'user_id', o.user_id, 'name', coalesce(p.full_name, p.email), 'phone', p.phone,
+        'from', o.from_at, 'to', o.to_at, 'note', o.note, 'by', o.by_name, 'can', public.fm_oncall_can(o.region), 'now', now() between o.from_at and o.to_at) order by o.from_at)
+      from public.fm_oncall o join public.profiles p on p.id = o.user_id
+     where o.to_at > now() - make_interval(days => d) and (o.user_id = auth.uid() or public.fm_oncall_can(o.region) or public.fm_scope_all() or o.region = '' or public.fm_region_ok(o.region))), '[]'::jsonb),
+    'alerts', coalesce((select jsonb_agg(jsonb_build_object('region', a.region, 'ticket', a.ticket_id, 'level', a.level, 'at', a.at, 'school', a.school, 'priority', a.priority,
+        'to', (select string_agg(coalesce(full_name, email), '، ') from public.profiles where id = any(a.sent_to))) order by a.at desc)
+      from (select * from public.fm_oncall_alerts where at > now() - make_interval(days => d) and (public.fm_oncall_can(region) or public.fm_scope_all()) order by at desc limit 300) a), '[]'::jsonb),
+    'people', case when public.fm_oncall_can('') or public.fm_my_pos() in ('area_manager','area_engineer') then coalesce((select jsonb_agg(jsonb_build_object('id', id, 'name', coalesce(full_name, email), 'title', job_title, 'regions', regions) order by full_name)
+      from public.profiles where active and role not in ('pending','viewer')), '[]'::jsonb) else '[]'::jsonb end);
+end $$;
+create or replace function public.fm_v415_oncall() returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_oncall_cfg(); w int := greatest(5, least(coalesce((c->>'wait_min')::int, 30), 240)); t record; u uuid; lv int; ids uuid[]; n int := 0; mg uuid;
+begin
+  if not coalesce((c->>'enabled')::boolean, true) or not exists (select 1 from public.fm_oncall where now() between from_at and to_at) then return 0; end if;
+  for t in select k.region, k.ticket_id, k.school, k.priority, coalesce(k.created_at, k.uploaded_at) cat from public.tickets k
+    where coalesce(k.created_at, k.uploaded_at) between now() - interval '12 hours' and now() - make_interval(mins => w)
+      and coalesce(k.priority,'') ~* '(طارئ|حرج|عاجل|urgent|critical|emergency)'
+      and coalesce(k.status,'') !~* '(مغلق|تم الحل|تم حل|محلول|مكتمل|منجز|ملغ|closed|resolved|cancel|done|complete)'
+      and not exists (select 1 from public.ticket_work tw where tw.region = k.region and tw.ticket_id = k.ticket_id and tw.stage not in ('received','new'))
+      and not exists (select 1 from public.fm_tk_assign a where a.region = k.region and a.ticket_id = k.ticket_id and a.ack_at is not null)
+  loop
+    lv := case when t.cat <= now() - make_interval(mins => 2 * w) then 2 else 1 end;
+    for lv in 1..lv loop
+      if exists (select 1 from public.fm_oncall_alerts where region = t.region and ticket_id = t.ticket_id and level = lv) then continue; end if;
+      ids := '{}';
+      for u in select distinct o.user_id from public.fm_oncall o where now() between o.from_at and o.to_at and (o.region = '' or o.region = t.region) loop
+        if lv = 1 then ids := ids || u;
+        else select reports_to into mg from public.profiles where id = u; if mg is not null then ids := ids || mg; end if; end if;
+      end loop;
+      if lv = 2 and cardinality(ids) = 0 then select coalesce(array_agg(id), '{}') into ids from public.profiles where active and job_title = 'area_manager' and t.region = any(coalesce(regions,'{}')); end if;
+      if cardinality(ids) = 0 then continue; end if;
+      insert into public.fm_oncall_alerts (region, ticket_id, level, sent_to, school, priority) values (t.region, t.ticket_id, lv, ids, t.school, t.priority) on conflict do nothing;
+      foreach u in array ids loop
+        begin perform public.fm_alert_send(u, 'oncall', case lv when 1 then '🚨 بلاغ طارئ لم يُستلم — أنت المناوب' else '🚨 تصعيد: بلاغ طارئ لم يُستلم منذ ' || (2 * w) || ' دقيقة' end,
+          coalesce(t.school,'') || ' • البلاغ ' || t.ticket_id || ' • ' || coalesce(t.priority,''), 'tka', 'oc-' || t.region || '-' || t.ticket_id || '-' || lv, false);
+        exception when others then null; end;
+      end loop;
+      n := n + 1;
+    end loop;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_v415_oncall(), public.fm_oncall_can(text) from public, anon, authenticated;
+revoke all on function public.fm_oncall_save(jsonb), public.fm_oncall_list(int), public.fm_oncall_cfg() from public, anon;
+grant execute on function public.fm_oncall_save(jsonb), public.fm_oncall_list(int), public.fm_oncall_cfg() to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v415-oncall'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v415-oncall'', ''*/5 * * * *'', ''select public.fm_v415_oncall()'')';
+  exception when others then raise notice 'pg_cron is not available: on-call escalation does not run'; end;
+end $do$;
+notify pgrst, 'reload schema';
