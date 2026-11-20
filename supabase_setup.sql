@@ -19598,3 +19598,423 @@ revoke all on function public.fm_tk_archive_block(), public.fm_tk_archive_can(te
 revoke all on function public.fm_tk_archive_cfg(), public.fm_tk_archive_preview(text, date), public.fm_tk_archive_run(text, date, jsonb), public.fm_tk_archive_restore(text, text), public.fm_tk_archive_stats(text), public.fm_tk_archive_get(text, text) from public, anon;
 grant execute on function public.fm_tk_archive_cfg(), public.fm_tk_archive_preview(text, date), public.fm_tk_archive_run(text, date, jsonb), public.fm_tk_archive_restore(text, text), public.fm_tk_archive_stats(text), public.fm_tk_archive_get(text, text) to authenticated;
 notify pgrst, 'reload schema';
+
+
+-- ---------- 124) V389 — morning digest: one notification a day with each person's priorities ----------
+create or replace function public.fm_digest_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', true, 'hour', 7, 'days', '[0,1,2,3,4]'::jsonb, 'sla', true) || coalesce(public.fm_setting('digest'), '{}'::jsonb) $$;
+-- counts for one person (internal); every part on its own so a missing table only drops that part
+create or replace function public.fm_digest_items(p_user uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare j jsonb := '{}'; n int; tz text := 'Asia/Riyadh'; d date := (now() at time zone 'Asia/Riyadh')::date;
+begin
+  begin select count(*) into n from public.work_orders where assignee = p_user and status in ('assigned','accepted','in_progress','returned') and due_at < now();
+    j := j || jsonb_build_object('wo_late', n); exception when others then null; end;
+  begin select count(*) into n from public.work_orders where assignee = p_user and status in ('assigned','accepted','in_progress','returned') and due_at >= now() and (due_at at time zone tz)::date = d;
+    j := j || jsonb_build_object('wo_today', n); exception when others then null; end;
+  begin select count(*) into n from public.work_orders where assignee = p_user and status = 'assigned';
+    j := j || jsonb_build_object('wo_new', n); exception when others then null; end;
+  begin select count(*) into n from public.work_orders where status = 'done' and (approver = p_user or (approver is null and created_by = p_user));
+    j := j || jsonb_build_object('wo_appr', n); exception when others then
+    begin select count(*) into n from public.work_orders where status = 'done' and created_by = p_user; j := j || jsonb_build_object('wo_appr', n); exception when others then null; end; end;
+  begin select count(*) into n from public.fm_sla_watch where p_user = any(users) and due_at > now() and (due_at at time zone tz)::date = d;
+    j := j || jsonb_build_object('sla_today', n); exception when others then null; end;
+  begin select count(*) into n from public.wo_issue_requests r join public.wo_stores s on s.id = r.store_id where s.keeper = p_user and r.status = 'requested';
+    j := j || jsonb_build_object('ir_wait', n); exception when others then null; end;
+  begin select count(*) into n from public.wo_issue_requests where holder = p_user and status in ('issued','partial') and received_at is null;
+    j := j || jsonb_build_object('ir_recv', n); exception when others then null; end;
+  begin select count(*) into n from public.fm_leave_requests l join public.profiles p on p.id = l.user_id where l.status = 'pending' and p.reports_to = p_user;
+    j := j || jsonb_build_object('leave_wait', n); exception when others then null; end;
+  begin select count(*) into n from public.wo_visit_requests v join public.work_orders w on w.id = v.wo_id where v.status = 'pending' and w.approver = p_user;
+    j := j || jsonb_build_object('visit_wait', n); exception when others then null; end;
+  begin select count(*) into n from public.wo_edit_requests v join public.work_orders w on w.id = v.wo_id where v.status = 'pending' and w.approver = p_user;
+    j := j || jsonb_build_object('edit_wait', n); exception when others then null; end;
+  return j;
+end $$;
+create or replace function public.fm_digest_text(j jsonb, p_sla boolean default true) returns text language sql immutable set search_path = public as $$
+  select coalesce(string_agg(t, ' • ' order by o), '') from (
+    select 1 o, case when coalesce((j->>'wo_late')::int,0) > 0 then '⛔ ' || (j->>'wo_late') || ' أمر متأخر' end t union all
+    select 2, case when coalesce((j->>'wo_today')::int,0) > 0 then '📅 ' || (j->>'wo_today') || ' أمر موعده اليوم' end union all
+    select 3, case when coalesce((j->>'wo_new')::int,0) > 0 then '🆕 ' || (j->>'wo_new') || ' أمر بانتظار قبولك' end union all
+    select 4, case when coalesce((j->>'wo_appr')::int,0) > 0 then '✅ ' || (j->>'wo_appr') || ' أمر بانتظار اعتمادك' end union all
+    select 5, case when p_sla and coalesce((j->>'sla_today')::int,0) > 0 then '⏰ ' || (j->>'sla_today') || ' بلاغ يتجاوز المهلة اليوم' end union all
+    select 6, case when coalesce((j->>'ir_wait')::int,0) > 0 then '📦 ' || (j->>'ir_wait') || ' طلب صرف بانتظارك' end union all
+    select 7, case when coalesce((j->>'ir_recv')::int,0) > 0 then '🧰 ' || (j->>'ir_recv') || ' صرف بانتظار تأكيد استلامك' end union all
+    select 8, case when coalesce((j->>'leave_wait')::int,0) > 0 then '🏖️ ' || (j->>'leave_wait') || ' طلب إجازة' end union all
+    select 9, case when coalesce((j->>'visit_wait')::int,0) + coalesce((j->>'edit_wait')::int,0) > 0
+                   then '🗓️ ' || (coalesce((j->>'visit_wait')::int,0) + coalesce((j->>'edit_wait')::int,0)) || ' طلب فتح زيارة / تعديل أمر' end
+  ) x where t is not null $$;
+-- the caller's own digest (platform dialog / field home)
+create or replace function public.fm_digest_me() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c jsonb := public.fm_digest_cfg(); j jsonb;
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  j := public.fm_digest_items(auth.uid());
+  return jsonb_build_object('items', j, 'text', public.fm_digest_text(j, true), 'cfg', c, 'can_set', public.fm_role() = 'admin');
+end $$;
+-- one notification per person (pg_cron every 15 min; p_force / p_only = the system admin's test)
+create or replace function public.fm_v389_digest(p_force boolean default false, p_only uuid default null) returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_digest_cfg(); tz text := 'Asia/Riyadh'; d date := (now() at time zone 'Asia/Riyadh')::date;
+  u record; j jsonb; t text; v_n int := 0; k int; sla boolean := coalesce((c->>'sla')::boolean, true);
+begin
+  if not p_force then
+    if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+    if extract(hour from now() at time zone tz) < coalesce((c->>'hour')::int, 7) then return 0; end if;
+    if not (extract(dow from d)::int = any(array(select (jsonb_array_elements_text(coalesce(c->'days','[0,1,2,3,4]')))::int))) then return 0; end if;
+    if exists(select 1 from public.fm_daily_runs where job = 'digest' and day = d) then return 0; end if;
+    insert into public.fm_daily_runs (job, day) values ('digest', d) on conflict do nothing;
+  end if;
+  for u in select id from public.profiles where active and role <> 'pending' and (p_only is null or id = p_only) loop
+    begin
+      j := public.fm_digest_items(u.id);
+      t := public.fm_digest_text(j, sla);
+      if t = '' then
+        if p_only is not null then t := 'لا شيء ينتظرك اليوم 👍'; else continue; end if;
+      end if;
+      select coalesce(sum(v::int), 0) into k from jsonb_each_text(j) e(kk, v) where sla or kk <> 'sla_today';
+      if public.fm_alert_send(u.id, 'digest', '☀️ موجز يومك' || case when k > 0 then ': ' || k || ' عنصراً' else '' end, left(t, 300), 'digest', 'digest-' || d, true) then v_n := v_n + 1; end if;
+      -- the V223 morning SLA summary is not sent again to someone whose digest carried it
+      if sla and coalesce((j->>'sla_today')::int, 0) > 0 then
+        begin insert into public.fm_sla_morning (user_id, day) values (u.id, d) on conflict do nothing; exception when others then null; end;
+      end if;
+    exception when others then null; end;
+  end loop;
+  if not p_force then update public.fm_daily_runs set n = v_n where job = 'digest' and day = d; end if;
+  return v_n;
+end $$;
+create or replace function public.fm_digest_test() returns int language plpgsql security definer set search_path = public as $$
+begin
+  if public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  return public.fm_v389_digest(true, auth.uid());
+end $$;
+revoke all on function public.fm_digest_items(uuid), public.fm_v389_digest(boolean, uuid) from public, anon, authenticated;
+revoke all on function public.fm_digest_cfg(), public.fm_digest_text(jsonb, boolean), public.fm_digest_me(), public.fm_digest_test() from public, anon;
+grant execute on function public.fm_digest_cfg(), public.fm_digest_me(), public.fm_digest_test() to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v389-digest'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v389-digest'', ''*/15 * * * *'', ''select public.fm_v389_digest()'')';
+  exception when others then raise notice 'pg_cron is not available: the morning digest is not sent'; end;
+end $do$;
+notify pgrst, 'reload schema';
+
+-- ---------- 125) V391 — photo quality: dark / blurry photos, «after» the same as «before», and an AI review ----------
+-- The device measures each work-order photo when it is uploaded (q = {lum 0–255, sharp = variance of the Laplacian of a 128 px
+-- grey copy, flags [dark | blurry]}). «same» is found here: an «after» photo whose dHash (V380) is within 6 bits of a «before»
+-- photo of the same order and item. The AI review (fm-ai task photo) is stored in wo_photos.ai {ok, issue, reason, at, by}.
+alter table public.wo_photos add column if not exists q  jsonb;
+alter table public.wo_photos add column if not exists ai jsonb;
+create or replace function public.fm_ai_begin(p_kind text) returns bigint language plpgsql security definer set search_path = public as $$
+declare s jsonb := coalesce(public.fm_setting('ai'), '{}'); lim int := greatest(1, least(coalesce(nullif(s->>'daily_limit','')::int, 30), 1000)); id_ bigint;
+begin
+  if auth.uid() is null or public.fm_role() in ('pending') or public.fm_role() is null then raise exception 'not allowed'; end if;
+  if not coalesce((s->>'enabled')::boolean, false) then raise exception 'ai disabled'; end if;
+  if p_kind not in ('classify','summary','recurring','ppm','photo','catfix') then raise exception 'invalid kind'; end if;
+  if (select count(*) from public.fm_ai_usage where user_id = auth.uid() and day = (now() at time zone 'Asia/Riyadh')::date) >= lim then raise exception 'daily limit reached'; end if;
+  insert into public.fm_ai_usage (user_id, kind) values (auth.uid(), p_kind) returning id into id_;
+  return id_;
+end $$;
+create or replace function public.fm_photo_q(p_id uuid, p_q jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+declare r record; f jsonb;
+begin
+  if auth.uid() is null then raise exception 'not allowed'; end if;
+  if p_q is null or jsonb_typeof(p_q) <> 'object' or length(p_q::text) > 400 then raise exception 'bad value'; end if;
+  select coalesce(jsonb_agg(x), '[]'::jsonb) into f from jsonb_array_elements_text(coalesce(p_q->'flags', '[]'::jsonb)) x where x in ('dark','blurry');
+  select * into r from public.wo_photos where id = p_id;
+  if not found then return false; end if;
+  if r.by_id is distinct from auth.uid() and not public.fm_wo_can_see(r.wo_id) then raise exception 'not allowed'; end if;
+  update public.wo_photos set q = jsonb_build_object('lum', round(coalesce((p_q->>'lum')::numeric, 0), 1), 'sharp', round(coalesce((p_q->>'sharp')::numeric, 0), 1), 'flags', f, 'at', now())
+   where id = p_id;
+  return true;
+end $$;
+create or replace function public.fm_photo_q_can() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_flag_can() or public.fm_scope_all() or public.fm_role() in ('admin','manager','engineer')) $$;
+create or replace function public.fm_photo_ai_set(p_id uuid, p_ai jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+declare r record; iss text := coalesce(p_ai->>'issue', '');
+begin
+  if not public.fm_photo_q_can() then raise exception 'not allowed'; end if;
+  if iss not in ('none','dark','blurry','same','unrelated','no_work','other') then raise exception 'bad value'; end if;
+  select * into r from public.wo_photos where id = p_id;
+  if not found or not public.fm_wo_can_see(r.wo_id) then return false; end if;
+  update public.wo_photos set ai = jsonb_build_object('ok', iss = 'none', 'issue', iss, 'reason', left(coalesce(p_ai->>'reason', ''), 300), 'at', now(),
+    'by', (select full_name from public.profiles where id = auth.uid())) where id = p_id;
+  return true;
+end $$;
+-- flagged photos of the period (≤ 500) + counts
+create or replace function public.fm_photo_quality(p_days int default 30) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare d int := greatest(1, least(coalesce(p_days, 30), 400)); res jsonb;
+begin
+  if not public.fm_photo_q_can() then raise exception 'not allowed'; end if;
+  with ph as (
+    select p.id, p.wo_id, p.kind, p.tag, p.item, p.path, p.at, p.by_name, p.q, p.ai, p.phash,
+           case when p.phash ~ '^[0-9a-f]{16}$' and p.phash not in ('0000000000000000','ffffffffffffffff') then ('x' || p.phash)::bit(64) end as b,
+           w.code, w.school, w.region, w.assignee_name, w.title, w.checklist
+      from public.wo_photos p join public.work_orders w on w.id = p.wo_id
+     where p.at >= now() - make_interval(days => d) and public.fm_wo_can_see(p.wo_id)
+  ), same as (
+    select distinct on (a.id) a.id, b.id as bid, b.path as bpath, bit_count(a.b # b.b) as dist
+      from ph a join ph b on b.wo_id = a.wo_id and b.kind = 'before' and a.kind = 'after' and coalesce(b.item, -1) = coalesce(a.item, -1) and b.id <> a.id
+     where a.b is not null and b.b is not null and bit_count(a.b # b.b) <= 6
+     order by a.id, bit_count(a.b # b.b)
+  ), fl as (
+    select ph.*, s.bid, s.bpath, s.dist,
+           (select coalesce(jsonb_agg(x), '[]'::jsonb) from (select jsonb_array_elements_text(coalesce(ph.q->'flags','[]'::jsonb)) x
+              union all select 'same' where s.bid is not null) z) as flags
+      from ph left join same s on s.id = ph.id
+     where jsonb_array_length(coalesce(ph.q->'flags','[]'::jsonb)) > 0 or s.bid is not null or (ph.ai->>'ok') = 'false'
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'wo', f.wo_id, 'code', f.code, 'school', f.school, 'region', f.region, 'who', f.assignee_name,
+      'kind', f.kind, 'tag', f.tag, 'item', f.item, 'item_t', case when f.item is not null then left(coalesce(f.checklist->f.item->>'t', ''), 200) end,
+      'path', f.path, 'at', f.at, 'by', f.by_name, 'q', f.q, 'ai', f.ai, 'flags', f.flags, 'same_id', f.bid, 'same_path', f.bpath, 'dist', f.dist,
+      'rv', (select jsonb_build_object('status', r.status, 'note', r.note, 'by', r.by_name, 'at', r.at) from public.fm_photo_dup_reviews r where r.k = 'q:' || f.id::text))
+    order by f.at desc), '[]'::jsonb) into res
+  from (select * from fl order by at desc limit 500) f;
+  return jsonb_build_object('days', d, 'rows', res,
+    'checked', (select count(*) from public.wo_photos where at >= now() - make_interval(days => d) and q is not null),
+    'unchecked', (select count(*) from public.wo_photos where at >= now() - make_interval(days => d) and q is null),
+    'can_review', public.fm_flag_can());
+end $$;
+create or replace function public.fm_photo_unq(p_days int default 30, p_limit int default 200) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'path', p.path)), '[]'::jsonb)
+  from (select p.id, p.path from public.wo_photos p
+        where p.q is null and p.at >= now() - make_interval(days => greatest(1, least(coalesce(p_days, 30), 400)))
+          and auth.uid() is not null and public.fm_wo_can_see(p.wo_id)
+        order by p.at desc limit greatest(1, least(coalesce(p_limit, 200), 500))) p $$;
+create or replace function public.fm_photo_q_review(p_id uuid, p_status text, p_note text) returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_flag_can() then raise exception 'not allowed'; end if;
+  if p_status is null then delete from public.fm_photo_dup_reviews where k = 'q:' || p_id::text; return true; end if;
+  if p_status not in ('ok','action') then raise exception 'bad status'; end if;
+  if length(coalesce(trim(p_note), '')) < 3 then raise exception 'note required'; end if;
+  insert into public.fm_photo_dup_reviews (k, status, note, by_id, by_name)
+  values ('q:' || p_id::text, p_status, trim(p_note), auth.uid(), (select full_name from public.profiles where id = auth.uid()))
+  on conflict (k) do update set status = excluded.status, note = excluded.note, by_id = excluded.by_id, by_name = excluded.by_name, at = now();
+  return true;
+end $$;
+revoke all on function public.fm_photo_q(uuid, jsonb), public.fm_photo_q_can(), public.fm_photo_ai_set(uuid, jsonb), public.fm_photo_quality(int), public.fm_photo_unq(int, int), public.fm_photo_q_review(uuid, text, text) from public, anon;
+grant execute on function public.fm_photo_q(uuid, jsonb), public.fm_photo_q_can(), public.fm_photo_ai_set(uuid, jsonb), public.fm_photo_quality(int), public.fm_photo_unq(int, int), public.fm_photo_q_review(uuid, text, text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 126) V393 — quarterly satisfaction survey of the school principal (NPS) through the school-portal link ----------
+-- One answer per school (building key) and quarter: nps 0–10 («how likely are you to recommend our service»), four 1–5 scores
+-- (speed, quality, communication, cleanliness / tidiness after the work), a comment. The contractor of the school (school DB
+-- «contractor») and the region are kept with the answer. NPS = % promoters (9–10) − % detractors (0–6).
+create table if not exists public.fm_school_surveys (
+  id uuid primary key default gen_random_uuid(),
+  bkey text not null, school text, region text, contractor text, quarter text not null check (quarter ~ '^\d{4}-Q[1-4]$'),
+  nps int not null check (nps between 0 and 10),
+  q_speed int check (q_speed between 1 and 5), q_quality int check (q_quality between 1 and 5),
+  q_comm int check (q_comm between 1 and 5), q_clean int check (q_clean between 1 and 5),
+  comment text, by_name text, at timestamptz not null default now(),
+  unique (bkey, quarter)
+);
+alter table public.fm_school_surveys enable row level security;
+revoke all on public.fm_school_surveys from anon, authenticated;
+create or replace function public.fm_survey_quarter(t timestamptz default now()) returns text language sql stable set search_path = public as $$
+  select to_char(t at time zone 'Asia/Riyadh', 'YYYY') || '-Q' || to_char(t at time zone 'Asia/Riyadh', 'Q') $$;
+create or replace function public.fm_survey_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', true) || coalesce(public.fm_setting('survey'), '{}'::jsonb) $$;
+-- the school-DB «contractor» of a building (internal)
+create or replace function public.fm_school_contractor(p_bkey text, p_name text) returns text language plpgsql stable security definer set search_path = public as $$
+declare v jsonb; c text;
+begin
+  select value into v from public.app_kv where key = 'fm_school_master_db_v1';
+  if jsonb_typeof(v) = 'string' then v := (v #>> '{}')::jsonb; end if;
+  if v is not null and jsonb_typeof(v) = 'object' and jsonb_typeof(v->'schools') = 'array' then v := v->'schools'; end if;
+  if v is null or jsonb_typeof(v) <> 'array' then return null; end if;
+  select nullif(btrim(coalesce(e->>'contractor','')),'') into c from jsonb_array_elements(v) e
+   where jsonb_typeof(e) = 'object' and (public.fm_bkey(e->>'buildingId', e->>'school') = p_bkey or btrim(coalesce(e->>'school','')) = btrim(coalesce(p_name,'')))
+   order by (public.fm_bkey(e->>'buildingId', e->>'school') = p_bkey) desc limit 1;
+  return c;
+end $$;
+-- anon: is a survey open for this link this quarter?
+create or replace function public.fm_school_survey_get(p_token text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare l public.fm_school_links; q text := public.fm_survey_quarter(); c jsonb := public.fm_survey_cfg(); s public.fm_school_surveys;
+begin
+  select * into l from public.fm_school_links where token = p_token and active;
+  if not found then raise exception 'invalid link'; end if;
+  select * into s from public.fm_school_surveys where bkey = l.bkey and quarter = q;
+  return jsonb_build_object('quarter', q, 'enabled', coalesce((c->>'enabled')::boolean, true),
+    'done', s.id is not null, 'at', s.at, 'nps', s.nps);
+end $$;
+create or replace function public.fm_school_survey_submit(p_token text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare l public.fm_school_links; q text := public.fm_survey_quarter(); n int; g jsonb;
+  f int[] := array[nullif(p->>'q_speed','')::int, nullif(p->>'q_quality','')::int, nullif(p->>'q_comm','')::int, nullif(p->>'q_clean','')::int];
+begin
+  select * into l from public.fm_school_links where token = p_token and active;
+  if not found then raise exception 'invalid link'; end if;
+  g := public.fm_school_survey_get(p_token);
+  if not coalesce((g->>'enabled')::boolean, false) then raise exception 'survey closed'; end if;
+  if (g->>'done')::boolean then raise exception 'already answered'; end if;
+  n := nullif(p->>'nps','')::int;
+  if n is null or n not between 0 and 10 then raise exception 'invalid score'; end if;
+  if exists(select 1 from unnest(f) x where x is not null and x not between 1 and 5) then raise exception 'invalid score'; end if;
+  insert into public.fm_school_surveys (bkey, school, region, contractor, quarter, nps, q_speed, q_quality, q_comm, q_clean, comment, by_name)
+  values (l.bkey, l.school_name, l.region, public.fm_school_contractor(l.bkey, l.school_name), q, n, f[1], f[2], f[3], f[4],
+          left(nullif(btrim(coalesce(p->>'comment','')),''), 1000), left(nullif(btrim(coalesce(p->>'name','')),''), 80));
+  update public.fm_school_links set last_used_at = now() where token = p_token;
+  return jsonb_build_object('ok', true, 'quarter', q);
+end $$;
+-- staff report: answers of the last p_q quarters the caller may see (all for admin / scope_all / owner_rep / accountant, else his regions)
+create or replace function public.fm_survey_report(p_q int default 4) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare k int := greatest(1, least(coalesce(p_q, 4), 12)); qs text[]; t timestamptz := now(); i int; all_ boolean; res jsonb;
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  all_ := public.fm_role() = 'admin' or public.fm_scope_all() or exists(select 1 from public.profiles where id = auth.uid() and job_title in ('owner_rep','accountant'));
+  for i in 0..k-1 loop qs := qs || public.fm_survey_quarter(t - make_interval(months => 3 * i)); end loop;
+  select coalesce(jsonb_agg(jsonb_build_object('id', s.id, 'bkey', s.bkey, 'school', s.school, 'region', s.region, 'contractor', s.contractor, 'quarter', s.quarter,
+      'nps', s.nps, 'q_speed', s.q_speed, 'q_quality', s.q_quality, 'q_comm', s.q_comm, 'q_clean', s.q_clean, 'comment', s.comment, 'by', s.by_name, 'at', s.at)
+    order by s.at desc), '[]'::jsonb) into res
+  from public.fm_school_surveys s where s.quarter = any(qs) and (all_ or public.fm_region_ok(s.region));
+  return jsonb_build_object('quarters', to_jsonb(qs), 'rows', res, 'cfg', public.fm_survey_cfg(),
+    'links', (select count(*) from public.fm_school_links where active and (all_ or public.fm_region_ok(region))),
+    'can_set', public.fm_role() = 'admin');
+end $$;
+revoke all on function public.fm_school_contractor(text, text) from public, anon, authenticated;
+revoke all on function public.fm_survey_quarter(timestamptz), public.fm_survey_cfg(), public.fm_school_survey_get(text), public.fm_school_survey_submit(text, jsonb), public.fm_survey_report(int) from public;
+grant execute on function public.fm_school_survey_get(text), public.fm_school_survey_submit(text, jsonb) to anon, authenticated;
+grant execute on function public.fm_survey_quarter(timestamptz), public.fm_survey_cfg(), public.fm_survey_report(int) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 127) V394 — asset register imported from Solvix (its «collections» Excel export) ----------
+-- One row per Solvix record (src_id = its «ID»). bkey = fm_bkey(Building Number, Building Name), so an asset joins the school
+-- DB, tickets, work orders and costs of its building. sys = the platform system key (ac / el / pl / fi / lf / cv) worked out on
+-- import from category / levels / type. Read and written only through the RPCs (RLS on, no policies, no grants).
+create table if not exists public.fm_assets (
+  src_id text primary key, bkey text not null, building_no text, school text, region text,
+  category text, type text, l2 text, l3 text, code text, critical boolean not null default false, condition text,
+  qty int not null default 1, price numeric, brand text, model text, capacity text, serial text, install_date text, tag text, label text,
+  floor text, room text, sys text, imported_at timestamptz not null default now(), by_name text
+);
+create index if not exists fm_assets_bkey_idx on public.fm_assets (bkey);
+alter table public.fm_assets enable row level security;
+revoke all on public.fm_assets from anon, authenticated;
+create or replace function public.fm_asset_can_edit() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or exists(select 1 from public.profiles where id = auth.uid() and active
+    and job_title in ('sysadmin','dept_manager','project_manager','ops_manager'))) $$;
+create or replace function public.fm_asset_can_read(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.fm_role() <> 'pending' and (public.fm_role() = 'admin' or public.fm_scope_all()
+    or exists(select 1 from public.profiles where id = auth.uid() and job_title in ('owner_rep','accountant'))
+    or coalesce(p_region, '') = '' or public.fm_region_ok(p_region)) $$;
+-- import a chunk (≤ 1000 rows); p_replace on the first chunk empties the register
+create or replace function public.fm_asset_import(p_rows jsonb, p_replace boolean default false) returns jsonb language plpgsql security definer set search_path = public as $$
+declare n int := 0; r jsonb; nm text := (select full_name from public.profiles where id = auth.uid());
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 1000 then raise exception 'bad rows'; end if;
+  if p_replace then delete from public.fm_assets where true; end if;
+  for r in select * from jsonb_array_elements(p_rows) loop
+    if coalesce(btrim(r->>'src_id'), '') = '' or coalesce(btrim(r->>'bkey'), '') = '' then continue; end if;
+    insert into public.fm_assets (src_id, bkey, building_no, school, region, category, type, l2, l3, code, critical, condition, qty, price, brand, model, capacity,
+      serial, install_date, tag, label, floor, room, sys, imported_at, by_name)
+    values (left(r->>'src_id', 80), left(r->>'bkey', 120), left(r->>'building_no', 40), left(r->>'school', 200), left(r->>'region', 40), left(r->>'category', 200),
+      left(r->>'type', 300), left(r->>'l2', 200), left(r->>'l3', 200), left(r->>'code', 40), coalesce((r->>'critical')::boolean, false), left(r->>'condition', 80),
+      greatest(0, coalesce(nullif(r->>'qty','')::int, 1)), nullif(r->>'price','')::numeric, left(r->>'brand', 120), left(r->>'model', 120), left(r->>'capacity', 80),
+      left(r->>'serial', 120), left(r->>'install_date', 40), left(r->>'tag', 80), left(r->>'label', 80), left(r->>'floor', 40), left(r->>'room', 120),
+      case when r->>'sys' in ('ac','el','pl','fi','lf','cv') then r->>'sys' end, now(), nm)
+    on conflict (src_id) do update set bkey = excluded.bkey, building_no = excluded.building_no, school = excluded.school, region = excluded.region,
+      category = excluded.category, type = excluded.type, l2 = excluded.l2, l3 = excluded.l3, code = excluded.code, critical = excluded.critical,
+      condition = excluded.condition, qty = excluded.qty, price = excluded.price, brand = excluded.brand, model = excluded.model, capacity = excluded.capacity,
+      serial = excluded.serial, install_date = excluded.install_date, tag = excluded.tag, label = excluded.label, floor = excluded.floor, room = excluded.room,
+      sys = excluded.sys, imported_at = now(), by_name = nm;
+    n := n + 1;
+  end loop;
+  return jsonb_build_object('n', n, 'total', (select count(*) from public.fm_assets));
+end $$;
+-- a page of the register the caller may read (≤ 5000 rows), optionally one building
+create or replace function public.fm_assets_page(p_offset int default 0, p_limit int default 5000, p_bkey text default null) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('rows', coalesce((select jsonb_agg(to_jsonb(a) - 'by_name' order by a.bkey, a.src_id) from (
+      select * from public.fm_assets x where (p_bkey is null or x.bkey = p_bkey) and public.fm_asset_can_read(x.region)
+      order by x.bkey, x.src_id offset greatest(0, coalesce(p_offset, 0)) limit greatest(1, least(coalesce(p_limit, 5000), 5000))) a), '[]'::jsonb),
+    'total', (select count(*) from public.fm_assets x where (p_bkey is null or x.bkey = p_bkey) and public.fm_asset_can_read(x.region)),
+    'last', (select jsonb_build_object('at', max(imported_at), 'by', (array_agg(by_name order by imported_at desc))[1]) from public.fm_assets),
+    'can_edit', public.fm_asset_can_edit()) $$;
+revoke all on function public.fm_asset_can_edit(), public.fm_asset_can_read(text), public.fm_asset_import(jsonb, boolean), public.fm_assets_page(int, int, text) from public, anon;
+grant execute on function public.fm_asset_can_edit(), public.fm_asset_can_read(text), public.fm_asset_import(jsonb, boolean), public.fm_assets_page(int, int, text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 128) V395 — monthly backup restore drill ----------
+-- The system admin opens a backup file in the platform (the latest server backup or a file from the device); the platform decrypts
+-- and decompresses it, checks every table, and sends a sample of each table (≤ 200 rows) to fm_backup_drill_check, which inserts it
+-- into a temporary copy of the table (create temp table … (like public.<t>)) and drops it — the real data is never touched. The
+-- result is kept in fm_backup_drills; fm_v395_daily() (pg_cron 06:10 UTC) reminds the system admins (push kind backup, else
+-- WhatsApp) when no successful drill was recorded in the last 31 days (once a week at most).
+create table if not exists public.fm_backup_drills (
+  id uuid primary key default gen_random_uuid(), at timestamptz not null default now(), by_id uuid default auth.uid(), by_name text,
+  src text, file_at timestamptz, file_size bigint, tables int, rows bigint, checked int, failed int, missing int, extra int,
+  ok boolean not null default false, issues jsonb not null default '[]', secs numeric
+);
+alter table public.fm_backup_drills enable row level security;
+revoke all on public.fm_backup_drills from anon, authenticated;
+create or replace function public.fm_backup_drill_check(p_table text, p_rows jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare t text := btrim(coalesce(p_table, '')); n int; tmp text := 'fm395_' || substr(md5(random()::text), 1, 10); cols text;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 200 then raise exception 'bad rows'; end if;
+  if t = any(public.fm_backup_skip()) then return jsonb_build_object('t', t, 'ok', true, 'skip', true); end if;
+  if not exists(select 1 from information_schema.tables where table_schema = 'public' and table_name = t and table_type = 'BASE TABLE') then
+    return jsonb_build_object('t', t, 'ok', false, 'err', 'الجدول غير موجود في قاعدة البيانات الحالية');
+  end if;
+  begin
+    execute format('create temp table %I (like public.%I including defaults) on commit drop', tmp, t);
+    -- like the V351 restore: only the backup's columns that still exist (a newer column takes its default)
+    select string_agg(format('%I', c.column_name), ', ' order by c.ordinal_position) into cols
+      from information_schema.columns c
+     where c.table_schema = 'public' and c.table_name = t and coalesce(c.is_generated, 'NEVER') = 'NEVER'
+       and exists(select 1 from jsonb_array_elements(p_rows) r where r ? c.column_name);
+    if cols is null then execute format('drop table if exists %I', tmp); return jsonb_build_object('t', t, 'ok', jsonb_array_length(p_rows) = 0, 'n', 0, 'err', case when jsonb_array_length(p_rows) > 0 then 'لا يطابق أي عمود' end); end if;
+    execute format('insert into %I (%s) select %s from jsonb_populate_recordset(null::public.%I, $1)', tmp, cols, cols, t) using p_rows;
+    get diagnostics n = row_count;
+    execute format('drop table if exists %I', tmp);
+    return jsonb_build_object('t', t, 'ok', true, 'n', n);
+  exception when others then
+    begin execute format('drop table if exists %I', tmp); exception when others then null; end;
+    return jsonb_build_object('t', t, 'ok', false, 'err', left(sqlerrm, 300));
+  end;
+end $$;
+create or replace function public.fm_backup_drill_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare id_ uuid;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  insert into public.fm_backup_drills (by_name, src, file_at, file_size, tables, rows, checked, failed, missing, extra, ok, issues, secs)
+  values ((select full_name from public.profiles where id = auth.uid()), left(p->>'src', 200), nullif(p->>'file_at','')::timestamptz, nullif(p->>'file_size','')::bigint,
+    nullif(p->>'tables','')::int, nullif(p->>'rows','')::bigint, nullif(p->>'checked','')::int, nullif(p->>'failed','')::int, nullif(p->>'missing','')::int,
+    nullif(p->>'extra','')::int, coalesce((p->>'ok')::boolean, false),
+    case when jsonb_typeof(p->'issues') = 'array' then (select coalesce(jsonb_agg(x), '[]'::jsonb) from (select x from jsonb_array_elements(p->'issues') x limit 100) z) else '[]'::jsonb end,
+    nullif(p->>'secs','')::numeric)
+  returning id into id_;
+  begin insert into public.fm_audit_log (actor_name, action, target, details) values ((select full_name from public.profiles where id = auth.uid()), 'backup_drill', id_::text, jsonb_build_object('ok', p->'ok', 'src', p->'src'));
+  exception when others then null; end;
+  return id_;
+end $$;
+create or replace function public.fm_backup_drills_list() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  return jsonb_build_object('rows', coalesce((select jsonb_agg(to_jsonb(d) - 'by_id' order by d.at desc) from (select * from public.fm_backup_drills order by at desc limit 24) d), '[]'::jsonb),
+    'last_ok', (select max(at) from public.fm_backup_drills where ok));
+end $$;
+create or replace function public.fm_v395_daily() returns int language plpgsql security definer set search_path = public as $$
+declare d date := (now() at time zone 'Asia/Riyadh')::date; lo timestamptz; u record; v_n int := 0;
+begin
+  if exists(select 1 from public.fm_daily_runs where job = 'backup_drill' and day > d - 7) then return 0; end if;
+  select max(at) into lo from public.fm_backup_drills where ok;
+  if lo is not null and lo > now() - interval '31 days' then return 0; end if;
+  insert into public.fm_daily_runs (job, day) values ('backup_drill', d) on conflict do nothing;
+  for u in select id from public.profiles where active and job_title = 'sysadmin' loop
+    if public.fm_alert_send(u.id, 'backup', '🧪 حان موعد تجربة استرجاع النسخة الاحتياطية',
+         case when lo is null then 'لم تُسجَّل تجربة استرجاع ناجحة بعد. افتح «💾 النسخ الاحتياطي» ← «🧪 تجربة الاسترجاع».'
+              else 'آخر تجربة ناجحة: ' || to_char(lo at time zone 'Asia/Riyadh', 'YYYY-MM-DD') || '. افتح «💾 النسخ الاحتياطي» ← «🧪 تجربة الاسترجاع».' end,
+         'backup', 'backup-drill', true) then v_n := v_n + 1; end if;
+  end loop;
+  update public.fm_daily_runs set n = v_n where job = 'backup_drill' and day = d;
+  return v_n;
+end $$;
+revoke all on function public.fm_v395_daily() from public, anon, authenticated;
+revoke all on function public.fm_backup_drill_check(text, jsonb), public.fm_backup_drill_save(jsonb), public.fm_backup_drills_list() from public, anon;
+grant execute on function public.fm_backup_drill_check(text, jsonb), public.fm_backup_drill_save(jsonb), public.fm_backup_drills_list() to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v395-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v395-daily'', ''10 6 * * *'', ''select public.fm_v395_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: the restore-drill reminder is not sent'; end;
+end $do$;
+notify pgrst, 'reload schema';
