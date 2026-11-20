@@ -7,27 +7,31 @@ const {chromium}=require(require.resolve('playwright',{paths:[process.cwd(),'/us
 const {ROOT,C,reporter}=require('./common');const {check,skip,done}=reporter();
 const OUT=path.join(__dirname,'out');fs.mkdirSync(OUT,{recursive:true});const BLOCK=[],ERR=[];
 const RPC_OK=/\/rest\/v1\/rpc\/(fm_wo_create|fm_wo_create_many|fm_wo_act|fm_wo_repair|fm_wo_assignable|fm_eng_submit|fm_eng_lead|fm_wo_cron_on|fm_role|fm_names|fm_eng_people|fm_wo_my_escalations|fm_deputy_candidates|fm_eng_scores|fm_eng_rate_link|fm_eng_rate_staff|fm_eng_rate_follow|fm_touch|fm_usage_report|fm_news_feed|fm_leaves|fm_deputy_candidates)$/;
+/* V379+: most RPCs only read (POST is how PostgREST calls a function). Block the ones that write. */
+const RPC_W=/\/rpc\/(fm_wo_run_due|fm_wo_return_check|fm_wipe\w*|fm_tickets_import\w*|\w*(_save|_set|_submit|_import|_push|_add|_del|_delete|_run|_sync|_publish|_mark|_hash|_upsert|_new|_act|_make|_revoke|_close|_reopen|_pay|_award|_order))$/;
 const W_OK=/\/rest\/v1\/(wo_photos|fm_eng_observations|wo_events)(\?|$)|\/storage\/v1\/object\/(wo-photos|school-engagement)\/|\/storage\/v1\/object\/sign\/|\/auth\/v1\/(token|logout|user)/;
 async function route(rt,who){const q=rt.request(),u=q.url(),m=q.method();
- if(/supabase\.co/.test(u)&&!['GET','HEAD','OPTIONS'].includes(m)&&!RPC_OK.test(u.split('?')[0])&&!W_OK.test(u)){BLOCK.push(who+': '+m+' '+u.replace(/^https:\/\/[^/]+/,'').split('?')[0]);return rt.fulfill({status:403,contentType:'application/json',body:'{"message":"blocked by test guard"}'})}
+ const pth=u.split('?')[0],isRpc=/\/rest\/v1\/rpc\//.test(pth);
+ if(/supabase\.co/.test(u)&&!['GET','HEAD','OPTIONS'].includes(m)&&!RPC_OK.test(pth)&&!W_OK.test(u)&&!(isRpc&&!RPC_W.test(pth))){BLOCK.push(who+': '+m+' '+u.replace(/^https:\/\/[^/]+/,'').split('?')[0]);return rt.fulfill({status:403,contentType:'application/json',body:'{"message":"blocked by test guard"}'})}
  try{const h=Object.assign({},q.headers());delete h.host;const r=await fetch(u,{method:m,headers:h,body:['GET','HEAD'].includes(m)?undefined:q.postDataBuffer()});
   const hd={};r.headers.forEach((v,k)=>{if(!/content-encoding|content-length|transfer-encoding/.test(k))hd[k]=v});await rt.fulfill({status:r.status,headers:hd,body:Buffer.from(await r.arrayBuffer())})}catch(e){await rt.abort().catch(()=>{})}}
 async function session(b,who,vp){const ctx=await b.newContext({viewport:vp||{width:1400,height:950},acceptDownloads:true});await ctx.route(/^https:\/\//,rt=>route(rt,who));
+ await ctx.addInitScript(()=>{try{sessionStorage.setItem('fm271_later','1');localStorage.setItem('fm271_denied',new Date().toDateString());localStorage.setItem('fm187_later',String(Date.now()))}catch(e){}});
  const p=await ctx.newPage();p.on('pageerror',e=>ERR.push(who+': '+e.message));p.on('dialog',d=>d.accept());
  await p.goto('file://'+path.join(ROOT,'start.html'));await p.waitForTimeout(2500);await p.fill('#l-e',C[who].email);await p.fill('#l-p',C[who].password);await p.click('#l-go');
  await p.waitForTimeout(4000);const pick=await p.$('text=فتح المنصة');if(pick)await pick.click();   /* admin / engineer may get a chooser */
- await p.waitForURL(/index\.html|field\.html/,{timeout:30000}).catch(()=>{});await p.waitForTimeout(/field/.test(p.url())?6000:12000);
+ await p.waitForURL(/index\.html|field\.html/,{timeout:30000}).catch(()=>{});if(/field/.test(p.url()))await p.waitForSelector('.bnav',{timeout:45000}).catch(()=>{});await p.waitForTimeout(/field/.test(p.url())?6000:12000);
  /* V157: the platform shows «بورتالي» once per session as a full-screen overlay; check it, then close it so the clicks below reach the page */
  if(/index\.html/.test(p.url())){const pt=await p.evaluate(()=>{const r=document.getElementById('fm157-portal');return r&&!r.hidden?r.innerText:''});
-  check('البورتال','«بورتالي» يظهر عند الدخول ('+who+')',/بورتالي|صلاحيات|نطاق/.test(pt));
+  check('الدخول','القائمة الجانبية ظاهرة ('+who+') — البورتال أُلغي في V235',!!await p.$('nav.v2-nav .v2-nav-btn'));
   if(pt)await p.click('#fm157-portal [data-x]',{timeout:5000}).catch(()=>p.evaluate(()=>{document.getElementById('fm157-portal').hidden=true}));await p.waitForTimeout(300)}
  return {ctx,p}}
 const txt=(p,sel)=>p.evaluate(s=>document.querySelector(s)?.innerText||'',sel);
 let b;(async()=>{b=await chromium.launch();let s;
  /* supervisor — field app */
  s=await session(b,'supervisor',{width:390,height:820});check('الدخول','المشرف يُوجَّه لتطبيق الميدان',/field\.html/.test(s.p.url()));
- check('الميدان','تبويب «التواصل» ظاهر للمشرف',!!await s.p.$('.bnav button[data-v=eng]'));
- await s.p.click('.bnav button[data-v=wo]').catch(()=>{});await s.p.waitForTimeout(2000);
+ await s.p.waitForSelector('.bnav button[data-v=eng]',{timeout:25000}).catch(()=>{});check('الميدان','تبويب «التواصل» ظاهر للمشرف',!!await s.p.$('.bnav button[data-v=eng]'));
+ await s.p.evaluate(()=>document.querySelector('.bnav button[data-v=wo]')?.click());await s.p.waitForTimeout(3000);
  const all=async()=>{for(const t of ['الكل','مغلقة']){const x=await s.p.$(`button:has-text("${t}")`);if(x){await x.click();await s.p.waitForTimeout(1200);return}}};
  await all();check('الميدان','المشرف يرى الأمر المسند إليه',/مهندس→مشرف/.test(await txt(s.p,'body')));
  const mine=await s.p.$('button:has-text("أسندتها")');if(mine){await mine.click();await s.p.waitForTimeout(1200);await all()}
@@ -38,7 +42,7 @@ let b;(async()=>{b=await chromium.launch();let s;
  /* contractor — field app */
  s=await session(b,'contractor',{width:390,height:820});check('الدخول','المقاول يُوجَّه لتطبيق الميدان',/field\.html/.test(s.p.url()));
  check('الميدان','لا يظهر تبويب «التواصل» للمقاول',!await s.p.$('.bnav button[data-v=eng]'));
- await s.p.click('.bnav button[data-v=wo]').catch(()=>{});await s.p.waitForTimeout(2000);await all();const cw=await txt(s.p,'body');
+ await s.p.evaluate(()=>document.querySelector('.bnav button[data-v=wo]')?.click());await s.p.waitForTimeout(3000);await all();const cw=await txt(s.p,'body');
  check('الميدان','المقاول يرى أوامره فقط',/إصلاح/.test(cw)&&!/مهندس→مشرف/.test(cw));await s.p.screenshot({path:path.join(OUT,'contractor_wo.png')});await s.ctx.close();
  /* engineer — platform */
  s=await session(b,'engineer');check('الدخول','المهندس يُوجَّه للمنصة',/index\.html/.test(s.p.url()));
@@ -50,7 +54,9 @@ let b;(async()=>{b=await chromium.launch();let s;
   const [dl]=await Promise.all([s.p.waitForEvent('download',{timeout:60000}).catch(()=>null),s.p.click('.fm122-dlg .row button:text-is("⬇️ Excel")').catch(()=>{})]);
   let sheets='';if(dl){try{const XL=require(require.resolve('xlsx',{paths:[process.cwd(),'/usr/lib/node_modules','/usr/local/lib/node_modules']}));sheets=XL.readFile(await dl.path()).SheetNames.join('، ')}catch(e){sheets='(xlsx غير مثبتة — تحقق من التنزيل فقط)'}}
   check('التصدير','Excel الأمر: ملف واحد بأوراق',!!dl&&(!sheets.includes('،')||/بنود الفحص/.test(sheets)),dl?dl.suggestedFilename()+' '+sheets:'لم يُنزَّل');
-  const [pop]=await Promise.all([s.p.waitForEvent('popup',{timeout:20000}).catch(()=>null),s.p.click('.fm122-dlg .row button:has-text("PDF")').catch(()=>{})]);
+  const [pop0]=await Promise.all([s.p.waitForEvent('popup',{timeout:8000}).catch(()=>null),s.p.click('.fm122-dlg .row button:has-text("PDF")').catch(()=>{})]);
+  /* V379: the report opens inside the platform (in-page viewer), not a popup */
+  let pop=pop0;if(!pop){await s.p.waitForSelector('.fm379-v iframe',{timeout:15000}).catch(()=>{});const fh=await s.p.$('.fm379-v iframe');if(fh){const fr=await fh.contentFrame();pop={waitForTimeout:t=>s.p.waitForTimeout(t),$$eval:(q,f)=>fr.$$eval(q,f),close:()=>s.p.evaluate(()=>document.querySelectorAll('.fm379-v').forEach(v=>v.remove()))}}}
   if(pop){await pop.waitForTimeout(6000);const srcs=await pop.$$eval('img',x=>x.map(i=>i.src).filter(u=>/^https/.test(u)));const st=await Promise.all(srcs.map(u=>fetch(u).then(r=>r.status).catch(()=>0)));
    /* the report window is about:blank, outside the test's network route: its photo links are checked from Node */
    check('التصدير','تقرير PDF: الصفحة وروابط الصور',(await pop.$$eval('.pg',x=>x.length))>=1&&st.length>0&&st.every(x=>x===200),st.length+' صورة');await pop.close()}else check('التصدير','تقرير PDF',false,'لم تُفتح نافذة');
@@ -67,10 +73,10 @@ let b;(async()=>{b=await chromium.launch();let s;
  /* admin — optional */
  if(!C.admin.password){skip('الدخول','المدير','لا توجد كلمة مرور')}else{s=await session(b,'admin');
   if(!/index\.html/.test(s.p.url()))skip('الدخول','المدير','حساب المدير التجريبي غير موجود أو لم يدخل');
-  else{const g=await s.p.evaluate(()=>{const x=document.getElementById('v2-nav-eng')?.closest('.fm123-grp');return x?x.querySelector('.fm123-gh').innerText:''});check('القائمة','زر «التواصل مع المدارس» في مجموعة الكادر',/الكادر/.test(g));
+  else{const g=await s.p.evaluate(()=>{const x=document.getElementById('v2-nav-eng')?.closest('.fm123-grp');return x?x.querySelector('.fm123-gh').innerText:''});check('القائمة','زر «التواصل مع المدارس» في مجموعة المدارس (V201)',/المدارس/.test(g),g);
    await s.p.evaluate(()=>window.fmEngOpen&&fmEngOpen());await s.p.waitForTimeout(5000);const ae=await txt(s.p,'#eng-page');check('التواصل','المدير يرى «إدارة التواصل» والإعدادات',/إدارة التواصل مع المدارس/.test(ae)&&/الإعدادات والإسناد/.test(ae))}
   await s.ctx.close()}
  await b.close();
- const bad=BLOCK.filter(x=>!/rpc\/fm_wo_run_due$/.test(x));   /* the platform runs due campaigns on open: blocked on purpose */
+ const bad=BLOCK.filter(x=>!/rpc\/(fm_wo_run_due|fm_wo_return_check|fm_wf_snap_save)$/.test(x));   /* fm_wf_snap_save: the home page saves the month's workforce counts (V368) */   /* fm_wo_return_check: a returned order may become a ticket — blocked on purpose */   /* the platform runs due campaigns on open: blocked on purpose */
  check('الأمان','المنصة لم تحاول كتابة بيانات مشتركة أو بلاغات',!bad.length,bad.join(' | '));check('الجودة','لا أخطاء في الصفحات',!ERR.length,ERR.slice(0,5).join(' | '));
  done('ui_results.json')})().catch(async e=>{console.log('FATAL',e.stack);process.exitCode=2;await b?.close().catch(()=>{});process.exit(2)});
