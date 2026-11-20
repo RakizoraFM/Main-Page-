@@ -20018,3 +20018,25 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: the restore-drill reminder is not sent'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 129) V396 — work-order items linked to a Solvix asset: real faults and cost per asset ----------
+-- The field app stores the asset on the checklist item (asset {id = fm_assets.src_id, t, lb}); the checklist itself is saved by
+-- the usual fm_wo_act('checklist'). fm_asset_links is SECURITY INVOKER: the caller sees only the work orders his RLS lets him see.
+create or replace function public.fm_asset_links(p_days int default 365) returns jsonb
+language sql stable set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', x.aid, 'n', x.n, 'fix', x.fix, 'wos', x.wos, 'last', x.last, 'cost', round(x.cost, 2), 'codes', x.codes)), '[]'::jsonb)
+  from (
+    select it->'asset'->>'id' as aid, count(*) as n,
+           count(*) filter (where it->>'res' in ('fix','fixed')) as fix,
+           count(distinct w.id) as wos, max(coalesce(w.done_at, w.updated_at)) as last,
+           coalesce(sum((select sum(coalesce(nullif(m->>'q','')::numeric, 0) * coalesce(nullif(m->>'price','')::numeric, 0))
+                          from jsonb_array_elements(case when jsonb_typeof(it->'materials') = 'array' then it->'materials' else '[]'::jsonb end) m)), 0) as cost,
+           (array_agg(distinct w.code))[1:10] as codes
+      from public.work_orders w cross join lateral jsonb_array_elements(case when jsonb_typeof(w.checklist) = 'array' then w.checklist else '[]'::jsonb end) it
+     where coalesce(it->'asset'->>'id', '') <> '' and w.status not in ('cancelled','rejected')
+       and w.created_at >= now() - make_interval(days => greatest(30, least(coalesce(p_days, 365), 1100)))
+     group by 1
+  ) x $$;
+revoke all on function public.fm_asset_links(int) from public, anon;
+grant execute on function public.fm_asset_links(int) to authenticated;
+notify pgrst, 'reload schema';
