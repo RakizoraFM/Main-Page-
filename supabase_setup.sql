@@ -21018,3 +21018,43 @@ revoke all on function public.fm_wo_auto_repair_trg() from public, anon, authent
 revoke all on function public.fm_wo_auto_repair_cfg() from public, anon;
 grant execute on function public.fm_wo_auto_repair_cfg() to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 140) V414 — a Google Sheets source can feed a region's tickets ----------
+-- fm_sources.target may now be 'tickets:<region>' (lowercase key). Such a source is read by the system admin's platform (like V307)
+-- and its rows go through the normal ticket import (V232 incremental: adds and updates, never deletes) of that region — only while
+-- that region is the active one, so the screen never switches by itself. fm_source_tickets_done(src, rows, err) records the result.
+do $do$ declare c text; begin
+  for c in select conname from pg_constraint where conrelid = 'public.fm_sources'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%target%' loop
+    execute format('alter table public.fm_sources drop constraint %I', c);
+  end loop;
+  alter table public.fm_sources add constraint fm_sources_target_check check (target = 'schooldb' or target ~ '^tickets:[a-z0-9_]{1,40}$');
+end $do$;
+create or replace function public.fm_source_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare v uuid := public.fm_uuid_or_null(p->>'id'); me public.profiles; tg text := coalesce(nullif(p->>'target',''), 'schooldb');
+begin
+  if not public.fm_sdb_admin() then raise exception 'not allowed'; end if;
+  select * into me from public.profiles where id = auth.uid();
+  if coalesce(p->>'delete','') = 'true' then delete from public.fm_sources where id = v; return v; end if;
+  if btrim(coalesce(p->>'name','')) = '' or coalesce(p->>'url','') !~ '^https://docs\.google\.com/spreadsheets/' then raise exception 'bad source'; end if;
+  if tg <> 'schooldb' and tg !~ '^tickets:[a-z0-9_]{1,40}$' then raise exception 'bad source'; end if;
+  if v is null then
+    insert into public.fm_sources (name, url, target, map, full_list, every_h, active, by_id, by_name)
+    values (left(btrim(p->>'name'),120), left(p->>'url',600), tg, coalesce(p->'map','{}'), coalesce((p->>'full_list')::boolean,false) and tg = 'schooldb',
+            least(168, greatest(1, coalesce((p->>'every_h')::int, 6))), coalesce((p->>'active')::boolean, true), me.id, coalesce(me.full_name, me.email))
+    returning id into v;
+  else
+    update public.fm_sources set name = left(btrim(p->>'name'),120), url = left(p->>'url',600), target = tg, map = coalesce(p->'map', map),
+      full_list = coalesce((p->>'full_list')::boolean, full_list) and tg = 'schooldb', every_h = least(168, greatest(1, coalesce((p->>'every_h')::int, every_h))),
+      active = coalesce((p->>'active')::boolean, active) where id = v;
+  end if;
+  return v;
+end $$;
+create or replace function public.fm_source_tickets_done(p_src uuid, p_rows int, p_err text) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_sdb_admin() then raise exception 'not allowed'; end if;
+  update public.fm_sources set last_at = now(), last_ok = p_err is null, last_err = left(p_err, 300), last_rows = p_rows, last_changes = null
+   where id = p_src and target like 'tickets:%';
+end $$;
+revoke all on function public.fm_source_tickets_done(uuid, int, text) from public, anon;
+grant execute on function public.fm_source_tickets_done(uuid, int, text) to authenticated;
+notify pgrst, 'reload schema';
