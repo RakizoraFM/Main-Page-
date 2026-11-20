@@ -19932,3 +19932,89 @@ language sql stable security definer set search_path = public as $$
 revoke all on function public.fm_asset_can_edit(), public.fm_asset_can_read(text), public.fm_asset_import(jsonb, boolean), public.fm_assets_page(int, int, text) from public, anon;
 grant execute on function public.fm_asset_can_edit(), public.fm_asset_can_read(text), public.fm_asset_import(jsonb, boolean), public.fm_assets_page(int, int, text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 128) V395 — monthly backup restore drill ----------
+-- The system admin opens a backup file in the platform (the latest server backup or a file from the device); the platform decrypts
+-- and decompresses it, checks every table, and sends a sample of each table (≤ 200 rows) to fm_backup_drill_check, which inserts it
+-- into a temporary copy of the table (create temp table … (like public.<t>)) and drops it — the real data is never touched. The
+-- result is kept in fm_backup_drills; fm_v395_daily() (pg_cron 06:10 UTC) reminds the system admins (push kind backup, else
+-- WhatsApp) when no successful drill was recorded in the last 31 days (once a week at most).
+create table if not exists public.fm_backup_drills (
+  id uuid primary key default gen_random_uuid(), at timestamptz not null default now(), by_id uuid default auth.uid(), by_name text,
+  src text, file_at timestamptz, file_size bigint, tables int, rows bigint, checked int, failed int, missing int, extra int,
+  ok boolean not null default false, issues jsonb not null default '[]', secs numeric
+);
+alter table public.fm_backup_drills enable row level security;
+revoke all on public.fm_backup_drills from anon, authenticated;
+create or replace function public.fm_backup_drill_check(p_table text, p_rows jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare t text := btrim(coalesce(p_table, '')); n int; tmp text := 'fm395_' || substr(md5(random()::text), 1, 10); cols text;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 200 then raise exception 'bad rows'; end if;
+  if t = any(public.fm_backup_skip()) then return jsonb_build_object('t', t, 'ok', true, 'skip', true); end if;
+  if not exists(select 1 from information_schema.tables where table_schema = 'public' and table_name = t and table_type = 'BASE TABLE') then
+    return jsonb_build_object('t', t, 'ok', false, 'err', 'الجدول غير موجود في قاعدة البيانات الحالية');
+  end if;
+  begin
+    execute format('create temp table %I (like public.%I including defaults) on commit drop', tmp, t);
+    -- like the V351 restore: only the backup's columns that still exist (a newer column takes its default)
+    select string_agg(format('%I', c.column_name), ', ' order by c.ordinal_position) into cols
+      from information_schema.columns c
+     where c.table_schema = 'public' and c.table_name = t and coalesce(c.is_generated, 'NEVER') = 'NEVER'
+       and exists(select 1 from jsonb_array_elements(p_rows) r where r ? c.column_name);
+    if cols is null then execute format('drop table if exists %I', tmp); return jsonb_build_object('t', t, 'ok', jsonb_array_length(p_rows) = 0, 'n', 0, 'err', case when jsonb_array_length(p_rows) > 0 then 'لا يطابق أي عمود' end); end if;
+    execute format('insert into %I (%s) select %s from jsonb_populate_recordset(null::public.%I, $1)', tmp, cols, cols, t) using p_rows;
+    get diagnostics n = row_count;
+    execute format('drop table if exists %I', tmp);
+    return jsonb_build_object('t', t, 'ok', true, 'n', n);
+  exception when others then
+    begin execute format('drop table if exists %I', tmp); exception when others then null; end;
+    return jsonb_build_object('t', t, 'ok', false, 'err', left(sqlerrm, 300));
+  end;
+end $$;
+create or replace function public.fm_backup_drill_save(p jsonb) returns uuid language plpgsql security definer set search_path = public as $$
+declare id_ uuid;
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  insert into public.fm_backup_drills (by_name, src, file_at, file_size, tables, rows, checked, failed, missing, extra, ok, issues, secs)
+  values ((select full_name from public.profiles where id = auth.uid()), left(p->>'src', 200), nullif(p->>'file_at','')::timestamptz, nullif(p->>'file_size','')::bigint,
+    nullif(p->>'tables','')::int, nullif(p->>'rows','')::bigint, nullif(p->>'checked','')::int, nullif(p->>'failed','')::int, nullif(p->>'missing','')::int,
+    nullif(p->>'extra','')::int, coalesce((p->>'ok')::boolean, false),
+    case when jsonb_typeof(p->'issues') = 'array' then (select coalesce(jsonb_agg(x), '[]'::jsonb) from (select x from jsonb_array_elements(p->'issues') x limit 100) z) else '[]'::jsonb end,
+    nullif(p->>'secs','')::numeric)
+  returning id into id_;
+  begin insert into public.fm_audit_log (actor_name, action, target, details) values ((select full_name from public.profiles where id = auth.uid()), 'backup_drill', id_::text, jsonb_build_object('ok', p->'ok', 'src', p->'src'));
+  exception when others then null; end;
+  return id_;
+end $$;
+create or replace function public.fm_backup_drills_list() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  return jsonb_build_object('rows', coalesce((select jsonb_agg(to_jsonb(d) - 'by_id' order by d.at desc) from (select * from public.fm_backup_drills order by at desc limit 24) d), '[]'::jsonb),
+    'last_ok', (select max(at) from public.fm_backup_drills where ok));
+end $$;
+create or replace function public.fm_v395_daily() returns int language plpgsql security definer set search_path = public as $$
+declare d date := (now() at time zone 'Asia/Riyadh')::date; lo timestamptz; u record; v_n int := 0;
+begin
+  if exists(select 1 from public.fm_daily_runs where job = 'backup_drill' and day > d - 7) then return 0; end if;
+  select max(at) into lo from public.fm_backup_drills where ok;
+  if lo is not null and lo > now() - interval '31 days' then return 0; end if;
+  insert into public.fm_daily_runs (job, day) values ('backup_drill', d) on conflict do nothing;
+  for u in select id from public.profiles where active and job_title = 'sysadmin' loop
+    if public.fm_alert_send(u.id, 'backup', '🧪 حان موعد تجربة استرجاع النسخة الاحتياطية',
+         case when lo is null then 'لم تُسجَّل تجربة استرجاع ناجحة بعد. افتح «💾 النسخ الاحتياطي» ← «🧪 تجربة الاسترجاع».'
+              else 'آخر تجربة ناجحة: ' || to_char(lo at time zone 'Asia/Riyadh', 'YYYY-MM-DD') || '. افتح «💾 النسخ الاحتياطي» ← «🧪 تجربة الاسترجاع».' end,
+         'backup', 'backup-drill', true) then v_n := v_n + 1; end if;
+  end loop;
+  update public.fm_daily_runs set n = v_n where job = 'backup_drill' and day = d;
+  return v_n;
+end $$;
+revoke all on function public.fm_v395_daily() from public, anon, authenticated;
+revoke all on function public.fm_backup_drill_check(text, jsonb), public.fm_backup_drill_save(jsonb), public.fm_backup_drills_list() from public, anon;
+grant execute on function public.fm_backup_drill_check(text, jsonb), public.fm_backup_drill_save(jsonb), public.fm_backup_drills_list() to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v395-daily'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v395-daily'', ''10 6 * * *'', ''select public.fm_v395_daily()'')';
+  exception when others then raise notice 'pg_cron is not available: the restore-drill reminder is not sent'; end;
+end $do$;
+notify pgrst, 'reload schema';
