@@ -121,6 +121,21 @@ begin
       on conflict (region, ticket_id) do nothing;
     end loop;
   end loop;
+  -- V402: the tour tickets — open, in schools of «تركي المطيري» (demo.sup2, busy), created within the last two hours so their SLA
+  -- is fresh. A visitor as project manager assigns one to «ماجد السبيعي» (demo.sup1) with a work order, the supervisor does it with
+  -- photos in the field app, the engineer (demo.eng1, the school's engineer) approves. 12 of them so several visitors can try the same night.
+  for i in 1..12 loop
+    s := sch -> ((i * 2 - 2) % 40); pr := (array['عالي','متوسط','طارئ'])[1 + i % 3]; cr := now() - (10 * i) * interval '1 minute';
+    insert into public.tickets(region, ticket_id, school, building_id, supervisor, engineer, contractor, priority, sub_category, status, created_at, raw)
+    values ('riyadh', 'DM-TOUR-' || lpad(i::text, 2, '0'), s->>'school', s->>'buildingId', s->>'supervisor', s->>'engineer', s->>'contractor', pr,
+            A_CAT[1 + i % 14][1], 'جديد', cr,
+            jsonb_build_object('رقم البلاغ', 'DM-TOUR-' || lpad(i::text, 2, '0'), 'اسم المدرسة', s->>'school', 'الرقم الوزاري / رقم المبنى', s->>'buildingId',
+              'الحالة', 'جديد', 'الأولوية', pr, 'تاريخ البلاغ', to_char(cr at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS".000Z"'), 'تاريخ الإغلاق', '',
+              'التصنيف الرئيسي', A_CAT[1 + i % 14][1], 'التصنيف الفرعي', A_CAT[1 + i % 14][2], 'وصف البلاغ', A_CAT[1 + i % 14][2] || ' (بلاغ جولة العرض)',
+              'المشرف', s->>'supervisor', 'المهندس', s->>'engineer', 'المقاول', s->>'contractor'))
+    on conflict (region, ticket_id) do nothing;
+    n_t := n_t + 1;
+  end loop;
   for reg in select unnest(array['riyadh','qassim']) loop
     select max(created_at) into mx from public.tickets where region = reg;
     insert into public.app_kv(key, value) values ('fm_ref_date_' || reg, to_jsonb(to_char(mx at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS".000Z"')))
@@ -223,6 +238,14 @@ begin
   delete from public.wo_material_photos where true; delete from public.wo_suppliers where true; delete from public.wo_materials where true; delete from public.wo_stores where true;
   if to_regclass('public.fm_cc_centers') is not null then delete from public.fm_cc_entries where true; delete from public.fm_cc_staff where true; delete from public.fm_cc_budget where true; update public.fm_contracts set cc_id = null where true; delete from public.fm_cc_centers where parent_id is not null; delete from public.fm_cc_centers where true; end if;
   delete from public.fm_bills where true; delete from public.fm_contracts where true;
+  -- V402: what visitors did on the tour tickets (assignments, ticket stages / photos / events, orders and their events / photos)
+  if to_regclass('public.fm_tk_assign_log') is not null then delete from public.fm_tk_assign_log where true; end if;
+  if to_regclass('public.fm_tk_assign') is not null then delete from public.fm_tk_assign where true; end if;
+  if to_regclass('public.ticket_events') is not null then delete from public.ticket_events where true; end if;
+  if to_regclass('public.ticket_photos') is not null then delete from public.ticket_photos where true; end if;
+  if to_regclass('public.ticket_work') is not null then delete from public.ticket_work where true; end if;
+  if to_regclass('public.wo_photos') is not null then delete from public.wo_photos where true; end if;
+  if to_regclass('public.wo_events') is not null then delete from public.wo_events where true; end if;
   delete from public.work_orders where true; delete from public.tickets where true; delete from public.fm_eng_assignments where true;
   return public.fm_demo_seed();
 end $$;

@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="S16">
+<meta name="fm-version" content="S17">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -149,8 +149,10 @@ function setupView(err){
 
 /* S8 (V182): a demo company lists its demo accounts (demo_seed.sql) — one click signs in with the public demo password */
 const demoT=()=>{const t=readT();return t&&t.demo?t:null};
-const DEMO=[['demo.admin','🛡️ مدير النظام'],['demo.pm','📊 مدير المشروع'],['demo.area','🗺️ مدير المنطقة'],['demo.eng1','👷 مهندس المنطقة'],['demo.sup1','🧰 مشرف (تطبيق الميدان)'],['demo.contractor','🏗️ مقاول (تطبيق الميدان)'],['demo.store','📦 أمين المستودع'],['demo.owner','✅ ممثل الجهة المالكة'],['demo.acc','💰 المحاسبة']];
-const demoBox=()=>`<div class="msg info" style="text-align:right"><b>🧪 نسخة عرض ببيانات وهمية</b> — اختر الدور لتجربة المنصة كما يراها:<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">${DEMO.map(([e,l])=>`<button type="button" class="go" style="margin:0;padding:8px;font-size:13px" data-demo="${e}@rakizora.demo">${l}</button>`).join('')}</div><div style="font-size:12px;margin-top:6px">تُعاد البيانات لحالتها كل ليلة.</div></div>`;
+const DEMO=[['demo.admin','🛡️ مدير النظام'],['demo.area','🗺️ مدير المنطقة'],['demo.contractor','🏗️ مقاول (تطبيق الميدان)'],['demo.store','📦 أمين المستودع'],['demo.owner','✅ ممثل الجهة المالكة'],['demo.acc','💰 المحاسبة']];
+/* S17 (V402): the tour starts with three roles — project manager assigns a ticket, the supervisor does it with photos, the engineer approves */
+const DEMO3=[['demo.pm','📊 مدير المشروع','1) يُسند البلاغ'],['demo.sup1','🧰 المشرف (الجوال)','2) ينفّذ بالصور'],['demo.eng1','👷 المهندس','3) يراجع ويعتمد']];
+const demoBox=()=>`<div class="msg info" style="text-align:right"><b>🧪 نسخة عرض ببيانات وهمية</b> — جرّب بلاغاً واحداً من الإسناد حتى الإغلاق بالصور، بثلاثة أدوار بالترتيب:<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px">${DEMO3.map(([e,l,h])=>`<button type="button" class="go" style="margin:0;padding:8px 4px;font-size:13px;line-height:1.5" data-demo="${e}@rakizora.demo">${l}<br><small style="font-weight:700;opacity:.85">${h}</small></button>`).join('')}</div><details style="margin-top:8px"><summary style="cursor:pointer;font-weight:800;font-size:13px">أدوار أخرى</summary><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${DEMO.map(([e,l])=>`<button type="button" class="go" style="margin:0;padding:8px;font-size:13px" data-demo="${e}@rakizora.demo">${l}</button>`).join('')}</div></details><div style="font-size:12px;margin-top:6px">تُعاد البيانات لحالتها كل ليلة.</div></div>`;
 function loginView(mode,info,err){
  mode=mode||'in';
  const title={in:'تسجيل الدخول',up:'إنشاء حساب',reset:'استعادة كلمة المرور'}[mode];

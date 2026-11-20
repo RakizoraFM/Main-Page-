@@ -20285,3 +20285,40 @@ revoke all on function public.fm_asset_stage_begin(int, int, boolean), public.fm
 grant execute on function public.fm_asset_stage_begin(int, int, boolean), public.fm_asset_stage_add(uuid, int, jsonb), public.fm_asset_stage_preview(uuid),
   public.fm_asset_stage_commit(uuid), public.fm_asset_stage_cancel(uuid) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 133) V402 — a ticket assigned with a work order (V250) is closed when its order is approved ----------
+-- When a work order becomes «closed» (the engineer approved it), every ticket whose active assignment (fm_tk_assign) points at
+-- that order is finished: the assignment → done («أُغلق باعتماد أمر العمل …»), a log row, the ticket's work stage → resolved
+-- (ticket_work, resolution = the order code + the items' notes, resolved_at = the order's closed_at) unless the ticket is already
+-- resolved / closed / cancelled, and a ticket event. Only tickets linked through fm_tk_assign.wo_id; nothing else changes.
+-- Whole body in an exception block: a failure here never blocks the approval.
+create or replace function public.fm_wo_tk_close() returns trigger language plpgsql security definer set search_path = public as $$
+declare a record; d text; nm text;
+begin
+  if new.status <> 'closed' or old.status = 'closed' then return new; end if;
+  begin
+    nm := coalesce((select full_name from public.profiles where id = auth.uid()), new.approver_name, '');
+    d := 'أمر العمل ' || coalesce(new.code, '') || coalesce(': ' || nullif((select string_agg(nullif(btrim(x->>'note'), ''), '؛ ')
+           from jsonb_array_elements(case when jsonb_typeof(new.checklist) = 'array' then new.checklist else '[]'::jsonb end) x), ''), '');
+    for a in select * from public.fm_tk_assign where wo_id = new.id and status = 'active' loop
+      update public.fm_tk_assign set status = 'done', done_at = now(), done_note = left('أُغلق باعتماد أمر العمل ' || coalesce(new.code, ''), 500), updated_at = now()
+        where region = a.region and ticket_id = a.ticket_id;
+      insert into public.fm_tk_assign_log(region, ticket_id, action, assignee_name, note, by_id, by_name)
+        values (a.region, a.ticket_id, 'done', a.assignee_name, left('أُغلق باعتماد أمر العمل ' || coalesce(new.code, ''), 1000), auth.uid(), nm);
+      insert into public.ticket_work(region, ticket_id, stage, rec, resolved_at, updated_by, updated_by_name)
+        values (a.region, a.ticket_id, 'resolved', jsonb_build_object('stage','resolved','assignee', a.assignee_name, 'woCode', new.code,
+          'resolution', jsonb_build_object('desc', left(d, 900), 'cause', ''), 'updated', (extract(epoch from now()) * 1000)::bigint), coalesce(new.closed_at, now()), auth.uid(), nm)
+        on conflict (region, ticket_id) do update set stage = 'resolved', resolved_at = coalesce(new.closed_at, now()), updated_at = now(), updated_by = auth.uid(), updated_by_name = nm,
+          rec = public.ticket_work.rec || jsonb_build_object('stage','resolved','woCode', new.code, 'updated', (extract(epoch from now()) * 1000)::bigint,
+            'resolution', coalesce(public.ticket_work.rec->'resolution', '{}'::jsonb) || jsonb_build_object('desc', coalesce(nullif(public.ticket_work.rec#>>'{resolution,desc}', ''), left(d, 900))))
+          where public.ticket_work.stage not in ('resolved','closed','cancelled');
+      insert into public.ticket_events(region, ticket_id, by_name, type, stage, text)
+        values (a.region, a.ticket_id, nm, 'stage', 'resolved', left('✅ أُغلق باعتماد أمر العمل ' || coalesce(new.code, '') || coalesce(' — اعتمده ' || nullif(nm, ''), ''), 1000));
+    end loop;
+  exception when others then raise warning 'fm_wo_tk_close: %', sqlerrm; end;
+  return new;
+end $$;
+drop trigger if exists fm_wo_tk_close on public.work_orders;
+create trigger fm_wo_tk_close after update of status on public.work_orders for each row execute function public.fm_wo_tk_close();
+revoke all on function public.fm_wo_tk_close() from public, anon, authenticated;
+notify pgrst, 'reload schema';
