@@ -21207,3 +21207,26 @@ revoke all on function public.fm_rep_arch_can_save(text), public.fm_rep_arch_see
 revoke all on function public.fm_rep_arch_save(text, text, text, text, text, text), public.fm_rep_arch_list(int), public.fm_rep_arch_get(uuid), public.fm_rep_arch_del(uuid) from public, anon;
 grant execute on function public.fm_rep_arch_can_save(text), public.fm_rep_arch_save(text, text, text, text, text, text), public.fm_rep_arch_list(int), public.fm_rep_arch_get(uuid), public.fm_rep_arch_del(uuid) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 143) V417 — alternative units per item (buy by carton, stock and issue by piece) ----------
+-- wo_materials.units [{u: unit name, f: how many base units in one}] (≤ 5). Stock, moves, prices and requests stay in the item's base unit;
+-- the apps convert a quantity typed in another unit (qty × f, price ÷ f) before sending, so no balance or price rule changes.
+-- fm_mat_units_set(id, units): fm_wh_edit.
+alter table public.wo_materials add column if not exists units jsonb not null default '[]'::jsonb;
+create or replace function public.fm_mat_units_set(p_id uuid, p_units jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare x jsonb; out jsonb := '[]'; seen text[] := '{}'; u text; f numeric;
+begin
+  if not public.fm_wh_edit() then raise exception 'not allowed'; end if;
+  if not exists (select 1 from public.wo_materials where id = p_id) then raise exception 'not found'; end if;
+  if jsonb_typeof(coalesce(p_units,'[]')) <> 'array' or jsonb_array_length(coalesce(p_units,'[]')) > 5 then raise exception 'invalid units'; end if;
+  for x in select * from jsonb_array_elements(coalesce(p_units,'[]')) loop
+    u := left(btrim(coalesce(x->>'u','')), 20); f := nullif(x->>'f','')::numeric;
+    if u = '' or f is null or f <= 1 or f > 100000 or u = any(seen) then raise exception 'invalid units'; end if;
+    seen := seen || u; out := out || jsonb_build_array(jsonb_build_object('u', u, 'f', f));
+  end loop;
+  update public.wo_materials set units = out where id = p_id;
+  return out;
+end $$;
+revoke all on function public.fm_mat_units_set(uuid, jsonb) from public, anon;
+grant execute on function public.fm_mat_units_set(uuid, jsonb) to authenticated;
+notify pgrst, 'reload schema';
