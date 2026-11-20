@@ -20985,3 +20985,36 @@ end $$;
 revoke all on function public.fm_bill_rep_list(text), public.fm_bill_rep_set(text, jsonb) from public, anon;
 grant execute on function public.fm_bill_rep_list(text), public.fm_bill_rep_set(text, jsonb) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 139) V411 — an approved order with «needs repair» items opens its repair order by itself ----------
+-- fm_settings.wo_auto_repair {enabled false, types [preventive, inspection]} (system admin). After a work order becomes closed, when the
+-- setting is on and its type is listed, the items with res «fix» and no repair order yet go to fm_wo_repair (V149) in the approver's
+-- name, assigned back to the same assignee (hierarchy re-checked there). A failure never blocks the approval: it is written as a note event.
+-- The compliance % of an order (ok ÷ items with a result other than «لا ينطبق») is computed in the apps from the checklist.
+create or replace function public.fm_wo_auto_repair_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', false, 'types', '["preventive","inspection"]'::jsonb) || coalesce(public.fm_setting('wo_auto_repair'), '{}'::jsonb) $$;
+create or replace function public.fm_wo_auto_repair_trg() returns trigger language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_wo_auto_repair_cfg(); r jsonb;
+begin
+  if new.status = 'closed' and old.status is distinct from 'closed' and coalesce((c->>'enabled')::boolean, false)
+     and coalesce(c->'types', '[]'::jsonb) ? coalesce(new.type, '')
+     and exists (select 1 from jsonb_array_elements(case when jsonb_typeof(new.checklist) = 'array' then new.checklist else '[]'::jsonb end) e
+                  where e->>'res' = 'fix' and e->>'rwo' is null) then
+    begin
+      r := public.fm_wo_repair(new.id, jsonb_build_object('assignee', new.assignee, 'note', 'أُنشئ تلقائياً عند اعتماد ' || coalesce(new.code, '')));
+      insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+      values (new.id, auth.uid(), 'النظام', 'note', new.status, '🤖 أمر إصلاح تلقائي ' || coalesce(r->>'code','') || ' لـ ' || coalesce(r->>'count','') || ' بند غير مطابق');
+    exception when others then
+      begin insert into public.wo_events (wo_id, by_id, by_name, type, status, text)
+            values (new.id, auth.uid(), 'النظام', 'note', new.status, '⚠️ تعذّر إنشاء أمر الإصلاح تلقائياً: ' || left(sqlerrm, 200));
+      exception when others then null; end;
+    end;
+  end if;
+  return null;
+end $$;
+drop trigger if exists fm_wo_auto_repair on public.work_orders;
+create trigger fm_wo_auto_repair after update of status on public.work_orders for each row execute function public.fm_wo_auto_repair_trg();
+revoke all on function public.fm_wo_auto_repair_trg() from public, anon, authenticated;
+revoke all on function public.fm_wo_auto_repair_cfg() from public, anon;
+grant execute on function public.fm_wo_auto_repair_cfg() to authenticated;
+notify pgrst, 'reload schema';
