@@ -19695,3 +19695,101 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: the morning digest is not sent'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 125) V391 — photo quality: dark / blurry photos, «after» the same as «before», and an AI review ----------
+-- The device measures each work-order photo when it is uploaded (q = {lum 0–255, sharp = variance of the Laplacian of a 128 px
+-- grey copy, flags [dark | blurry]}). «same» is found here: an «after» photo whose dHash (V380) is within 6 bits of a «before»
+-- photo of the same order and item. The AI review (fm-ai task photo) is stored in wo_photos.ai {ok, issue, reason, at, by}.
+alter table public.wo_photos add column if not exists q  jsonb;
+alter table public.wo_photos add column if not exists ai jsonb;
+create or replace function public.fm_ai_begin(p_kind text) returns bigint language plpgsql security definer set search_path = public as $$
+declare s jsonb := coalesce(public.fm_setting('ai'), '{}'); lim int := greatest(1, least(coalesce(nullif(s->>'daily_limit','')::int, 30), 1000)); id_ bigint;
+begin
+  if auth.uid() is null or public.fm_role() in ('pending') or public.fm_role() is null then raise exception 'not allowed'; end if;
+  if not coalesce((s->>'enabled')::boolean, false) then raise exception 'ai disabled'; end if;
+  if p_kind not in ('classify','summary','recurring','ppm','photo','catfix') then raise exception 'invalid kind'; end if;
+  if (select count(*) from public.fm_ai_usage where user_id = auth.uid() and day = (now() at time zone 'Asia/Riyadh')::date) >= lim then raise exception 'daily limit reached'; end if;
+  insert into public.fm_ai_usage (user_id, kind) values (auth.uid(), p_kind) returning id into id_;
+  return id_;
+end $$;
+create or replace function public.fm_photo_q(p_id uuid, p_q jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+declare r record; f jsonb;
+begin
+  if auth.uid() is null then raise exception 'not allowed'; end if;
+  if p_q is null or jsonb_typeof(p_q) <> 'object' or length(p_q::text) > 400 then raise exception 'bad value'; end if;
+  select coalesce(jsonb_agg(x), '[]'::jsonb) into f from jsonb_array_elements_text(coalesce(p_q->'flags', '[]'::jsonb)) x where x in ('dark','blurry');
+  select * into r from public.wo_photos where id = p_id;
+  if not found then return false; end if;
+  if r.by_id is distinct from auth.uid() and not public.fm_wo_can_see(r.wo_id) then raise exception 'not allowed'; end if;
+  update public.wo_photos set q = jsonb_build_object('lum', round(coalesce((p_q->>'lum')::numeric, 0), 1), 'sharp', round(coalesce((p_q->>'sharp')::numeric, 0), 1), 'flags', f, 'at', now())
+   where id = p_id;
+  return true;
+end $$;
+create or replace function public.fm_photo_q_can() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_flag_can() or public.fm_scope_all() or public.fm_role() in ('admin','manager','engineer')) $$;
+create or replace function public.fm_photo_ai_set(p_id uuid, p_ai jsonb) returns boolean language plpgsql security definer set search_path = public as $$
+declare r record; iss text := coalesce(p_ai->>'issue', '');
+begin
+  if not public.fm_photo_q_can() then raise exception 'not allowed'; end if;
+  if iss not in ('none','dark','blurry','same','unrelated','no_work','other') then raise exception 'bad value'; end if;
+  select * into r from public.wo_photos where id = p_id;
+  if not found or not public.fm_wo_can_see(r.wo_id) then return false; end if;
+  update public.wo_photos set ai = jsonb_build_object('ok', iss = 'none', 'issue', iss, 'reason', left(coalesce(p_ai->>'reason', ''), 300), 'at', now(),
+    'by', (select full_name from public.profiles where id = auth.uid())) where id = p_id;
+  return true;
+end $$;
+-- flagged photos of the period (≤ 500) + counts
+create or replace function public.fm_photo_quality(p_days int default 30) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare d int := greatest(1, least(coalesce(p_days, 30), 400)); res jsonb;
+begin
+  if not public.fm_photo_q_can() then raise exception 'not allowed'; end if;
+  with ph as (
+    select p.id, p.wo_id, p.kind, p.tag, p.item, p.path, p.at, p.by_name, p.q, p.ai, p.phash,
+           case when p.phash ~ '^[0-9a-f]{16}$' and p.phash not in ('0000000000000000','ffffffffffffffff') then ('x' || p.phash)::bit(64) end as b,
+           w.code, w.school, w.region, w.assignee_name, w.title, w.checklist
+      from public.wo_photos p join public.work_orders w on w.id = p.wo_id
+     where p.at >= now() - make_interval(days => d) and public.fm_wo_can_see(p.wo_id)
+  ), same as (
+    select distinct on (a.id) a.id, b.id as bid, b.path as bpath, bit_count(a.b # b.b) as dist
+      from ph a join ph b on b.wo_id = a.wo_id and b.kind = 'before' and a.kind = 'after' and coalesce(b.item, -1) = coalesce(a.item, -1) and b.id <> a.id
+     where a.b is not null and b.b is not null and bit_count(a.b # b.b) <= 6
+     order by a.id, bit_count(a.b # b.b)
+  ), fl as (
+    select ph.*, s.bid, s.bpath, s.dist,
+           (select coalesce(jsonb_agg(x), '[]'::jsonb) from (select jsonb_array_elements_text(coalesce(ph.q->'flags','[]'::jsonb)) x
+              union all select 'same' where s.bid is not null) z) as flags
+      from ph left join same s on s.id = ph.id
+     where jsonb_array_length(coalesce(ph.q->'flags','[]'::jsonb)) > 0 or s.bid is not null or (ph.ai->>'ok') = 'false'
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'wo', f.wo_id, 'code', f.code, 'school', f.school, 'region', f.region, 'who', f.assignee_name,
+      'kind', f.kind, 'tag', f.tag, 'item', f.item, 'item_t', case when f.item is not null then left(coalesce(f.checklist->f.item->>'t', ''), 200) end,
+      'path', f.path, 'at', f.at, 'by', f.by_name, 'q', f.q, 'ai', f.ai, 'flags', f.flags, 'same_id', f.bid, 'same_path', f.bpath, 'dist', f.dist,
+      'rv', (select jsonb_build_object('status', r.status, 'note', r.note, 'by', r.by_name, 'at', r.at) from public.fm_photo_dup_reviews r where r.k = 'q:' || f.id::text))
+    order by f.at desc), '[]'::jsonb) into res
+  from (select * from fl order by at desc limit 500) f;
+  return jsonb_build_object('days', d, 'rows', res,
+    'checked', (select count(*) from public.wo_photos where at >= now() - make_interval(days => d) and q is not null),
+    'unchecked', (select count(*) from public.wo_photos where at >= now() - make_interval(days => d) and q is null),
+    'can_review', public.fm_flag_can());
+end $$;
+create or replace function public.fm_photo_unq(p_days int default 30, p_limit int default 200) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'path', p.path)), '[]'::jsonb)
+  from (select p.id, p.path from public.wo_photos p
+        where p.q is null and p.at >= now() - make_interval(days => greatest(1, least(coalesce(p_days, 30), 400)))
+          and auth.uid() is not null and public.fm_wo_can_see(p.wo_id)
+        order by p.at desc limit greatest(1, least(coalesce(p_limit, 200), 500))) p $$;
+create or replace function public.fm_photo_q_review(p_id uuid, p_status text, p_note text) returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_flag_can() then raise exception 'not allowed'; end if;
+  if p_status is null then delete from public.fm_photo_dup_reviews where k = 'q:' || p_id::text; return true; end if;
+  if p_status not in ('ok','action') then raise exception 'bad status'; end if;
+  if length(coalesce(trim(p_note), '')) < 3 then raise exception 'note required'; end if;
+  insert into public.fm_photo_dup_reviews (k, status, note, by_id, by_name)
+  values ('q:' || p_id::text, p_status, trim(p_note), auth.uid(), (select full_name from public.profiles where id = auth.uid()))
+  on conflict (k) do update set status = excluded.status, note = excluded.note, by_id = excluded.by_id, by_name = excluded.by_name, at = now();
+  return true;
+end $$;
+revoke all on function public.fm_photo_q(uuid, jsonb), public.fm_photo_q_can(), public.fm_photo_ai_set(uuid, jsonb), public.fm_photo_quality(int), public.fm_photo_unq(int, int), public.fm_photo_q_review(uuid, text, text) from public, anon;
+grant execute on function public.fm_photo_q(uuid, jsonb), public.fm_photo_q_can(), public.fm_photo_ai_set(uuid, jsonb), public.fm_photo_quality(int), public.fm_photo_unq(int, int), public.fm_photo_q_review(uuid, text, text) to authenticated;
+notify pgrst, 'reload schema';
