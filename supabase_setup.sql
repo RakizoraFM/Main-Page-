@@ -20040,3 +20040,39 @@ language sql stable set search_path = public as $$
 revoke all on function public.fm_asset_links(int) from public, anon;
 grant execute on function public.fm_asset_links(int) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 130) V398 — photo documentation quality per person and month (for the V372 scorecard) ----------
+-- Per uploader (wo_photos.by_id) in the Riyadh month: photos, dark / blurry (V391 q.flags), «after» the same as «before» (dHash ≤ 6
+-- bits, same order and item), rejected by the assistant (ai.ok = false), the same file on another order (V380 sha), and «bad» =
+-- photos with at least one of those. Only people the caller may judge (self, admin, scope_all, people under him, area manager's regions).
+create or replace function public.fm_photo_q_people(p_month text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare a timestamptz; b timestamptz; res jsonb;
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'bad month'; end if;
+  a := (p_month || '-01')::timestamp at time zone 'Asia/Riyadh'; b := ((p_month || '-01')::date + interval '1 month')::timestamp at time zone 'Asia/Riyadh';
+  with ph as (
+    select p.id, p.by_id, p.wo_id, p.kind, p.item, p.sha, p.q, p.ai,
+           case when p.phash ~ '^[0-9a-f]{16}$' and p.phash not in ('0000000000000000','ffffffffffffffff') then ('x' || p.phash)::bit(64) end as bh
+      from public.wo_photos p where p.at >= a and p.at < b and p.by_id is not null
+  ), fl as (
+    select ph.by_id, ph.id,
+      coalesce(ph.q->'flags' ? 'dark', false) as dark, coalesce(ph.q->'flags' ? 'blurry', false) as blurry,
+      (ph.kind = 'after' and ph.bh is not null and exists (select 1 from public.wo_photos o where o.wo_id = ph.wo_id and o.kind = 'before' and coalesce(o.item, -1) = coalesce(ph.item, -1)
+         and o.phash ~ '^[0-9a-f]{16}$' and bit_count(('x' || o.phash)::bit(64) # ph.bh) <= 6)) as same,
+      coalesce((ph.ai->>'ok') = 'false', false) as aibad,
+      (ph.sha is not null and exists (select 1 from public.wo_photos o where o.sha = ph.sha and o.wo_id <> ph.wo_id)) as dup
+    from ph
+  )
+  select coalesce(jsonb_object_agg(x.by_id, jsonb_build_object('n', x.n, 'dark', x.dark, 'blurry', x.blurry, 'same', x.same, 'ai', x.aibad, 'dup', x.dup, 'bad', x.bad)), '{}'::jsonb) into res
+  from (select f.by_id, count(*) n, count(*) filter (where dark) dark, count(*) filter (where blurry) blurry, count(*) filter (where same) same,
+               count(*) filter (where aibad) aibad, count(*) filter (where dup) dup, count(*) filter (where dark or blurry or same or aibad or dup) bad
+          from fl f join public.profiles pr on pr.id = f.by_id
+         where f.by_id = auth.uid() or public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_is_under(f.by_id, auth.uid())
+            or (public.fm_my_pos() = 'area_manager' and (cardinality(public.fm_regions()) = 0 or pr.regions && public.fm_regions()))
+         group by f.by_id) x;
+  return res;
+end $$;
+revoke all on function public.fm_photo_q_people(text) from public, anon;
+grant execute on function public.fm_photo_q_people(text) to authenticated;
+notify pgrst, 'reload schema';
