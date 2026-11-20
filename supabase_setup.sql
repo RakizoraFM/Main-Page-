@@ -20930,3 +20930,58 @@ revoke all on function public.fm_job_rate_info(text), public.fm_job_rate_submit(
 grant execute on function public.fm_job_rate_info(text), public.fm_job_rate_submit(text, jsonb), public.fm_school_jobs(text), public.fm_school_job_rate(text, bigint, jsonb) to anon, authenticated;
 grant execute on function public.fm_job_ratings_list(int), public.fm_job_rate_follow(bigint, text), public.fm_job_rate_cfg() to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 138) V408 — a returned fault (V255) or a failed closed-ticket audit (V256) suggested as a deduction in the contractor bill ----------
+-- One decision per region × ticket × kind (repeat | audit): «ded» (deducted in a bill, amount, bill id / code) or «excl» (excluded, reason ≥ 3).
+-- A «ded» whose bill was cancelled is free again (fm_bill_rep_list returns the bill status; fm_bill_rep_set refuses a ticket already
+-- deducted in a live bill — «already deducted: BL-…»). Writes: fm_bill_can('prep', region); reads: fm_bill_can('read', region).
+create table if not exists public.fm_bill_rep_dec (
+  region text not null, ticket_id text not null, kind text not null check (kind in ('repeat','audit')),
+  decision text not null check (decision in ('ded','excl')), amount numeric(12,2), reason text,
+  bill_id uuid references public.fm_bills(id) on delete set null, bill_code text, contractor text, month text,
+  by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(),
+  primary key (region, ticket_id, kind)
+);
+alter table public.fm_bill_rep_dec enable row level security;
+revoke all on public.fm_bill_rep_dec from anon, authenticated;
+create or replace function public.fm_bill_rep_list(p_region text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_bill_can('read', p_region) then raise exception 'not allowed'; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('ticket', d.ticket_id, 'kind', d.kind, 'decision', d.decision, 'amount', d.amount, 'reason', d.reason,
+      'bill_id', d.bill_id, 'bill_code', d.bill_code, 'bill_status', b.status, 'contractor', d.contractor, 'month', d.month, 'by', d.by_name, 'at', d.at))
+    from public.fm_bill_rep_dec d left join public.fm_bills b on b.id = d.bill_id where d.region = p_region), '[]'::jsonb);
+end $$;
+create or replace function public.fm_bill_rep_set(p_region text, p_rows jsonb) returns int language plpgsql security definer set search_path = public as $$
+declare x jsonb; n int := 0; dec text; tk text; kd text; bl public.fm_bills; old public.fm_bill_rep_dec; nm text;
+begin
+  if auth.uid() is null or not public.fm_bill_can('prep', p_region) then raise exception 'not allowed'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 500 then raise exception 'invalid rows'; end if;
+  select coalesce(full_name, email) into nm from public.profiles where id = auth.uid();
+  for x in select * from jsonb_array_elements(p_rows) loop
+    tk := nullif(btrim(coalesce(x->>'ticket','')),''); kd := x->>'kind'; dec := nullif(x->>'decision','');
+    if tk is null or kd not in ('repeat','audit') then raise exception 'invalid rows'; end if;
+    select * into old from public.fm_bill_rep_dec where region = p_region and ticket_id = tk and kind = kd for update;
+    if dec is null then delete from public.fm_bill_rep_dec where region = p_region and ticket_id = tk and kind = kd; n := n + 1; continue; end if;
+    if dec not in ('ded','excl') then raise exception 'invalid rows'; end if;
+    if dec = 'excl' and length(btrim(coalesce(x->>'reason',''))) < 3 then raise exception 'reason required: %', tk; end if;
+    bl := null;
+    if dec = 'ded' then
+      select * into bl from public.fm_bills where id = nullif(x->>'bill_id','')::uuid;
+      if old.decision = 'ded' and old.bill_id is not null and old.bill_id is distinct from bl.id
+         and exists (select 1 from public.fm_bills where id = old.bill_id and status <> 'cancelled') then
+        raise exception 'already deducted: %', old.bill_code;
+      end if;
+      if coalesce((x->>'amount')::numeric, -1) < 0 then raise exception 'invalid amount: %', tk; end if;
+    end if;
+    insert into public.fm_bill_rep_dec (region, ticket_id, kind, decision, amount, reason, bill_id, bill_code, contractor, month, by_id, by_name, at)
+    values (p_region, tk, kd, dec, case when dec = 'ded' then (x->>'amount')::numeric end, left(nullif(btrim(coalesce(x->>'reason','')),''), 500),
+            bl.id, bl.code, left(x->>'contractor', 200), left(x->>'month', 7), auth.uid(), nm, now())
+    on conflict (region, ticket_id, kind) do update set decision = excluded.decision, amount = excluded.amount, reason = excluded.reason, bill_id = excluded.bill_id,
+      bill_code = excluded.bill_code, contractor = excluded.contractor, month = excluded.month, by_id = excluded.by_id, by_name = excluded.by_name, at = now();
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_bill_rep_list(text), public.fm_bill_rep_set(text, jsonb) from public, anon;
+grant execute on function public.fm_bill_rep_list(text), public.fm_bill_rep_set(text, jsonb) to authenticated;
+notify pgrst, 'reload schema';
