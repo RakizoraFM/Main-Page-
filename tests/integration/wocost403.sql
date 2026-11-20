@@ -128,5 +128,52 @@ do $$ declare j jsonb; r jsonb; begin
   select x into r from jsonb_array_elements(j->'rows') x where x->>'id' = current_setting('fm403.wo') or x->>'wo_id' = current_setting('fm403.wo');
   insert into t403 (area, name, pass, detail) values ('الاتساق', 'تقرير تكلفة المشروعات يحسب نفس مواد الأمر (600)', coalesce((r->>'mat_store')::numeric, -1) = 600, coalesce(r::text, 'لا صف'));
 end $$;
+-- ---------- V404: a part goes back, services in the budget and the journal ----------
+do $$ declare w uuid := current_setting('fm403.wo')::uuid; ln uuid; r1 jsonb; r2 jsonb; e text; bal0 numeric; bal1 numeric; x jsonb; rcid uuid := gen_random_uuid(); begin
+  select id into ln from public.fm_wo_costs where wo_id = w and kind = 'part' and qty = 3;
+  select qty into bal0 from public.wo_stock where store_id = '40300000-0000-4000-8000-0000000000a1' and material_id = '40300000-0000-4000-8000-0000000000b1';
+  perform set_config('request.jwt.claim.sub', '40300000-0000-4000-8000-000000000004', true); set local role authenticated;
+  r1 := public.fm_wo_part_return(ln, 2, rcid, 'لم تُستخدم — رجعت سليمة');
+  r2 := public.fm_wo_part_return(ln, 2, rcid, 'لم تُستخدم — رجعت سليمة');
+  begin perform public.fm_wo_part_return(ln, 2, gen_random_uuid(), 'إرجاع زائد'); e := 'allowed'; exception when others then e := sqlerrm; end;
+  reset role;
+  select qty into bal1 from public.wo_stock where store_id = '40300000-0000-4000-8000-0000000000a1' and material_id = '40300000-0000-4000-8000-0000000000b1';
+  insert into t403 (area, name, pass, detail) values ('الإرجاع', 'إرجاع قطعتين للمستودع بسعر الصرف (−200) والرصيد يزيد 2', (r1->>'amount')::numeric = -200 and bal1 = bal0 + 2, r1::text),
+    ('الإرجاع', 'إعادة نفس الإرجاع بنفس المعرّف لا تكرره', (r2->>'dup')::boolean and (select count(*) from public.fm_wo_costs where client_id = rcid) = 1, ''),
+    ('الإرجاع', 'لا يُرجَع أكثر مما صُرف (بقيت قطعة واحدة)', e like 'more than issued: 1%', e);
+  perform set_config('request.jwt.claim.sub', '40300000-0000-4000-8000-000000000001', true); set local role authenticated;
+  x := public.fm_wo_costs_get(w);
+  select r into x from (select x r) z;
+  reset role;
+  insert into t403 (area, name, pass, detail) values ('الإرجاع', 'تكلفة الأمر بعد الإرجاع = 1500 − 900 (ملغاة) − 200 = 400', (x->>'total')::numeric = 400, x->>'total');
+end $$;
+do $$ declare j jsonb; r jsonb; begin
+  perform set_config('request.jwt.claim.sub', '40300000-0000-4000-8000-000000000001', true); set local role authenticated;
+  j := public.fm_erp_cost(current_date - 1, current_date + 1, null, false); reset role;
+  select x into r from jsonb_array_elements(j->'rows') x where x->>'id' = current_setting('fm403.wo');
+  insert into t403 (area, name, pass, detail) values ('الاتساق', 'تقرير تكلفة المشروعات يخصم الإرجاع (600 − 200 = 400)', (r->>'mat_store')::numeric = 400, r->>'mat_store');
+end $$;
+-- a second service (kept), and one on a contract whose bill already holds the order (left out of budget / journal)
+insert into public.fm_contracts (id, name, contractor_name, region) values ('40300000-0000-4000-8000-0000000000d1', 'عقد اختبار', 'مقاول المستخلص', 'qassim') on conflict do nothing;
+insert into public.fm_bills (id, contract_id, month) values ('40300000-0000-4000-8000-0000000000e1', '40300000-0000-4000-8000-0000000000d1', to_char(now(), 'YYYY-MM')) on conflict do nothing;
+insert into public.fm_bill_wos (bill_id, wo_id) values ('40300000-0000-4000-8000-0000000000e1', current_setting('fm403.wo')::uuid) on conflict do nothing;
+do $$ declare w uuid := current_setting('fm403.wo')::uuid; b jsonb; j jsonb; sub numeric; n1 int; n2 int; n3 int; n4 int; bal boolean; begin
+  perform set_config('request.jwt.claim.sub', '40300000-0000-4000-8000-000000000005', true); set local role authenticated;
+  perform public.fm_wo_service_add(w, '{"vendor":"مؤسسة كهرباء عنيزة","descr":"فحص لوحة كهرباء","qty":1,"unit_price":700}', gen_random_uuid());
+  perform public.fm_wo_service_add(w, '{"contract_id":"40300000-0000-4000-8000-0000000000d1","descr":"زيارة ضمن المستخلص","qty":1,"unit_price":250}', gen_random_uuid());
+  j := public.fm_acct_journal(current_date - 1, current_date + 1);
+  perform set_config('request.jwt.claim.sub', '40300000-0000-4000-8000-000000000001', true);
+  b := public.fm_erp_budget(extract(year from now())::int);
+  reset role;
+  select coalesce(sum((x->>'a')::numeric), 0) into sub from jsonb_array_elements(b->'actual') x where x->>'p' = '40300000-0000-4000-8000-0000000000c1' and x->>'c' = 'sub';
+  insert into t403 (area, name, pass, detail) values ('الميزانية', 'فعلي «مقاولو باطن» للمشروع = الخدمة القائمة 700 (لا الملغاة ولا التي في المستخلص)', sub = 700, sub::text);
+  select count(*) filter (where x->>'src' = 'wosvc'), count(*) filter (where x->>'src' = 'wosvc_v'), count(*) filter (where x->>'src' = 'woret'),
+         count(*) filter (where x->>'src' = 'wosvc' and x->>'desc' like '%المستخلص%')
+    into n1, n2, n3, n4 from jsonb_array_elements(j->'entries') x;
+  select bool_and(abs((select sum((l->>'dr')::numeric) - sum((l->>'cr')::numeric) from jsonb_array_elements(x->'lines') l)) < 0.01) into bal
+    from jsonb_array_elements(j->'entries') x where x->>'src' in ('wosvc','wosvc_v','woret');
+  insert into t403 (area, name, pass, detail) values ('القيود', 'قيود الخدمات: خدمتان (900 الملغاة + 700) وعكس الملغاة، بلا خدمة المستخلص', n1 = 2 and n2 = 1 and n4 = 0, n1 || ' / ' || n2 || ' / ' || n4),
+    ('القيود', 'قيد إرجاع القطعة (مخزون / تكلفة مواد) وكل القيود متوازنة', n3 = 1 and bal, n3 || ' متوازنة=' || bal);
+end $$;
 select n, area, name, case when pass then 'PASS' else 'FAIL' end res, left(detail, 160) detail from t403 order by n;
 select count(*) filter (where pass) passed, count(*) filter (where not pass) failed from t403;
