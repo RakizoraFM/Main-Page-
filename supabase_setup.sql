@@ -21230,3 +21230,16 @@ end $$;
 revoke all on function public.fm_mat_units_set(uuid, jsonb) from public, anon;
 grant execute on function public.fm_mat_units_set(uuid, jsonb) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 144) V418 — «اسأل المنصة»: fm_ai_begin accepts the kind 'ask' (redeploy fm-ai for the task) ----------
+create or replace function public.fm_ai_begin(p_kind text) returns bigint language plpgsql security definer set search_path = public as $$
+declare s jsonb := coalesce(public.fm_setting('ai'), '{}'); lim int := greatest(1, least(coalesce(nullif(s->>'daily_limit','')::int, 30), 1000)); id_ bigint;
+begin
+  if auth.uid() is null or public.fm_role() in ('pending') or public.fm_role() is null then raise exception 'not allowed'; end if;
+  if not coalesce((s->>'enabled')::boolean, false) then raise exception 'ai disabled'; end if;
+  if p_kind not in ('classify','summary','recurring','ppm','photo','catfix','ask') then raise exception 'invalid kind'; end if;
+  if (select count(*) from public.fm_ai_usage where user_id = auth.uid() and day = (now() at time zone 'Asia/Riyadh')::date) >= lim then raise exception 'daily limit reached'; end if;
+  insert into public.fm_ai_usage (user_id, kind) values (auth.uid(), p_kind) returning id into id_;
+  return id_;
+end $$;
+notify pgrst, 'reload schema';
