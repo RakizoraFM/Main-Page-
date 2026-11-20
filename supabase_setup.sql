@@ -20322,3 +20322,193 @@ drop trigger if exists fm_wo_tk_close on public.work_orders;
 create trigger fm_wo_tk_close after update of status on public.work_orders for each row execute function public.fm_wo_tk_close();
 revoke all on function public.fm_wo_tk_close() from public, anon, authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 134) V403 — work-order cost ledger: an approved order → a spare part issued or a contractor service → cost on the building and the project ----------
+-- fm_wo_costs holds one line per cost source: 'move:<wo_stock_moves.id>' (store «out» with the order), 'cus:<wo_custody_moves.id>'
+-- (custody «use» with the order) — posted by triggers, so the closure stock-out (fm_wo_stock_out) and every issue are costed — and
+-- 'svc:<client_id>' (a contractor service). src is unique: posting the same source twice does nothing.
+-- Retries: fm_wo_part_issue / fm_wo_service_add take a client_id made once by the browser per action; fm_wo_cost_ops keeps the result
+-- of each client_id (advisory lock per id) — the same call again returns that result with dup = true and changes nothing.
+-- A part is issued only to an APPROVED order (status closed): before approval the closure itself takes the checklist materials
+-- out (fm_wo_stock_out skips an order that already has an «out» move). The building = fm_bkey(building_id, school) of the order;
+-- the project = the order's current ERP link (fm_erp_work_order_projects), read when summarised. Tables: RLS on, no policies, no grants.
+create table if not exists public.fm_wo_costs (
+  id uuid primary key default gen_random_uuid(), src text not null unique, wo_id uuid not null references public.work_orders(id) on delete cascade, wo_code text,
+  kind text not null check (kind in ('part','service')), material_id uuid, store_id uuid, descr text, vendor text, contract_id uuid,
+  qty numeric not null default 1, unit_price numeric not null default 0, amount numeric not null default 0,
+  bkey text, building_no text, school text, region text, status text not null default 'posted' check (status in ('posted','void')),
+  void_reason text, void_by text, void_at timestamptz, client_id uuid, by_id uuid, by_name text, at timestamptz not null default now()
+);
+create index if not exists fm_wo_costs_wo on public.fm_wo_costs (wo_id);
+create index if not exists fm_wo_costs_bkey on public.fm_wo_costs (bkey, at);
+create table if not exists public.fm_wo_cost_ops (client_id uuid primary key, kind text not null, wo_id uuid, result jsonb not null, by_id uuid, at timestamptz not null default now());
+alter table public.fm_wo_costs enable row level security;
+alter table public.fm_wo_cost_ops enable row level security;
+revoke all on public.fm_wo_costs, public.fm_wo_cost_ops from anon, authenticated;
+
+-- internal: one ledger line (on conflict (src) do nothing)
+create or replace function public.fm_wo_cost_put(p_src text, p_wo uuid, p_kind text, p_material uuid, p_store uuid, p_descr text, p_vendor text, p_contract uuid,
+  p_qty numeric, p_price numeric, p_client uuid, p_by uuid, p_by_name text) returns uuid language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; v uuid;
+begin
+  select * into w from public.work_orders where id = p_wo;
+  if w.id is null then return null; end if;
+  insert into public.fm_wo_costs (src, wo_id, wo_code, kind, material_id, store_id, descr, vendor, contract_id, qty, unit_price, amount, bkey, building_no, school, region, client_id, by_id, by_name)
+  values (p_src, w.id, w.code, p_kind, p_material, p_store, left(p_descr, 500), left(p_vendor, 200), p_contract, coalesce(p_qty, 0), coalesce(p_price, 0),
+          round(coalesce(p_qty, 0) * coalesce(p_price, 0), 2), public.fm_bkey(w.building_id, w.school), w.building_id, w.school, w.region, p_client, p_by, p_by_name)
+  on conflict (src) do nothing returning id into v;
+  return v;
+end $$;
+
+-- triggers: every store «out» / custody «use» that names an order is costed once
+create or replace function public.fm_wo_cost_from_move() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  begin
+    if new.wo_id is not null and new.kind = 'out' and coalesce(new.qty, 0) < 0 then
+      perform public.fm_wo_cost_put('move:' || new.id, new.wo_id, 'part', new.material_id, new.store_id, coalesce(new.item, (select name from public.wo_materials where id = new.material_id)),
+        null, null, -new.qty, coalesce(new.unit_price, (select price from public.wo_materials where id = new.material_id), 0), null, new.by_id, new.by_name);
+    end if;
+  exception when others then raise warning 'fm_wo_cost_from_move: %', sqlerrm; end;
+  return new;
+end $$;
+drop trigger if exists fm_wo_cost_from_move on public.wo_stock_moves;
+create trigger fm_wo_cost_from_move after insert on public.wo_stock_moves for each row execute function public.fm_wo_cost_from_move();
+create or replace function public.fm_wo_cost_from_cus() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  begin
+    if new.wo_id is not null and new.kind = 'use' and coalesce(new.qty, 0) < 0 then
+      perform public.fm_wo_cost_put('cus:' || new.id, new.wo_id, 'part', new.material_id, new.store_id, coalesce(new.ref, (select name from public.wo_materials where id = new.material_id)),
+        null, null, -new.qty, coalesce(new.unit_price, (select price from public.wo_materials where id = new.material_id), 0), null, new.by_id, new.by_name);
+    end if;
+  exception when others then raise warning 'fm_wo_cost_from_cus: %', sqlerrm; end;
+  return new;
+end $$;
+drop trigger if exists fm_wo_cost_from_cus on public.wo_custody_moves;
+create trigger fm_wo_cost_from_cus after insert on public.wo_custody_moves for each row execute function public.fm_wo_cost_from_cus();
+-- the moves written before this section (once; idempotent through src)
+do $do$ begin
+  perform public.fm_wo_cost_put('move:' || m.id, m.wo_id, 'part', m.material_id, m.store_id, coalesce(m.item, (select name from public.wo_materials where id = m.material_id)), null, null,
+    -m.qty, coalesce(m.unit_price, (select price from public.wo_materials where id = m.material_id), 0), null, m.by_id, m.by_name)
+    from public.wo_stock_moves m where m.wo_id is not null and m.kind = 'out' and m.qty < 0 and exists (select 1 from public.work_orders w where w.id = m.wo_id);
+  perform public.fm_wo_cost_put('cus:' || c.id, c.wo_id, 'part', c.material_id, c.store_id, coalesce(c.ref, (select name from public.wo_materials where id = c.material_id)), null, null,
+    -c.qty, coalesce(c.unit_price, (select price from public.wo_materials where id = c.material_id), 0), null, c.by_id, c.by_name)
+    from public.wo_custody_moves c where c.wo_id is not null and c.kind = 'use' and c.qty < 0 and exists (select 1 from public.work_orders w where w.id = c.wo_id);
+exception when others then raise notice 'V403 backfill skipped: %', sqlerrm; end $do$;
+
+-- who records costs on an order: admin, the order's managers (fm_wo_mgr), its approver, the bill preparers of its region (accountant …)
+create or replace function public.fm_wo_cost_can(p_wo uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.fm_role() <> 'pending' and exists (select 1 from public.work_orders w where w.id = p_wo and (
+    public.fm_role() = 'admin' or public.fm_wo_mgr(w.id) or w.approver = auth.uid() or public.fm_bill_can('prep', w.region))) $$;
+
+-- issue a spare part from a store to an approved order (the balance must suffice; priced at the store's average cost by fm_move_cost)
+create or replace function public.fm_wo_part_issue(p_wo uuid, p_store uuid, p_material uuid, p_qty numeric, p_client uuid, p_note text default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; st public.wo_stores; cur numeric; mv uuid; c public.fm_wo_costs; r jsonb; nm text := public.fm_me_name();
+begin
+  if p_client is null then raise exception 'client id required'; end if;
+  perform pg_advisory_xact_lock(hashtext('fm_wo_cost_op:' || p_client));
+  select result into r from public.fm_wo_cost_ops where client_id = p_client;
+  if r is not null then return r || jsonb_build_object('dup', true); end if;
+  select * into w from public.work_orders where id = p_wo for update;
+  if w.id is null then raise exception 'order not found'; end if;
+  if w.status <> 'closed' then raise exception 'order not approved'; end if;
+  select * into st from public.wo_stores where id = p_store and active;
+  if st.id is null then raise exception 'invalid store'; end if;
+  if not (public.fm_stock_can(st.region) or public.fm_wh_keeper(st.id)) then raise exception 'not allowed'; end if;
+  if not public.fm_mod('wh') then raise exception 'module disabled: wh'; end if;
+  if coalesce(p_qty, 0) <= 0 or p_qty > 100000 then raise exception 'invalid qty'; end if;
+  if not exists (select 1 from public.wo_materials where id = p_material and active) then raise exception 'unknown material'; end if;
+  select qty into cur from public.wo_stock where store_id = st.id and material_id = p_material for update;
+  if coalesce(cur, 0) < p_qty then raise exception 'insufficient stock: %', coalesce(cur, 0); end if;
+  update public.wo_stock set qty = qty - p_qty, updated_at = now() where store_id = st.id and material_id = p_material;
+  insert into public.wo_stock_moves (store_id, material_id, qty, kind, wo_id, wo_code, school, item, note, by_id, by_name)
+  values (st.id, p_material, -p_qty, 'out', w.id, w.code, w.school, left(coalesce(nullif(btrim(p_note), ''), 'صرف لأمر معتمد'), 300), left(nullif(btrim(coalesce(p_note, '')), ''), 300), auth.uid(), nm)
+  returning id into mv;
+  update public.fm_wo_costs set client_id = p_client where src = 'move:' || mv returning * into c;
+  if c.id is null then raise exception 'cost not posted'; end if;
+  r := jsonb_build_object('ok', true, 'id', c.id, 'move', mv, 'amount', c.amount, 'unit_price', c.unit_price, 'qty', c.qty, 'wo', w.code);
+  insert into public.fm_wo_cost_ops (client_id, kind, wo_id, result, by_id) values (p_client, 'part', w.id, r, auth.uid());
+  return r;
+end $$;
+
+-- a contractor service on an approved order: p {vendor, contract_id?, descr, qty, unit_price}
+create or replace function public.fm_wo_service_add(p_wo uuid, p jsonb, p_client uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; q numeric := coalesce(nullif(p->>'qty','')::numeric, 1); pr numeric := nullif(p->>'unit_price','')::numeric; v uuid; r jsonb; ct uuid := nullif(p->>'contract_id','')::uuid;
+begin
+  if p_client is null then raise exception 'client id required'; end if;
+  perform pg_advisory_xact_lock(hashtext('fm_wo_cost_op:' || p_client));
+  select result into r from public.fm_wo_cost_ops where client_id = p_client;
+  if r is not null then return r || jsonb_build_object('dup', true); end if;
+  select * into w from public.work_orders where id = p_wo for update;
+  if w.id is null then raise exception 'order not found'; end if;
+  if w.status <> 'closed' then raise exception 'order not approved'; end if;
+  if not public.fm_wo_cost_can(w.id) then raise exception 'not allowed'; end if;
+  if q <= 0 or q > 100000 then raise exception 'invalid qty'; end if;
+  if pr is null or pr < 0 or pr > 100000000 then raise exception 'invalid price'; end if;
+  if length(btrim(coalesce(p->>'vendor', ''))) < 2 and ct is null then raise exception 'vendor required'; end if;
+  if length(btrim(coalesce(p->>'descr', ''))) < 3 then raise exception 'description required'; end if;
+  if ct is not null and not exists (select 1 from public.fm_contracts where id = ct) then raise exception 'invalid contract'; end if;
+  v := public.fm_wo_cost_put('svc:' || p_client, w.id, 'service', null, null, btrim(p->>'descr'),
+         coalesce(nullif(btrim(coalesce(p->>'vendor','')), ''), (select coalesce(contractor_name, name) from public.fm_contracts where id = ct)), ct, q, pr, p_client, auth.uid(), public.fm_me_name());
+  r := jsonb_build_object('ok', true, 'id', v, 'amount', round(q * pr, 2), 'wo', w.code);
+  insert into public.fm_wo_cost_ops (client_id, kind, wo_id, result, by_id) values (p_client, 'service', w.id, r, auth.uid());
+  return r;
+end $$;
+
+-- a recorded service is voided with a reason (kept, not deleted); parts go back through the warehouse return flow
+create or replace function public.fm_wo_cost_void(p_id uuid, p_reason text) returns boolean language plpgsql security definer set search_path = public as $$
+declare c public.fm_wo_costs;
+begin
+  select * into c from public.fm_wo_costs where id = p_id for update;
+  if c.id is null or c.status <> 'posted' then raise exception 'not found'; end if;
+  if c.kind <> 'service' then raise exception 'parts are returned through the warehouse'; end if;
+  if not public.fm_wo_cost_can(c.wo_id) then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p_reason, ''))) < 3 then raise exception 'reason required'; end if;
+  update public.fm_wo_costs set status = 'void', void_reason = left(btrim(p_reason), 500), void_by = public.fm_me_name(), void_at = now() where id = p_id;
+  return true;
+end $$;
+
+-- the lines of one order (whoever sees the order) with the building and the current project
+create or replace function public.fm_wo_costs_get(p_wo uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare w public.work_orders;
+begin
+  select * into w from public.work_orders where id = p_wo;
+  if w.id is null or not public.fm_wo_can_see(w.id) then raise exception 'not allowed'; end if;
+  return jsonb_build_object('wo', w.code, 'status', w.status, 'bkey', public.fm_bkey(w.building_id, w.school), 'school', w.school, 'region', w.region,
+    'project', (select jsonb_build_object('id', p.id, 'code', p.code, 'name', p.name) from public.fm_erp_work_order_projects l join public.fm_erp_projects p on p.id = l.project_id where l.wo_id = w.id),
+    'can', public.fm_wo_cost_can(w.id), 'can_part', w.status = 'closed' and public.fm_mod('wh'), 'approved', w.status = 'closed',
+    'lines', coalesce((select jsonb_agg(to_jsonb(c) - 'client_id' - 'by_id' || jsonb_build_object('material', (select name from public.wo_materials where id = c.material_id),
+       'store', (select name from public.wo_stores where id = c.store_id)) order by c.at) from public.fm_wo_costs c where c.wo_id = w.id), '[]'::jsonb),
+    'total', coalesce((select sum(amount) from public.fm_wo_costs where wo_id = w.id and status = 'posted'), 0));
+end $$;
+
+-- cost per building / project / order in a period (Riyadh dates of the line), for the ERP cost readers
+create or replace function public.fm_wo_cost_summary(p_from date, p_to date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare j jsonb;
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  if p_from is null or p_to is null or p_to < p_from or p_to - p_from > 400 then raise exception 'invalid period'; end if;
+  with L as (
+    select c.*, l.project_id, p.code pcode, p.name pname from public.fm_wo_costs c
+      left join public.fm_erp_work_order_projects l on l.wo_id = c.wo_id left join public.fm_erp_projects p on p.id = l.project_id
+     where c.status = 'posted' and (c.at at time zone 'Asia/Riyadh')::date between p_from and p_to
+       and (public.fm_erp_cost_all() or public.fm_region_ok(coalesce(c.region, ''))))
+  select jsonb_build_object('from', p_from, 'to', p_to,
+    'total', coalesce((select sum(amount) from L), 0), 'parts', coalesce((select sum(amount) from L where kind = 'part'), 0), 'services', coalesce((select sum(amount) from L where kind = 'service'), 0),
+    'buildings', coalesce((select jsonb_agg(x order by x.total desc) from (select bkey, min(building_no) building_no, min(school) school, min(region) region,
+        sum(amount) total, sum(amount) filter (where kind = 'part') parts, sum(amount) filter (where kind = 'service') services, count(distinct wo_id) orders from L group by bkey) x), '[]'::jsonb),
+    'projects', coalesce((select jsonb_agg(x order by x.total desc) from (select project_id, min(pcode) code, min(pname) name,
+        sum(amount) total, sum(amount) filter (where kind = 'part') parts, sum(amount) filter (where kind = 'service') services, count(distinct wo_id) orders, count(distinct bkey) buildings from L group by project_id) x), '[]'::jsonb),
+    'orders', coalesce((select jsonb_agg(x order by x.total desc) from (select wo_id, min(wo_code) code, min(school) school, min(bkey) bkey, min(pcode) project,
+        sum(amount) total, sum(amount) filter (where kind = 'part') parts, sum(amount) filter (where kind = 'service') services from L group by wo_id limit 2000) x), '[]'::jsonb))
+  into j;
+  return j;
+end $$;
+
+revoke all on function public.fm_wo_cost_put(text, uuid, text, uuid, uuid, text, text, uuid, numeric, numeric, uuid, uuid, text), public.fm_wo_cost_from_move(), public.fm_wo_cost_from_cus() from public, anon, authenticated;
+revoke all on function public.fm_wo_cost_can(uuid), public.fm_wo_part_issue(uuid, uuid, uuid, numeric, uuid, text), public.fm_wo_service_add(uuid, jsonb, uuid),
+  public.fm_wo_cost_void(uuid, text), public.fm_wo_costs_get(uuid), public.fm_wo_cost_summary(date, date) from public, anon;
+grant execute on function public.fm_wo_cost_can(uuid), public.fm_wo_part_issue(uuid, uuid, uuid, numeric, uuid, text), public.fm_wo_service_add(uuid, jsonb, uuid),
+  public.fm_wo_cost_void(uuid, text), public.fm_wo_costs_get(uuid), public.fm_wo_cost_summary(date, date) to authenticated;
+notify pgrst, 'reload schema';

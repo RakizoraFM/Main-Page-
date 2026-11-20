@@ -1,6 +1,6 @@
 #!/bin/bash
 # V402 — Onaizah trial (140 schools): permissions, deadlines, alerts and the engineer's closure review on a LOCAL Postgres.
-# usage: PGHOST=/tmp PGPORT=5433 PGUSER=postgres bash tests/integration/onaizah402.sh [dbname]
+# usage: PGHOST=/tmp PGPORT=5433 PGUSER=postgres bash tests/integration/onaizah402.sh [dbname] [test.sql]
 # Builds a fresh database with a Supabase-like bootstrap (auth.users / auth.uid() / roles), runs supabase_setup.sql, then onaizah402.sql.
 # Never point it at a real project: it writes the school DB (app_kv) and test accounts.
 set -e
@@ -32,4 +32,4 @@ alter default privileges in schema public grant all on functions to anon, authen
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 SQL
 $P -d $DB -f supabase_setup.sql >/dev/null 2>&1 || { echo "supabase_setup.sql failed"; $P -d $DB -f supabase_setup.sql 2>&1 | grep -m3 ERROR; exit 1; }
-$P -d $DB -f tests/integration/onaizah402.sql 2>&1 | grep -v NOTICE
+$P -d $DB -f ${2:-tests/integration/onaizah402.sql} 2>&1 | grep -v NOTICE
