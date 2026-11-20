@@ -19874,3 +19874,61 @@ revoke all on function public.fm_survey_quarter(timestamptz), public.fm_survey_c
 grant execute on function public.fm_school_survey_get(text), public.fm_school_survey_submit(text, jsonb) to anon, authenticated;
 grant execute on function public.fm_survey_quarter(timestamptz), public.fm_survey_cfg(), public.fm_survey_report(int) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 127) V394 — asset register imported from Solvix (its «collections» Excel export) ----------
+-- One row per Solvix record (src_id = its «ID»). bkey = fm_bkey(Building Number, Building Name), so an asset joins the school
+-- DB, tickets, work orders and costs of its building. sys = the platform system key (ac / el / pl / fi / lf / cv) worked out on
+-- import from category / levels / type. Read and written only through the RPCs (RLS on, no policies, no grants).
+create table if not exists public.fm_assets (
+  src_id text primary key, bkey text not null, building_no text, school text, region text,
+  category text, type text, l2 text, l3 text, code text, critical boolean not null default false, condition text,
+  qty int not null default 1, price numeric, brand text, model text, capacity text, serial text, install_date text, tag text, label text,
+  floor text, room text, sys text, imported_at timestamptz not null default now(), by_name text
+);
+create index if not exists fm_assets_bkey_idx on public.fm_assets (bkey);
+alter table public.fm_assets enable row level security;
+revoke all on public.fm_assets from anon, authenticated;
+create or replace function public.fm_asset_can_edit() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or exists(select 1 from public.profiles where id = auth.uid() and active
+    and job_title in ('sysadmin','dept_manager','project_manager','ops_manager'))) $$;
+create or replace function public.fm_asset_can_read(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.fm_role() <> 'pending' and (public.fm_role() = 'admin' or public.fm_scope_all()
+    or exists(select 1 from public.profiles where id = auth.uid() and job_title in ('owner_rep','accountant'))
+    or coalesce(p_region, '') = '' or public.fm_region_ok(p_region)) $$;
+-- import a chunk (≤ 1000 rows); p_replace on the first chunk empties the register
+create or replace function public.fm_asset_import(p_rows jsonb, p_replace boolean default false) returns jsonb language plpgsql security definer set search_path = public as $$
+declare n int := 0; r jsonb; nm text := (select full_name from public.profiles where id = auth.uid());
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 1000 then raise exception 'bad rows'; end if;
+  if p_replace then delete from public.fm_assets where true; end if;
+  for r in select * from jsonb_array_elements(p_rows) loop
+    if coalesce(btrim(r->>'src_id'), '') = '' or coalesce(btrim(r->>'bkey'), '') = '' then continue; end if;
+    insert into public.fm_assets (src_id, bkey, building_no, school, region, category, type, l2, l3, code, critical, condition, qty, price, brand, model, capacity,
+      serial, install_date, tag, label, floor, room, sys, imported_at, by_name)
+    values (left(r->>'src_id', 80), left(r->>'bkey', 120), left(r->>'building_no', 40), left(r->>'school', 200), left(r->>'region', 40), left(r->>'category', 200),
+      left(r->>'type', 300), left(r->>'l2', 200), left(r->>'l3', 200), left(r->>'code', 40), coalesce((r->>'critical')::boolean, false), left(r->>'condition', 80),
+      greatest(0, coalesce(nullif(r->>'qty','')::int, 1)), nullif(r->>'price','')::numeric, left(r->>'brand', 120), left(r->>'model', 120), left(r->>'capacity', 80),
+      left(r->>'serial', 120), left(r->>'install_date', 40), left(r->>'tag', 80), left(r->>'label', 80), left(r->>'floor', 40), left(r->>'room', 120),
+      case when r->>'sys' in ('ac','el','pl','fi','lf','cv') then r->>'sys' end, now(), nm)
+    on conflict (src_id) do update set bkey = excluded.bkey, building_no = excluded.building_no, school = excluded.school, region = excluded.region,
+      category = excluded.category, type = excluded.type, l2 = excluded.l2, l3 = excluded.l3, code = excluded.code, critical = excluded.critical,
+      condition = excluded.condition, qty = excluded.qty, price = excluded.price, brand = excluded.brand, model = excluded.model, capacity = excluded.capacity,
+      serial = excluded.serial, install_date = excluded.install_date, tag = excluded.tag, label = excluded.label, floor = excluded.floor, room = excluded.room,
+      sys = excluded.sys, imported_at = now(), by_name = nm;
+    n := n + 1;
+  end loop;
+  return jsonb_build_object('n', n, 'total', (select count(*) from public.fm_assets));
+end $$;
+-- a page of the register the caller may read (≤ 5000 rows), optionally one building
+create or replace function public.fm_assets_page(p_offset int default 0, p_limit int default 5000, p_bkey text default null) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('rows', coalesce((select jsonb_agg(to_jsonb(a) - 'by_name' order by a.bkey, a.src_id) from (
+      select * from public.fm_assets x where (p_bkey is null or x.bkey = p_bkey) and public.fm_asset_can_read(x.region)
+      order by x.bkey, x.src_id offset greatest(0, coalesce(p_offset, 0)) limit greatest(1, least(coalesce(p_limit, 5000), 5000))) a), '[]'::jsonb),
+    'total', (select count(*) from public.fm_assets x where (p_bkey is null or x.bkey = p_bkey) and public.fm_asset_can_read(x.region)),
+    'last', (select jsonb_build_object('at', max(imported_at), 'by', (array_agg(by_name order by imported_at desc))[1]) from public.fm_assets),
+    'can_edit', public.fm_asset_can_edit()) $$;
+revoke all on function public.fm_asset_can_edit(), public.fm_asset_can_read(text), public.fm_asset_import(jsonb, boolean), public.fm_assets_page(int, int, text) from public, anon;
+grant execute on function public.fm_asset_can_edit(), public.fm_asset_can_read(text), public.fm_asset_import(jsonb, boolean), public.fm_assets_page(int, int, text) to authenticated;
+notify pgrst, 'reload schema';
