@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SA9">
+<meta name="fm-version" content="SA10">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -195,12 +195,13 @@ function leadsTab(p){p.innerHTML=`<div class="card"><div class="note">الطلب
 function companies(p){p.innerHTML=`<div class="row" style="margin-bottom:10px"><button class="b p" id="add">➕ شركة جديدة</button></div><div class="card"><div class="tw"><table><thead><tr><th>الشركة</th><th>الرمز</th><th>الباقة</th><th>المدارس</th><th>الحالة</th><th>حتى</th><th>التواصل</th><th></th></tr></thead><tbody>
  ${T.map(t=>{const d=daysLeft(t.active_until);return `<tr><td>${t.logo?`<img class="logo" src="${esc(t.logo)}" alt=""> `:''}<b>${esc(t.name)}</b></td><td dir="ltr">${esc(t.code)}</td><td>${esc(planOf(t.plan).name)}<div style="font-size:11.5px;color:var(--mut)">${esc(modsTxt(tMods(t)))}</div></td><td>${+t.schools_limit?num(t.schools_limit,0):'بلا حد'}</td><td><span class="tag ${esc(t.status)}">${STL[t.status]||t.status}</span></td>
   <td>${dshow(t.active_until)}${d!=null?`<div style="font-size:11.5px;color:${d<0?'var(--bad)':d<=30?'var(--warn)':'var(--mut)'};font-weight:800">${d<0?'منتهٍ':d+' يوم'}</div>`:''}</td><td class="wrap">${esc(t.contact_name||'')}<div style="font-size:11.5px;color:var(--mut)" dir="ltr">${esc(t.contact_phone||'')}</div></td>
-  <td><button class="b" data-ed="${esc(t.code)}">✏️ تعديل</button><button class="b" data-pr="${esc(t.code)}">🚀 التجهيز والرابط</button><button class="b" data-inv="${esc(t.code)}">🧾 فاتورة</button><button class="b" data-code="${esc(t.code)}">🔑 كود يدوي</button></td></tr>`}).join('')||'<tr><td colspan="8">لا توجد شركات بعد</td></tr>'}</tbody></table></div></div>`;
+  <td><button class="b" data-ed="${esc(t.code)}">✏️ تعديل</button><button class="b" data-pr="${esc(t.code)}">🚀 التجهيز والرابط</button><button class="b" data-inv="${esc(t.code)}">🧾 فاتورة</button><button class="b" data-code="${esc(t.code)}">🔑 كود يدوي</button>${t.demo?`<button class="b" data-dm="${esc(t.code)}">🧪 تجهيز العرض</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="8">لا توجد شركات بعد</td></tr>'}</tbody></table></div></div>`;
  $('#add').onclick=()=>tenantDlg(null);
  p.querySelectorAll('[data-ed]').forEach(b=>b.onclick=()=>tenantDlg(T.find(t=>t.code===b.dataset.ed)));
  p.querySelectorAll('[data-pr]').forEach(b=>b.onclick=()=>provision(T.find(t=>t.code===b.dataset.pr)));
  p.querySelectorAll('[data-inv]').forEach(b=>b.onclick=()=>invoiceDlg(T.find(t=>t.code===b.dataset.inv)));
- p.querySelectorAll('[data-code]').forEach(b=>b.onclick=()=>manualCode(T.find(t=>t.code===b.dataset.code)))}
+ p.querySelectorAll('[data-code]').forEach(b=>b.onclick=()=>manualCode(T.find(t=>t.code===b.dataset.code)));
+ p.querySelectorAll('[data-dm]').forEach(b=>b.onclick=()=>demoSetup(T.find(t=>t.code===b.dataset.dm)))}
 function dlg(html){const d=document.createElement('dialog');d.innerHTML=html;document.body.appendChild(d);d.addEventListener('close',()=>d.remove());d.showModal();d.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>d.close());return d}
 /* the key must be public: an sb_publishable_ key or a JWT whose role is anon */
 function keyOk(k){k=S(k);if(/^sb_secret_/.test(k))return false;if(/^sb_publishable_/.test(k))return true;try{const r=JSON.parse(atob(k.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).role;return r==='anon'}catch(e){return false}}
@@ -263,6 +264,39 @@ function provision(t){if(!t)return;const link=siteBase()+'?c='+encodeURIComponen
  const cp=async v=>{try{await navigator.clipboard.writeText(v);toast('تم النسخ')}catch(e){prompt('انسخ:',v)}};
  d.querySelector('[data-c=sql]').onclick=()=>cp(sql);d.querySelector('[data-c=link]').onclick=()=>cp(link);
  const w=d.querySelector('[data-wa]');if(w)w.onclick=()=>wa(t.contact_phone,`مرحباً ${t.contact_name||''}\nتم تجهيز منصة RakizoraFM لإدارة الصيانة الخاصة بـ ${t.name}.\nرابط الدخول: ${link}\nأول حساب تنشئه يصبح مدير النظام للشركة، ومنه تضيف فريقك.`)}
+/* SA10 (V404): the demo company — the steps in order, each line ready to copy, and a check against the company's own project:
+   the demo accounts sign in with the demo password (Auth), the 12 tour tickets DM-TOUR-* exist, section 131 (fm_digest_lists, used by
+   the engineer's «☀️ يومي») is installed, the subscription is active (fm_plan_info), and the site's demo code points at this company.
+   «🌐 اعرضها في الموقع» saves saas_settings.site.demo_code = this code, so the site buttons switch from «اطلب عرضاً مباشراً» to «جرّب». */
+async function demoSetup(t){if(!t)return;const pass=S(t.demo_pass),link=siteBase()+'?c='+encodeURIComponent(t.code);
+ const L1=`select public.fm_demo_users('${pass||'كلمة-مرور-العرض'}');`,L2='select public.fm_demo_reset();';
+ const on=S((SET.site||{}).demo_code).toLowerCase()===S(t.code).toLowerCase();
+ const d=dlg(`<div class="in"><h3>🧪 تجهيز شركة العرض «${esc(t.name)}»</h3><ol style="margin:0;padding-inline-start:20px;line-height:2.1;font-weight:700;font-size:13.5px">
+  <li>أنشئ مشروع Supabase مستقلاً للعرض (لا تستخدم مشروع شركة حقيقية)، وضع رابطه ومفتاحه العام في «✏️ تعديل» هذه الشركة.</li>
+  <li>SQL Editor ← شغّل <b>supabase_setup.sql</b> كاملاً (إن رفض المحرر الحجم: <code>python3 tools/sql_parts.py</code> وشغّل الأجزاء بالترتيب)، ثم سطر الاشتراك من «🚀 التجهيز والرابط».</li>
+  <li>شغّل <b>demo_seed.sql</b> كاملاً، ثم:<div class="code" data-l1>${esc(L1)}</div><button class="b" data-c1>📋 نسخ</button><div class="code">${esc(L2)}</div><button class="b" data-c2>📋 نسخ</button></li>
+  <li>Authentication ← URL Configuration: Site URL = ${esc(link.split('?')[0])} وأضف <code>${esc(new URL('.',location.href).href)}**</code> في Redirect URLs.</li>
+  <li>اضغط «🔍 افحص» حتى تصير كل البنود ✅، ثم «🌐 اعرضها في الموقع».</li></ol>
+  <div class="note">الأدوار الثلاثة للجولة: demo.pm (مدير المشروع) ← demo.sup1 (المشرف، الجوال) ← demo.eng1 (المهندس). كلمة المرور ${pass?'محفوظة مع الشركة':'<b style="color:#b91c1c">غير محفوظة — اكتبها في «✏️ تعديل»</b>'} وتظهر للزوار في صفحة الدخول، فلا تستخدم كلمة حقيقية.</div>
+  <div data-chk style="margin-top:10px"></div></div>
+  <div class="ft"><button class="b p" data-ck>🔍 افحص</button><button class="b" data-pub>${on?'✅ معروضة في الموقع — إيقاف العرض':'🌐 اعرضها في الموقع'}</button><button class="b" data-x>إغلاق</button></div>`);
+ const cp=async v=>{try{await navigator.clipboard.writeText(v);toast('تم النسخ')}catch(e){prompt('انسخ:',v)}};
+ d.querySelector('[data-c1]').onclick=()=>cp(L1);d.querySelector('[data-c2]').onclick=()=>cp(L2);
+ d.querySelector('[data-pub]').onclick=async()=>{const site=Object.assign({},SET.site||{},{demo_code:on?'':S(t.code).toLowerCase()});
+  try{await API.saveSetting('site',site);SET.site=site;toast(on?'أُوقف العرض في الموقع — الأزرار تعود «اطلب عرضاً مباشراً»':'✅ صارت أزرار الموقع «جرّب النسخة التفاعلية» لهذه الشركة');d.close()}catch(e){toast(ERR(e.message),1)}};
+ d.querySelector('[data-ck]').onclick=async ev=>{const b=ev.currentTarget,box=d.querySelector('[data-chk]');b.disabled=true;box.innerHTML='⏳';const R=[];const row=(ok,t1,why)=>R.push(`<div style="padding:4px 0;font-weight:700">${ok===true?'✅':ok===false?'⛔':'⚠️'} ${t1}${why?` <span style="color:#64748b;font-weight:600">— ${esc(why)}</span>`:''}</div>`);
+  const url=S(t.url).replace(/\/+$/,''),key=S(t.anon_key||t.key);let tok=null;
+  if(!url||!key)row(false,'رابط ومفتاح مشروع العرض','غير محفوظين في الشركة');
+  else{try{const r=await fetch(url+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:key,'Content-Type':'application/json'},body:JSON.stringify({email:'demo.pm@rakizora.demo',password:pass})});const j=await r.json().catch(()=>({}));
+    if(r.ok&&j.access_token){tok=j.access_token;row(true,'حسابات العرض تدخل بكلمة مرور العرض')}else row(false,'حسابات العرض','لم يدخل demo.pm — شغّل fm_demo_users بنفس كلمة المرور المحفوظة ('+(j.error_description||j.msg||r.status)+')')}catch(e){row(false,'الاتصال بمشروع العرض',e.message)}
+   if(tok){const H={apikey:key,Authorization:'Bearer '+tok,'Content-Type':'application/json'};
+    try{const r=await fetch(url+'/rest/v1/tickets?select=ticket_id&ticket_id=like.DM-TOUR*&limit=50',{headers:H});const j=await r.json();row(Array.isArray(j)&&j.length>=12,'بلاغات جولة العرض',Array.isArray(j)?j.length+' بلاغ'+(j.length>=12?'':' (المطلوب 12) — شغّل fm_demo_reset()'):S(j.message))}catch(e){row(false,'بلاغات جولة العرض',e.message)}
+    try{const r=await fetch(url+'/rest/v1/rpc/fm_digest_lists',{method:'POST',headers:H,body:'{}'});row(r.ok,'صفحة «☀️ يومي» للمهندس (القسم 131)',r.ok?'':'غير موجودة — شغّل supabase_setup.sql المحدَّث')}catch(e){row(false,'القسم 131',e.message)}
+    try{const r=await fetch(url+'/rest/v1/rpc/fm_plan_info',{method:'POST',headers:H,body:'{}'});const j=await r.json();row(r.ok&&!/expired|none/.test(S(j&&j.state))?true:r.ok?null:false,'الاشتراك',r.ok?'الحالة: '+S(j&&j.state):'fm_plan_info غير موجودة')}catch(e){row(null,'الاشتراك',e.message)}
+    row(null,'إغلاق البلاغ باعتماد أمره (القسم 133)','مشغّل داخلي لا يُفحص من هنا — يأتي مع supabase_setup.sql المحدَّث')}}
+  row(on,'أزرار الموقع تشير لهذه الشركة',on?'':'اضغط «🌐 اعرضها في الموقع» بعد نجاح الفحص');
+  box.innerHTML=R.join('');b.disabled=false}}
+window.fmSaasDemoSetup=demoSetup;
 function wa(ph,txt){let p=S(ph).replace(/[^\d]/g,'');if(/^05\d{8}$/.test(p))p='966'+p.slice(1);window.open(`https://wa.me/${p}?text=${encodeURIComponent(txt)}`,'_blank','noopener')}
 async function manualCode(t){if(!t)return;const d=dlg(`<div class="in"><h3>🔑 كود تفعيل يدوي — ${esc(t.name)}</h3><div class="note">لتمديد فترة تجريبية أو تعديل الباقة بدون فاتورة. يُستخدم الكود مرة واحدة.</div>
   <div class="three"><label class="f">الباقة<select data-k="p">${plans().map(p=>`<option value="${esc(p.k)}" ${t.plan===p.k?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label><label class="f">حد المدارس<input data-k="l" value="${esc(t.schools_limit)}"></label><label class="f">حتى<input type="date" data-k="u" value="${esc(t.active_until||addDays(today(),30))}"></label></div>

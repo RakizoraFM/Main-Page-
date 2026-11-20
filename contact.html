@@ -245,7 +245,7 @@ header .site-nav{justify-content:center;margin-inline:auto!important}
   <details><summary>هل يجب الاشتراك في جميع الأجزاء؟</summary><p>لا. يمكنك البدء بالأجزاء التي تحتاجها ثم إضافة أجزاء أخرى لاحقًا حسب نطاق التشغيل.</p></details>
   <details><summary>هل تناسب المنصة أكثر من منطقة أو مشروع؟</summary><p>تدعم المنصة تنظيم المباني والفرق حسب المناطق والأدوار والصلاحيات، وفق إعداد بيئة شركتك.</p></details>
   <details><summary>هل يوجد تطبيق للفرق الميدانية؟</summary><p>تتضمن المنصة تطبيقًا ميدانيًا للمشرفين والمقاولين، مع متابعة المهام ورفع الصور حسب الصلاحيات.</p></details>
-  <details><summary>كيف أجرب المنصة؟</summary><p>يمكنك فتح نسخة العرض التفاعلية من الصفحة، أو إرسال طلب عرض لنتواصل معك خلال يوم عمل.</p></details>
+  <details><summary>كيف أجرب المنصة؟</summary><p>أرسل طلب عرض من هذه الصفحة ونتواصل معك خلال يوم عمل لعرض المنصة مباشرة على بيانات وهمية. ستُتاح نسخة العرض التفاعلية للتجربة الذاتية قريباً.</p></details>
   <details><summary>هل يمكن إضافة بيانات المباني والفريق عند البداية؟</summary><p>نعم، تتضمن خطوات الإعداد رفع بيانات المباني وإضافة المستخدمين وضبط الأدوار ومناطق العمل.</p></details>
   <details><summary>كيف أعرف الباقة المناسبة؟</summary><p>اختر الأجزاء التي تحتاجها وأرسل طلب العرض، وسنساعدك في تحديد الباقة حسب عدد المباني ونطاق التشغيل.</p></details>
  </div></div></section><section id="trial"><div class="wrap" style="max-width:760px"><h2>🚀 اطلب تجربة أو عرض خدمات</h2><p class="sub">اختر ما يهمك من الخدمات، وسنتواصل معك خلال يوم عمل.</p>
@@ -292,7 +292,7 @@ const PN=Object.fromEntries(PARTS.map(([k,i,t])=>[k,i+' '+t]));
 const money=v=>(+v||0).toLocaleString('en-US')+' ر.س';
 (async()=>{if(!$('#plans-grid')&&!$('#demo-go')&&!$('#wa'))return;let P=null;try{P=await API.call('saas_public')}catch(e){}
  const site=(P&&P.site)||{},plans=(P&&Array.isArray(P.plans)&&P.plans)||[],adds=(P&&Array.isArray(P.addons)&&P.addons)||[];
- if(site.demo_code){const u='start.html?c='+encodeURIComponent(site.demo_code);if($('#demo-go')) $('#demo-go').href=u;document.querySelectorAll('[data-demo-link]').forEach(a=>a.href=u)}else{if($('#demo-go')) $('#demo-go').hidden=true;if($('#demo-none')) $('#demo-none').hidden=false}
+ if(site.demo_code){const u='start.html?c='+encodeURIComponent(site.demo_code);if($('#demo-go')) $('#demo-go').href=u;document.querySelectorAll('[data-demo-link]').forEach(a=>{a.href=u;a.textContent='🧪 جرّب النسخة التفاعلية'});if($('#demo-go'))$('#demo-go').textContent='🧪 ادخل نسخة العرض';if($('[data-demo-h]'))$('[data-demo-h]').textContent='🧪 جرّب نسخة العرض';if($('[data-demo-sub]'))$('[data-demo-sub]').textContent='بيانات وهمية بالكامل لمبانٍ وبلاغات وأوامر عمل — ادخل بدور مدير المشروع أو المهندس أو المشرف وجرّب بلاغاً من الإسناد حتى الإغلاق بالصور.'}else{}
  if(site.whatsapp&&$('#wa')){const w=$('#wa');let p=S(site.whatsapp).replace(/[^\d]/g,'');if(/^05\d{8}$/.test(p))p='966'+p.slice(1);w.href='https://wa.me/'+p+'?text='+encodeURIComponent('السلام عليكم، أرغب في معرفة المزيد عن منصة RakizoraFM');w.hidden=false}
  if($('#plans-grid')) $('#plans-grid').innerHTML=plans.length?plans.map((x,i)=>{const mods=Array.isArray(x.modules)?x.modules:Object.keys(PN);return `<div class="card ${i===1?'hl':''}"><h3>${esc(x.name)}</h3>${x.price!=null?`<div class="pr">${money(x.price)} <small>/ شهرياً قبل الضريبة</small></div>`:''}
   <div style="color:var(--mut);font-weight:700">${+x.max?'حتى '+(+x.max).toLocaleString('en-US')+' مبنى':'عدد غير محدود من المباني'}</div><div style="margin:8px 0">${mods.map(k=>`<span class="chip">${esc(PN[k]||k)}</span>`).join('')}</div>

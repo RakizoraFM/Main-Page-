@@ -20018,3 +20018,709 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: the restore-drill reminder is not sent'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 129) V396 — work-order items linked to a Solvix asset: real faults and cost per asset ----------
+-- The field app stores the asset on the checklist item (asset {id = fm_assets.src_id, t, lb}); the checklist itself is saved by
+-- the usual fm_wo_act('checklist'). fm_asset_links is SECURITY INVOKER: the caller sees only the work orders his RLS lets him see.
+create or replace function public.fm_asset_links(p_days int default 365) returns jsonb
+language sql stable set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', x.aid, 'n', x.n, 'fix', x.fix, 'wos', x.wos, 'last', x.last, 'cost', round(x.cost, 2), 'codes', x.codes)), '[]'::jsonb)
+  from (
+    select it->'asset'->>'id' as aid, count(*) as n,
+           count(*) filter (where it->>'res' in ('fix','fixed')) as fix,
+           count(distinct w.id) as wos, max(coalesce(w.done_at, w.updated_at)) as last,
+           coalesce(sum((select sum(coalesce(nullif(m->>'q','')::numeric, 0) * coalesce(nullif(m->>'price','')::numeric, 0))
+                          from jsonb_array_elements(case when jsonb_typeof(it->'materials') = 'array' then it->'materials' else '[]'::jsonb end) m)), 0) as cost,
+           (array_agg(distinct w.code))[1:10] as codes
+      from public.work_orders w cross join lateral jsonb_array_elements(case when jsonb_typeof(w.checklist) = 'array' then w.checklist else '[]'::jsonb end) it
+     where coalesce(it->'asset'->>'id', '') <> '' and w.status not in ('cancelled','rejected')
+       and w.created_at >= now() - make_interval(days => greatest(30, least(coalesce(p_days, 365), 1100)))
+     group by 1
+  ) x $$;
+revoke all on function public.fm_asset_links(int) from public, anon;
+grant execute on function public.fm_asset_links(int) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 130) V398 — photo documentation quality per person and month (for the V372 scorecard) ----------
+-- Per uploader (wo_photos.by_id) in the Riyadh month: photos, dark / blurry (V391 q.flags), «after» the same as «before» (dHash ≤ 6
+-- bits, same order and item), rejected by the assistant (ai.ok = false), the same file on another order (V380 sha), and «bad» =
+-- photos with at least one of those. Only people the caller may judge (self, admin, scope_all, people under him, area manager's regions).
+create or replace function public.fm_photo_q_people(p_month text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare a timestamptz; b timestamptz; res jsonb;
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'bad month'; end if;
+  a := (p_month || '-01')::timestamp at time zone 'Asia/Riyadh'; b := ((p_month || '-01')::date + interval '1 month')::timestamp at time zone 'Asia/Riyadh';
+  with ph as (
+    select p.id, p.by_id, p.wo_id, p.kind, p.item, p.sha, p.q, p.ai,
+           case when p.phash ~ '^[0-9a-f]{16}$' and p.phash not in ('0000000000000000','ffffffffffffffff') then ('x' || p.phash)::bit(64) end as bh
+      from public.wo_photos p where p.at >= a and p.at < b and p.by_id is not null
+  ), fl as (
+    select ph.by_id, ph.id,
+      coalesce(ph.q->'flags' ? 'dark', false) as dark, coalesce(ph.q->'flags' ? 'blurry', false) as blurry,
+      (ph.kind = 'after' and ph.bh is not null and exists (select 1 from public.wo_photos o where o.wo_id = ph.wo_id and o.kind = 'before' and coalesce(o.item, -1) = coalesce(ph.item, -1)
+         and o.phash ~ '^[0-9a-f]{16}$' and bit_count(('x' || o.phash)::bit(64) # ph.bh) <= 6)) as same,
+      coalesce((ph.ai->>'ok') = 'false', false) as aibad,
+      (ph.sha is not null and exists (select 1 from public.wo_photos o where o.sha = ph.sha and o.wo_id <> ph.wo_id)) as dup
+    from ph
+  )
+  select coalesce(jsonb_object_agg(x.by_id, jsonb_build_object('n', x.n, 'dark', x.dark, 'blurry', x.blurry, 'same', x.same, 'ai', x.aibad, 'dup', x.dup, 'bad', x.bad)), '{}'::jsonb) into res
+  from (select f.by_id, count(*) n, count(*) filter (where dark) dark, count(*) filter (where blurry) blurry, count(*) filter (where same) same,
+               count(*) filter (where aibad) aibad, count(*) filter (where dup) dup, count(*) filter (where dark or blurry or same or aibad or dup) bad
+          from fl f join public.profiles pr on pr.id = f.by_id
+         where f.by_id = auth.uid() or public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_is_under(f.by_id, auth.uid())
+            or (public.fm_my_pos() = 'area_manager' and (cardinality(public.fm_regions()) = 0 or pr.regions && public.fm_regions()))
+         group by f.by_id) x;
+  return res;
+end $$;
+revoke all on function public.fm_photo_q_people(text) from public, anon;
+grant execute on function public.fm_photo_q_people(text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 131) V400 — «☀️ يومي»: the lists behind the morning digest (≤ 20 rows each) ----------
+create or replace function public.fm_digest_lists() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare me uuid := auth.uid(); j jsonb := '{}'; v jsonb; tz text := 'Asia/Riyadh'; d date := (now() at time zone 'Asia/Riyadh')::date;
+begin
+  if me is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  begin select coalesce(jsonb_agg(x order by x->>'due'), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'title', title, 'school', school, 'due', due_at, 'status', status) x
+      from public.work_orders where assignee = me and status in ('assigned','accepted','in_progress','returned') and due_at < now() order by due_at limit 20) q;
+    j := j || jsonb_build_object('wo_late', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'title', title, 'school', school, 'due', due_at, 'status', status) x
+      from public.work_orders where assignee = me and status in ('assigned','accepted','in_progress','returned') and due_at >= now() and (due_at at time zone tz)::date = d order by due_at limit 20) q;
+    j := j || jsonb_build_object('wo_today', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'title', title, 'school', school, 'due', due_at, 'status', status, 'visit_on', visit_on) x
+      from public.work_orders where assignee = me and status = 'assigned' order by due_at nulls last limit 20) q;
+    j := j || jsonb_build_object('wo_new', v); exception when others then
+    begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'title', title, 'school', school, 'due', due_at, 'status', status) x
+        from public.work_orders where assignee = me and status = 'assigned' order by due_at nulls last limit 20) q; j := j || jsonb_build_object('wo_new', v); exception when others then null; end; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'title', title, 'school', school, 'by', assignee_name, 'done_at', done_at) x
+      from public.work_orders where status = 'done' and (approver = me or (approver is null and created_by = me)) order by done_at nulls last limit 20) q;
+    j := j || jsonb_build_object('wo_appr', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', w.ticket_id, 'region', w.region, 'school', w.school, 'due', w.due_at, 'cat', w.category) x
+      from public.fm_sla_watch w where me = any(w.users) and w.due_at > now() and (w.due_at at time zone tz)::date = d order by w.due_at limit 20) q;
+    j := j || jsonb_build_object('sla_today', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', r.id, 'code', r.code, 'holder', r.holder_name, 'school', r.school, 'at', r.at, 'store', s.name) x
+      from public.wo_issue_requests r join public.wo_stores s on s.id = r.store_id where s.keeper = me and r.status = 'requested' order by r.at limit 20) q;
+    j := j || jsonb_build_object('ir_wait', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'school', school, 'at', issued_at) x
+      from public.wo_issue_requests where holder = me and status in ('issued','partial') and received_at is null order by issued_at limit 20) q;
+    j := j || jsonb_build_object('ir_recv', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', l.id, 'code', l.code, 'who', l.user_name, 'from', l.from_on, 'to', l.to_on, 'kind', l.kind, 'reason', l.reason) x
+      from public.fm_leave_requests l join public.profiles p on p.id = l.user_id where l.status = 'pending' and p.reports_to = me order by l.from_on limit 20) q;
+    j := j || jsonb_build_object('leave_wait', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', r.id, 'wo', r.wo_id, 'code', r.wo_code, 'school', r.school, 'by', r.by_name, 'want', r.want_on, 'reason', r.reason) x
+      from public.wo_visit_requests r join public.work_orders w on w.id = r.wo_id where r.status = 'pending' and w.approver = me order by r.at limit 20) q;
+    j := j || jsonb_build_object('visit_wait', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', r.id, 'wo', r.wo_id, 'code', r.wo_code, 'school', r.school, 'by', r.by_name, 'reason', r.reason) x
+      from public.wo_edit_requests r join public.work_orders w on w.id = r.wo_id where r.status = 'pending' and w.approver = me order by r.at limit 20) q;
+    j := j || jsonb_build_object('edit_wait', v); exception when others then null; end;
+  return j;
+end $$;
+revoke all on function public.fm_digest_lists() from public, anon;
+grant execute on function public.fm_digest_lists() to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 132) V401 — safe Solvix import: the whole file is staged first, the register is replaced in one transaction ----------
+-- Before, fm_asset_import emptied the register with the FIRST chunk; a later chunk that failed left a partial register.
+-- Now: fm_asset_stage_begin → fm_asset_stage_add per chunk (idempotent by seq, a retry overwrites the same chunk) →
+-- fm_asset_stage_preview (duplicates, buildings not in the school DB, name conflicts, new / changed / removed) →
+-- fm_asset_stage_commit, which checks that every chunk arrived and the row count matches, then deletes + inserts in ONE
+-- transaction (any error rolls everything back, the current register stays whole). fm_asset_import is closed (an old cached
+-- page must not run the unsafe path). Tables: RLS on, no policies, no grants.
+create table if not exists public.fm_asset_stages (
+  id uuid primary key default gen_random_uuid(), by_id uuid, by_name text, created_at timestamptz not null default now(),
+  chunks int not null check (chunks between 1 and 500), total int not null check (total between 1 and 500000), replace boolean not null default true,
+  status text not null default 'open' check (status in ('open','committed','cancelled')), done_at timestamptz, result jsonb
+);
+create table if not exists public.fm_asset_stage_rows (
+  stage_id uuid not null references public.fm_asset_stages(id) on delete cascade, seq int not null, rows jsonb not null, at timestamptz not null default now(),
+  primary key (stage_id, seq)
+);
+alter table public.fm_asset_stages enable row level security;
+alter table public.fm_asset_stage_rows enable row level security;
+revoke all on public.fm_asset_stages, public.fm_asset_stage_rows from anon, authenticated;
+
+create or replace function public.fm_asset_import(p_rows jsonb, p_replace boolean default false) returns jsonb language plpgsql security definer set search_path = public as $$
+begin raise exception 'staged import required (reload the page)'; end $$;
+
+create or replace function public.fm_asset_stage_begin(p_chunks int, p_total int, p_replace boolean default true) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare v uuid;
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  if coalesce(p_chunks, 0) not between 1 and 500 or coalesce(p_total, 0) not between 1 and 500000 then raise exception 'bad size'; end if;
+  delete from public.fm_asset_stages where (by_id = auth.uid() and status = 'open') or created_at < now() - interval '2 days';
+  insert into public.fm_asset_stages (by_id, by_name, chunks, total, replace)
+  values (auth.uid(), (select full_name from public.profiles where id = auth.uid()), p_chunks, p_total, coalesce(p_replace, true)) returning id into v;
+  return v;
+end $$;
+
+-- one chunk (≤ 1000 rows); the same seq sent again replaces the earlier copy (safe retry)
+create or replace function public.fm_asset_stage_add(p_stage uuid, p_seq int, p_rows jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s public.fm_asset_stages;
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  select * into s from public.fm_asset_stages where id = p_stage for update;
+  if s.id is null or s.by_id is distinct from auth.uid() then raise exception 'stage not found'; end if;
+  if s.status <> 'open' then raise exception 'stage closed'; end if;
+  if p_seq is null or p_seq < 0 or p_seq >= s.chunks then raise exception 'bad chunk'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 1000 then raise exception 'bad rows'; end if;
+  insert into public.fm_asset_stage_rows (stage_id, seq, rows) values (p_stage, p_seq, p_rows)
+  on conflict (stage_id, seq) do update set rows = excluded.rows, at = now();
+  return jsonb_build_object('seq', p_seq, 'n', jsonb_array_length(p_rows),
+    'got', (select count(*) from public.fm_asset_stage_rows where stage_id = p_stage));
+end $$;
+
+-- internal: the staged rows, one per line, with their order (seq, i) and the cleaned keys
+create or replace function public.fm_asset_stage_lines(p_stage uuid) returns table (seq int, i int, src text, bkey text, school text, serial text, r jsonb)
+language sql stable security definer set search_path = public as $$
+  select x.seq, (e.ord - 1)::int, nullif(btrim(left(e.r->>'src_id', 80)), ''), nullif(btrim(left(e.r->>'bkey', 120)), ''),
+    btrim(coalesce(e.r->>'school', '')), nullif(btrim(coalesce(e.r->>'serial', '')), ''), e.r
+  from public.fm_asset_stage_rows x cross join lateral jsonb_array_elements(x.rows) with ordinality e(r, ord)
+  where x.stage_id = p_stage $$;
+
+-- internal: building keys of the school DB (fm_bkey of building number + name)
+create or replace function public.fm_asset_db_keys() returns text[] language plpgsql stable security definer set search_path = public as $$
+declare v jsonb;
+begin
+  select value into v from public.app_kv where key = 'fm_school_master_db_v1';
+  if v is null then return null; end if;
+  if jsonb_typeof(v) = 'string' then v := (v #>> '{}')::jsonb; end if;
+  if jsonb_typeof(v) = 'object' then v := v->'schools'; end if;
+  if v is null or jsonb_typeof(v) <> 'array' then return null; end if;
+  return (select array_agg(distinct public.fm_bkey(x->>'buildingId', x->>'school')) from jsonb_array_elements(v) x);
+end $$;
+
+create or replace function public.fm_asset_stage_preview(p_stage uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s public.fm_asset_stages; ks text[]; j jsonb;
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  select * into s from public.fm_asset_stages where id = p_stage;
+  if s.id is null or s.by_id is distinct from auth.uid() then raise exception 'stage not found'; end if;
+  ks := public.fm_asset_db_keys();
+  create temp table if not exists fm401_l (seq int, i int, src text, bkey text, school text, serial text) on commit drop;
+  truncate fm401_l;
+  insert into fm401_l select l.seq, l.i, l.src, l.bkey, l.school, l.serial from public.fm_asset_stage_lines(p_stage) l;
+  with ok as (select distinct on (src) * from fm401_l where src is not null and bkey is not null order by src, seq, i)
+  select jsonb_build_object(
+    'status', s.status, 'chunks', s.chunks, 'total', s.total, 'replace', s.replace,
+    'got', (select count(*) from public.fm_asset_stage_rows where stage_id = p_stage),
+    'missing', (select coalesce(jsonb_agg(g), '[]') from generate_series(0, s.chunks - 1) g where not exists (select 1 from public.fm_asset_stage_rows where stage_id = p_stage and seq = g)),
+    'rows', (select count(*) from fm401_l),
+    'bad', (select count(*) from fm401_l where src is null or bkey is null),
+    'valid', (select count(*) from ok),
+    'buildings', (select count(distinct bkey) from ok),
+    'dup', (select count(*) from (select src from fm401_l where src is not null and bkey is not null group by src having count(*) > 1) d),
+    'dup_rows', (select coalesce(sum(c - 1), 0) from (select count(*) c from fm401_l where src is not null and bkey is not null group by src having count(*) > 1) d),
+    'dup_list', (select coalesce(jsonb_agg(d), '[]') from (select src, count(*) n, min(school) school from fm401_l where src is not null and bkey is not null group by src having count(*) > 1 order by count(*) desc, src limit 50) d),
+    'serial_dup', (select coalesce(jsonb_agg(d), '[]') from (select serial, count(distinct src) n, array_agg(distinct src) srcs, min(school) school from ok where serial is not null
+      and lower(serial) not in ('na','n/a','-','0','لا يوجد','none') group by serial having count(distinct src) > 1 order by count(distinct src) desc limit 50) d),
+    'name_conflict', (select coalesce(jsonb_agg(d), '[]') from (select bkey, array_agg(distinct school) names from ok where school <> '' group by bkey having count(distinct school) > 1 order by bkey limit 50) d),
+    'no_db', case when ks is null then null else (select count(distinct bkey) from ok where not (bkey = any(ks))) end,
+    'no_db_rows', case when ks is null then null else (select count(*) from ok where not (bkey = any(ks))) end,
+    'no_db_list', case when ks is null then null else (select coalesce(jsonb_agg(d), '[]') from (select bkey, min(school) school, count(*) n from ok where not (bkey = any(ks)) group by bkey order by count(*) desc limit 100) d) end,
+    'current', (select count(*) from public.fm_assets),
+    'new', (select count(*) from ok where not exists (select 1 from public.fm_assets a where a.src_id = ok.src)),
+    'kept', (select count(*) from ok where exists (select 1 from public.fm_assets a where a.src_id = ok.src)),
+    'removed', case when s.replace then (select count(*) from public.fm_assets a where not exists (select 1 from ok where ok.src = a.src_id)) else 0 end
+  ) into j from (select 1) z;
+  return j;
+end $$;
+
+-- the switch: everything checked first, then delete + insert in this one transaction
+create or replace function public.fm_asset_stage_commit(p_stage uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s public.fm_asset_stages; got int; nrows int; nm text; n int; del int := 0; res jsonb;
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  select * into s from public.fm_asset_stages where id = p_stage for update;
+  if s.id is null or s.by_id is distinct from auth.uid() then raise exception 'stage not found'; end if;
+  if s.status <> 'open' then raise exception 'stage closed'; end if;
+  select count(*) into got from public.fm_asset_stage_rows where stage_id = p_stage and seq between 0 and s.chunks - 1;
+  if got <> s.chunks then raise exception 'stage incomplete: % of %', got, s.chunks; end if;
+  select coalesce(sum(jsonb_array_length(rows)), 0) into nrows from public.fm_asset_stage_rows where stage_id = p_stage;
+  if nrows <> s.total then raise exception 'row count mismatch: % of %', nrows, s.total; end if;
+  perform pg_advisory_xact_lock(hashtext('fm_assets_import'));
+  nm := (select full_name from public.profiles where id = auth.uid());
+  if s.replace then delete from public.fm_assets where true; get diagnostics del = row_count; end if;
+  insert into public.fm_assets (src_id, bkey, building_no, school, region, category, type, l2, l3, code, critical, condition, qty, price, brand, model, capacity,
+    serial, install_date, tag, label, floor, room, sys, imported_at, by_name)
+  select l.src, l.bkey, left(r->>'building_no', 40), left(r->>'school', 200), left(r->>'region', 40), left(r->>'category', 200),
+    left(r->>'type', 300), left(r->>'l2', 200), left(r->>'l3', 200), left(r->>'code', 40),
+    coalesce(case when lower(r->>'critical') in ('true','false') then (r->>'critical')::boolean end, false), left(r->>'condition', 80),
+    greatest(0, coalesce(case when r->>'qty' ~ '^\d{1,9}$' then (r->>'qty')::int end, 1)),
+    case when r->>'price' ~ '^\d+(\.\d+)?$' then (r->>'price')::numeric end, left(r->>'brand', 120), left(r->>'model', 120), left(r->>'capacity', 80),
+    left(r->>'serial', 120), left(r->>'install_date', 40), left(r->>'tag', 80), left(r->>'label', 80), left(r->>'floor', 40), left(r->>'room', 120),
+    case when r->>'sys' in ('ac','el','pl','fi','lf','cv') then r->>'sys' end, now(), nm
+  from (select distinct on (src) * from public.fm_asset_stage_lines(p_stage) where src is not null and bkey is not null order by src, seq, i) l
+  on conflict (src_id) do update set bkey = excluded.bkey, building_no = excluded.building_no, school = excluded.school, region = excluded.region,
+    category = excluded.category, type = excluded.type, l2 = excluded.l2, l3 = excluded.l3, code = excluded.code, critical = excluded.critical,
+    condition = excluded.condition, qty = excluded.qty, price = excluded.price, brand = excluded.brand, model = excluded.model, capacity = excluded.capacity,
+    serial = excluded.serial, install_date = excluded.install_date, tag = excluded.tag, label = excluded.label, floor = excluded.floor, room = excluded.room,
+    sys = excluded.sys, imported_at = now(), by_name = nm;
+  get diagnostics n = row_count;
+  res := jsonb_build_object('n', n, 'deleted', del, 'total', (select count(*) from public.fm_assets));
+  update public.fm_asset_stages set status = 'committed', done_at = now(), result = res where id = p_stage;
+  delete from public.fm_asset_stage_rows where stage_id = p_stage;
+  begin
+    insert into public.fm_audit_log (actor_name, action, target, details) values (nm, 'asset_import', 'fm_assets', res || jsonb_build_object('rows', nrows, 'replace', s.replace));
+  exception when others then null; end;
+  return res;
+end $$;
+
+create or replace function public.fm_asset_stage_cancel(p_stage uuid) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  update public.fm_asset_stages set status = 'cancelled', done_at = now() where id = p_stage and by_id = auth.uid() and status = 'open';
+  delete from public.fm_asset_stage_rows where stage_id = p_stage and exists (select 1 from public.fm_asset_stages where id = p_stage and by_id = auth.uid());
+  return found;
+end $$;
+
+revoke all on function public.fm_asset_stage_lines(uuid), public.fm_asset_db_keys() from public, anon, authenticated;
+revoke all on function public.fm_asset_stage_begin(int, int, boolean), public.fm_asset_stage_add(uuid, int, jsonb), public.fm_asset_stage_preview(uuid),
+  public.fm_asset_stage_commit(uuid), public.fm_asset_stage_cancel(uuid) from public, anon;
+grant execute on function public.fm_asset_stage_begin(int, int, boolean), public.fm_asset_stage_add(uuid, int, jsonb), public.fm_asset_stage_preview(uuid),
+  public.fm_asset_stage_commit(uuid), public.fm_asset_stage_cancel(uuid) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 133) V402 — a ticket assigned with a work order (V250) is closed when its order is approved ----------
+-- When a work order becomes «closed» (the engineer approved it), every ticket whose active assignment (fm_tk_assign) points at
+-- that order is finished: the assignment → done («أُغلق باعتماد أمر العمل …»), a log row, the ticket's work stage → resolved
+-- (ticket_work, resolution = the order code + the items' notes, resolved_at = the order's closed_at) unless the ticket is already
+-- resolved / closed / cancelled, and a ticket event. Only tickets linked through fm_tk_assign.wo_id; nothing else changes.
+-- Whole body in an exception block: a failure here never blocks the approval.
+create or replace function public.fm_wo_tk_close() returns trigger language plpgsql security definer set search_path = public as $$
+declare a record; d text; nm text;
+begin
+  if new.status <> 'closed' or old.status = 'closed' then return new; end if;
+  begin
+    nm := coalesce((select full_name from public.profiles where id = auth.uid()), new.approver_name, '');
+    d := 'أمر العمل ' || coalesce(new.code, '') || coalesce(': ' || nullif((select string_agg(nullif(btrim(x->>'note'), ''), '؛ ')
+           from jsonb_array_elements(case when jsonb_typeof(new.checklist) = 'array' then new.checklist else '[]'::jsonb end) x), ''), '');
+    for a in select * from public.fm_tk_assign where wo_id = new.id and status = 'active' loop
+      update public.fm_tk_assign set status = 'done', done_at = now(), done_note = left('أُغلق باعتماد أمر العمل ' || coalesce(new.code, ''), 500), updated_at = now()
+        where region = a.region and ticket_id = a.ticket_id;
+      insert into public.fm_tk_assign_log(region, ticket_id, action, assignee_name, note, by_id, by_name)
+        values (a.region, a.ticket_id, 'done', a.assignee_name, left('أُغلق باعتماد أمر العمل ' || coalesce(new.code, ''), 1000), auth.uid(), nm);
+      insert into public.ticket_work(region, ticket_id, stage, rec, resolved_at, updated_by, updated_by_name)
+        values (a.region, a.ticket_id, 'resolved', jsonb_build_object('stage','resolved','assignee', a.assignee_name, 'woCode', new.code,
+          'resolution', jsonb_build_object('desc', left(d, 900), 'cause', ''), 'updated', (extract(epoch from now()) * 1000)::bigint), coalesce(new.closed_at, now()), auth.uid(), nm)
+        on conflict (region, ticket_id) do update set stage = 'resolved', resolved_at = coalesce(new.closed_at, now()), updated_at = now(), updated_by = auth.uid(), updated_by_name = nm,
+          rec = public.ticket_work.rec || jsonb_build_object('stage','resolved','woCode', new.code, 'updated', (extract(epoch from now()) * 1000)::bigint,
+            'resolution', coalesce(public.ticket_work.rec->'resolution', '{}'::jsonb) || jsonb_build_object('desc', coalesce(nullif(public.ticket_work.rec#>>'{resolution,desc}', ''), left(d, 900))))
+          where public.ticket_work.stage not in ('resolved','closed','cancelled');
+      insert into public.ticket_events(region, ticket_id, by_name, type, stage, text)
+        values (a.region, a.ticket_id, nm, 'stage', 'resolved', left('✅ أُغلق باعتماد أمر العمل ' || coalesce(new.code, '') || coalesce(' — اعتمده ' || nullif(nm, ''), ''), 1000));
+    end loop;
+  exception when others then raise warning 'fm_wo_tk_close: %', sqlerrm; end;
+  return new;
+end $$;
+drop trigger if exists fm_wo_tk_close on public.work_orders;
+create trigger fm_wo_tk_close after update of status on public.work_orders for each row execute function public.fm_wo_tk_close();
+revoke all on function public.fm_wo_tk_close() from public, anon, authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 134) V403 — work-order cost ledger: an approved order → a spare part issued or a contractor service → cost on the building and the project ----------
+-- fm_wo_costs holds one line per cost source: 'move:<wo_stock_moves.id>' (store «out» with the order), 'cus:<wo_custody_moves.id>'
+-- (custody «use» with the order) — posted by triggers, so the closure stock-out (fm_wo_stock_out) and every issue are costed — and
+-- 'svc:<client_id>' (a contractor service). src is unique: posting the same source twice does nothing.
+-- Retries: fm_wo_part_issue / fm_wo_service_add take a client_id made once by the browser per action; fm_wo_cost_ops keeps the result
+-- of each client_id (advisory lock per id) — the same call again returns that result with dup = true and changes nothing.
+-- A part is issued only to an APPROVED order (status closed): before approval the closure itself takes the checklist materials
+-- out (fm_wo_stock_out skips an order that already has an «out» move). The building = fm_bkey(building_id, school) of the order;
+-- the project = the order's current ERP link (fm_erp_work_order_projects), read when summarised. Tables: RLS on, no policies, no grants.
+create table if not exists public.fm_wo_costs (
+  id uuid primary key default gen_random_uuid(), src text not null unique, wo_id uuid not null references public.work_orders(id) on delete cascade, wo_code text,
+  kind text not null check (kind in ('part','service')), material_id uuid, store_id uuid, descr text, vendor text, contract_id uuid,
+  qty numeric not null default 1, unit_price numeric not null default 0, amount numeric not null default 0,
+  bkey text, building_no text, school text, region text, status text not null default 'posted' check (status in ('posted','void')),
+  void_reason text, void_by text, void_at timestamptz, client_id uuid, by_id uuid, by_name text, at timestamptz not null default now()
+);
+create index if not exists fm_wo_costs_wo on public.fm_wo_costs (wo_id);
+create index if not exists fm_wo_costs_bkey on public.fm_wo_costs (bkey, at);
+create table if not exists public.fm_wo_cost_ops (client_id uuid primary key, kind text not null, wo_id uuid, result jsonb not null, by_id uuid, at timestamptz not null default now());
+alter table public.fm_wo_costs enable row level security;
+alter table public.fm_wo_cost_ops enable row level security;
+revoke all on public.fm_wo_costs, public.fm_wo_cost_ops from anon, authenticated;
+
+-- internal: one ledger line (on conflict (src) do nothing)
+create or replace function public.fm_wo_cost_put(p_src text, p_wo uuid, p_kind text, p_material uuid, p_store uuid, p_descr text, p_vendor text, p_contract uuid,
+  p_qty numeric, p_price numeric, p_client uuid, p_by uuid, p_by_name text) returns uuid language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; v uuid;
+begin
+  select * into w from public.work_orders where id = p_wo;
+  if w.id is null then return null; end if;
+  insert into public.fm_wo_costs (src, wo_id, wo_code, kind, material_id, store_id, descr, vendor, contract_id, qty, unit_price, amount, bkey, building_no, school, region, client_id, by_id, by_name)
+  values (p_src, w.id, w.code, p_kind, p_material, p_store, left(p_descr, 500), left(p_vendor, 200), p_contract, coalesce(p_qty, 0), coalesce(p_price, 0),
+          round(coalesce(p_qty, 0) * coalesce(p_price, 0), 2), public.fm_bkey(w.building_id, w.school), w.building_id, w.school, w.region, p_client, p_by, p_by_name)
+  on conflict (src) do nothing returning id into v;
+  return v;
+end $$;
+
+-- triggers: every store «out» / custody «use» that names an order is costed once
+create or replace function public.fm_wo_cost_from_move() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  begin
+    if new.wo_id is not null and new.kind = 'out' and coalesce(new.qty, 0) < 0 then
+      perform public.fm_wo_cost_put('move:' || new.id, new.wo_id, 'part', new.material_id, new.store_id, coalesce(new.item, (select name from public.wo_materials where id = new.material_id)),
+        null, null, -new.qty, coalesce(new.unit_price, (select price from public.wo_materials where id = new.material_id), 0), null, new.by_id, new.by_name);
+    end if;
+  exception when others then raise warning 'fm_wo_cost_from_move: %', sqlerrm; end;
+  return new;
+end $$;
+drop trigger if exists fm_wo_cost_from_move on public.wo_stock_moves;
+create trigger fm_wo_cost_from_move after insert on public.wo_stock_moves for each row execute function public.fm_wo_cost_from_move();
+create or replace function public.fm_wo_cost_from_cus() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  begin
+    if new.wo_id is not null and new.kind = 'use' and coalesce(new.qty, 0) < 0 then
+      perform public.fm_wo_cost_put('cus:' || new.id, new.wo_id, 'part', new.material_id, new.store_id, coalesce(new.ref, (select name from public.wo_materials where id = new.material_id)),
+        null, null, -new.qty, coalesce(new.unit_price, (select price from public.wo_materials where id = new.material_id), 0), null, new.by_id, new.by_name);
+    end if;
+  exception when others then raise warning 'fm_wo_cost_from_cus: %', sqlerrm; end;
+  return new;
+end $$;
+drop trigger if exists fm_wo_cost_from_cus on public.wo_custody_moves;
+create trigger fm_wo_cost_from_cus after insert on public.wo_custody_moves for each row execute function public.fm_wo_cost_from_cus();
+-- the moves written before this section (once; idempotent through src)
+do $do$ begin
+  perform public.fm_wo_cost_put('move:' || m.id, m.wo_id, 'part', m.material_id, m.store_id, coalesce(m.item, (select name from public.wo_materials where id = m.material_id)), null, null,
+    -m.qty, coalesce(m.unit_price, (select price from public.wo_materials where id = m.material_id), 0), null, m.by_id, m.by_name)
+    from public.wo_stock_moves m where m.wo_id is not null and m.kind = 'out' and m.qty < 0 and exists (select 1 from public.work_orders w where w.id = m.wo_id);
+  perform public.fm_wo_cost_put('cus:' || c.id, c.wo_id, 'part', c.material_id, c.store_id, coalesce(c.ref, (select name from public.wo_materials where id = c.material_id)), null, null,
+    -c.qty, coalesce(c.unit_price, (select price from public.wo_materials where id = c.material_id), 0), null, c.by_id, c.by_name)
+    from public.wo_custody_moves c where c.wo_id is not null and c.kind = 'use' and c.qty < 0 and exists (select 1 from public.work_orders w where w.id = c.wo_id);
+exception when others then raise notice 'V403 backfill skipped: %', sqlerrm; end $do$;
+
+-- who records costs on an order: admin, the order's managers (fm_wo_mgr), its approver, the bill preparers of its region (accountant …)
+create or replace function public.fm_wo_cost_can(p_wo uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.fm_role() <> 'pending' and exists (select 1 from public.work_orders w where w.id = p_wo and (
+    public.fm_role() = 'admin' or public.fm_wo_mgr(w.id) or w.approver = auth.uid() or public.fm_bill_can('prep', w.region))) $$;
+
+-- issue a spare part from a store to an approved order (the balance must suffice; priced at the store's average cost by fm_move_cost)
+create or replace function public.fm_wo_part_issue(p_wo uuid, p_store uuid, p_material uuid, p_qty numeric, p_client uuid, p_note text default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; st public.wo_stores; cur numeric; mv uuid; c public.fm_wo_costs; r jsonb; nm text := public.fm_me_name();
+begin
+  if p_client is null then raise exception 'client id required'; end if;
+  perform pg_advisory_xact_lock(hashtext('fm_wo_cost_op:' || p_client));
+  select result into r from public.fm_wo_cost_ops where client_id = p_client;
+  if r is not null then return r || jsonb_build_object('dup', true); end if;
+  select * into w from public.work_orders where id = p_wo for update;
+  if w.id is null then raise exception 'order not found'; end if;
+  if w.status <> 'closed' then raise exception 'order not approved'; end if;
+  select * into st from public.wo_stores where id = p_store and active;
+  if st.id is null then raise exception 'invalid store'; end if;
+  if not (public.fm_stock_can(st.region) or public.fm_wh_keeper(st.id)) then raise exception 'not allowed'; end if;
+  if not public.fm_mod('wh') then raise exception 'module disabled: wh'; end if;
+  if coalesce(p_qty, 0) <= 0 or p_qty > 100000 then raise exception 'invalid qty'; end if;
+  if not exists (select 1 from public.wo_materials where id = p_material and active) then raise exception 'unknown material'; end if;
+  select qty into cur from public.wo_stock where store_id = st.id and material_id = p_material for update;
+  if coalesce(cur, 0) < p_qty then raise exception 'insufficient stock: %', coalesce(cur, 0); end if;
+  update public.wo_stock set qty = qty - p_qty, updated_at = now() where store_id = st.id and material_id = p_material;
+  insert into public.wo_stock_moves (store_id, material_id, qty, kind, wo_id, wo_code, school, item, note, by_id, by_name)
+  values (st.id, p_material, -p_qty, 'out', w.id, w.code, w.school, left(coalesce(nullif(btrim(p_note), ''), 'صرف لأمر معتمد'), 300), left(nullif(btrim(coalesce(p_note, '')), ''), 300), auth.uid(), nm)
+  returning id into mv;
+  update public.fm_wo_costs set client_id = p_client where src = 'move:' || mv returning * into c;
+  if c.id is null then raise exception 'cost not posted'; end if;
+  r := jsonb_build_object('ok', true, 'id', c.id, 'move', mv, 'amount', c.amount, 'unit_price', c.unit_price, 'qty', c.qty, 'wo', w.code);
+  insert into public.fm_wo_cost_ops (client_id, kind, wo_id, result, by_id) values (p_client, 'part', w.id, r, auth.uid());
+  return r;
+end $$;
+
+-- a contractor service on an approved order: p {vendor, contract_id?, descr, qty, unit_price}
+create or replace function public.fm_wo_service_add(p_wo uuid, p jsonb, p_client uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare w public.work_orders; q numeric := coalesce(nullif(p->>'qty','')::numeric, 1); pr numeric := nullif(p->>'unit_price','')::numeric; v uuid; r jsonb; ct uuid := nullif(p->>'contract_id','')::uuid;
+begin
+  if p_client is null then raise exception 'client id required'; end if;
+  perform pg_advisory_xact_lock(hashtext('fm_wo_cost_op:' || p_client));
+  select result into r from public.fm_wo_cost_ops where client_id = p_client;
+  if r is not null then return r || jsonb_build_object('dup', true); end if;
+  select * into w from public.work_orders where id = p_wo for update;
+  if w.id is null then raise exception 'order not found'; end if;
+  if w.status <> 'closed' then raise exception 'order not approved'; end if;
+  if not public.fm_wo_cost_can(w.id) then raise exception 'not allowed'; end if;
+  if q <= 0 or q > 100000 then raise exception 'invalid qty'; end if;
+  if pr is null or pr < 0 or pr > 100000000 then raise exception 'invalid price'; end if;
+  if length(btrim(coalesce(p->>'vendor', ''))) < 2 and ct is null then raise exception 'vendor required'; end if;
+  if length(btrim(coalesce(p->>'descr', ''))) < 3 then raise exception 'description required'; end if;
+  if ct is not null and not exists (select 1 from public.fm_contracts where id = ct) then raise exception 'invalid contract'; end if;
+  v := public.fm_wo_cost_put('svc:' || p_client, w.id, 'service', null, null, btrim(p->>'descr'),
+         coalesce(nullif(btrim(coalesce(p->>'vendor','')), ''), (select coalesce(contractor_name, name) from public.fm_contracts where id = ct)), ct, q, pr, p_client, auth.uid(), public.fm_me_name());
+  r := jsonb_build_object('ok', true, 'id', v, 'amount', round(q * pr, 2), 'wo', w.code);
+  insert into public.fm_wo_cost_ops (client_id, kind, wo_id, result, by_id) values (p_client, 'service', w.id, r, auth.uid());
+  return r;
+end $$;
+
+-- a recorded service is voided with a reason (kept, not deleted); parts go back through the warehouse return flow
+create or replace function public.fm_wo_cost_void(p_id uuid, p_reason text) returns boolean language plpgsql security definer set search_path = public as $$
+declare c public.fm_wo_costs;
+begin
+  select * into c from public.fm_wo_costs where id = p_id for update;
+  if c.id is null or c.status <> 'posted' then raise exception 'not found'; end if;
+  if c.kind <> 'service' then raise exception 'parts are returned through the warehouse'; end if;
+  if not public.fm_wo_cost_can(c.wo_id) then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p_reason, ''))) < 3 then raise exception 'reason required'; end if;
+  update public.fm_wo_costs set status = 'void', void_reason = left(btrim(p_reason), 500), void_by = public.fm_me_name(), void_at = now() where id = p_id;
+  return true;
+end $$;
+
+-- the lines of one order (whoever sees the order) with the building and the current project
+create or replace function public.fm_wo_costs_get(p_wo uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare w public.work_orders;
+begin
+  select * into w from public.work_orders where id = p_wo;
+  if w.id is null or not public.fm_wo_can_see(w.id) then raise exception 'not allowed'; end if;
+  return jsonb_build_object('wo', w.code, 'status', w.status, 'bkey', public.fm_bkey(w.building_id, w.school), 'school', w.school, 'region', w.region,
+    'project', (select jsonb_build_object('id', p.id, 'code', p.code, 'name', p.name) from public.fm_erp_work_order_projects l join public.fm_erp_projects p on p.id = l.project_id where l.wo_id = w.id),
+    'can', public.fm_wo_cost_can(w.id), 'can_part', w.status = 'closed' and public.fm_mod('wh'), 'approved', w.status = 'closed',
+    'lines', coalesce((select jsonb_agg(to_jsonb(c) - 'client_id' - 'by_id' || jsonb_build_object('material', (select name from public.wo_materials where id = c.material_id),
+       'store', (select name from public.wo_stores where id = c.store_id)) order by c.at) from public.fm_wo_costs c where c.wo_id = w.id), '[]'::jsonb),
+    'total', coalesce((select sum(amount) from public.fm_wo_costs where wo_id = w.id and status = 'posted'), 0));
+end $$;
+
+-- cost per building / project / order in a period (Riyadh dates of the line), for the ERP cost readers
+create or replace function public.fm_wo_cost_summary(p_from date, p_to date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare j jsonb;
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  if p_from is null or p_to is null or p_to < p_from or p_to - p_from > 400 then raise exception 'invalid period'; end if;
+  with L as (
+    select c.*, l.project_id, p.code pcode, p.name pname from public.fm_wo_costs c
+      left join public.fm_erp_work_order_projects l on l.wo_id = c.wo_id left join public.fm_erp_projects p on p.id = l.project_id
+     where c.status = 'posted' and (c.at at time zone 'Asia/Riyadh')::date between p_from and p_to
+       and (public.fm_erp_cost_all() or public.fm_region_ok(coalesce(c.region, ''))))
+  select jsonb_build_object('from', p_from, 'to', p_to,
+    'total', coalesce((select sum(amount) from L), 0), 'parts', coalesce((select sum(amount) from L where kind = 'part'), 0), 'services', coalesce((select sum(amount) from L where kind = 'service'), 0),
+    'buildings', coalesce((select jsonb_agg(x order by x.total desc) from (select bkey, min(building_no) building_no, min(school) school, min(region) region,
+        sum(amount) total, sum(amount) filter (where kind = 'part') parts, sum(amount) filter (where kind = 'service') services, count(distinct wo_id) orders from L group by bkey) x), '[]'::jsonb),
+    'projects', coalesce((select jsonb_agg(x order by x.total desc) from (select project_id, min(pcode) code, min(pname) name,
+        sum(amount) total, sum(amount) filter (where kind = 'part') parts, sum(amount) filter (where kind = 'service') services, count(distinct wo_id) orders, count(distinct bkey) buildings from L group by project_id) x), '[]'::jsonb),
+    'orders', coalesce((select jsonb_agg(x order by x.total desc) from (select wo_id, min(wo_code) code, min(school) school, min(bkey) bkey, min(pcode) project,
+        sum(amount) total, sum(amount) filter (where kind = 'part') parts, sum(amount) filter (where kind = 'service') services from L group by wo_id limit 2000) x), '[]'::jsonb))
+  into j;
+  return j;
+end $$;
+
+revoke all on function public.fm_wo_cost_put(text, uuid, text, uuid, uuid, text, text, uuid, numeric, numeric, uuid, uuid, text), public.fm_wo_cost_from_move(), public.fm_wo_cost_from_cus() from public, anon, authenticated;
+revoke all on function public.fm_wo_cost_can(uuid), public.fm_wo_part_issue(uuid, uuid, uuid, numeric, uuid, text), public.fm_wo_service_add(uuid, jsonb, uuid),
+  public.fm_wo_cost_void(uuid, text), public.fm_wo_costs_get(uuid), public.fm_wo_cost_summary(date, date) from public, anon;
+grant execute on function public.fm_wo_cost_can(uuid), public.fm_wo_part_issue(uuid, uuid, uuid, numeric, uuid, text), public.fm_wo_service_add(uuid, jsonb, uuid),
+  public.fm_wo_cost_void(uuid, text), public.fm_wo_costs_get(uuid), public.fm_wo_cost_summary(date, date) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 135) V404 — return a part from a work order; services and returns in the project budget and the accounting journal ----------
+-- fm_wo_part_return(cost line, qty, client_id, reason): a part line of the ledger (store «out» or custody «use» of the order) goes
+-- back to a store at the line's own unit price: «return» move with the order's wo_id (+ balance), a negative ledger line
+-- 'ret:<client_id>'; never more than issued minus earlier returns; same client id → the stored result (dup). V353 (fm_erp_cost_rows)
+-- now subtracts these «return» moves (only V404 writes «return» moves with a wo_id). Contractor services of fm_wo_costs enter the V360
+-- project actuals (category sub) and the V359 journal (wosvc / wosvc_v); returns enter the journal (woret). A service whose order
+-- is already in a non-cancelled bill of the same contract (fm_bill_wos) is left out of both — the bill carries it.
+create or replace function public.fm_wo_svc_in_bill(p_wo uuid, p_contract uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select p_contract is not null and exists (select 1 from public.fm_bill_wos bw join public.fm_bills b on b.id = bw.bill_id
+    where bw.wo_id = p_wo and b.contract_id = p_contract and b.status <> 'cancelled') $$;
+revoke all on function public.fm_wo_svc_in_bill(uuid, uuid) from public, anon, authenticated;
+
+create or replace function public.fm_wo_part_return(p_cost uuid, p_qty numeric, p_client uuid, p_reason text, p_store uuid default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare c public.fm_wo_costs; st public.wo_stores; back numeric; r jsonb; mv uuid; v uuid; nm text := public.fm_me_name();
+begin
+  if p_client is null then raise exception 'client id required'; end if;
+  perform pg_advisory_xact_lock(hashtext('fm_wo_cost_op:' || p_client));
+  select result into r from public.fm_wo_cost_ops where client_id = p_client;
+  if r is not null then return r || jsonb_build_object('dup', true); end if;
+  select * into c from public.fm_wo_costs where id = p_cost for update;
+  if c.id is null or c.kind <> 'part' or c.status <> 'posted' or c.amount <= 0 or c.material_id is null then raise exception 'not a part line'; end if;
+  if length(btrim(coalesce(p_reason, ''))) < 3 then raise exception 'reason required'; end if;
+  if coalesce(p_qty, 0) <= 0 then raise exception 'invalid qty'; end if;
+  select coalesce(-sum(qty), 0) into back from public.fm_wo_costs where src like 'ret:%' and descr is not null and wo_id = c.wo_id and material_id = c.material_id
+     and position(c.id::text in coalesce(vendor, '')) > 0;
+  if p_qty > c.qty - back then raise exception 'more than issued: %', c.qty - back; end if;
+  select * into st from public.wo_stores where id = coalesce(p_store, c.store_id, public.fm_stock_store_for(c.region)) and active;
+  if st.id is null then raise exception 'invalid store'; end if;
+  if not (public.fm_stock_can(st.region) or public.fm_wh_keeper(st.id)) then raise exception 'not allowed'; end if;
+  insert into public.wo_stock (store_id, material_id) values (st.id, c.material_id) on conflict do nothing;
+  perform 1 from public.wo_stock where store_id = st.id and material_id = c.material_id for update;
+  update public.wo_stock set qty = qty + p_qty, updated_at = now() where store_id = st.id and material_id = c.material_id;
+  insert into public.wo_stock_moves (store_id, material_id, qty, kind, unit_price, wo_id, wo_code, school, item, note, by_id, by_name)
+  values (st.id, c.material_id, p_qty, 'return', c.unit_price, c.wo_id, c.wo_code, c.school, left('إرجاع من أمر العمل ' || coalesce(c.wo_code, ''), 300), left(btrim(p_reason), 300), auth.uid(), nm)
+  returning id into mv;
+  -- the ledger line keeps the returned line's id in «vendor» (a part line has no vendor) so the remaining quantity can be checked
+  insert into public.fm_wo_costs (src, wo_id, wo_code, kind, material_id, store_id, descr, vendor, qty, unit_price, amount, bkey, building_no, school, region, client_id, by_id, by_name)
+  values ('ret:' || p_client, c.wo_id, c.wo_code, 'part', c.material_id, st.id, left('↩️ إرجاع: ' || coalesce(c.descr, '') || ' — ' || btrim(p_reason), 500), 'ret-of:' || c.id,
+          -p_qty, c.unit_price, round(-p_qty * c.unit_price, 2), c.bkey, c.building_no, c.school, c.region, p_client, auth.uid(), nm) returning id into v;
+  r := jsonb_build_object('ok', true, 'id', v, 'move', mv, 'qty', p_qty, 'amount', round(-p_qty * c.unit_price, 2), 'left', c.qty - back - p_qty, 'wo', c.wo_code);
+  insert into public.fm_wo_cost_ops (client_id, kind, wo_id, result, by_id) values (p_client, 'return', c.wo_id, r, auth.uid());
+  return r;
+end $$;
+revoke all on function public.fm_wo_part_return(uuid, numeric, uuid, text, uuid) from public, anon;
+grant execute on function public.fm_wo_part_return(uuid, numeric, uuid, text, uuid) to authenticated;
+
+-- V353 order cost: «return» moves of the order are subtracted (body of section 97 with that one change)
+create or replace function public.fm_erp_cost_rows(p_ids uuid[]) returns table(wo_id uuid, mat_store numeric, mat_est boolean, mat_buy numeric,
+  contractor numeric, contractor_pending numeric, labour_std numeric, labour_ot numeric, std_hours numeric, ot_hours numeric, rate numeric, flags text[])
+language plpgsql stable security definer set search_path = public as $$
+declare R jsonb := public.fm_erp_cost_rules(); w record; ms numeric; mv numeric; mc numeric; mest numeric; mb numeric; ct numeric; cp numeric; bm text; bmat boolean;
+  hs numeric; ho numeric; rt numeric; fl text[];
+begin
+  for w in select o.id, o.code, o.type, o.checklist, o.assignee, coalesce(pr.job_title, '') jt from public.work_orders o left join public.profiles pr on pr.id = o.assignee
+            where o.id = any(p_ids) loop
+    fl := '{}';
+    select coalesce(sum(-m.qty * coalesce(m.unit_price,0)),0), count(*) into mv, mc from public.wo_stock_moves m where m.wo_id = w.id and m.kind in ('out','return');
+    select coalesce(sum(-c.qty * coalesce(c.unit_price,0)),0) + mv, count(*) + mc into ms, mc from public.wo_custody_moves c where c.wo_id = w.id and c.kind = 'use';
+    select coalesce(sum(coalesce(nullif(mt.m->>'q','')::numeric,0) * coalesce(nullif(mt.m->>'price','')::numeric,0)) filter (where coalesce(mt.m->>'src','store') = 'store'),0),
+           coalesce(sum(coalesce(nullif(mt.m->>'q','')::numeric,0) * coalesce(nullif(mt.m->>'price','')::numeric,0)) filter (where mt.m->>'src' = 'buy'),0)
+      into mest, mb
+      from jsonb_array_elements(case when jsonb_typeof(w.checklist) = 'array' then w.checklist else '[]' end) it(e)
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(it.e->'materials') = 'array' then it.e->'materials' else '[]' end) mt(m)
+     where jsonb_typeof(mt.m) = 'object';
+    if mc = 0 and mest > 0 then ms := mest; fl := fl || 'est'::text; end if;
+    -- contractor lines (approved / paid) and pending ones; the contract's material mode
+    select coalesce(sum((l->>'a')::numeric) filter (where b.status in ('approved','paid')),0),
+           coalesce(sum((l->>'a')::numeric) filter (where b.status not in ('approved','paid','cancelled')),0),
+           bool_or(l->>'k' = 'mat')
+      into ct, cp, bmat
+      from public.fm_bills b cross join lateral jsonb_array_elements(case when jsonb_typeof(b.lines) = 'array' then b.lines else '[]' end) l
+     where b.status <> 'cancelled' and ((l->>'k' = 'wo' and l->>'wo_id' = w.id::text) or (l->>'k' = 'mat' and l->>'ref' = w.code));
+    select ctr.mat_mode into bm from public.fm_bill_wos bw join public.fm_bills bl on bl.id = bw.bill_id join public.fm_contracts ctr on ctr.id = bl.contract_id
+     where bw.wo_id = w.id and bl.status <> 'cancelled' limit 1;
+    if bm in ('buy','all') and mb > 0 then mb := 0; fl := fl || 'buy_in_bill'::text; end if;
+    if coalesce(bmat,false) and bm = 'all' and mc > 0 then fl := fl || 'mat_twice'::text; end if;
+    -- labour
+    rt := coalesce(nullif(R->'rates'->>w.jt,'')::numeric, 0);
+    hs := coalesce(nullif(R->'std'->>coalesce(w.type,''),'')::numeric, 0);
+    select coalesce(sum(coalesce(o.appr_hours, o.hours, 0)),0) into ho from public.fm_overtime o where o.wo_code = w.code and o.status = 'approved';
+    if rt = 0 and (hs > 0 or ho > 0) then fl := fl || 'no_rate'::text; end if;
+    wo_id := w.id; mat_store := round(ms,2); mat_est := 'est' = any(fl); mat_buy := round(mb,2); contractor := round(ct,2); contractor_pending := round(cp,2);
+    labour_std := round(hs * rt, 2); labour_ot := round(ho * rt * coalesce((R->>'ot')::numeric, 1.5), 2); std_hours := hs; ot_hours := ho; rate := rt; flags := fl;
+    return next;
+  end loop;
+end $$;
+
+-- V360 actuals with the services (body of section 103 + the union)
+create or replace function public.fm_erp_budget_actual(p_year int, p_indirect boolean) returns table(project_id uuid, m int, cat text, amount numeric)
+language plpgsql stable security definer set search_path = public as $$
+declare ids uuid[];
+begin
+  select coalesce(array_agg(o.id), '{}') into ids from public.work_orders o join public.fm_erp_work_order_projects l on l.wo_id = o.id
+   where o.status = 'closed' and extract(year from coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh')::int = p_year;
+  return query
+    select x.pid, x.mm, x.k, round(sum(x.v), 2) from (
+      select l.project_id pid, extract(month from coalesce(o.closed_at, o.updated_at) at time zone 'Asia/Riyadh')::int mm, u.k, u.v
+        from public.fm_erp_cost_rows(ids) c join public.work_orders o on o.id = c.wo_id join public.fm_erp_work_order_projects l on l.wo_id = o.id,
+        lateral (values ('mat', c.mat_store + c.mat_buy), ('sub', c.contractor), ('labour', c.labour_std + c.labour_ot)) u(k, v)
+      -- V404: contractor services recorded on the order (fm_wo_costs), month of the line, unless that contract's bill already holds the order
+      union all
+      select l.project_id, extract(month from k.at at time zone 'Asia/Riyadh')::int, 'sub', k.amount
+        from public.fm_wo_costs k join public.fm_erp_work_order_projects l on l.wo_id = k.wo_id
+       where k.kind = 'service' and k.status = 'posted' and extract(year from k.at at time zone 'Asia/Riyadh')::int = p_year
+         and not public.fm_wo_svc_in_bill(k.wo_id, k.contract_id)) x
+     where x.v <> 0 group by 1, 2, 3;
+  if p_indirect then
+    begin
+      return query select a.project_id, a.m, 'indirect'::text, round(sum(a.amount), 2) from public.fm_erp_alloc_rows(p_year) a where a.project_id is not null group by 1, 2;
+    exception when others then null;
+    end;
+  end if;
+end $$;
+
+-- the V359 journal's later sources (body of section 110 + V404 sources)
+create or replace function public.fm_acct_more(p_from date, p_to date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare ents jsonb := '[]'; r record; tz text := 'Asia/Riyadh'; skipped text[] := '{}'; acc text;
+  kl jsonb := jsonb_build_object('bonus','مكافأة','incentive','حافز','allowance','بدل','other','مستحق');
+  okl jsonb := jsonb_build_object('after_hours','بعد الدوام','emergency','طوارئ','weekend','عطلة أسبوعية','holiday','إجازة رسمية');
+begin
+  begin
+    for r in select b.* from public.fm_wf_bonuses b where b.appr_at is not null and (
+               (b.appr_at at time zone tz)::date between p_from and p_to or (b.unappr_at is not null and (b.unappr_at at time zone tz)::date between p_from and p_to)) loop
+      if (r.appr_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','bonus','date',(r.appr_at at time zone tz)::date,'ref',r.code,
+          'desc',coalesce(kl->>r.kind,'مكافأة')||' '||r.person_name||coalesce(' ('||nullif(r.employee_code,'')||')','')||' — '||r.month,'dim',r.region,
+          'lines', jsonb_build_array(jsonb_build_object('a','cost_lab','dr',r.amount,'cr',0), jsonb_build_object('a','payroll','dr',0,'cr',r.amount))));
+      end if;
+      if r.unappr_at is not null and (r.unappr_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','bonus_v','date',(r.unappr_at at time zone tz)::date,'ref',r.code,
+          'desc','عكس '||coalesce(kl->>r.kind,'مكافأة')||' ملغاة '||r.person_name||coalesce(' — '||r.dec_note,''),'dim',r.region,
+          'lines', jsonb_build_array(jsonb_build_object('a','payroll','dr',r.amount,'cr',0), jsonb_build_object('a','cost_lab','dr',0,'cr',r.amount))));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'bonus'; end;
+  -- V370: approved overtime (cost stamped at approval) on the approval date
+  begin
+    for r in select o.*, coalesce(pr.full_name, o.user_name) nm from public.fm_overtime o left join public.profiles pr on pr.id = o.user_id
+              where o.status = 'approved' and coalesce(o.cost,0) > 0 and o.dec_at is not null and (o.dec_at at time zone tz)::date between p_from and p_to loop
+      ents := ents || jsonb_build_array(jsonb_build_object('src','ot','date',(r.dec_at at time zone tz)::date,'ref',r.code,
+        'desc','عمل إضافي ('||coalesce(okl->>r.kind,'')||') '||coalesce(r.nm,'')||' — '||coalesce(r.appr_hours, r.hours)||' س','dim',coalesce(r.region,''),
+        'lines', jsonb_build_array(jsonb_build_object('a','cost_lab','dr',r.cost,'cr',0), jsonb_build_object('a','payroll','dr',0,'cr',r.cost))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'ot'; end;
+  -- V370: payment batches and their reversal
+  begin
+    for r in select x.* from public.fm_pay_batches x where x.total > 0 and (x.pay_date between p_from and p_to or (x.status = 'void' and x.void_at is not null and (x.void_at at time zone tz)::date between p_from and p_to)) loop
+      acc := case when r.method = 'cash' then 'cash' else 'bank' end;
+      if r.pay_date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','pay','date',r.pay_date,'ref',coalesce(nullif(r.ref,''), r.code),'desc','صرف مكافآت وعمل إضافي '||r.month||' ('||r.code||')','dim','',
+          'lines', jsonb_build_array(jsonb_build_object('a','payroll','dr',r.total,'cr',0), jsonb_build_object('a',acc,'dr',0,'cr',r.total))));
+      end if;
+      if r.status = 'void' and r.void_at is not null and (r.void_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','pay_v','date',(r.void_at at time zone tz)::date,'ref',r.code,'desc','عكس دفعة رواتب ملغاة '||r.code||coalesce(' — '||r.void_reason,''),'dim','',
+          'lines', jsonb_build_array(jsonb_build_object('a',acc,'dr',r.total,'cr',0), jsonb_build_object('a','payroll','dr',0,'cr',r.total))));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'pay'; end;
+  -- V404: contractor services on work orders (Dr subcontract cost / Cr payable to subcontractors) and their void; parts returned to
+  -- the store from an order (Dr inventory / Cr materials cost). A service whose order is already in that contract's bill is left out.
+  begin
+    for r in select k.*, coalesce(pj.code, '') pcode from public.fm_wo_costs k left join public.fm_erp_work_order_projects l on l.wo_id = k.wo_id
+               left join public.fm_erp_projects pj on pj.id = l.project_id
+              where k.kind = 'service' and k.amount > 0 and not public.fm_wo_svc_in_bill(k.wo_id, k.contract_id) and ((k.at at time zone tz)::date between p_from and p_to
+                or (k.status = 'void' and k.void_at is not null and (k.void_at at time zone tz)::date between p_from and p_to)) loop
+      if (r.at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','wosvc','date',(r.at at time zone tz)::date,'ref',r.wo_code,
+          'desc','خدمة مقاول '||coalesce(r.vendor,'')||' — '||coalesce(r.descr,'')||' — '||coalesce(r.school,''),'dim',coalesce(nullif(r.pcode,''), r.region, ''),
+          'lines', jsonb_build_array(jsonb_build_object('a','cost_sub','dr',r.amount,'cr',0), jsonb_build_object('a','ap_sub','dr',0,'cr',r.amount))));
+      end if;
+      if r.status = 'void' and r.void_at is not null and (r.void_at at time zone tz)::date between p_from and p_to then
+        ents := ents || jsonb_build_array(jsonb_build_object('src','wosvc_v','date',(r.void_at at time zone tz)::date,'ref',r.wo_code,
+          'desc','عكس خدمة مقاول ملغاة '||coalesce(r.vendor,'')||coalesce(' — '||r.void_reason,''),'dim',coalesce(nullif(r.pcode,''), r.region, ''),
+          'lines', jsonb_build_array(jsonb_build_object('a','ap_sub','dr',r.amount,'cr',0), jsonb_build_object('a','cost_sub','dr',0,'cr',r.amount))));
+      end if;
+    end loop;
+  exception when undefined_table or undefined_column or undefined_function then skipped := skipped || 'wosvc'; end;
+  begin
+    for r in select k.* from public.fm_wo_costs k where k.kind = 'part' and k.amount < 0 and k.src like 'ret:%' and (k.at at time zone tz)::date between p_from and p_to loop
+      ents := ents || jsonb_build_array(jsonb_build_object('src','woret','date',(r.at at time zone tz)::date,'ref',r.wo_code,
+        'desc','إرجاع قطعة من أمر العمل '||coalesce(r.wo_code,'')||' — '||coalesce(r.descr,''),'dim',coalesce(r.region,''),
+        'lines', jsonb_build_array(jsonb_build_object('a','inventory','dr',-r.amount,'cr',0), jsonb_build_object('a','cost_mat','dr',0,'cr',-r.amount))));
+    end loop;
+  exception when undefined_table or undefined_column then skipped := skipped || 'woret'; end;
+  return jsonb_build_object('entries', ents, 'skipped', to_jsonb(skipped));
+end $$;
+notify pgrst, 'reload schema';
+
+-- ---------- 136) V404 — the work-order cost beyond the checklist, per order, for the replacement plan (V176) ----------
+-- fm_bld_costs already counts the checklist materials of finished orders, which are the same parts the ledger posts at approval.
+-- So V176 adds only what the checklist does not hold: posted contractor services, parts issued after approval (fm_wo_part_issue:
+-- a 'move:' line with a client id) and returns (negative). Per order with its building key, school and a text to find the system
+-- (title + item texts). Readers: fm_erp_cost_can (all regions or fm_region_ok), like fm_wo_cost_summary.
+create or replace function public.fm_wo_cost_extra(p_from date, p_to date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_erp_cost_can() then raise exception 'not allowed'; end if;
+  if p_from is null or p_to is null or p_to < p_from or p_to - p_from > 800 then raise exception 'invalid period'; end if;
+  return coalesce((select jsonb_agg(x) from (
+    select c.wo_id, min(c.wo_code) code, min(c.bkey) k, min(c.school) school,
+           round(sum(c.amount) filter (where c.kind = 'service'), 2) services, round(sum(c.amount) filter (where c.kind = 'part'), 2) parts, round(sum(c.amount), 2) extra,
+           left(min(w.title) || ' ' || coalesce((select string_agg(coalesce(e->>'g','') || ' ' || coalesce(e->>'t',''), ' ') from jsonb_array_elements(case when jsonb_typeof(min(w.checklist::text)::jsonb) = 'array' then min(w.checklist::text)::jsonb else '[]'::jsonb end) e), ''), 600) txt
+      from public.fm_wo_costs c join public.work_orders w on w.id = c.wo_id
+     where c.status = 'posted' and (c.at at time zone 'Asia/Riyadh')::date between p_from and p_to
+       and (c.kind = 'service' or c.src like 'ret:%' or (c.src like 'move:%' and c.client_id is not null))
+       and (public.fm_erp_cost_all() or public.fm_region_ok(coalesce(c.region, '')))
+     group by c.wo_id) x), '[]'::jsonb);
+end $$;
+revoke all on function public.fm_wo_cost_extra(date, date) from public, anon;
+grant execute on function public.fm_wo_cost_extra(date, date) to authenticated;
+notify pgrst, 'reload schema';
