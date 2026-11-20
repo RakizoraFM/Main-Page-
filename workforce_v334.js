@@ -42,7 +42,7 @@
     }
   }, true);
   document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape' && stack.length) {
+    if (event.key === 'Escape' && stack.length && !event.__fmEsc && !window.__fmEscSynth) {
       event.preventDefault();
       stack[stack.length - 1].close();
     }

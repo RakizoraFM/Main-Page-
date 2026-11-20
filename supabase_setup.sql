@@ -19041,3 +19041,560 @@ begin
   return id_;
 end $$;
 notify pgrst, 'reload schema';
+
+-- ---------- 119) V380 — duplicate photos: the same picture uploaded on more than one work order ----------
+-- Each work-order photo gets a fingerprint computed on the device when it is uploaded (dHash = 64-bit difference hash of a
+-- 9×8 grey thumbnail, survives re-compression and resizing; sha = SHA-256 of the uploaded JPEG). fm_photo_dups lists the
+-- photos whose fingerprint equals or is within 4 bits of a photo on ANOTHER order (four 16-bit bands find the candidates).
+alter table public.wo_photos add column if not exists phash text;
+alter table public.wo_photos add column if not exists sha   text;
+create index if not exists wo_photos_phash_idx on public.wo_photos (phash) where phash is not null;
+create index if not exists wo_photos_sha_idx on public.wo_photos (sha) where sha is not null;
+create table if not exists public.fm_photo_dup_reviews (
+  k text primary key, status text not null check (status in ('ok','action')), note text, by_id uuid default auth.uid(), by_name text, at timestamptz not null default now()
+);
+alter table public.fm_photo_dup_reviews enable row level security;
+revoke all on public.fm_photo_dup_reviews from anon, authenticated;
+
+create or replace function public.fm_photo_hash(p_id uuid, p_phash text, p_sha text) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare r record;
+begin
+  if auth.uid() is null then raise exception 'not allowed'; end if;
+  if p_phash is not null and p_phash !~ '^([0-9a-f]{16}|-)$' then raise exception 'bad hash'; end if;
+  if p_sha is not null and p_sha !~ '^[0-9a-f]{64}$' then raise exception 'bad hash'; end if;
+  select * into r from public.wo_photos where id = p_id;
+  if not found then return false; end if;
+  -- the uploader, or anyone who may see the order (the platform backfills old photos)
+  if r.by_id is distinct from auth.uid() and not public.fm_wo_can_see(r.wo_id) then raise exception 'not allowed'; end if;
+  update public.wo_photos set phash = coalesce(p_phash, phash), sha = coalesce(p_sha, sha) where id = p_id;
+  return true;
+end $$;
+
+create or replace function public.fm_photo_dups(p_days int default 90) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare d int := greatest(7, least(coalesce(p_days, 90), 400)); res jsonb;
+begin
+  if auth.uid() is null or not (public.fm_flag_can() or public.fm_scope_all() or public.fm_role() in ('admin','manager','engineer')) then raise exception 'not allowed'; end if;
+  with ph as (
+    select p.id, p.wo_id, p.kind, p.tag, p.item, p.path, p.at, p.by_name, p.phash, p.sha,
+           case when p.phash ~ '^[0-9a-f]{16}$' then ('x' || p.phash)::bit(64) end as b, w.code, w.school, w.region, w.assignee_name, w.title
+    from public.wo_photos p join public.work_orders w on w.id = p.wo_id
+    where p.at >= now() - make_interval(days => d) and (p.phash ~ '^[0-9a-f]{16}$' or p.sha is not null)
+      and public.fm_wo_can_see(p.wo_id)
+  ), band as (
+    select id, substr(phash, 1, 4) as v, 1 as n from ph where b is not null and phash not in ('0000000000000000','ffffffffffffffff') union all
+    select id, substr(phash, 5, 4), 2 from ph where b is not null and phash not in ('0000000000000000','ffffffffffffffff') union all
+    select id, substr(phash, 9, 4), 3 from ph where b is not null and phash not in ('0000000000000000','ffffffffffffffff') union all
+    select id, substr(phash, 13, 4), 4 from ph where b is not null and phash not in ('0000000000000000','ffffffffffffffff')
+  ), cand as (
+    select distinct least(a.id::text, b.id::text) as x, greatest(a.id::text, b.id::text) as y
+    from band a join band b on a.n = b.n and a.v = b.v and a.id <> b.id
+    union
+    select least(a.id::text, b.id::text), greatest(a.id::text, b.id::text)
+    from ph a join ph b on a.sha = b.sha and a.id <> b.id
+  ), pairs as (
+    select a.*, b.id as id2, b.wo_id as wo2, b.code as code2, b.school as school2, b.region as region2, b.assignee_name as as2,
+           b.kind as kind2, b.item as item2, b.path as path2, b.at as at2, b.by_name as by2,
+           case when a.sha is not null and a.sha = b.sha then 0 when a.b is not null and b.b is not null then bit_count(a.b # b.b) else 99 end as dist
+    from cand c join ph a on a.id::text = c.x join ph b on b.id::text = c.y
+    where a.wo_id <> b.wo_id
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'k', least(p.id::text, p.id2::text) || ':' || greatest(p.id::text, p.id2::text), 'dist', p.dist, 'same_file', p.dist = 0 and p.sha is not null,
+      'a', jsonb_build_object('id', p.id, 'wo', p.wo_id, 'code', p.code, 'school', p.school, 'region', p.region, 'who', p.assignee_name, 'kind', p.kind, 'item', p.item, 'path', p.path, 'at', p.at, 'by', p.by_name),
+      'b', jsonb_build_object('id', p.id2, 'wo', p.wo2, 'code', p.code2, 'school', p.school2, 'region', p.region2, 'who', p.as2, 'kind', p.kind2, 'item', p.item2, 'path', p.path2, 'at', p.at2, 'by', p.by2),
+      'other_school', coalesce(p.school, '') <> coalesce(p.school2, ''),
+      'rv', (select jsonb_build_object('status', r.status, 'note', r.note, 'by', r.by_name, 'at', r.at) from public.fm_photo_dup_reviews r
+             where r.k = least(p.id::text, p.id2::text) || ':' || greatest(p.id::text, p.id2::text))
+    ) order by p.dist, greatest(p.at, p.at2) desc), '[]'::jsonb) into res
+  from (select * from pairs where dist <= 4 order by dist limit 500) p;
+  return jsonb_build_object('days', d, 'pairs', res,
+    'hashed', (select count(*) from public.wo_photos where at >= now() - make_interval(days => d) and phash ~ '^[0-9a-f]{16}$'),
+    'unhashed', (select count(*) from public.wo_photos where at >= now() - make_interval(days => d) and phash is null),
+    'can_review', public.fm_flag_can());
+end $$;
+
+-- photos without a fingerprint (for the platform backfill); '-' = the device could not read it
+create or replace function public.fm_photo_unhashed(p_days int default 90, p_limit int default 200) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'path', p.path)), '[]'::jsonb)
+  from (select p.id, p.path from public.wo_photos p
+        where p.phash is null and p.at >= now() - make_interval(days => greatest(7, least(coalesce(p_days, 90), 400)))
+          and auth.uid() is not null and public.fm_wo_can_see(p.wo_id)
+        order by p.at desc limit greatest(1, least(coalesce(p_limit, 200), 500))) p
+$$;
+
+create or replace function public.fm_photo_dup_review(p_k text, p_status text, p_note text) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_flag_can() then raise exception 'not allowed'; end if;
+  if p_k !~ '^[0-9a-f-]{36}:[0-9a-f-]{36}$' then raise exception 'bad key'; end if;
+  if p_status is null then delete from public.fm_photo_dup_reviews where k = p_k; return true; end if;
+  if p_status not in ('ok','action') then raise exception 'bad status'; end if;
+  if length(coalesce(trim(p_note), '')) < 3 then raise exception 'note required'; end if;
+  insert into public.fm_photo_dup_reviews (k, status, note, by_id, by_name)
+  values (p_k, p_status, trim(p_note), auth.uid(), (select full_name from public.profiles where id = auth.uid()))
+  on conflict (k) do update set status = excluded.status, note = excluded.note, by_id = excluded.by_id, by_name = excluded.by_name, at = now();
+  return true;
+end $$;
+revoke all on function public.fm_photo_hash(uuid, text, text), public.fm_photo_dups(int), public.fm_photo_unhashed(int, int), public.fm_photo_dup_review(text, text, text) from public, anon;
+grant execute on function public.fm_photo_hash(uuid, text, text), public.fm_photo_dups(int), public.fm_photo_unhashed(int, int), public.fm_photo_dup_review(text, text, text) to authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 120) V382 — response deadline for school principals' requests: reminder, escalation, response time ----------
+-- first_at = when the request first left «new» (accepted / in progress / done / rejected). A new request still waiting after
+-- `hours` (urgent: `urgent_hours`) sends a reminder to the school's staff (fm_school_staff_ids); after `esc_hours` (urgent:
+-- `urgent_esc`) it escalates to the area managers of the region and the project / ops managers. Push, else WhatsApp
+-- (fm_alert_send). Settings fm_settings.sr_sla {enabled true, hours 4, esc_hours 24, urgent_hours 1, urgent_esc 4}.
+alter table public.fm_school_requests add column if not exists first_at timestamptz;
+alter table public.fm_school_requests add column if not exists first_by_name text;
+alter table public.fm_school_requests add column if not exists esc_level int not null default 0;
+alter table public.fm_school_requests add column if not exists esc_at timestamptz;
+do $do$ begin
+  update public.fm_school_requests set first_at = coalesce(updated_at, created_at), first_by_name = handled_by_name
+   where first_at is null and status <> 'new';
+exception when others then null; end $do$;
+
+create or replace function public.fm_sr_first_stamp() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if old.status = 'new' and new.status <> 'new' and new.first_at is null then
+    new.first_at := now();
+    new.first_by_name := coalesce(new.handled_by_name, (select coalesce(full_name, email) from public.profiles where id = auth.uid()));
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_sr_first_stamp on public.fm_school_requests;
+create trigger fm_sr_first_stamp before update of status on public.fm_school_requests for each row execute function public.fm_sr_first_stamp();
+
+create or replace function public.fm_sr_sla_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', true, 'hours', 4, 'esc_hours', 24, 'urgent_hours', 1, 'urgent_esc', 4)
+      || coalesce((select value from public.fm_settings where key = 'sr_sla'), '{}'::jsonb)
+$$;
+
+create or replace function public.fm_v382_sr_run() returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_sr_sla_cfg(); r record; age numeric; h1 numeric; h2 numeric; ids uuid[]; u uuid; n int := 0; t text; b text;
+begin
+  if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+  for r in select * from public.fm_school_requests where status = 'new' and esc_level < 2 order by created_at limit 500 loop
+    age := extract(epoch from now() - r.created_at) / 3600;
+    h1 := case when r.urgency = 'urgent' then coalesce((c->>'urgent_hours')::numeric, 1) else coalesce((c->>'hours')::numeric, 4) end;
+    h2 := case when r.urgency = 'urgent' then coalesce((c->>'urgent_esc')::numeric, 4) else coalesce((c->>'esc_hours')::numeric, 24) end;
+    if age >= h2 then
+      t := '🔺 تصعيد: طلب مدرسة بلا رد ' || round(age)::text || ' ساعة';
+      b := coalesce(r.code, '') || ' — ' || r.school_name || ' — ' || left(r.description, 120);
+      for u in select p.id from public.profiles p
+                where p.active and (p.job_title in ('project_manager','ops_manager')
+                   or (p.job_title = 'area_manager' and (r.region is null or coalesce(array_length(p.regions, 1), 0) = 0 or r.region = any(p.regions)))) loop
+        perform public.fm_alert_send(u, 'sr_new', t, b, 'sr', 'sr-esc-' || r.id::text, true);
+      end loop;
+      update public.fm_school_requests set esc_level = 2, esc_at = now() where id = r.id;
+      n := n + 1;
+    elsif r.esc_level = 0 and age >= h1 then
+      ids := coalesce(public.fm_school_staff_ids(r.bkey, r.school_name, r.region), '{}');
+      t := '⏰ طلب مدرسة بانتظار الرد: ' || coalesce(r.code, '');
+      b := r.school_name || ' — ' || left(r.description, 120) || ' (منذ ' || round(age)::text || ' ساعة)';
+      foreach u in array ids loop perform public.fm_alert_send(u, 'sr_new', t, b, 'sr', 'sr-rem-' || r.id::text, true); end loop;
+      update public.fm_school_requests set esc_level = 1, esc_at = now() where id = r.id;
+      n := n + 1;
+    end if;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_v382_sr_run() from public, anon, authenticated;
+revoke all on function public.fm_sr_first_stamp() from public, anon, authenticated;
+
+-- response-time figures for the platform page (same schools as fm_school_req_list)
+create or replace function public.fm_sr_sla_stats(p_days int default 30) returns jsonb language sql stable security definer set search_path = public as $$
+  with c as (select public.fm_sr_sla_cfg() v),
+  r as (select q.*, extract(epoch from coalesce(q.first_at, now()) - q.created_at) / 3600 as h,
+               case when q.urgency = 'urgent' then coalesce(((select v from c)->>'urgent_hours')::numeric, 1) else coalesce(((select v from c)->>'hours')::numeric, 4) end as lim
+          from public.fm_school_requests q
+         where public.fm_role() in ('admin','manager','staff','viewer','engineer','supervisor')
+           and q.bkey in (select bkey from public.fm_my_schools())
+           and q.created_at > now() - make_interval(days => greatest(1, least(coalesce(p_days, 30), 365))))
+  select jsonb_build_object('cfg', (select v from c), 'days', greatest(1, least(coalesce(p_days, 30), 365)),
+    'n', count(*), 'answered', count(*) filter (where first_at is not null),
+    'avg_h', round(avg(h) filter (where first_at is not null)::numeric, 1),
+    'median_h', round((percentile_cont(0.5) within group (order by h) filter (where first_at is not null))::numeric, 1),
+    'on_time', count(*) filter (where first_at is not null and h <= lim),
+    'waiting', count(*) filter (where status = 'new'), 'late', count(*) filter (where status = 'new' and h > lim),
+    'escalated', count(*) filter (where esc_level >= 2),
+    'late_codes', coalesce(jsonb_agg(jsonb_build_object('code', code, 'h', round(h::numeric, 1), 'esc', esc_level)) filter (where status = 'new' and h > lim), '[]'::jsonb),
+    'by', coalesce((select jsonb_agg(x order by x->>'name') from (select jsonb_build_object('name', coalesce(first_by_name, '—'), 'n', count(*), 'avg_h', round(avg(h)::numeric, 1),
+                    'on_time', count(*) filter (where h <= lim)) x from r where first_at is not null group by first_by_name) z), '[]'::jsonb))
+  from r
+$$;
+grant execute on function public.fm_sr_sla_stats(int) to authenticated;
+revoke all on function public.fm_sr_sla_stats(int) from anon;
+
+do $do$ begin
+  perform cron.unschedule('fm-v382-sr') where exists (select 1 from cron.job where jobname = 'fm-v382-sr');
+  perform cron.schedule('fm-v382-sr', '*/15 * * * *', 'select public.fm_v382_sr_run()');
+exception when others then raise notice 'pg_cron not available: %', sqlerrm; end $do$;
+notify pgrst, 'reload schema';
+
+-- ---------- 121) V383 — read-only link for the owner (no account): published reports, requests and work-order figures ----------
+-- A private link owner.html?k=<64 hex> per person of the owner side (name, regions — empty = all, end date). The platform
+-- PUBLISHES a report (client dashboard / monthly report HTML made in the browser) for a month and region; the link shows
+-- the published reports of its regions plus live counts of school requests and work orders (6 months). Nothing else.
+create table if not exists public.fm_owner_links (
+  id uuid primary key default gen_random_uuid(), token text not null unique, name text not null, regions text[] not null default '{}',
+  active boolean not null default true, expires_at date, created_by uuid default auth.uid(), created_by_name text,
+  created_at timestamptz not null default now(), last_used_at timestamptz, uses int not null default 0
+);
+create table if not exists public.fm_owner_snaps (
+  id uuid primary key default gen_random_uuid(), month text not null check (month ~ '^\d{4}-\d{2}$'), region text not null default '',
+  kind text not null check (kind in ('client','monthly')), title text, html text not null check (length(html) <= 4000000),
+  by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(), unique (month, region, kind)
+);
+alter table public.fm_owner_links enable row level security;
+alter table public.fm_owner_snaps enable row level security;
+revoke all on public.fm_owner_links, public.fm_owner_snaps from anon, authenticated;
+
+create or replace function public.fm_owner_can() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or exists (select 1 from public.profiles where id = auth.uid() and active
+    and job_title in ('sysadmin','dept_manager','project_manager','ops_manager')))
+$$;
+create or replace function public.fm_owner_link_make(p_name text, p_regions text[], p_until date) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare t text := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', ''); r public.fm_owner_links;
+begin
+  if not public.fm_owner_can() then raise exception 'not allowed'; end if;
+  if length(coalesce(trim(p_name), '')) < 2 then raise exception 'name required'; end if;
+  if p_until is not null and p_until < current_date then raise exception 'bad date'; end if;
+  insert into public.fm_owner_links (token, name, regions, expires_at, created_by_name)
+  values (t, trim(p_name), coalesce(p_regions, '{}'), p_until, (select coalesce(full_name, email) from public.profiles where id = auth.uid()))
+  returning * into r;
+  insert into public.fm_audit_log (actor_name, action, target, details) values (r.created_by_name, 'owner_link', r.id::text, jsonb_build_object('name', r.name, 'regions', r.regions, 'until', r.expires_at));
+  return to_jsonb(r);
+end $$;
+create or replace function public.fm_owner_link_revoke(p_id uuid) returns boolean language plpgsql security definer set search_path = public as $$
+begin if not public.fm_owner_can() then raise exception 'not allowed'; end if;
+  update public.fm_owner_links set active = false where id = p_id; return found; end $$;
+create or replace function public.fm_owner_links_list() returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin if not public.fm_owner_can() then raise exception 'not allowed'; end if;
+  return jsonb_build_object(
+    'links', coalesce((select jsonb_agg(to_jsonb(l) order by l.active desc, l.created_at desc) from public.fm_owner_links l), '[]'::jsonb),
+    'snaps', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'month', s.month, 'region', s.region, 'kind', s.kind, 'title', s.title, 'by', s.by_name, 'at', s.at, 'size', length(s.html)) order by s.month desc, s.kind) from public.fm_owner_snaps s), '[]'::jsonb));
+end $$;
+create or replace function public.fm_owner_snap_publish(p_month text, p_region text, p_kind text, p_title text, p_html text) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare id_ uuid;
+begin
+  if not public.fm_owner_can() then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' or p_kind not in ('client','monthly') then raise exception 'bad report'; end if;
+  if p_html is null or length(p_html) < 50 or length(p_html) > 4000000 then raise exception 'bad report'; end if;
+  insert into public.fm_owner_snaps (month, region, kind, title, html, by_name)
+  values (p_month, coalesce(p_region, ''), p_kind, left(p_title, 200), p_html, (select coalesce(full_name, email) from public.profiles where id = auth.uid()))
+  on conflict (month, region, kind) do update set html = excluded.html, title = excluded.title, by_id = auth.uid(), by_name = excluded.by_name, at = now()
+  returning id into id_;
+  return id_;
+end $$;
+create or replace function public.fm_owner_snap_del(p_id uuid) returns boolean language plpgsql security definer set search_path = public as $$
+begin if not public.fm_owner_can() then raise exception 'not allowed'; end if; delete from public.fm_owner_snaps where id = p_id; return found; end $$;
+
+create or replace function public.fm_owner_tok(p_token text) returns public.fm_owner_links language plpgsql security definer set search_path = public as $$
+declare l public.fm_owner_links;
+begin
+  select * into l from public.fm_owner_links where token = lower(trim(p_token)) and active and (expires_at is null or expires_at >= current_date);
+  if not found then raise exception 'invalid link'; end if;
+  update public.fm_owner_links set last_used_at = now(), uses = uses + 1 where id = l.id;
+  return l;
+end $$;
+create or replace function public.fm_owner_portal(p_token text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare l public.fm_owner_links := public.fm_owner_tok(p_token); since date := (date_trunc('month', now() at time zone 'Asia/Riyadh') - interval '5 months')::date;
+  allr boolean := coalesce(array_length(l.regions, 1), 0) = 0; reqs jsonb := '[]'; wos jsonb := '[]';
+begin
+  begin
+    select coalesce(jsonb_agg(x order by x->>'m'), '[]') into reqs from (
+      select jsonb_build_object('m', to_char(created_at at time zone 'Asia/Riyadh', 'YYYY-MM'), 'n', count(*),
+        'done', count(*) filter (where status = 'done'), 'open', count(*) filter (where status in ('new','accepted','in_progress')),
+        'rejected', count(*) filter (where status = 'rejected'),
+        'reply_h', round((avg(extract(epoch from first_at - created_at) / 3600) filter (where first_at is not null))::numeric, 1),
+        'rating', round(avg(rating)::numeric, 1)) x
+      from public.fm_school_requests where created_at >= since and (allr or region = any(l.regions)) group by 1) q;
+  exception when others then reqs := '[]'; end;
+  begin
+    select coalesce(jsonb_agg(x order by x->>'m'), '[]') into wos from (
+      select jsonb_build_object('m', m, 'created', sum(c), 'closed', sum(cl), 'pm_due', sum(pd), 'pm_done', sum(pdn)) x from (
+        select to_char(created_at at time zone 'Asia/Riyadh', 'YYYY-MM') m, 1 c, 0 cl, 0 pd, 0 pdn from public.work_orders
+          where created_at >= since and status not in ('cancelled','rejected') and (allr or region = any(l.regions))
+        union all select to_char(closed_at at time zone 'Asia/Riyadh', 'YYYY-MM'), 0, 1, 0, 0 from public.work_orders
+          where closed_at >= since and status = 'closed' and (allr or region = any(l.regions))
+        union all select to_char(due_at at time zone 'Asia/Riyadh', 'YYYY-MM'), 0, 0, 1, case when status = 'closed' then 1 else 0 end from public.work_orders
+          where type = 'preventive' and due_at >= since and status not in ('cancelled','rejected') and (allr or region = any(l.regions))
+      ) z group by m) q;
+  exception when others then wos := '[]'; end;
+  return jsonb_build_object('name', l.name, 'regions', l.regions, 'until', l.expires_at,
+    'company', (select company from public.fm_plan limit 1),
+    'snaps', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'month', s.month, 'region', s.region, 'kind', s.kind, 'title', s.title, 'at', s.at) order by s.month desc, s.kind)
+       from public.fm_owner_snaps s where allr or s.region = '' or s.region = any(l.regions)), '[]'::jsonb),
+    'requests', reqs, 'orders', wos,
+    'open_now', jsonb_build_object(
+       'requests', (select count(*) from public.fm_school_requests where status in ('new','accepted','in_progress') and (allr or region = any(l.regions))),
+       'orders', (select count(*) from public.work_orders where status in ('assigned','accepted','in_progress','returned','done') and (allr or region = any(l.regions))),
+       'late', (select count(*) from public.work_orders where status in ('assigned','accepted','in_progress','returned') and due_at < now() and (allr or region = any(l.regions)))));
+exception when undefined_table or undefined_column then
+  return jsonb_build_object('name', l.name, 'regions', l.regions, 'until', l.expires_at, 'snaps', '[]'::jsonb, 'requests', reqs, 'orders', wos);
+end $$;
+create or replace function public.fm_owner_snap(p_token text, p_id uuid) returns jsonb language plpgsql security definer set search_path = public as $$
+declare l public.fm_owner_links := public.fm_owner_tok(p_token); s public.fm_owner_snaps;
+begin
+  select * into s from public.fm_owner_snaps where id = p_id;
+  if not found or not (coalesce(array_length(l.regions, 1), 0) = 0 or s.region = '' or s.region = any(l.regions)) then raise exception 'not found'; end if;
+  return jsonb_build_object('title', s.title, 'month', s.month, 'region', s.region, 'kind', s.kind, 'at', s.at, 'html', s.html);
+end $$;
+revoke all on function public.fm_owner_can(), public.fm_owner_link_make(text, text[], date), public.fm_owner_link_revoke(uuid), public.fm_owner_links_list(),
+  public.fm_owner_snap_publish(text, text, text, text, text), public.fm_owner_snap_del(uuid), public.fm_owner_tok(text), public.fm_owner_portal(text), public.fm_owner_snap(text, uuid) from public;
+grant execute on function public.fm_owner_can(), public.fm_owner_link_make(text, text[], date), public.fm_owner_link_revoke(uuid), public.fm_owner_links_list(),
+  public.fm_owner_snap_publish(text, text, text, text, text), public.fm_owner_snap_del(uuid) to authenticated;
+grant execute on function public.fm_owner_portal(text), public.fm_owner_snap(text, uuid) to anon, authenticated;
+notify pgrst, 'reload schema';
+
+-- ---------- 122) V386 — expiry dates of consumables (lots) and first-expiry-first-out ----------
+-- An item marked `exp_track` keeps lots per store (quantity left, expiry date). Lots are recorded when the goods arrive
+-- (fm_lot_add). Every outgoing stock move of a tracked item (out / issue / transfer / dispose / claim_out) takes its quantity
+-- from the lots of that store with the EARLIEST expiry first (trigger fm_lot_fefo); an incoming transfer creates a lot with
+-- the expiry of the lots it left. Daily (pg_cron fm-v386-daily 05:25 UTC): push wh_exp to the keepers of the region for lots
+-- expiring within the item's warn days (default 30) and once when a lot has expired with quantity left.
+alter table public.wo_materials add column if not exists exp_track boolean not null default false;
+alter table public.wo_materials add column if not exists exp_warn int not null default 30;
+create table if not exists public.wo_stock_lots (
+  id uuid primary key default gen_random_uuid(), store_id uuid not null references public.wo_stores(id) on delete cascade,
+  material_id uuid not null references public.wo_materials(id) on delete cascade, qty_in numeric(14,3) not null check (qty_in > 0),
+  qty_left numeric(14,3) not null check (qty_left >= 0), expiry date not null, lot_no text, ref text, note text,
+  by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(), warned text
+);
+create index if not exists wo_stock_lots_fefo_idx on public.wo_stock_lots (store_id, material_id, expiry) where qty_left > 0;
+alter table public.wo_stock_lots enable row level security;
+drop policy if exists p_lots_read on public.wo_stock_lots;
+create policy p_lots_read on public.wo_stock_lots for select using (public.fm_role() in ('admin','manager','staff','engineer','viewer'));
+revoke all on public.wo_stock_lots from anon, authenticated;
+grant select on public.wo_stock_lots to authenticated;
+
+create or replace function public.fm_mat_exp_set(p_id uuid, p_on boolean, p_warn int) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_wh_edit() then raise exception 'not allowed'; end if;
+  update public.wo_materials set exp_track = coalesce(p_on, exp_track), exp_warn = greatest(1, least(coalesce(p_warn, exp_warn), 365)) where id = p_id;
+  return found;
+end $$;
+
+create or replace function public.fm_lot_add(p_store uuid, p_material uuid, p_qty numeric, p_expiry date, p_lot text, p_ref text, p_note text) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare st public.wo_stores; id_ uuid;
+begin
+  select * into st from public.wo_stores where id = p_store;
+  if not found or auth.uid() is null or not (public.fm_stock_can(st.region) or public.fm_wh_keeper(p_store)) then raise exception 'not allowed'; end if;
+  if coalesce(p_qty, 0) <= 0 then raise exception 'qty required'; end if;
+  if p_expiry is null then raise exception 'expiry required'; end if;
+  if not exists (select 1 from public.wo_materials where id = p_material) then raise exception 'item not found'; end if;
+  update public.wo_materials set exp_track = true where id = p_material and not exp_track;
+  insert into public.wo_stock_lots (store_id, material_id, qty_in, qty_left, expiry, lot_no, ref, note, by_name)
+  values (p_store, p_material, p_qty, p_qty, p_expiry, nullif(trim(p_lot), ''), nullif(trim(p_ref), ''), nullif(trim(p_note), ''),
+          (select coalesce(full_name, email) from public.profiles where id = auth.uid()))
+  returning id into id_;
+  return id_;
+end $$;
+-- correct a lot (count / wrong date); quantity may only go down to 0 or be re-set within what came in
+create or replace function public.fm_lot_edit(p_id uuid, p_left numeric, p_expiry date, p_note text) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare l public.wo_stock_lots; st public.wo_stores;
+begin
+  select * into l from public.wo_stock_lots where id = p_id for update;
+  if not found then return false; end if;
+  select * into st from public.wo_stores where id = l.store_id;
+  if auth.uid() is null or not (public.fm_stock_can(st.region) or public.fm_wh_keeper(l.store_id)) then raise exception 'not allowed'; end if;
+  if p_left is not null and (p_left < 0 or p_left > l.qty_in) then raise exception 'bad qty'; end if;
+  update public.wo_stock_lots set qty_left = coalesce(p_left, qty_left), expiry = coalesce(p_expiry, expiry),
+    note = coalesce(nullif(trim(p_note), ''), note), warned = case when p_expiry is not null and p_expiry <> l.expiry then null else warned end where id = p_id;
+  return true;
+end $$;
+
+create or replace function public.fm_lot_fefo() returns trigger language plpgsql security definer set search_path = public as $$
+declare need numeric; l record; take numeric; ex date;
+begin
+  begin
+    if not exists (select 1 from public.wo_materials where id = new.material_id and exp_track) then return new; end if;
+    if new.qty < 0 and new.kind in ('out','issue','transfer','dispose','claim_out','adjust','scrap') then
+      need := -new.qty;
+      for l in select id, qty_left from public.wo_stock_lots where store_id = new.store_id and material_id = new.material_id and qty_left > 0
+               order by expiry, at for update loop
+        exit when need <= 0;
+        take := least(need, l.qty_left);
+        update public.wo_stock_lots set qty_left = qty_left - take where id = l.id;
+        need := need - take;
+      end loop;
+    elsif new.qty > 0 and new.kind = 'transfer' and new.ref is not null then
+      -- an incoming transfer takes the earliest expiry of the source lots of the same transfer reference (best effort)
+      select min(x.expiry) into ex from public.wo_stock_lots x join public.wo_stock_moves m
+        on m.ref = new.ref and m.material_id = new.material_id and m.qty < 0 and m.store_id = x.store_id
+       where x.material_id = new.material_id;
+      if ex is not null then
+        insert into public.wo_stock_lots (store_id, material_id, qty_in, qty_left, expiry, ref, note, by_name)
+        values (new.store_id, new.material_id, new.qty, new.qty, ex, new.ref, 'تحويل', new.by_name);
+      end if;
+    end if;
+  exception when others then null;
+  end;
+  return new;
+end $$;
+drop trigger if exists fm_lot_fefo on public.wo_stock_moves;
+create trigger fm_lot_fefo after insert on public.wo_stock_moves for each row execute function public.fm_lot_fefo();
+
+create or replace function public.fm_lots_list(p_days int default 3650) returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'can', public.fm_wh_edit() or exists (select 1 from public.wo_stores s where s.active and (public.fm_stock_can(s.region) or public.fm_wh_keeper(s.id))),
+    'lots', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'store_id', l.store_id, 'store', s.name, 'region', s.region, 'material_id', l.material_id,
+        'name', m.name, 'code', m.code, 'unit', m.unit, 'qty_in', l.qty_in, 'qty_left', l.qty_left, 'expiry', l.expiry, 'lot_no', l.lot_no, 'ref', l.ref, 'note', l.note,
+        'by', l.by_name, 'at', l.at, 'days', l.expiry - (now() at time zone 'Asia/Riyadh')::date, 'warn', m.exp_warn) order by l.expiry, s.name)
+      from public.wo_stock_lots l join public.wo_stores s on s.id = l.store_id join public.wo_materials m on m.id = l.material_id
+      where public.fm_role() in ('admin','manager','staff','engineer','viewer')
+        and (l.qty_left > 0 or l.at > now() - make_interval(days => greatest(1, least(coalesce(p_days, 3650), 3650))))), '[]'::jsonb),
+    'tracked', coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name, 'code', m.code, 'unit', m.unit, 'warn', m.exp_warn,
+        'bal', (select coalesce(jsonb_agg(jsonb_build_object('store_id', k.store_id, 'qty', k.qty)), '[]'::jsonb) from public.wo_stock k where k.material_id = m.id and k.qty <> 0)))
+      from public.wo_materials m where m.exp_track and public.fm_role() in ('admin','manager','staff','engineer','viewer')), '[]'::jsonb))
+$$;
+
+create or replace function public.fm_v386_daily() returns int language plpgsql security definer set search_path = public as $$
+declare r record; k uuid; n int := 0; lvl text;
+begin
+  for r in select l.*, m.name mname, m.exp_warn, s.region, s.name sname, l.expiry - (now() at time zone 'Asia/Riyadh')::date as d
+             from public.wo_stock_lots l join public.wo_materials m on m.id = l.material_id join public.wo_stores s on s.id = l.store_id
+            where l.qty_left > 0 and l.expiry - (now() at time zone 'Asia/Riyadh')::date <= m.exp_warn loop
+    lvl := case when r.d < 0 then 'exp' when r.d <= 7 then '7' else 'warn' end;
+    continue when r.warned = lvl;
+    for k in select * from public.fm_wh_keepers_of(r.region) loop
+      perform public.fm_alert_send(k, 'wh_exp', case when r.d < 0 then '⛔ صنف منتهي الصلاحية: ' else '⏳ صلاحية تقترب: ' end || r.mname,
+        r.sname || ' — ' || trim(to_char(r.qty_left, 'FM999999990.###')) || ' — ' || case when r.d < 0 then 'انتهت ' || r.expiry::text else 'تنتهي ' || r.expiry::text || ' (بعد ' || r.d || ' يوم)' end,
+        'wh=exp', 'exp-' || r.id::text, true);
+    end loop;
+    update public.wo_stock_lots set warned = lvl where id = r.id;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.fm_v386_daily(), public.fm_lot_fefo() from public, anon, authenticated;
+revoke all on function public.fm_mat_exp_set(uuid, boolean, int), public.fm_lot_add(uuid, uuid, numeric, date, text, text, text), public.fm_lot_edit(uuid, numeric, date, text), public.fm_lots_list(int) from public, anon;
+grant execute on function public.fm_mat_exp_set(uuid, boolean, int), public.fm_lot_add(uuid, uuid, numeric, date, text, text, text), public.fm_lot_edit(uuid, numeric, date, text), public.fm_lots_list(int) to authenticated;
+do $do$ begin
+  perform cron.unschedule('fm-v386-daily') where exists (select 1 from cron.job where jobname = 'fm-v386-daily');
+  perform cron.schedule('fm-v386-daily', '25 5 * * *', 'select public.fm_v386_daily()');
+exception when others then raise notice 'pg_cron not available: %', sqlerrm; end $do$;
+notify pgrst, 'reload schema';
+
+-- ---------- 123) V387 — archive tickets older than N years; their monthly numbers stay for the reports ----------
+-- The system admin (or a regional uploader) moves the tickets of a region created before a cutoff (at least 1 year back)
+-- from `tickets` to `tickets_archive` in one call; the platform sends that region's monthly figures for the archived
+-- months (received, closed, breached, SLA %, average close hours, top categories — computed with the platform's own SLA
+-- rules before the move) into `fm_ticket_archive_stats`. Archived tickets can be looked up by number and a month restored.
+-- While `fm_settings.tk_archive.block_reimport` (default true) is on, re-uploading an archived ticket does not bring it back.
+create table if not exists public.tickets_archive (like public.tickets including defaults);
+alter table public.tickets_archive add column if not exists archived_at timestamptz not null default now();
+alter table public.tickets_archive add column if not exists archived_by uuid;
+do $do$ begin
+  alter table public.tickets_archive add primary key (region, ticket_id);
+exception when others then null; end $do$;
+create index if not exists tickets_archive_created_idx on public.tickets_archive (region, created_at);
+create table if not exists public.fm_ticket_archive_stats (
+  region text not null, month text not null check (month ~ '^\d{4}-\d{2}$'), stats jsonb not null, n int not null default 0,
+  at timestamptz not null default now(), by_name text, primary key (region, month)
+);
+alter table public.tickets_archive enable row level security;
+alter table public.fm_ticket_archive_stats enable row level security;
+revoke all on public.tickets_archive, public.fm_ticket_archive_stats from anon, authenticated;
+create or replace function public.fm_wipe_parts() returns jsonb language sql immutable as $$
+  select jsonb_build_object(
+    'tickets',    jsonb_build_array('fm_breach_reason_log','fm_breach_reasons','fm_tk_assign_log','fm_tk_assign','fm_sla_pauses',
+                                    'fm_tk_close_rev','fm_tk_audits','fm_close_review_events','fm_close_reviews','fm_sla_inbox231',
+                                    'fm_sla_watch','fm_sla_watch_meta','fm_sla_morning','fm_ticket_imports232','fm_weekly_sent','fm_weekly',
+                                    'ticket_photos','ticket_events','ticket_work','tickets','tickets_archive','fm_ticket_archive_stats'),
+    'schooldb',   jsonb_build_array(),
+    'wo',         jsonb_build_array('wo_audits','wo_photos','wo_events','fm_bill_wos','work_orders','wo_schedules'),
+    'wh_moves',   jsonb_build_array('wo_serials','wo_purchase_requests','wo_issue_requests','wo_custody_counts','wo_custody_moves','wo_custody','wo_stock_lots','wo_stock_moves','wo_stock'),
+    'wh_catalog', jsonb_build_array('wo_material_photos','wo_supplier_prices','wo_suppliers','wo_materials','wo_stores'),
+    'eng',        jsonb_build_array('fm_eng_ratings','fm_eng_rate_links','fm_eng_audit','fm_eng_observations','fm_eng_logs','fm_eng_assignments'),
+    'portal',     jsonb_build_array('fm_school_requests','fm_school_links'),
+    'costs',      jsonb_build_array('fm_expenses','fm_budgets'),
+    'bill',       jsonb_build_array('fm_bill_wos','fm_bills','fm_contracts'),
+    'cc',         jsonb_build_array('fm_cc_entries','fm_cc_budget','fm_cc_staff','fm_cc_centers'),
+    'misc',       jsonb_build_array('fm_news','fm_push_queue','fm_activity')) $$;
+
+create or replace function public.fm_tk_archive_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('years', 2, 'block_reimport', true) || coalesce((select value from public.fm_settings where key = 'tk_archive'), '{}'::jsonb)
+$$;
+create or replace function public.fm_tk_archive_can(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or exists (select 1 from public.profiles where id = auth.uid() and active and job_title = 'sysadmin')
+     or public.fm_can_upload(p_region))
+$$;
+create or replace function public.fm_tk_archive_preview(p_region text, p_before date) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.fm_tk_archive_can(p_region) then raise exception 'not allowed'; end if;
+  return jsonb_build_object('live', (select count(*) from public.tickets where region = p_region),
+    'to_move', (select count(*) from public.tickets where region = p_region and created_at < p_before),
+    'no_date', (select count(*) from public.tickets where region = p_region and created_at is null),
+    'archived', (select count(*) from public.tickets_archive where region = p_region),
+    'months', coalesce((select jsonb_agg(jsonb_build_object('month', month, 'n', n, 'at', at) order by month) from public.fm_ticket_archive_stats where region = p_region), '[]'::jsonb),
+    'cfg', public.fm_tk_archive_cfg());
+end $$;
+create or replace function public.fm_tk_archive_run(p_region text, p_before date, p_stats jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare n int; m jsonb; nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid());
+begin
+  if not public.fm_tk_archive_can(p_region) then raise exception 'not allowed'; end if;
+  if p_before is null or p_before > ((now() at time zone 'Asia/Riyadh')::date - interval '1 year')::date then raise exception 'cutoff too recent'; end if;
+  perform pg_advisory_xact_lock(hashtext('fm_tk_archive:' || p_region));
+  for m in select * from jsonb_array_elements(coalesce(p_stats, '[]'::jsonb)) loop
+    if (m->>'month') ~ '^\d{4}-\d{2}$' and (m->>'month') <= to_char(p_before - 1, 'YYYY-MM') then
+      insert into public.fm_ticket_archive_stats (region, month, stats, n, by_name) values (p_region, m->>'month', m, coalesce((m->>'rec')::int, 0), nm)
+      on conflict (region, month) do update set stats = excluded.stats, n = excluded.n, at = now(), by_name = excluded.by_name;
+    end if;
+  end loop;
+  with moved as (delete from public.tickets t where t.region = p_region and t.created_at < p_before returning t.*)
+  insert into public.tickets_archive select mv.*, now(), auth.uid() from moved mv
+  on conflict (region, ticket_id) do update set raw = excluded.raw, status = excluded.status, archived_at = now();
+  get diagnostics n = row_count;
+  insert into public.fm_audit_log (actor_name, action, target, details) values (nm, 'tickets_archive', p_region, jsonb_build_object('before', p_before, 'n', n));
+  return jsonb_build_object('moved', n);
+end $$;
+create or replace function public.fm_tk_archive_restore(p_region text, p_month text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare n int; nm text := (select coalesce(full_name, email) from public.profiles where id = auth.uid());
+begin
+  if not public.fm_tk_archive_can(p_region) then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception 'bad month'; end if;
+  perform set_config('fm.tk_restore', '1', true);
+  with back as (delete from public.tickets_archive a where a.region = p_region and to_char(a.created_at at time zone 'Asia/Riyadh', 'YYYY-MM') = p_month returning a.*)
+  insert into public.tickets (region, ticket_id, school, building_id, supervisor, engineer, contractor, priority, sub_category, status, created_at, raw, uploaded_at, uploaded_by)
+  select region, ticket_id, school, building_id, supervisor, engineer, contractor, priority, sub_category, status, created_at, raw, uploaded_at, uploaded_by from back
+  on conflict (region, ticket_id) do nothing;
+  get diagnostics n = row_count;
+  delete from public.fm_ticket_archive_stats where region = p_region and month = p_month;
+  insert into public.fm_audit_log (actor_name, action, target, details) values (nm, 'tickets_restore', p_region, jsonb_build_object('month', p_month, 'n', n));
+  return jsonb_build_object('restored', n);
+end $$;
+-- archived figures per month (anyone who reads the region's tickets) and one archived ticket by number
+create or replace function public.fm_tk_archive_stats(p_region text) returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('month', month, 'stats', stats, 'at', at) order by month), '[]'::jsonb)
+  from public.fm_ticket_archive_stats where region = p_region and auth.uid() is not null and public.fm_role() not in ('pending')
+$$;
+create or replace function public.fm_tk_archive_get(p_region text, p_id text) returns jsonb language sql stable security definer set search_path = public as $$
+  select to_jsonb(a) - 'uploaded_by' - 'archived_by' from public.tickets_archive a
+   where a.region = p_region and a.ticket_id = trim(p_id) and auth.uid() is not null and public.fm_role() in ('admin','manager','staff','viewer','engineer')
+$$;
+-- re-uploading an archived ticket does not bring it back (unless the setting is off or a restore runs)
+create or replace function public.fm_tk_archive_block() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if coalesce(current_setting('fm.tk_restore', true), '') = '1' then return new; end if;
+  if coalesce((public.fm_tk_archive_cfg()->>'block_reimport')::boolean, true)
+     and exists (select 1 from public.tickets_archive a where a.region = new.region and a.ticket_id = new.ticket_id) then return null; end if;
+  return new;
+exception when others then return new;
+end $$;
+drop trigger if exists fm_tk_archive_block on public.tickets;
+create trigger fm_tk_archive_block before insert on public.tickets for each row execute function public.fm_tk_archive_block();
+revoke all on function public.fm_tk_archive_block(), public.fm_tk_archive_can(text) from public, anon, authenticated;
+revoke all on function public.fm_tk_archive_cfg(), public.fm_tk_archive_preview(text, date), public.fm_tk_archive_run(text, date, jsonb), public.fm_tk_archive_restore(text, text), public.fm_tk_archive_stats(text), public.fm_tk_archive_get(text, text) from public, anon;
+grant execute on function public.fm_tk_archive_cfg(), public.fm_tk_archive_preview(text, date), public.fm_tk_archive_run(text, date, jsonb), public.fm_tk_archive_restore(text, text), public.fm_tk_archive_stats(text), public.fm_tk_archive_get(text, text) to authenticated;
+notify pgrst, 'reload schema';

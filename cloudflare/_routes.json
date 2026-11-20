@@ -1,5 +1,5 @@
 {
   "version": 1,
-  "include": ["/index.html", "/field.html", "/start.html", "/rate.html", "/school.html", "/supplier.html", "/contractor.html", "/saas.html", "/try.html"],
+  "include": ["/index.html", "/field.html", "/start.html", "/rate.html", "/school.html", "/supplier.html", "/contractor.html", "/owner.html", "/saas.html", "/try.html"],
   "exclude": []
 }
