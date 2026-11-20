@@ -21153,3 +21153,57 @@ do $do$ begin
   exception when others then raise notice 'pg_cron is not available: on-call escalation does not run'; end;
 end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 142) V416 — cloud archive of issued monthly reports / client dashboards (fixed copies, versions kept) ----------
+-- fm_report_archive: one row per saved copy (month, region '' = all, kind monthly | client | pack, version 1, 2 … per month × region × kind,
+-- title, html ≤ 4 MB without scripts, note, by). Never overwritten, so the report sent to the client stays as it was.
+-- Save: admin, fm_scope_all, area manager of the region. Read: admin, scope_all, owner_rep, accountant, else the caller's regions
+-- (fm_region_ok, '' = all regions). Delete: admin. RLS on, no policies, no grants.
+create table if not exists public.fm_report_archive (
+  id uuid primary key default gen_random_uuid(), month text not null check (month ~ '^\d{4}-\d{2}$'), region text not null default '',
+  kind text not null check (kind in ('monthly','client','pack')), version int not null default 1, title text,
+  html text not null check (length(html) between 50 and 4000000), note text, by_id uuid default auth.uid(), by_name text, at timestamptz not null default now(),
+  unique (month, region, kind, version)
+);
+alter table public.fm_report_archive enable row level security;
+revoke all on public.fm_report_archive from anon, authenticated;
+create or replace function public.fm_rep_arch_can_save(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_scope_all()
+    or (public.fm_my_pos() = 'area_manager' and coalesce(p_region,'') <> '' and public.fm_region_ok(p_region))) $$;
+create or replace function public.fm_rep_arch_sees(p_region text) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.fm_role() <> 'pending' and (public.fm_role() = 'admin' or public.fm_scope_all()
+    or public.fm_my_pos() in ('owner_rep','accountant') or coalesce(p_region,'') = '' or public.fm_region_ok(p_region)) $$;
+create or replace function public.fm_rep_arch_save(p_month text, p_region text, p_kind text, p_title text, p_html text, p_note text default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v int; id_ uuid; h text := regexp_replace(coalesce(p_html,''), '<script[\s\S]*?</script>', '', 'gi');
+begin
+  if not public.fm_rep_arch_can_save(coalesce(p_region,'')) then raise exception 'not allowed'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' or p_kind not in ('monthly','client','pack') or length(h) < 50 or length(h) > 4000000 then raise exception 'bad report'; end if;
+  perform pg_advisory_xact_lock(hashtext('fm416:' || p_month || ':' || coalesce(p_region,'') || ':' || p_kind));
+  select coalesce(max(version), 0) + 1 into v from public.fm_report_archive where month = p_month and region = coalesce(p_region,'') and kind = p_kind;
+  insert into public.fm_report_archive (month, region, kind, version, title, html, note, by_name)
+  values (p_month, coalesce(p_region,''), p_kind, v, left(p_title, 200), h, left(nullif(btrim(coalesce(p_note,'')),''), 500), (select coalesce(full_name, email) from public.profiles where id = auth.uid()))
+  returning id into id_;
+  return jsonb_build_object('id', id_, 'version', v);
+end $$;
+create or replace function public.fm_rep_arch_list(p_months int default 24) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare k int := greatest(1, least(coalesce(p_months,24), 120));
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  return jsonb_build_object('can_del', public.fm_role() = 'admin', 'rows', coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'month', a.month, 'region', a.region, 'kind', a.kind,
+      'version', a.version, 'title', a.title, 'note', a.note, 'by', a.by_name, 'at', a.at, 'size', length(a.html)) order by a.month desc, a.region, a.kind, a.version desc)
+    from public.fm_report_archive a where a.month >= to_char((now() at time zone 'Asia/Riyadh') - make_interval(months => k), 'YYYY-MM') and public.fm_rep_arch_sees(a.region)), '[]'::jsonb));
+end $$;
+create or replace function public.fm_rep_arch_get(p_id uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare a public.fm_report_archive;
+begin
+  select * into a from public.fm_report_archive where id = p_id;
+  if not found or not public.fm_rep_arch_sees(a.region) then raise exception 'not found'; end if;
+  return jsonb_build_object('title', a.title, 'month', a.month, 'region', a.region, 'kind', a.kind, 'version', a.version, 'at', a.at, 'by', a.by_name, 'html', a.html);
+end $$;
+create or replace function public.fm_rep_arch_del(p_id uuid) returns boolean language plpgsql security definer set search_path = public as $$
+begin if public.fm_role() <> 'admin' then raise exception 'not allowed'; end if; delete from public.fm_report_archive where id = p_id; return found; end $$;
+revoke all on function public.fm_rep_arch_can_save(text), public.fm_rep_arch_sees(text) from public, anon;
+revoke all on function public.fm_rep_arch_save(text, text, text, text, text, text), public.fm_rep_arch_list(int), public.fm_rep_arch_get(uuid), public.fm_rep_arch_del(uuid) from public, anon;
+grant execute on function public.fm_rep_arch_can_save(text), public.fm_rep_arch_save(text, text, text, text, text, text), public.fm_rep_arch_list(int), public.fm_rep_arch_get(uuid), public.fm_rep_arch_del(uuid) to authenticated;
+notify pgrst, 'reload schema';
