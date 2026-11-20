@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SP3">
+<meta name="fm-version" content="SP4">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -49,6 +49,9 @@ textarea{min-height:100px}
 .cf{border:1px solid #fcd34d;background:#fffbeb;border-radius:14px;padding:10px 12px;margin:8px 0}.cf .r1{display:flex;justify-content:space-between;gap:8px;align-items:center}.cf .bt{display:flex;gap:8px;margin-top:8px}.cf .bt button{flex:1;border:0;border-radius:10px;padding:10px;font:900 14px Cairo,Tahoma,sans-serif;cursor:pointer;color:#fff}.cf .ok{background:#16a34a}.cf .no{background:#dc2626}.cf textarea{min-height:70px;margin-top:8px}.bdg{display:inline-block;min-width:20px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;padding:0 6px;margin-inline-start:4px}
 /* SP3 (V223): the principal confirms finished work */
 .foot{text-align:center;color:#94a3b8;font-size:11.5px;margin-top:14px;font-weight:700;line-height:1.8}
+.nps{display:grid;grid-template-columns:repeat(11,1fr);gap:4px;margin:6px 0}.nps button{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:9px 0;font:800 15px Cairo,Tahoma,sans-serif;cursor:pointer}
+.nps button.on.lo{background:#dc2626;color:#fff;border-color:#dc2626}.nps button.on.mid{background:#f59e0b;color:#fff;border-color:#f59e0b}.nps button.on.hi{background:#16a34a;color:#fff;border-color:#16a34a}
+.npsl{display:flex;justify-content:space-between;font-size:11.5px;color:#64748b;margin-bottom:6px}
 </style>
 </head>
 <body>
@@ -80,7 +83,8 @@ function shrink(file){return new Promise((res,rej)=>{const r=new FileReader();r.
  let w=im.width,h=im.height,m=1280;if(Math.max(w,h)>m){const k=m/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k)}
  const c=document.createElement('canvas');let q=.72,out='';for(let i=0;i<6;i++){c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);out=c.toDataURL('image/jpeg',q);if(out.length<=560000)break;q-=.12;w=Math.round(w*.8);h=Math.round(h*.8)}
  out.length<=560000?res(out):rej(Error('size'))};im.src=r.result};r.readAsDataURL(file)})}
-async function load(){I=await rpc('fm_school_portal',{p_token:token})}
+let SV=null,sv={nps:null,q:{},comment:''};
+async function load(){I=await rpc('fm_school_portal',{p_token:token});try{SV=await rpc('fm_school_survey_get',{p_token:token})}catch(e){SV=null}}
 async function start(){
  if(!(await tenantCfg()))return fail('رمز الشركة في الرابط غير صحيح أو تعذّر الاتصال.');if(!/^[0-9a-f]{64}$/.test(token))return fail('الرابط غير صحيح.');
  try{await load()}catch(e){return fail('تعذّر الاتصال. تحقق من الإنترنت ثم أعد فتح الرابط.')}
@@ -88,7 +92,7 @@ async function start(){
 function draw(){const CF=I.confirm||[];if(!tab)tab=CF.length?'conf':'new';const open=(I.requests||[]).filter(r=>['new','accepted','in_progress'].includes(r.status)).length;
  app.innerHTML=`<div class="brand">RakizoraFM · إدارة المرافق</div><h1>🏫 ${esc(I.school)}</h1><div class="sub">بوابة المدرسة — ارفع طلبك وتابع حالته</div>
  <div class="kp"><div><b>${open}</b><span>طلباتي المفتوحة</span></div><div><b>${(I.tickets||[]).length}</b><span>بلاغات مفتوحة</span></div><div><b>${(I.orders||[]).length}</b><span>أعمال جارية</span></div></div>
- <div class="tabs">${[['new','➕ طلب جديد'],['conf','✅ تأكيد الإنجاز'+(CF.length?`<span class="bdg">${CF.length}</span>`:'')],['mine','📋 طلباتي'],['open','🛠️ المفتوح على المدرسة']].map(([k,l])=>`<button data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div><div id="pane"></div>
+ <div class="tabs">${[['new','➕ طلب جديد'],['conf','✅ تأكيد الإنجاز'+(CF.length?`<span class="bdg">${CF.length}</span>`:'')],['mine','📋 طلباتي'],['open','🛠️ المفتوح على المدرسة'],...(SV&&SV.enabled?[['srv','⭐ استبيان الربع'+(!SV.done?'<span class="bdg">1</span>':'')]]:[])].map(([k,l])=>`<button data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div><div id="pane"></div>
  <div class="foot">هذا الرابط خاص بمدرستكم — لا تشاركه خارج إدارة المدرسة.</div>`;
  app.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{tab=b.dataset.t;sent='';draw()});
  const p=app.querySelector('#pane');
@@ -101,9 +105,26 @@ function draw(){const CF=I.confirm||[];if(!tab)tab=CF.length?'conf':'new';const 
    const c=prompt('ملاحظة على التنفيذ (اختياري):','');if(c===null){box.querySelectorAll('button').forEach(x=>x.classList.remove('on'));return}
    try{await rpc('fm_school_request_rate',{p_token:token,p_id:box.dataset.r,p_score:v,p_comment:c||''});await load();draw()}catch(e){alert(e.message)}}));return}
  if(tab==='conf')return drawConf(p,CF);
+ if(tab==='srv')return drawSurvey(p);
  const T=I.tickets||[],O=I.orders||[];
  p.innerHTML=`<label class="f">بلاغات مفتوحة (${T.length})</label>${T.length?T.map(t=>`<div class="it"><div class="r1"><b>${esc(t.cat||'بلاغ')}</b><span class="st open">${esc(t.status||'')}</span></div><small>رقم ${esc(t.id)} · ${esc(date(t.at))}${t.priority?' · '+esc(t.priority):''}</small></div>`).join(''):'<div class="empty">لا توجد بلاغات مفتوحة ✅</div>'}
   <label class="f">أعمال صيانة جارية (${O.length})</label>${O.length?O.map(o=>`<div class="it"><div class="r1"><b>${esc(o.title)}</b><span class="st in_progress">${esc(o.sc==='pending'?'بانتظار تأكيدكم':WST[o.status]||o.status)}</span></div><small>${esc(o.code||'')} · ${esc(date(o.at))}</small></div>`).join(''):'<div class="empty">لا توجد أعمال جارية</div>'}`}
+/* SP4 (V393): quarterly satisfaction survey — NPS 0–10, four optional 1–5 scores, a comment (fm_school_survey_get / _submit) */
+const SVQ=[['q_speed','سرعة الاستجابة للطلبات والبلاغات'],['q_quality','جودة تنفيذ الأعمال'],['q_comm','التواصل والمتابعة من الفريق'],['q_clean','النظافة والترتيب بعد العمل']];
+function drawSurvey(p){const qn=String(SV.quarter||'').replace(/^(\d{4})-Q(\d)$/,'الربع $2 من $1');
+ if(SV.done){p.innerHTML=`<div class="okm">✅ شكراً لكم — تم استلام تقييمكم لـ ${esc(qn)}${SV.nps!=null?` (${SV.nps} من 10)`:''}.<br>سيُفتح الاستبيان مرة أخرى في الربع القادم.</div>`;return}
+ p.innerHTML=`<label class="f">${esc(qn)}: ما مدى احتمال أن توصوا بخدمة الصيانة والتشغيل لمدرسة أخرى؟</label><div class="nps">${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<button type="button" data-n="${n}" class="${sv.nps===n?'on':''} ${n<=6?'lo':n<=8?'mid':'hi'}">${n}</button>`).join('')}</div>
+  <div class="npsl"><span>0 = لا أوصي أبداً</span><span>10 = أوصي بالتأكيد</span></div>
+  ${SVQ.map(([k,t])=>`<label class="f">${t} <small>(اختياري)</small></label><div class="stars" data-q="${k}">${[1,2,3,4,5].map(n=>`<button type="button" data-v="${n}" class="${(sv.q[k]||0)>=n?'on':''}">★</button>`).join('')}</div>`).join('')}
+  <label class="f">ملاحظات أو اقتراحات <small>(اختياري)</small></label><textarea data-c rows="3" maxlength="1000">${esc(sv.comment)}</textarea>
+  <label class="f">اسم من يقيّم <small>(اختياري)</small></label><input type="text" data-nm value="${esc(form.name||'')}" maxlength="80">
+  <button class="go" type="button" data-send>📨 إرسال التقييم</button>`;
+ p.querySelectorAll('[data-n]').forEach(b=>b.onclick=()=>{sv.nps=+b.dataset.n;drawSurvey(p)});
+ p.querySelectorAll('[data-q]').forEach(box=>box.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{sv.q[box.dataset.q]=+b.dataset.v;sv.comment=p.querySelector('[data-c]').value;drawSurvey(p)}));
+ p.querySelector('[data-c]').oninput=e=>sv.comment=e.target.value;
+ p.querySelector('[data-send]').onclick=async ev=>{if(sv.nps==null)return alert('اختر رقماً من 0 إلى 10 أولاً.');const b=ev.currentTarget;b.disabled=true;
+  try{await rpc('fm_school_survey_submit',{p_token:token,p:Object.assign({nps:sv.nps,comment:p.querySelector('[data-c]').value,name:p.querySelector('[data-nm]').value},sv.q)});await load();draw()}
+  catch(e){b.disabled=false;alert(/already answered/.test(e.message)?'تم إرسال تقييم هذا الربع من قبل.':/survey closed/.test(e.message)?'الاستبيان غير متاح حالياً.':e.message)}}}
 /* SP3: work the maintenance team reported finished — the principal confirms it or says what is still not done */
 function drawConf(p,CF){const H=I.confirmed||[];
  p.innerHTML=`<div class="sub" style="text-align:right">أبلغ فريق الصيانة أن هذه الأعمال أُنجزت. أكّدوا ذلك بعد المعاينة، أو اكتبوا ما لم يُنجز ليُعاد للفريق.</div>

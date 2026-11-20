@@ -19793,3 +19793,84 @@ end $$;
 revoke all on function public.fm_photo_q(uuid, jsonb), public.fm_photo_q_can(), public.fm_photo_ai_set(uuid, jsonb), public.fm_photo_quality(int), public.fm_photo_unq(int, int), public.fm_photo_q_review(uuid, text, text) from public, anon;
 grant execute on function public.fm_photo_q(uuid, jsonb), public.fm_photo_q_can(), public.fm_photo_ai_set(uuid, jsonb), public.fm_photo_quality(int), public.fm_photo_unq(int, int), public.fm_photo_q_review(uuid, text, text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 126) V393 — quarterly satisfaction survey of the school principal (NPS) through the school-portal link ----------
+-- One answer per school (building key) and quarter: nps 0–10 («how likely are you to recommend our service»), four 1–5 scores
+-- (speed, quality, communication, cleanliness / tidiness after the work), a comment. The contractor of the school (school DB
+-- «contractor») and the region are kept with the answer. NPS = % promoters (9–10) − % detractors (0–6).
+create table if not exists public.fm_school_surveys (
+  id uuid primary key default gen_random_uuid(),
+  bkey text not null, school text, region text, contractor text, quarter text not null check (quarter ~ '^\d{4}-Q[1-4]$'),
+  nps int not null check (nps between 0 and 10),
+  q_speed int check (q_speed between 1 and 5), q_quality int check (q_quality between 1 and 5),
+  q_comm int check (q_comm between 1 and 5), q_clean int check (q_clean between 1 and 5),
+  comment text, by_name text, at timestamptz not null default now(),
+  unique (bkey, quarter)
+);
+alter table public.fm_school_surveys enable row level security;
+revoke all on public.fm_school_surveys from anon, authenticated;
+create or replace function public.fm_survey_quarter(t timestamptz default now()) returns text language sql stable set search_path = public as $$
+  select to_char(t at time zone 'Asia/Riyadh', 'YYYY') || '-Q' || to_char(t at time zone 'Asia/Riyadh', 'Q') $$;
+create or replace function public.fm_survey_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', true) || coalesce(public.fm_setting('survey'), '{}'::jsonb) $$;
+-- the school-DB «contractor» of a building (internal)
+create or replace function public.fm_school_contractor(p_bkey text, p_name text) returns text language plpgsql stable security definer set search_path = public as $$
+declare v jsonb; c text;
+begin
+  select value into v from public.app_kv where key = 'fm_school_master_db_v1';
+  if jsonb_typeof(v) = 'string' then v := (v #>> '{}')::jsonb; end if;
+  if v is not null and jsonb_typeof(v) = 'object' and jsonb_typeof(v->'schools') = 'array' then v := v->'schools'; end if;
+  if v is null or jsonb_typeof(v) <> 'array' then return null; end if;
+  select nullif(btrim(coalesce(e->>'contractor','')),'') into c from jsonb_array_elements(v) e
+   where jsonb_typeof(e) = 'object' and (public.fm_bkey(e->>'buildingId', e->>'school') = p_bkey or btrim(coalesce(e->>'school','')) = btrim(coalesce(p_name,'')))
+   order by (public.fm_bkey(e->>'buildingId', e->>'school') = p_bkey) desc limit 1;
+  return c;
+end $$;
+-- anon: is a survey open for this link this quarter?
+create or replace function public.fm_school_survey_get(p_token text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare l public.fm_school_links; q text := public.fm_survey_quarter(); c jsonb := public.fm_survey_cfg(); s public.fm_school_surveys;
+begin
+  select * into l from public.fm_school_links where token = p_token and active;
+  if not found then raise exception 'invalid link'; end if;
+  select * into s from public.fm_school_surveys where bkey = l.bkey and quarter = q;
+  return jsonb_build_object('quarter', q, 'enabled', coalesce((c->>'enabled')::boolean, true),
+    'done', s.id is not null, 'at', s.at, 'nps', s.nps);
+end $$;
+create or replace function public.fm_school_survey_submit(p_token text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare l public.fm_school_links; q text := public.fm_survey_quarter(); n int; g jsonb;
+  f int[] := array[nullif(p->>'q_speed','')::int, nullif(p->>'q_quality','')::int, nullif(p->>'q_comm','')::int, nullif(p->>'q_clean','')::int];
+begin
+  select * into l from public.fm_school_links where token = p_token and active;
+  if not found then raise exception 'invalid link'; end if;
+  g := public.fm_school_survey_get(p_token);
+  if not coalesce((g->>'enabled')::boolean, false) then raise exception 'survey closed'; end if;
+  if (g->>'done')::boolean then raise exception 'already answered'; end if;
+  n := nullif(p->>'nps','')::int;
+  if n is null or n not between 0 and 10 then raise exception 'invalid score'; end if;
+  if exists(select 1 from unnest(f) x where x is not null and x not between 1 and 5) then raise exception 'invalid score'; end if;
+  insert into public.fm_school_surveys (bkey, school, region, contractor, quarter, nps, q_speed, q_quality, q_comm, q_clean, comment, by_name)
+  values (l.bkey, l.school_name, l.region, public.fm_school_contractor(l.bkey, l.school_name), q, n, f[1], f[2], f[3], f[4],
+          left(nullif(btrim(coalesce(p->>'comment','')),''), 1000), left(nullif(btrim(coalesce(p->>'name','')),''), 80));
+  update public.fm_school_links set last_used_at = now() where token = p_token;
+  return jsonb_build_object('ok', true, 'quarter', q);
+end $$;
+-- staff report: answers of the last p_q quarters the caller may see (all for admin / scope_all / owner_rep / accountant, else his regions)
+create or replace function public.fm_survey_report(p_q int default 4) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare k int := greatest(1, least(coalesce(p_q, 4), 12)); qs text[]; t timestamptz := now(); i int; all_ boolean; res jsonb;
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  all_ := public.fm_role() = 'admin' or public.fm_scope_all() or exists(select 1 from public.profiles where id = auth.uid() and job_title in ('owner_rep','accountant'));
+  for i in 0..k-1 loop qs := qs || public.fm_survey_quarter(t - make_interval(months => 3 * i)); end loop;
+  select coalesce(jsonb_agg(jsonb_build_object('id', s.id, 'bkey', s.bkey, 'school', s.school, 'region', s.region, 'contractor', s.contractor, 'quarter', s.quarter,
+      'nps', s.nps, 'q_speed', s.q_speed, 'q_quality', s.q_quality, 'q_comm', s.q_comm, 'q_clean', s.q_clean, 'comment', s.comment, 'by', s.by_name, 'at', s.at)
+    order by s.at desc), '[]'::jsonb) into res
+  from public.fm_school_surveys s where s.quarter = any(qs) and (all_ or public.fm_region_ok(s.region));
+  return jsonb_build_object('quarters', to_jsonb(qs), 'rows', res, 'cfg', public.fm_survey_cfg(),
+    'links', (select count(*) from public.fm_school_links where active and (all_ or public.fm_region_ok(region))),
+    'can_set', public.fm_role() = 'admin');
+end $$;
+revoke all on function public.fm_school_contractor(text, text) from public, anon, authenticated;
+revoke all on function public.fm_survey_quarter(timestamptz), public.fm_survey_cfg(), public.fm_school_survey_get(text), public.fm_school_survey_submit(text, jsonb), public.fm_survey_report(int) from public;
+grant execute on function public.fm_school_survey_get(text), public.fm_school_survey_submit(text, jsonb) to anon, authenticated;
+grant execute on function public.fm_survey_quarter(timestamptz), public.fm_survey_cfg(), public.fm_survey_report(int) to authenticated;
+notify pgrst, 'reload schema';
