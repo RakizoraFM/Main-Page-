@@ -20724,3 +20724,209 @@ end $$;
 revoke all on function public.fm_wo_cost_extra(date, date) from public, anon;
 grant execute on function public.fm_wo_cost_extra(date, date) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 137) V406 — the school rates each closed ticket and work order (one-time link to the principal) ----------
+-- A rating row is made when a work order becomes closed, a ticket's field record (ticket_work) enters resolved / closed, or an
+-- uploaded ticket's source status turns closed (only an UPDATE from an open status, ticket created within 60 days — a first upload
+-- of old closed tickets asks nothing). A ticket closed by its work order (V402: rec.woCode) is rated through the order only.
+-- The link (rate.html?j=<token>, 14 days) goes to the principal by WhatsApp (template key «job_rate» [school, what, title, link],
+-- at most 3 a day per school) and every waiting job also shows in the school portal (school.html, tab «⭐ قيّم الأعمال»).
+-- Score 1–5 (+ speed / quality optional); ≤ 2 opens a follow-up and notifies the supervisor's manager and the area managers.
+-- fm_settings.job_rate {enabled true, tickets true, wo true, wa true, days 14} — the system admin writes it directly.
+create table if not exists public.fm_job_ratings (
+  id bigserial primary key,
+  kind text not null check (kind in ('ticket','wo')),
+  region text not null default '', ref text not null, code text, title text, school text, bkey text,
+  supervisor text, sup_id uuid, engineer text, contractor text, closed_at timestamptz,
+  token text not null unique check (token ~ '^[0-9a-f]{64}$'),
+  created_at timestamptz not null default now(), expires_at timestamptz not null,
+  wa_at timestamptz,
+  rated_at timestamptz, score int check (score between 1 and 5), q_speed int check (q_speed between 1 and 5),
+  q_quality int check (q_quality between 1 and 5), comment text, rater_name text, src text,
+  fu_status text check (fu_status in ('open','closed')), fu_note text, fu_by uuid, fu_name text, fu_at timestamptz,
+  unique (kind, region, ref)
+);
+create index if not exists fm_job_ratings_bkey_idx on public.fm_job_ratings (bkey, rated_at);
+create index if not exists fm_job_ratings_sup_idx on public.fm_job_ratings (sup_id, created_at);
+alter table public.fm_job_ratings enable row level security;
+revoke all on public.fm_job_ratings from anon, authenticated;
+create or replace function public.fm_job_rate_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', true, 'tickets', true, 'wo', true, 'wa', true, 'days', 14) || coalesce(public.fm_setting('job_rate'), '{}'::jsonb) $$;
+create or replace function public.fm_job_rate_url(p_token text) returns text language sql stable security definer set search_path = public as $$
+  select case when nullif(s->>'base_url','') is null or p_token is null then null
+              else rtrim(s->>'base_url', '/') || '/rate.html?j=' || p_token || coalesce('&c=' || nullif(s->>'tenant',''), '') end
+    from (select coalesce(public.fm_setting('wa'), '{}') s) x $$;
+-- internal: make the rating row (once per job) and send the WhatsApp link
+create or replace function public.fm_job_rate_make(p_kind text, p_region text, p_ref text, p_code text, p_title text, p_school text, p_bkey text,
+  p_sup text, p_sup_id uuid, p_eng text, p_ctr text, p_closed timestamptz) returns bigint language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_job_rate_cfg(); v_id bigint; tk text; ph text; bk text := coalesce(p_bkey, public.fm_bkey(null, p_school));
+begin
+  if not coalesce((c->>'enabled')::boolean, true) or not coalesce((c->>(case p_kind when 'wo' then 'wo' else 'tickets' end))::boolean, true) then return null; end if;
+  if nullif(btrim(coalesce(p_school,'')),'') is null or p_ref is null then return null; end if;
+  tk := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
+  insert into public.fm_job_ratings (kind, region, ref, code, title, school, bkey, supervisor, sup_id, engineer, contractor, closed_at, token, expires_at)
+  values (p_kind, coalesce(p_region,''), p_ref, p_code, left(p_title, 200), p_school, bk, nullif(btrim(coalesce(p_sup,'')),''),
+          coalesce(p_sup_id, public.fm_tk_person(p_sup)), nullif(btrim(coalesce(p_eng,'')),''),
+          coalesce(nullif(btrim(coalesce(p_ctr,'')),''), public.fm_school_contractor(bk, p_school)), coalesce(p_closed, now()), tk,
+          now() + make_interval(days => greatest(1, least(coalesce((c->>'days')::int, 14), 60))))
+  on conflict (kind, region, ref) do nothing returning id into v_id;
+  if v_id is null then return null; end if;
+  if coalesce((c->>'wa')::boolean, true) and public.fm_job_rate_url(tk) is not null
+     and (select count(*) from public.fm_job_ratings where bkey = bk and wa_at > now() - interval '1 day') < 3 then
+    ph := public.fm_wa_principal(bk, p_school);
+    if ph is not null and public.fm_wa_add(ph, 'job_rate', array[p_school, case p_kind when 'wo' then 'أمر العمل ' else 'البلاغ ' end || coalesce(p_code, p_ref),
+                                             coalesce(left(p_title, 120), ''), public.fm_job_rate_url(tk)], 'job_rate', 'jr:' || v_id) then
+      update public.fm_job_ratings set wa_at = now() where id = v_id;
+    end if;
+  end if;
+  return v_id;
+end $$;
+-- work order closed
+create or replace function public.fm_job_rate_wo_trg() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  begin
+    if new.status = 'closed' and old.status is distinct from 'closed' then
+      perform public.fm_job_rate_make('wo', coalesce(new.region,''), new.id::text, new.code, new.title, new.school, public.fm_bkey(new.building_id, new.school),
+        new.assignee_name, new.assignee, new.approver_name, null, coalesce(new.closed_at, now()));
+    end if;
+  exception when others then null; end;
+  return null;
+end $$;
+drop trigger if exists fm_job_rate_wo on public.work_orders;
+create trigger fm_job_rate_wo after update of status on public.work_orders for each row execute function public.fm_job_rate_wo_trg();
+-- ticket closed in the field record (V135)
+create or replace function public.fm_job_rate_tw_trg() returns trigger language plpgsql security definer set search_path = public as $$
+declare t public.tickets;
+begin
+  begin
+    if new.stage in ('resolved','closed') and (tg_op = 'INSERT' or old.stage not in ('resolved','closed'))
+       and nullif(new.rec->>'woCode','') is null then
+      select * into t from public.tickets where region = new.region and ticket_id = new.ticket_id;
+      if found and coalesce(t.created_at, t.uploaded_at) > now() - interval '60 days' then
+        perform public.fm_job_rate_make('ticket', t.region, t.ticket_id, t.ticket_id, coalesce(t.sub_category, t.raw->>'التصنيف', 'بلاغ صيانة'), t.school,
+          public.fm_bkey(t.building_id, t.school), t.supervisor, null, t.engineer, t.contractor, coalesce(new.resolved_at, now()));
+      end if;
+    end if;
+  exception when others then null; end;
+  return null;
+end $$;
+drop trigger if exists fm_job_rate_tw on public.ticket_work;
+create trigger fm_job_rate_tw after insert or update of stage on public.ticket_work for each row execute function public.fm_job_rate_tw_trg();
+-- ticket closed in the uploaded source (status update open → closed)
+create or replace function public.fm_job_rate_tk_trg() returns trigger language plpgsql security definer set search_path = public as $$
+declare cl text := '(مغلق|تم الحل|تم حل|محلول|مكتمل|منجز|closed|resolved|done|complete)'; cx text := '(ملغ|cancel)';
+begin
+  begin
+    if coalesce(new.status,'') ~* cl and coalesce(new.status,'') !~* cx and coalesce(old.status,'') !~* cl
+       and coalesce(new.created_at, new.uploaded_at) > now() - interval '60 days'
+       and not exists (select 1 from public.ticket_work w where w.region = new.region and w.ticket_id = new.ticket_id and nullif(w.rec->>'woCode','') is not null) then
+      perform public.fm_job_rate_make('ticket', new.region, new.ticket_id, new.ticket_id, coalesce(new.sub_category, 'بلاغ صيانة'), new.school,
+        public.fm_bkey(new.building_id, new.school), new.supervisor, null, new.engineer, new.contractor, now());
+    end if;
+  exception when others then null; end;
+  return null;
+end $$;
+drop trigger if exists fm_job_rate_tk on public.tickets;
+create trigger fm_job_rate_tk after update of status on public.tickets for each row execute function public.fm_job_rate_tk_trg();
+-- anon: the rating page
+create or replace function public.fm_job_rate_info(p_token text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r public.fm_job_ratings;
+begin
+  select * into r from public.fm_job_ratings where token = p_token;
+  if not found then return jsonb_build_object('state','invalid'); end if;
+  return jsonb_build_object('state', case when r.rated_at is not null then 'used' when r.expires_at < now() then 'expired' else 'ok' end,
+    'kind', r.kind, 'code', r.code, 'title', r.title, 'school', r.school, 'closed_at', r.closed_at, 'supervisor', r.supervisor);
+end $$;
+-- internal: record a rating (link or portal)
+create or replace function public.fm_job_rate_put(r public.fm_job_ratings, p jsonb, p_src text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s int := nullif(p->>'score','')::int; a int := nullif(p->>'q_speed','')::int; b int := nullif(p->>'q_quality','')::int; u uuid;
+  mgr uuid; bd text;
+begin
+  if r.rated_at is not null then raise exception 'already rated'; end if;
+  if r.expires_at < now() then raise exception 'link expired'; end if;
+  if s is null or s not between 1 and 5 or (a is not null and a not between 1 and 5) or (b is not null and b not between 1 and 5) then raise exception 'invalid rating'; end if;
+  update public.fm_job_ratings set rated_at = now(), score = s, q_speed = a, q_quality = b, src = p_src,
+    comment = left(nullif(btrim(coalesce(p->>'comment','')),''), 1000), rater_name = left(nullif(btrim(coalesce(p->>'name','')),''), 80),
+    fu_status = case when s <= 2 then 'open' end where id = r.id;
+  if s <= 2 then
+    begin
+      bd := r.school || ' — ' || case r.kind when 'wo' then 'أمر العمل ' else 'البلاغ ' end || coalesce(r.code, r.ref) || ' • ' || s || '/5'
+            || coalesce(' • ' || left(nullif(btrim(coalesce(p->>'comment','')),''), 120), '');
+      select reports_to into mgr from public.profiles where id = r.sup_id;
+      if mgr is not null then perform public.fm_alert_send(mgr, 'job_rate', '⭐ تقييم منخفض من مدرسة', bd, 'jobrate', 'jr-' || r.id, false); end if;
+      for u in select id from public.profiles where active and job_title = 'area_manager' and (r.region = '' or r.region = any(coalesce(regions,'{}'))) loop
+        if u is distinct from mgr then perform public.fm_alert_send(u, 'job_rate', '⭐ تقييم منخفض من مدرسة', bd, 'jobrate', 'jr-' || r.id, false); end if;
+      end loop;
+    exception when others then null; end;
+  end if;
+  return jsonb_build_object('ok', true);
+end $$;
+create or replace function public.fm_job_rate_submit(p_token text, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.fm_job_ratings;
+begin
+  select * into r from public.fm_job_ratings where token = p_token for update;
+  if not found then raise exception 'invalid link'; end if;
+  return public.fm_job_rate_put(r, p, 'link');
+end $$;
+-- anon: the school portal lists the jobs of its building waiting for a rating (+ the last 10 rated)
+create or replace function public.fm_school_jobs(p_token text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare l public.fm_school_links;
+begin
+  select * into l from public.fm_school_links where token = p_token and active;
+  if not found then raise exception 'invalid link'; end if;
+  return jsonb_build_object(
+    'wait', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'kind', kind, 'code', code, 'title', title, 'closed_at', closed_at, 'supervisor', supervisor) order by closed_at desc)
+       from (select * from public.fm_job_ratings where bkey = l.bkey and rated_at is null and expires_at > now() order by closed_at desc limit 30) x), '[]'::jsonb),
+    'done', coalesce((select jsonb_agg(jsonb_build_object('kind', kind, 'code', code, 'title', title, 'score', score, 'at', rated_at) order by rated_at desc)
+       from (select * from public.fm_job_ratings where bkey = l.bkey and rated_at is not null order by rated_at desc limit 10) y), '[]'::jsonb));
+end $$;
+create or replace function public.fm_school_job_rate(p_token text, p_id bigint, p jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
+declare l public.fm_school_links; r public.fm_job_ratings;
+begin
+  select * into l from public.fm_school_links where token = p_token and active;
+  if not found then raise exception 'invalid link'; end if;
+  select * into r from public.fm_job_ratings where id = p_id and bkey = l.bkey for update;
+  if not found then raise exception 'invalid link'; end if;
+  update public.fm_school_links set last_used_at = now() where token = p_token;
+  return public.fm_job_rate_put(r, p, 'portal');
+end $$;
+-- staff: who sees a rating
+create or replace function public.fm_job_rate_sees(r public.fm_job_ratings) returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.fm_role() <> 'pending' and (
+    public.fm_role() = 'admin' or public.fm_scope_all()
+    or (public.fm_my_pos() in ('area_manager','area_engineer','accountant','owner_rep') and r.region <> '' and public.fm_region_ok(r.region))
+    or r.sup_id = auth.uid() or (r.sup_id is not null and public.fm_is_under(r.sup_id, auth.uid()))) $$;
+create or replace function public.fm_job_ratings_list(p_days int default 90) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare d int := greatest(7, least(coalesce(p_days, 90), 400));
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  return jsonb_build_object('cfg', public.fm_job_rate_cfg(), 'can_set', public.fm_role() = 'admin', 'link_ok', public.fm_job_rate_url('0') is not null,
+    'rows', coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'kind', r.kind, 'region', r.region, 'ref', r.ref, 'code', r.code, 'title', r.title,
+        'school', r.school, 'bkey', r.bkey, 'supervisor', r.supervisor, 'sup_id', r.sup_id, 'engineer', r.engineer, 'contractor', r.contractor,
+        'closed_at', r.closed_at, 'created_at', r.created_at, 'expires_at', r.expires_at, 'wa_at', r.wa_at, 'rated_at', r.rated_at, 'score', r.score,
+        'q_speed', r.q_speed, 'q_quality', r.q_quality, 'comment', r.comment, 'rater', r.rater_name, 'src', r.src,
+        'fu_status', r.fu_status, 'fu_note', r.fu_note, 'fu_name', r.fu_name, 'fu_at', r.fu_at,
+        'url', case when r.rated_at is null and r.expires_at > now() then public.fm_job_rate_url(r.token) end,
+        'can_fu', r.fu_status = 'open' and r.sup_id is distinct from auth.uid()) order by r.created_at desc)
+      from public.fm_job_ratings r where r.created_at > now() - make_interval(days => d) and public.fm_job_rate_sees(r)), '[]'::jsonb));
+end $$;
+create or replace function public.fm_job_rate_follow(p_id bigint, p_note text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.fm_job_ratings;
+begin
+  select * into r from public.fm_job_ratings where id = p_id for update;
+  if not found or not public.fm_job_rate_sees(r) then raise exception 'not allowed'; end if;
+  if r.fu_status is distinct from 'open' then raise exception 'nothing to follow'; end if;
+  if r.sup_id = auth.uid() and public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  if length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  update public.fm_job_ratings set fu_status = 'closed', fu_note = left(btrim(p_note), 1000), fu_by = auth.uid(),
+    fu_name = (select coalesce(full_name, email) from public.profiles where id = auth.uid()), fu_at = now() where id = p_id;
+  return jsonb_build_object('ok', true);
+end $$;
+revoke all on function public.fm_job_rate_make(text, text, text, text, text, text, text, text, uuid, text, text, timestamptz),
+  public.fm_job_rate_put(public.fm_job_ratings, jsonb, text), public.fm_job_rate_wo_trg(), public.fm_job_rate_tw_trg(), public.fm_job_rate_tk_trg(),
+  public.fm_job_rate_sees(public.fm_job_ratings), public.fm_job_rate_url(text) from public, anon, authenticated;
+revoke all on function public.fm_job_rate_info(text), public.fm_job_rate_submit(text, jsonb), public.fm_school_jobs(text), public.fm_school_job_rate(text, bigint, jsonb),
+  public.fm_job_ratings_list(int), public.fm_job_rate_follow(bigint, text), public.fm_job_rate_cfg() from public, anon;
+grant execute on function public.fm_job_rate_info(text), public.fm_job_rate_submit(text, jsonb), public.fm_school_jobs(text), public.fm_school_job_rate(text, bigint, jsonb) to anon, authenticated;
+grant execute on function public.fm_job_ratings_list(int), public.fm_job_rate_follow(bigint, text), public.fm_job_rate_cfg() to authenticated;
+notify pgrst, 'reload schema';

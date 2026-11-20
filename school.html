@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SP4">
+<meta name="fm-version" content="SP5">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -83,8 +83,8 @@ function shrink(file){return new Promise((res,rej)=>{const r=new FileReader();r.
  let w=im.width,h=im.height,m=1280;if(Math.max(w,h)>m){const k=m/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k)}
  const c=document.createElement('canvas');let q=.72,out='';for(let i=0;i<6;i++){c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);out=c.toDataURL('image/jpeg',q);if(out.length<=560000)break;q-=.12;w=Math.round(w*.8);h=Math.round(h*.8)}
  out.length<=560000?res(out):rej(Error('size'))};im.src=r.result};r.readAsDataURL(file)})}
-let SV=null,sv={nps:null,q:{},comment:''};
-async function load(){I=await rpc('fm_school_portal',{p_token:token});try{SV=await rpc('fm_school_survey_get',{p_token:token})}catch(e){SV=null}}
+let SV=null,sv={nps:null,q:{},comment:''},JB=null;
+async function load(){I=await rpc('fm_school_portal',{p_token:token});try{SV=await rpc('fm_school_survey_get',{p_token:token})}catch(e){SV=null}try{JB=await rpc('fm_school_jobs',{p_token:token})}catch(e){JB=null}}
 async function start(){
  if(!(await tenantCfg()))return fail('رمز الشركة في الرابط غير صحيح أو تعذّر الاتصال.');if(!/^[0-9a-f]{64}$/.test(token))return fail('الرابط غير صحيح.');
  try{await load()}catch(e){return fail('تعذّر الاتصال. تحقق من الإنترنت ثم أعد فتح الرابط.')}
@@ -92,7 +92,7 @@ async function start(){
 function draw(){const CF=I.confirm||[];if(!tab)tab=CF.length?'conf':'new';const open=(I.requests||[]).filter(r=>['new','accepted','in_progress'].includes(r.status)).length;
  app.innerHTML=`<div class="brand">RakizoraFM · إدارة المرافق</div><h1>🏫 ${esc(I.school)}</h1><div class="sub">بوابة المدرسة — ارفع طلبك وتابع حالته</div>
  <div class="kp"><div><b>${open}</b><span>طلباتي المفتوحة</span></div><div><b>${(I.tickets||[]).length}</b><span>بلاغات مفتوحة</span></div><div><b>${(I.orders||[]).length}</b><span>أعمال جارية</span></div></div>
- <div class="tabs">${[['new','➕ طلب جديد'],['conf','✅ تأكيد الإنجاز'+(CF.length?`<span class="bdg">${CF.length}</span>`:'')],['mine','📋 طلباتي'],['open','🛠️ المفتوح على المدرسة'],...(SV&&SV.enabled?[['srv','⭐ استبيان الربع'+(!SV.done?'<span class="bdg">1</span>':'')]]:[])].map(([k,l])=>`<button data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div><div id="pane"></div>
+ <div class="tabs">${[['new','➕ طلب جديد'],['conf','✅ تأكيد الإنجاز'+(CF.length?`<span class="bdg">${CF.length}</span>`:'')],['mine','📋 طلباتي'],['open','🛠️ المفتوح على المدرسة'],...(JB?[['job','⭐ قيّم الأعمال'+((JB.wait||[]).length?`<span class="bdg">${JB.wait.length}</span>`:'')]]:[]),...(SV&&SV.enabled?[['srv','⭐ استبيان الربع'+(!SV.done?'<span class="bdg">1</span>':'')]]:[])].map(([k,l])=>`<button data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div><div id="pane"></div>
  <div class="foot">هذا الرابط خاص بمدرستكم — لا تشاركه خارج إدارة المدرسة.</div>`;
  app.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{tab=b.dataset.t;sent='';draw()});
  const p=app.querySelector('#pane');
@@ -106,9 +106,20 @@ function draw(){const CF=I.confirm||[];if(!tab)tab=CF.length?'conf':'new';const 
    try{await rpc('fm_school_request_rate',{p_token:token,p_id:box.dataset.r,p_score:v,p_comment:c||''});await load();draw()}catch(e){alert(e.message)}}));return}
  if(tab==='conf')return drawConf(p,CF);
  if(tab==='srv')return drawSurvey(p);
+ if(tab==='job')return drawJobs(p);
  const T=I.tickets||[],O=I.orders||[];
  p.innerHTML=`<label class="f">بلاغات مفتوحة (${T.length})</label>${T.length?T.map(t=>`<div class="it"><div class="r1"><b>${esc(t.cat||'بلاغ')}</b><span class="st open">${esc(t.status||'')}</span></div><small>رقم ${esc(t.id)} · ${esc(date(t.at))}${t.priority?' · '+esc(t.priority):''}</small></div>`).join(''):'<div class="empty">لا توجد بلاغات مفتوحة ✅</div>'}
   <label class="f">أعمال صيانة جارية (${O.length})</label>${O.length?O.map(o=>`<div class="it"><div class="r1"><b>${esc(o.title)}</b><span class="st in_progress">${esc(o.sc==='pending'?'بانتظار تأكيدكم':WST[o.status]||o.status)}</span></div><small>${esc(o.code||'')} · ${esc(date(o.at))}</small></div>`).join(''):'<div class="empty">لا توجد أعمال جارية</div>'}`}
+/* SP5 (V406): rate each closed ticket / work order of the school (fm_school_jobs / fm_school_job_rate) */
+function drawJobs(p){const W=JB.wait||[],D=JB.done||[];const kn=x=>(x.kind==='wo'?'أمر العمل ':'البلاغ ')+(x.code||'');
+ p.innerHTML=`<div class="sub" style="text-align:right">قيّموا كل عمل أُغلق في مدرستكم من 1 (ضعيف جداً) إلى 5 (ممتاز). تقييمكم يدخل في تقييم المشرف والمقاول.</div>
+  ${W.length?W.map(x=>`<div class="it" data-j="${esc(x.id)}"><div class="r1"><b>${esc(x.title||kn(x))}</b><span class="st done">أُغلق ${esc(date(x.closed_at))}</span></div><small>${esc(kn(x))}${x.supervisor?' · المشرف: '+esc(x.supervisor):''}</small>
+   <div class="stars">${[1,2,3,4,5].map(n=>`<button type="button" data-v="${n}">★</button>`).join('')}</div></div>`).join(''):'<div class="okm">✅ لا توجد أعمال بانتظار تقييمكم.</div>'}
+  ${D.length?`<label class="f">آخر تقييماتكم</label>`+D.map(x=>`<div class="it"><div class="r1"><b>${esc(x.title||kn(x))}</b><span>${'★'.repeat(x.score)}${'☆'.repeat(5-x.score)}</span></div><small>${esc(kn(x))} · ${esc(date(x.at))}</small></div>`).join(''):''}`;
+ p.querySelectorAll('[data-j]').forEach(box=>box.querySelectorAll('[data-v]').forEach(b=>b.onclick=async()=>{const v=+b.dataset.v;box.querySelectorAll('[data-v]').forEach(x=>x.classList.toggle('on',+x.dataset.v<=v));
+  const c=prompt(v<=2?'ما الذي لم يكن جيداً؟ (يساعدنا على المعالجة)':'ملاحظة (اختياري):','');if(c===null){box.querySelectorAll('[data-v]').forEach(x=>x.classList.remove('on'));return}
+  try{await rpc('fm_school_job_rate',{p_token:token,p_id:+box.dataset.j,p:{score:v,comment:c||'',name:form.name||''}});await load();draw()}
+  catch(e){alert(/already rated/.test(e.message)?'تم تقييم هذا العمل من قبل.':/link expired/.test(e.message)?'انتهت مدة تقييم هذا العمل.':e.message)}}))}
 /* SP4 (V393): quarterly satisfaction survey — NPS 0–10, four optional 1–5 scores, a comment (fm_school_survey_get / _submit) */
 const SVQ=[['q_speed','سرعة الاستجابة للطلبات والبلاغات'],['q_quality','جودة تنفيذ الأعمال'],['q_comm','التواصل والمتابعة من الفريق'],['q_clean','النظافة والترتيب بعد العمل']];
 function drawSurvey(p){const qn=String(SV.quarter||'').replace(/^(\d{4})-Q(\d)$/,'الربع $2 من $1');
