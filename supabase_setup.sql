@@ -19598,3 +19598,100 @@ revoke all on function public.fm_tk_archive_block(), public.fm_tk_archive_can(te
 revoke all on function public.fm_tk_archive_cfg(), public.fm_tk_archive_preview(text, date), public.fm_tk_archive_run(text, date, jsonb), public.fm_tk_archive_restore(text, text), public.fm_tk_archive_stats(text), public.fm_tk_archive_get(text, text) from public, anon;
 grant execute on function public.fm_tk_archive_cfg(), public.fm_tk_archive_preview(text, date), public.fm_tk_archive_run(text, date, jsonb), public.fm_tk_archive_restore(text, text), public.fm_tk_archive_stats(text), public.fm_tk_archive_get(text, text) to authenticated;
 notify pgrst, 'reload schema';
+
+
+-- ---------- 124) V389 — morning digest: one notification a day with each person's priorities ----------
+create or replace function public.fm_digest_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', true, 'hour', 7, 'days', '[0,1,2,3,4]'::jsonb, 'sla', true) || coalesce(public.fm_setting('digest'), '{}'::jsonb) $$;
+-- counts for one person (internal); every part on its own so a missing table only drops that part
+create or replace function public.fm_digest_items(p_user uuid) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare j jsonb := '{}'; n int; tz text := 'Asia/Riyadh'; d date := (now() at time zone 'Asia/Riyadh')::date;
+begin
+  begin select count(*) into n from public.work_orders where assignee = p_user and status in ('assigned','accepted','in_progress','returned') and due_at < now();
+    j := j || jsonb_build_object('wo_late', n); exception when others then null; end;
+  begin select count(*) into n from public.work_orders where assignee = p_user and status in ('assigned','accepted','in_progress','returned') and due_at >= now() and (due_at at time zone tz)::date = d;
+    j := j || jsonb_build_object('wo_today', n); exception when others then null; end;
+  begin select count(*) into n from public.work_orders where assignee = p_user and status = 'assigned';
+    j := j || jsonb_build_object('wo_new', n); exception when others then null; end;
+  begin select count(*) into n from public.work_orders where status = 'done' and (approver = p_user or (approver is null and created_by = p_user));
+    j := j || jsonb_build_object('wo_appr', n); exception when others then
+    begin select count(*) into n from public.work_orders where status = 'done' and created_by = p_user; j := j || jsonb_build_object('wo_appr', n); exception when others then null; end; end;
+  begin select count(*) into n from public.fm_sla_watch where p_user = any(users) and due_at > now() and (due_at at time zone tz)::date = d;
+    j := j || jsonb_build_object('sla_today', n); exception when others then null; end;
+  begin select count(*) into n from public.wo_issue_requests r join public.wo_stores s on s.id = r.store_id where s.keeper = p_user and r.status = 'requested';
+    j := j || jsonb_build_object('ir_wait', n); exception when others then null; end;
+  begin select count(*) into n from public.wo_issue_requests where holder = p_user and status in ('issued','partial') and received_at is null;
+    j := j || jsonb_build_object('ir_recv', n); exception when others then null; end;
+  begin select count(*) into n from public.fm_leave_requests l join public.profiles p on p.id = l.user_id where l.status = 'pending' and p.reports_to = p_user;
+    j := j || jsonb_build_object('leave_wait', n); exception when others then null; end;
+  begin select count(*) into n from public.wo_visit_requests v join public.work_orders w on w.id = v.wo_id where v.status = 'pending' and w.approver = p_user;
+    j := j || jsonb_build_object('visit_wait', n); exception when others then null; end;
+  begin select count(*) into n from public.wo_edit_requests v join public.work_orders w on w.id = v.wo_id where v.status = 'pending' and w.approver = p_user;
+    j := j || jsonb_build_object('edit_wait', n); exception when others then null; end;
+  return j;
+end $$;
+create or replace function public.fm_digest_text(j jsonb, p_sla boolean default true) returns text language sql immutable set search_path = public as $$
+  select coalesce(string_agg(t, ' • ' order by o), '') from (
+    select 1 o, case when coalesce((j->>'wo_late')::int,0) > 0 then '⛔ ' || (j->>'wo_late') || ' أمر متأخر' end t union all
+    select 2, case when coalesce((j->>'wo_today')::int,0) > 0 then '📅 ' || (j->>'wo_today') || ' أمر موعده اليوم' end union all
+    select 3, case when coalesce((j->>'wo_new')::int,0) > 0 then '🆕 ' || (j->>'wo_new') || ' أمر بانتظار قبولك' end union all
+    select 4, case when coalesce((j->>'wo_appr')::int,0) > 0 then '✅ ' || (j->>'wo_appr') || ' أمر بانتظار اعتمادك' end union all
+    select 5, case when p_sla and coalesce((j->>'sla_today')::int,0) > 0 then '⏰ ' || (j->>'sla_today') || ' بلاغ يتجاوز المهلة اليوم' end union all
+    select 6, case when coalesce((j->>'ir_wait')::int,0) > 0 then '📦 ' || (j->>'ir_wait') || ' طلب صرف بانتظارك' end union all
+    select 7, case when coalesce((j->>'ir_recv')::int,0) > 0 then '🧰 ' || (j->>'ir_recv') || ' صرف بانتظار تأكيد استلامك' end union all
+    select 8, case when coalesce((j->>'leave_wait')::int,0) > 0 then '🏖️ ' || (j->>'leave_wait') || ' طلب إجازة' end union all
+    select 9, case when coalesce((j->>'visit_wait')::int,0) + coalesce((j->>'edit_wait')::int,0) > 0
+                   then '🗓️ ' || (coalesce((j->>'visit_wait')::int,0) + coalesce((j->>'edit_wait')::int,0)) || ' طلب فتح زيارة / تعديل أمر' end
+  ) x where t is not null $$;
+-- the caller's own digest (platform dialog / field home)
+create or replace function public.fm_digest_me() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c jsonb := public.fm_digest_cfg(); j jsonb;
+begin
+  if auth.uid() is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  j := public.fm_digest_items(auth.uid());
+  return jsonb_build_object('items', j, 'text', public.fm_digest_text(j, true), 'cfg', c, 'can_set', public.fm_role() = 'admin');
+end $$;
+-- one notification per person (pg_cron every 15 min; p_force / p_only = the system admin's test)
+create or replace function public.fm_v389_digest(p_force boolean default false, p_only uuid default null) returns int language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_digest_cfg(); tz text := 'Asia/Riyadh'; d date := (now() at time zone 'Asia/Riyadh')::date;
+  u record; j jsonb; t text; v_n int := 0; k int; sla boolean := coalesce((c->>'sla')::boolean, true);
+begin
+  if not p_force then
+    if not coalesce((c->>'enabled')::boolean, true) then return 0; end if;
+    if extract(hour from now() at time zone tz) < coalesce((c->>'hour')::int, 7) then return 0; end if;
+    if not (extract(dow from d)::int = any(array(select (jsonb_array_elements_text(coalesce(c->'days','[0,1,2,3,4]')))::int))) then return 0; end if;
+    if exists(select 1 from public.fm_daily_runs where job = 'digest' and day = d) then return 0; end if;
+    insert into public.fm_daily_runs (job, day) values ('digest', d) on conflict do nothing;
+  end if;
+  for u in select id from public.profiles where active and role <> 'pending' and (p_only is null or id = p_only) loop
+    begin
+      j := public.fm_digest_items(u.id);
+      t := public.fm_digest_text(j, sla);
+      if t = '' then
+        if p_only is not null then t := 'لا شيء ينتظرك اليوم 👍'; else continue; end if;
+      end if;
+      select coalesce(sum(v::int), 0) into k from jsonb_each_text(j) e(kk, v) where sla or kk <> 'sla_today';
+      if public.fm_alert_send(u.id, 'digest', '☀️ موجز يومك' || case when k > 0 then ': ' || k || ' عنصراً' else '' end, left(t, 300), 'digest', 'digest-' || d, true) then v_n := v_n + 1; end if;
+      -- the V223 morning SLA summary is not sent again to someone whose digest carried it
+      if sla and coalesce((j->>'sla_today')::int, 0) > 0 then
+        begin insert into public.fm_sla_morning (user_id, day) values (u.id, d) on conflict do nothing; exception when others then null; end;
+      end if;
+    exception when others then null; end;
+  end loop;
+  if not p_force then update public.fm_daily_runs set n = v_n where job = 'digest' and day = d; end if;
+  return v_n;
+end $$;
+create or replace function public.fm_digest_test() returns int language plpgsql security definer set search_path = public as $$
+begin
+  if public.fm_role() <> 'admin' then raise exception 'not allowed'; end if;
+  return public.fm_v389_digest(true, auth.uid());
+end $$;
+revoke all on function public.fm_digest_items(uuid), public.fm_v389_digest(boolean, uuid) from public, anon, authenticated;
+revoke all on function public.fm_digest_cfg(), public.fm_digest_text(jsonb, boolean), public.fm_digest_me(), public.fm_digest_test() from public, anon;
+grant execute on function public.fm_digest_cfg(), public.fm_digest_me(), public.fm_digest_test() to authenticated;
+do $do$ begin
+  begin execute 'select cron.unschedule(''fm-v389-digest'')'; exception when others then null; end;
+  begin execute 'select cron.schedule(''fm-v389-digest'', ''*/15 * * * *'', ''select public.fm_v389_digest()'')';
+  exception when others then raise notice 'pg_cron is not available: the morning digest is not sent'; end;
+end $do$;
+notify pgrst, 'reload schema';
