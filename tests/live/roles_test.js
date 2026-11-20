@@ -55,9 +55,12 @@ const W=[
  for(const [fn,body,who,why] of W)for(const t of who){const k=T[t][0];if(!TOK[k])continue;const r=await rpc(k,fn,body);
   check('الصلاحيات',fn+' مرفوض لـ '+t,!r.ok,(r.ok?'⚠️ قُبل! ':'')+msg(r).slice(0,60)+' — '+why)}
  /* 3) every page with every account */
+ /* most RPCs only read (POST is how PostgREST calls a function): block only the ones that write */
+ const RPC_W=/\/rpc\/(fm_wo_run_due|fm_wo_return_check|fm_wipe\w*|fm_tickets_import\w*|\w*(_save|_set|_submit|_import|_push|_add|_del|_delete|_run|_sync|_publish|_mark|_hash|_upsert|_new|_act|_make|_revoke|_close|_reopen|_pay|_award|_order))$/;
  const BLOCK=[];const RPC_OK=/\/rest\/v1\/rpc\/(fm_touch|fm_role|fm_my_pos|fm233_read|fm233_manage|fm195_orders|fm195_schedules|fm195_inbox|fm_bld_costs|fm_deputy_principals|fm_custody_overdue|fm_custody_idle|fm_[a-z0-9_]*(list|get|me|people|info|data|feed|cfg|can|sees|checks|report|mods_on|names|regions|scores|assignable|candidates|status|waiting|reserved|stagnant|remaining|plan|counts|parts|alts|abnormal|flags|closed|kinds|lead|leaves|my|inbox|watch_list|usage|my_schools|my_school_db|db)[a-z0-9_]*)$/;
  async function route(rt,who){const q=rt.request(),u=q.url(),m=q.method();
-  if(/supabase\.co/.test(u)&&!['GET','HEAD','OPTIONS'].includes(m)&&!RPC_OK.test(u.split('?')[0])&&!/\/auth\/v1\/(token|logout|user)/.test(u)){BLOCK.push(who+': '+m+' '+u.replace(/^https:\/\/[^/]+/,'').split('?')[0]);return rt.fulfill({status:403,contentType:'application/json',body:'{"message":"blocked by test guard"}'})}
+  const pth=u.split('?')[0],isRpc=/\/rest\/v1\/rpc\//.test(pth);
+  if(/supabase\.co/.test(u)&&!['GET','HEAD','OPTIONS'].includes(m)&&!RPC_OK.test(pth)&&!(isRpc&&!RPC_W.test(pth))&&!/\/auth\/v1\/(token|logout|user)/.test(u)){BLOCK.push(who+': '+m+' '+u.replace(/^https:\/\/[^/]+/,'').split('?')[0]);return rt.fulfill({status:403,contentType:'application/json',body:'{"message":"blocked by test guard"}'})}
   try{const h=Object.assign({},q.headers());delete h.host;const r=await fetch(u,{method:m,headers:h,body:['GET','HEAD'].includes(m)?undefined:q.postDataBuffer()});
    const hd={};r.headers.forEach((v,k)=>{if(!/content-encoding|content-length|transfer-encoding/.test(k))hd[k]=v});await rt.fulfill({status:r.status,headers:hd,body:Buffer.from(await r.arrayBuffer())})}catch(e){await rt.abort().catch(()=>{})}}
  const b=await chromium.launch();const SUM={};
@@ -66,7 +69,7 @@ const W=[
   const p=await ctx.newPage();p.on('pageerror',e=>ERR.push(e.message.slice(0,140)));p.on('dialog',d=>d.dismiss().catch(()=>{}));
   await p.goto('file://'+path.join(ROOT,'start.html'));await p.waitForTimeout(2500);await p.fill('#l-e',C[k].email);await p.fill('#l-p',C[k].password);await p.click('#l-go');
   await p.waitForTimeout(4000);const pick=await p.$('text=فتح المنصة');if(pick)await pick.click().catch(()=>{});
-  await p.waitForURL(/index\.html|field\.html/,{timeout:30000}).catch(()=>{});const field=/field\.html/.test(p.url());if(field)await p.waitForSelector('.bnav button[data-v]',{timeout:40000}).catch(()=>{});await p.waitForTimeout(field?4000:14000);
+  await p.waitForURL(/index\.html|field\.html/,{timeout:30000}).catch(()=>{});const field=/field\.html/.test(p.url());if(field){let ok=await p.waitForSelector('.bnav button[data-v]',{timeout:40000}).then(()=>1).catch(()=>0);if(!ok){await p.reload();ok=await p.waitForSelector('.bnav button[data-v]',{timeout:40000}).then(()=>1).catch(()=>0)}if(!ok)ERR.push(who+': field app did not finish loading in 80 s')}await p.waitForTimeout(field?4000:14000);
   const S={app:field?'field':/index/.test(p.url())?'platform':'?',pages:0,fail:[],errs:0};
   if(S.app==='platform'){
    await p.evaluate(()=>{document.querySelectorAll('.fm122-dlg-wrap,#fm183-wiz,.fm183-wrap').forEach(x=>x.remove());document.querySelectorAll('dialog[open]').forEach(d=>d.close())});
