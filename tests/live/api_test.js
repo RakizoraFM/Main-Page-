@@ -37,7 +37,7 @@ async function upPhoto(k,wo,kind,extra){const pid=crypto.randomUUID(),p=`${wo}/$
  r=await rpc('supervisor','fm_wo_act',{p_id:w1,p_action:'accept'});check('أوامر العمل','المشرف يقبل الأمر',r.j==='accepted',msg(r));
  r=await rpc('supervisor','fm_wo_act',{p_id:w1,p_action:'start'});check('أوامر العمل','بدء التنفيذ',r.j==='in_progress',msg(r));
  const done1=d=>rpc('supervisor','fm_wo_act',{p_id:w1,p_action:'done',p_data:d});
- r=await done1(CL.map(x=>Object.assign({},x,{res:'ok',done:true})));check('توثيق الإنجاز','رفض بدون صورة «بعد»',/after photo/.test(msg(r)),msg(r));
+ r=await done1(CL.map(x=>Object.assign({},x,{res:'ok',done:true})));check('توثيق الإنجاز','رفض الإنجاز بلا توثيق (V276: صور الوصول أولاً)',!r.ok&&/after photo|arrival/.test(msg(r)),msg(r));
  r=await upPhoto('supervisor',w1,'after');check('الصور','رفع صورة إلى التخزين',r.ok,r.ok?'':msg(r));
  r=await done1(CL.map(x=>Object.assign({},x,{res:'ok',done:true})));check('توثيق الإنجاز','رفض بدون صور الوصول الثلاث',/arrival/.test(msg(r)),msg(r));
  for(const tag of ['sign','entrance','fence'])await upPhoto('supervisor',w1,'arrival',{tag});

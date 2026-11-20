@@ -1,17 +1,108 @@
 {
  "SUM": {
+  "sysadmin": {
+   "app": "platform",
+   "pages": 113,
+   "fail": [],
+   "errs": 0
+  },
+  "area_engineer": {
+   "app": "platform",
+   "pages": 89,
+   "fail": [],
+   "errs": 0
+  },
   "supervisor": {
    "app": "field",
-   "pages": 11,
+   "pages": 8,
    "fail": [],
    "errs": 0
   },
   "contractor": {
    "app": "field",
-   "pages": 15,
+   "pages": 10,
+   "fail": [],
+   "errs": 0
+  },
+  "viewer": {
+   "app": "platform",
+   "pages": 76,
+   "fail": [],
+   "errs": 0
+  },
+  "dept_manager": {
+   "app": "platform",
+   "pages": 94,
+   "fail": [],
+   "errs": 0
+  },
+  "project_manager": {
+   "app": "platform",
+   "pages": 105,
+   "fail": [],
+   "errs": 0
+  },
+  "ops_manager": {
+   "app": "platform",
+   "pages": 99,
+   "fail": [],
+   "errs": 0
+  },
+  "area_manager": {
+   "app": "platform",
+   "pages": 95,
+   "fail": [],
+   "errs": 0
+  },
+  "hse_manager": {
+   "app": "platform",
+   "pages": 91,
+   "fail": [],
+   "errs": 0
+  },
+  "qa_manager": {
+   "app": "platform",
+   "pages": 94,
+   "fail": [],
+   "errs": 0
+  },
+  "accountant": {
+   "app": "platform",
+   "pages": 96,
+   "fail": [],
+   "errs": 0
+  },
+  "storekeeper": {
+   "app": "platform",
+   "pages": 82,
    "fail": [],
    "errs": 0
   }
  },
- "BLOCK": []
+ "BLOCK": [
+  "sysadmin: POST /rest/v1/rpc/fm_wo_run_due",
+  "sysadmin: POST /rest/v1/rpc/fm_wo_return_check",
+  "sysadmin: POST /rest/v1/rpc/fm_wf_snap_save",
+  "area_engineer: POST /rest/v1/rpc/fm_wo_run_due",
+  "area_engineer: POST /rest/v1/rpc/fm_wo_return_check",
+  "dept_manager: POST /rest/v1/rpc/fm_wf_snap_save",
+  "project_manager: POST /rest/v1/rpc/fm_wo_run_due",
+  "project_manager: POST /rest/v1/rpc/fm_wo_return_check",
+  "project_manager: POST /rest/v1/rpc/fm_wf_snap_save",
+  "ops_manager: POST /rest/v1/rpc/fm_wo_run_due",
+  "ops_manager: POST /rest/v1/rpc/fm_wo_return_check",
+  "ops_manager: POST /rest/v1/rpc/fm_wf_snap_save",
+  "area_manager: POST /rest/v1/rpc/fm_wo_run_due",
+  "area_manager: POST /rest/v1/rpc/fm_wo_return_check",
+  "hse_manager: POST /rest/v1/rpc/fm_wo_run_due",
+  "hse_manager: POST /rest/v1/rpc/fm_wo_return_check",
+  "hse_manager: POST /rest/v1/rpc/fm_wf_snap_save",
+  "qa_manager: POST /rest/v1/rpc/fm_wo_run_due",
+  "qa_manager: POST /rest/v1/rpc/fm_wo_return_check",
+  "qa_manager: POST /rest/v1/rpc/fm_wf_snap_save",
+  "accountant: POST /rest/v1/rpc/fm_wo_run_due",
+  "accountant: POST /rest/v1/rpc/fm_wo_return_check",
+  "storekeeper: POST /rest/v1/rpc/fm_wo_run_due",
+  "storekeeper: POST /rest/v1/rpc/fm_wo_return_check"
+ ]
 }

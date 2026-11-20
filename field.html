@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F138">
+<meta name="fm-version" content="F139">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -313,6 +313,19 @@ window.FMCloud={__core:true,cfg,setCfg,api:real,msg:ARmsg,uuid,engClient:sb,
  ROLE:{admin:'مدير النظام',engineer:'مهندس',supervisor:'مشرف',contractor:'مقاول',viewer:'مشاهد (إدارة)',pending:'بانتظار التفعيل'}};
 })();
 
+</script>
+<script id="fmf-139-me-cache">
+/* F139: about 13 layers ask C.api.me() while the app opens; each call was a separate network user check + profile read
+   (17 /auth/v1/user calls measured on the real project, 10–15 s to the first screen). One shared answer for 10 s;
+   a failure or «no user» is not kept; saving the profile, signing in or out drops it. */
+(function(){'use strict';const A=window.FMCloud&&FMCloud.api;if(!A||!A.me||A.me.__f139)return;
+ const o=A.me;let p=null,t=0;
+ const drop=()=>{p=null;t=0};
+ const f=function(){if(p&&Date.now()-t<10000)return p.then(v=>v&&Object.assign({},v));t=Date.now();
+  const q=o.apply(this,arguments);p=q.then(v=>{if(!v)drop();return v},e=>{drop();throw e});return p.then(v=>v&&Object.assign({},v))};
+ f.__f139=1;A.me=f;window.fmfMeDrop=drop;
+ ['saveProfile','signIn','signOut','updateMyProfile'].forEach(k=>{const g=A[k];if(typeof g!=='function')return;A[k]=function(){drop();return g.apply(this,arguments)}});
+})();
 </script>
 <script>
 /* RakizoraFM brand: name and embedded logo files */
