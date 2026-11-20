@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="R2">
+<meta name="fm-version" content="R3">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -49,6 +49,8 @@ async function tenantCfg(){if(!CO)return true;try{const r=await fetch(CTRL.url+'
 const app=document.getElementById('app');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const token=(new URLSearchParams(location.search).get('t')||'').trim();
+/* R3 (V406): ?j=<token> = rating of one closed ticket / work order (fm_job_rate_info / fm_job_rate_submit) */
+const jtok=(new URLSearchParams(location.search).get('j')||'').trim();
 const LV=['','ضعيف جداً','ضعيف','مقبول','جيد','ممتاز'];
 const ERR={'already rated':'تم إرسال التقييم لهذه الزيارة من قبل. شكراً لك.','link expired':'انتهت صلاحية رابط التقييم (7 أيام). اطلب رابطاً جديداً من المشرف.','invalid link':'رابط التقييم غير صحيح.','invalid rating':'اختر درجة لكل بند مطلوب.'};
 async function rpc(fn,body){const r=await fetch(CFG.url+'/rest/v1/rpc/'+fn,{method:'POST',headers:{apikey:CFG.key,Authorization:'Bearer '+CFG.key,'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -56,8 +58,36 @@ async function rpc(fn,body){const r=await fetch(CFG.url+'/rest/v1/rpc/'+fn,{meth
 function fail(t){app.innerHTML='<div class="brand">RakizoraFM · إدارة المرافق</div><h1>تقييم الخدمة</h1><p class="msg">'+esc(t)+'</p>'}
 function date(v){try{return new Date(v).toLocaleDateString('ar-SA-u-ca-gregory',{timeZone:'Asia/Riyadh',year:'numeric',month:'long',day:'numeric'})}catch(e){return ''}}
 function q(k,title,hint,optional){return '<div class="q" data-q="'+k+'"><b>'+title+'</b>'+(hint?'<small>'+esc(hint)+'</small>':'')+'<div class="stars">'+[1,2,3,4,5].map(n=>'<button type="button" data-v="'+n+'" aria-label="'+n+' من 5">★</button>').join('')+'</div><div class="lv"></div>'+(optional?'<label class="na"><input type="checkbox" data-na> لم أتعامل معه</label>':'')+'</div>'}
+async function startJob(){
+ if(!/^[0-9a-f]{64}$/.test(jtok))return fail('رابط التقييم غير صحيح.');
+ let i;try{i=await rpc('fm_job_rate_info',{p_token:jtok})}catch(e){return fail('تعذّر الاتصال. تحقق من الإنترنت ثم أعد فتح الرابط.')}
+ if(!i||i.state==='invalid')return fail('رابط التقييم غير صحيح.');
+ if(i.state==='used')return fail('تم إرسال تقييم هذا العمل من قبل. شكراً لك.');
+ if(i.state==='expired')return fail('انتهت صلاحية رابط التقييم. يمكنكم التقييم من بوابة المدرسة.');
+ const what=(i.kind==='wo'?'أمر العمل ':'البلاغ ')+(i.code||'');
+ app.innerHTML='<div class="brand">RakizoraFM · إدارة المرافق</div><h1>تقييم العمل المنجز</h1><div class="sub">'+esc(i.school)+'<br>'+esc(what)+(i.title?' — '+esc(i.title):'')+'<br>أُغلق بتاريخ '+esc(date(i.closed_at))+'</div>'
+  +'<p class="sub">كيف تقيّمون هذا العمل؟ من 1 (ضعيف جداً) إلى 5 (ممتاز).</p>'
+  +q('score','التقييم العام للعمل',i.supervisor?'المشرف: '+i.supervisor:'',false)
+  +q('q_speed','سرعة التنفيذ','',true)+q('q_quality','جودة التنفيذ ونظافة الموقع','',true)
+  +'<label class="f">ملاحظات (اختياري)</label><textarea id="comment" maxlength="1000"></textarea>'
+  +'<label class="f">الاسم (اختياري)</label><input type="text" id="rn" maxlength="80" autocomplete="name">'
+  +'<button class="go" id="send">إرسال التقييم</button><p class="msg" id="err" hidden></p><div class="foot">يُستخدم الرابط مرة واحدة فقط.</div>';
+ app.querySelectorAll('.na').forEach(l=>l.lastChild.textContent=' لا أعرف');
+ const val={};
+ app.querySelectorAll('.q').forEach(box=>{const k=box.dataset.q,bs=[...box.querySelectorAll('[data-v]')],na=box.querySelector('[data-na]');
+  const paint=()=>{bs.forEach(b=>b.classList.toggle('on',+b.dataset.v<=(val[k]||0)));box.querySelector('.lv').textContent=val[k]?LV[val[k]]:''};
+  bs.forEach(b=>b.onclick=()=>{val[k]=+b.dataset.v;if(na)na.checked=false;paint()});
+  if(na)na.onchange=()=>{if(na.checked)delete val[k];paint()}});
+ app.querySelector('#send').onclick=async e=>{const b=e.currentTarget,err=app.querySelector('#err');err.hidden=true;
+  if(!val.score){err.textContent='اختر التقييم العام للعمل.';err.hidden=false;return}
+  b.disabled=true;
+  try{await rpc('fm_job_rate_submit',{p_token:jtok,p:Object.assign({},val,{comment:app.querySelector('#comment').value,name:app.querySelector('#rn').value})});
+   app.innerHTML='<div class="ok"><div class="big">🙏</div>شكراً لكم، تم استلام تقييمكم.<br><span style="color:#64748b;font-size:13px">'+esc(i.school)+' — '+esc(what)+'</span></div>'}
+  catch(x){err.textContent=x.message==='Failed to fetch'?'تعذّر الإرسال. تحقق من الإنترنت ثم حاول مرة أخرى.':x.message;err.hidden=false;b.disabled=false}};
+}
 async function start(){
  if(!(await tenantCfg()))return fail('رمز الشركة في الرابط غير صحيح أو تعذّر الاتصال.');
+ if(jtok)return startJob();
  if(!/^[0-9a-f]{64}$/.test(token))return fail('رابط التقييم غير صحيح.');
  let i;try{i=await rpc('fm_eng_rate_info',{p_token:token})}catch(e){return fail('تعذّر الاتصال. تحقق من الإنترنت ثم أعد فتح الرابط.')}
  if(!i||i.state==='invalid')return fail('رابط التقييم غير صحيح.');
