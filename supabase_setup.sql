@@ -20119,3 +20119,169 @@ end $$;
 revoke all on function public.fm_digest_lists() from public, anon;
 grant execute on function public.fm_digest_lists() to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 132) V401 — safe Solvix import: the whole file is staged first, the register is replaced in one transaction ----------
+-- Before, fm_asset_import emptied the register with the FIRST chunk; a later chunk that failed left a partial register.
+-- Now: fm_asset_stage_begin → fm_asset_stage_add per chunk (idempotent by seq, a retry overwrites the same chunk) →
+-- fm_asset_stage_preview (duplicates, buildings not in the school DB, name conflicts, new / changed / removed) →
+-- fm_asset_stage_commit, which checks that every chunk arrived and the row count matches, then deletes + inserts in ONE
+-- transaction (any error rolls everything back, the current register stays whole). fm_asset_import is closed (an old cached
+-- page must not run the unsafe path). Tables: RLS on, no policies, no grants.
+create table if not exists public.fm_asset_stages (
+  id uuid primary key default gen_random_uuid(), by_id uuid, by_name text, created_at timestamptz not null default now(),
+  chunks int not null check (chunks between 1 and 500), total int not null check (total between 1 and 500000), replace boolean not null default true,
+  status text not null default 'open' check (status in ('open','committed','cancelled')), done_at timestamptz, result jsonb
+);
+create table if not exists public.fm_asset_stage_rows (
+  stage_id uuid not null references public.fm_asset_stages(id) on delete cascade, seq int not null, rows jsonb not null, at timestamptz not null default now(),
+  primary key (stage_id, seq)
+);
+alter table public.fm_asset_stages enable row level security;
+alter table public.fm_asset_stage_rows enable row level security;
+revoke all on public.fm_asset_stages, public.fm_asset_stage_rows from anon, authenticated;
+
+create or replace function public.fm_asset_import(p_rows jsonb, p_replace boolean default false) returns jsonb language plpgsql security definer set search_path = public as $$
+begin raise exception 'staged import required (reload the page)'; end $$;
+
+create or replace function public.fm_asset_stage_begin(p_chunks int, p_total int, p_replace boolean default true) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare v uuid;
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  if coalesce(p_chunks, 0) not between 1 and 500 or coalesce(p_total, 0) not between 1 and 500000 then raise exception 'bad size'; end if;
+  delete from public.fm_asset_stages where (by_id = auth.uid() and status = 'open') or created_at < now() - interval '2 days';
+  insert into public.fm_asset_stages (by_id, by_name, chunks, total, replace)
+  values (auth.uid(), (select full_name from public.profiles where id = auth.uid()), p_chunks, p_total, coalesce(p_replace, true)) returning id into v;
+  return v;
+end $$;
+
+-- one chunk (≤ 1000 rows); the same seq sent again replaces the earlier copy (safe retry)
+create or replace function public.fm_asset_stage_add(p_stage uuid, p_seq int, p_rows jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s public.fm_asset_stages;
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  select * into s from public.fm_asset_stages where id = p_stage for update;
+  if s.id is null or s.by_id is distinct from auth.uid() then raise exception 'stage not found'; end if;
+  if s.status <> 'open' then raise exception 'stage closed'; end if;
+  if p_seq is null or p_seq < 0 or p_seq >= s.chunks then raise exception 'bad chunk'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 1000 then raise exception 'bad rows'; end if;
+  insert into public.fm_asset_stage_rows (stage_id, seq, rows) values (p_stage, p_seq, p_rows)
+  on conflict (stage_id, seq) do update set rows = excluded.rows, at = now();
+  return jsonb_build_object('seq', p_seq, 'n', jsonb_array_length(p_rows),
+    'got', (select count(*) from public.fm_asset_stage_rows where stage_id = p_stage));
+end $$;
+
+-- internal: the staged rows, one per line, with their order (seq, i) and the cleaned keys
+create or replace function public.fm_asset_stage_lines(p_stage uuid) returns table (seq int, i int, src text, bkey text, school text, serial text, r jsonb)
+language sql stable security definer set search_path = public as $$
+  select x.seq, (e.ord - 1)::int, nullif(btrim(left(e.r->>'src_id', 80)), ''), nullif(btrim(left(e.r->>'bkey', 120)), ''),
+    btrim(coalesce(e.r->>'school', '')), nullif(btrim(coalesce(e.r->>'serial', '')), ''), e.r
+  from public.fm_asset_stage_rows x cross join lateral jsonb_array_elements(x.rows) with ordinality e(r, ord)
+  where x.stage_id = p_stage $$;
+
+-- internal: building keys of the school DB (fm_bkey of building number + name)
+create or replace function public.fm_asset_db_keys() returns text[] language plpgsql stable security definer set search_path = public as $$
+declare v jsonb;
+begin
+  select value into v from public.app_kv where key = 'fm_school_master_db_v1';
+  if v is null then return null; end if;
+  if jsonb_typeof(v) = 'string' then v := (v #>> '{}')::jsonb; end if;
+  if jsonb_typeof(v) = 'object' then v := v->'schools'; end if;
+  if v is null or jsonb_typeof(v) <> 'array' then return null; end if;
+  return (select array_agg(distinct public.fm_bkey(x->>'buildingId', x->>'school')) from jsonb_array_elements(v) x);
+end $$;
+
+create or replace function public.fm_asset_stage_preview(p_stage uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s public.fm_asset_stages; ks text[]; j jsonb;
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  select * into s from public.fm_asset_stages where id = p_stage;
+  if s.id is null or s.by_id is distinct from auth.uid() then raise exception 'stage not found'; end if;
+  ks := public.fm_asset_db_keys();
+  create temp table if not exists fm401_l (seq int, i int, src text, bkey text, school text, serial text) on commit drop;
+  truncate fm401_l;
+  insert into fm401_l select l.seq, l.i, l.src, l.bkey, l.school, l.serial from public.fm_asset_stage_lines(p_stage) l;
+  with ok as (select distinct on (src) * from fm401_l where src is not null and bkey is not null order by src, seq, i)
+  select jsonb_build_object(
+    'status', s.status, 'chunks', s.chunks, 'total', s.total, 'replace', s.replace,
+    'got', (select count(*) from public.fm_asset_stage_rows where stage_id = p_stage),
+    'missing', (select coalesce(jsonb_agg(g), '[]') from generate_series(0, s.chunks - 1) g where not exists (select 1 from public.fm_asset_stage_rows where stage_id = p_stage and seq = g)),
+    'rows', (select count(*) from fm401_l),
+    'bad', (select count(*) from fm401_l where src is null or bkey is null),
+    'valid', (select count(*) from ok),
+    'buildings', (select count(distinct bkey) from ok),
+    'dup', (select count(*) from (select src from fm401_l where src is not null and bkey is not null group by src having count(*) > 1) d),
+    'dup_rows', (select coalesce(sum(c - 1), 0) from (select count(*) c from fm401_l where src is not null and bkey is not null group by src having count(*) > 1) d),
+    'dup_list', (select coalesce(jsonb_agg(d), '[]') from (select src, count(*) n, min(school) school from fm401_l where src is not null and bkey is not null group by src having count(*) > 1 order by count(*) desc, src limit 50) d),
+    'serial_dup', (select coalesce(jsonb_agg(d), '[]') from (select serial, count(distinct src) n, array_agg(distinct src) srcs, min(school) school from ok where serial is not null
+      and lower(serial) not in ('na','n/a','-','0','لا يوجد','none') group by serial having count(distinct src) > 1 order by count(distinct src) desc limit 50) d),
+    'name_conflict', (select coalesce(jsonb_agg(d), '[]') from (select bkey, array_agg(distinct school) names from ok where school <> '' group by bkey having count(distinct school) > 1 order by bkey limit 50) d),
+    'no_db', case when ks is null then null else (select count(distinct bkey) from ok where not (bkey = any(ks))) end,
+    'no_db_rows', case when ks is null then null else (select count(*) from ok where not (bkey = any(ks))) end,
+    'no_db_list', case when ks is null then null else (select coalesce(jsonb_agg(d), '[]') from (select bkey, min(school) school, count(*) n from ok where not (bkey = any(ks)) group by bkey order by count(*) desc limit 100) d) end,
+    'current', (select count(*) from public.fm_assets),
+    'new', (select count(*) from ok where not exists (select 1 from public.fm_assets a where a.src_id = ok.src)),
+    'kept', (select count(*) from ok where exists (select 1 from public.fm_assets a where a.src_id = ok.src)),
+    'removed', case when s.replace then (select count(*) from public.fm_assets a where not exists (select 1 from ok where ok.src = a.src_id)) else 0 end
+  ) into j from (select 1) z;
+  return j;
+end $$;
+
+-- the switch: everything checked first, then delete + insert in this one transaction
+create or replace function public.fm_asset_stage_commit(p_stage uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s public.fm_asset_stages; got int; nrows int; nm text; n int; del int := 0; res jsonb;
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  select * into s from public.fm_asset_stages where id = p_stage for update;
+  if s.id is null or s.by_id is distinct from auth.uid() then raise exception 'stage not found'; end if;
+  if s.status <> 'open' then raise exception 'stage closed'; end if;
+  select count(*) into got from public.fm_asset_stage_rows where stage_id = p_stage and seq between 0 and s.chunks - 1;
+  if got <> s.chunks then raise exception 'stage incomplete: % of %', got, s.chunks; end if;
+  select coalesce(sum(jsonb_array_length(rows)), 0) into nrows from public.fm_asset_stage_rows where stage_id = p_stage;
+  if nrows <> s.total then raise exception 'row count mismatch: % of %', nrows, s.total; end if;
+  perform pg_advisory_xact_lock(hashtext('fm_assets_import'));
+  nm := (select full_name from public.profiles where id = auth.uid());
+  if s.replace then delete from public.fm_assets where true; get diagnostics del = row_count; end if;
+  insert into public.fm_assets (src_id, bkey, building_no, school, region, category, type, l2, l3, code, critical, condition, qty, price, brand, model, capacity,
+    serial, install_date, tag, label, floor, room, sys, imported_at, by_name)
+  select l.src, l.bkey, left(r->>'building_no', 40), left(r->>'school', 200), left(r->>'region', 40), left(r->>'category', 200),
+    left(r->>'type', 300), left(r->>'l2', 200), left(r->>'l3', 200), left(r->>'code', 40),
+    coalesce(case when lower(r->>'critical') in ('true','false') then (r->>'critical')::boolean end, false), left(r->>'condition', 80),
+    greatest(0, coalesce(case when r->>'qty' ~ '^\d{1,9}$' then (r->>'qty')::int end, 1)),
+    case when r->>'price' ~ '^\d+(\.\d+)?$' then (r->>'price')::numeric end, left(r->>'brand', 120), left(r->>'model', 120), left(r->>'capacity', 80),
+    left(r->>'serial', 120), left(r->>'install_date', 40), left(r->>'tag', 80), left(r->>'label', 80), left(r->>'floor', 40), left(r->>'room', 120),
+    case when r->>'sys' in ('ac','el','pl','fi','lf','cv') then r->>'sys' end, now(), nm
+  from (select distinct on (src) * from public.fm_asset_stage_lines(p_stage) where src is not null and bkey is not null order by src, seq, i) l
+  on conflict (src_id) do update set bkey = excluded.bkey, building_no = excluded.building_no, school = excluded.school, region = excluded.region,
+    category = excluded.category, type = excluded.type, l2 = excluded.l2, l3 = excluded.l3, code = excluded.code, critical = excluded.critical,
+    condition = excluded.condition, qty = excluded.qty, price = excluded.price, brand = excluded.brand, model = excluded.model, capacity = excluded.capacity,
+    serial = excluded.serial, install_date = excluded.install_date, tag = excluded.tag, label = excluded.label, floor = excluded.floor, room = excluded.room,
+    sys = excluded.sys, imported_at = now(), by_name = nm;
+  get diagnostics n = row_count;
+  res := jsonb_build_object('n', n, 'deleted', del, 'total', (select count(*) from public.fm_assets));
+  update public.fm_asset_stages set status = 'committed', done_at = now(), result = res where id = p_stage;
+  delete from public.fm_asset_stage_rows where stage_id = p_stage;
+  begin
+    insert into public.fm_audit_log (actor_name, action, target, details) values (nm, 'asset_import', 'fm_assets', res || jsonb_build_object('rows', nrows, 'replace', s.replace));
+  exception when others then null; end;
+  return res;
+end $$;
+
+create or replace function public.fm_asset_stage_cancel(p_stage uuid) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.fm_asset_can_edit() then raise exception 'not allowed'; end if;
+  update public.fm_asset_stages set status = 'cancelled', done_at = now() where id = p_stage and by_id = auth.uid() and status = 'open';
+  delete from public.fm_asset_stage_rows where stage_id = p_stage and exists (select 1 from public.fm_asset_stages where id = p_stage and by_id = auth.uid());
+  return found;
+end $$;
+
+revoke all on function public.fm_asset_stage_lines(uuid), public.fm_asset_db_keys() from public, anon, authenticated;
+revoke all on function public.fm_asset_stage_begin(int, int, boolean), public.fm_asset_stage_add(uuid, int, jsonb), public.fm_asset_stage_preview(uuid),
+  public.fm_asset_stage_commit(uuid), public.fm_asset_stage_cancel(uuid) from public, anon;
+grant execute on function public.fm_asset_stage_begin(int, int, boolean), public.fm_asset_stage_add(uuid, int, jsonb), public.fm_asset_stage_preview(uuid),
+  public.fm_asset_stage_commit(uuid), public.fm_asset_stage_cancel(uuid) to authenticated;
+notify pgrst, 'reload schema';
