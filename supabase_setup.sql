@@ -20076,3 +20076,46 @@ end $$;
 revoke all on function public.fm_photo_q_people(text) from public, anon;
 grant execute on function public.fm_photo_q_people(text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 131) V400 — «☀️ يومي»: the lists behind the morning digest (≤ 20 rows each) ----------
+create or replace function public.fm_digest_lists() returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare me uuid := auth.uid(); j jsonb := '{}'; v jsonb; tz text := 'Asia/Riyadh'; d date := (now() at time zone 'Asia/Riyadh')::date;
+begin
+  if me is null or public.fm_role() = 'pending' then raise exception 'not allowed'; end if;
+  begin select coalesce(jsonb_agg(x order by x->>'due'), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'title', title, 'school', school, 'due', due_at, 'status', status) x
+      from public.work_orders where assignee = me and status in ('assigned','accepted','in_progress','returned') and due_at < now() order by due_at limit 20) q;
+    j := j || jsonb_build_object('wo_late', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'title', title, 'school', school, 'due', due_at, 'status', status) x
+      from public.work_orders where assignee = me and status in ('assigned','accepted','in_progress','returned') and due_at >= now() and (due_at at time zone tz)::date = d order by due_at limit 20) q;
+    j := j || jsonb_build_object('wo_today', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'title', title, 'school', school, 'due', due_at, 'status', status, 'visit_on', visit_on) x
+      from public.work_orders where assignee = me and status = 'assigned' order by due_at nulls last limit 20) q;
+    j := j || jsonb_build_object('wo_new', v); exception when others then
+    begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'title', title, 'school', school, 'due', due_at, 'status', status) x
+        from public.work_orders where assignee = me and status = 'assigned' order by due_at nulls last limit 20) q; j := j || jsonb_build_object('wo_new', v); exception when others then null; end; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'title', title, 'school', school, 'by', assignee_name, 'done_at', done_at) x
+      from public.work_orders where status = 'done' and (approver = me or (approver is null and created_by = me)) order by done_at nulls last limit 20) q;
+    j := j || jsonb_build_object('wo_appr', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', w.ticket_id, 'region', w.region, 'school', w.school, 'due', w.due_at, 'cat', w.category) x
+      from public.fm_sla_watch w where me = any(w.users) and w.due_at > now() and (w.due_at at time zone tz)::date = d order by w.due_at limit 20) q;
+    j := j || jsonb_build_object('sla_today', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', r.id, 'code', r.code, 'holder', r.holder_name, 'school', r.school, 'at', r.at, 'store', s.name) x
+      from public.wo_issue_requests r join public.wo_stores s on s.id = r.store_id where s.keeper = me and r.status = 'requested' order by r.at limit 20) q;
+    j := j || jsonb_build_object('ir_wait', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', id, 'code', code, 'school', school, 'at', issued_at) x
+      from public.wo_issue_requests where holder = me and status in ('issued','partial') and received_at is null order by issued_at limit 20) q;
+    j := j || jsonb_build_object('ir_recv', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', l.id, 'code', l.code, 'who', l.user_name, 'from', l.from_on, 'to', l.to_on, 'kind', l.kind, 'reason', l.reason) x
+      from public.fm_leave_requests l join public.profiles p on p.id = l.user_id where l.status = 'pending' and p.reports_to = me order by l.from_on limit 20) q;
+    j := j || jsonb_build_object('leave_wait', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', r.id, 'wo', r.wo_id, 'code', r.wo_code, 'school', r.school, 'by', r.by_name, 'want', r.want_on, 'reason', r.reason) x
+      from public.wo_visit_requests r join public.work_orders w on w.id = r.wo_id where r.status = 'pending' and w.approver = me order by r.at limit 20) q;
+    j := j || jsonb_build_object('visit_wait', v); exception when others then null; end;
+  begin select coalesce(jsonb_agg(x), '[]') into v from (select jsonb_build_object('id', r.id, 'wo', r.wo_id, 'code', r.wo_code, 'school', r.school, 'by', r.by_name, 'reason', r.reason) x
+      from public.wo_edit_requests r join public.work_orders w on w.id = r.wo_id where r.status = 'pending' and w.approver = me order by r.at limit 20) q;
+    j := j || jsonb_build_object('edit_wait', v); exception when others then null; end;
+  return j;
+end $$;
+revoke all on function public.fm_digest_lists() from public, anon;
+grant execute on function public.fm_digest_lists() to authenticated;
+notify pgrst, 'reload schema';
