@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="F139">
+<meta name="fm-version" content="F140">
 <script id="fmf-50-lang-early">
 /* V228: English interface. localStorage fm_lang = 'en' turns it on: html lang=en (layout stays right-to-left, text runs by
    its own direction), dates and numbers that asked for an Arabic locale use English ones. The words are translated by the
@@ -15,6 +15,39 @@
  var W1=function(l,op){return new DT(fix(l,1),op)};W1.prototype=DT.prototype;W1.supportedLocalesOf=DT.supportedLocalesOf;Intl.DateTimeFormat=W1;
  var W2=function(l,op){return new NF(fix(l,0),op)};W2.prototype=NF.prototype;W2.supportedLocalesOf=NF.supportedLocalesOf;Intl.NumberFormat=W2;
 }catch(e){}})();
+</script>
+<script id="fmf-140-net">
+/* F140 */(function(){'use strict';
+/* NET: identical reads to Supabase within a few seconds share one network request (the platform's layers ask for the
+   same settings / lists many times while a page opens). GET REST / auth requests and read-only RPC calls (POST to
+   /rpc/<name> whose name does not look like a write) with the same URL, token, headers and body share one answer
+   for TTL ms (20 s; a «🔄 / تحديث» click clears it); any other write clears the whole cache, so a read after a save is always fresh. Errors are not kept. */
+if(window.__fmNet)return;window.__fmNet=1;
+const nf=window.fetch;if(typeof nf!=='function')return;
+const TTL=20000,M=new Map();
+const RPC=/\/rest\/v1\/rpc\/([a-z0-9_]+)$/i;
+const W=/(_save|_set|_submit|_import|_push|_add|_del|_delete|_run|_sync|_publish|_mark|_hash|_upsert|_new|_act|_make|_revoke|_close|_reopen|_pay|_award|_order|_touch|_begin|_end|_check|_kick|_claim|_result|_subscribe|_unsubscribe|_activate|_test|_assign|_sign|_review|_vote|_comment|_release|_send|_request|_cancel|_edit|_restore|_wipe|_once|_approve|_receive|_return|_issue|_stamp|_log|_ack|_link|_unlink|_config|_autoset|_init|_seed|_reset|_pass|_points|_invite|_quote|_invoice|_objection|_rate|_follow|_lock|_undo|_dispose|_writeoff|_count|_move|_transfer|_claim_|_lead|_due|_now|_apply|_end_|_unassign|_report|_award)$|fm_touch|fm_wo_act|fm_wo_create|fm_wo_repair|fm_wo_bulk|fm_stock_move|fm_eng_submit/i;
+function hv(h,n){if(!h)return '';try{if(typeof h.get==='function')return h.get(n)||'';const k=Object.keys(h).find(x=>x.toLowerCase()===n);return k?String(h[k]):''}catch(e){return ''}}
+setInterval(()=>{const t=Date.now();M.forEach((v,k)=>{if(t-v.t>TTL)M.delete(k)})},15000);
+window.fmNetClear=()=>M.clear();
+/* a refresh button always reads fresh data */
+document.addEventListener('click',e=>{const b=e.target&&e.target.closest&&e.target.closest('button');if(b&&/🔄|تحديث|Refresh/.test(b.textContent||''))M.clear()},true);
+window.fetch=function(input,init){
+ try{
+  const url=typeof input==='string'?input:(input&&input.url)||'';
+  if(!/\.supabase\.co\/(rest|auth)\/v1\//.test(url)||(input&&typeof input!=='string'))return nf.apply(this,arguments);
+  const m=String((init&&init.method)||'GET').toUpperCase(),path=url.split('?')[0];
+  let ok=false;
+  if(m==='GET')ok=true;
+  else if(m==='POST'){const r=RPC.exec(path);ok=!!(r&&!W.test(r[1])&&(!init.body||typeof init.body==='string'))}
+  if(!ok){if(m!=='HEAD'&&!/\/auth\/v1\/token/.test(path))M.clear();return nf.apply(this,arguments)}
+  const h=init&&init.headers,k=[m,url,hv(h,'authorization'),hv(h,'apikey'),hv(h,'prefer'),hv(h,'range'),hv(h,'accept'),hv(h,'accept-profile'),(init&&init.body)||''].join('\u0001');
+  const e=M.get(k);if(e&&Date.now()-e.t<TTL){window.__fmNetHits=(window.__fmNetHits||0)+1;return e.p.then(r=>r.clone())}
+  const p=nf.apply(this,arguments);M.set(k,{t:Date.now(),p});
+  p.then(r=>{if(!r.ok)M.delete(k)},()=>M.delete(k));
+  return p.then(r=>r.clone());
+ }catch(x){return nf.apply(this,arguments)}};
+})();
 </script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
