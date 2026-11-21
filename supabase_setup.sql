@@ -22523,3 +22523,55 @@ revoke all on function public.fm_tk_tomb_on_del(), public.fm_tk_tomb_guard() fro
 revoke all on function public.fm_tickets_import436(jsonb, boolean), public.fm_tk_tomb_ids(text), public.fm_tk_tomb_clear(text) from public, anon;
 grant execute on function public.fm_tickets_import436(jsonb, boolean), public.fm_tk_tomb_ids(text), public.fm_tk_tomb_clear(text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 151) V437 — eight more parts sold separately (erp, hr, assets, energy, ai, reports, cpen, integ) ----------
+-- A company's fm_plan.modules list saved before V437 has no marker key «_v»: for it the eight new parts stay ON (they were
+-- open before), so nothing closes by itself. Every list signed by the owner console from SA11 on carries "_v": 437, and then a
+-- part missing from the list is really off. No list at all (single-company site) = every part, as before.
+create or replace function public.fm_mods_new() returns text[] language sql immutable as $$
+  select array['erp','hr','assets','energy','ai','reports','cpen','integ'] $$;
+create or replace function public.fm_mod(k text) returns boolean language sql stable security definer set search_path = public as $$
+  select k = 'core' or coalesce((select p.modules is null or jsonb_typeof(p.modules) <> 'object'
+      or (p.modules ? k and (jsonb_typeof(p.modules->k) = 'null' or current_date <= (p.modules->>k)::date))
+      or (k = any(public.fm_mods_new()) and not (p.modules ? '_v'))
+    from public.fm_plan p where p.id = 1), true) $$;
+create or replace function public.fm_mods_on() returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(k), '[]') from unnest(array['tickets','wo','wh','eng','portal','costs','bill','cc','solvix_assets']
+    || public.fm_mods_new()) k where public.fm_mod(k) $$;
+-- report schedules: a backup e-mail schedule (V351, kind p:backup) is not part of «reports» — the backup stays core
+create or replace function public.fm_mod_guard_rep() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.kind = 'p:backup' then return new; end if;
+  if not public.fm_plan_ok() then raise exception 'subscription expired' using errcode = '42501'; end if;
+  if not public.fm_mod('reports') then raise exception 'module disabled: reports' using errcode = '42501'; end if;
+  return new;
+end $$;
+-- new rows in the tables of a part that is off are refused (insert only: rows already there can still be closed / paid
+-- by the other parts that touch them; the data stays and comes back when the part is bought again)
+do $$ declare x text[]; begin
+  foreach x slice 1 in array array[
+    ['fm_erp_owner_claims','erp'],['fm_erp_collections','erp'],['fm_erp_budgets','erp'],['fm_erp_alloc_rules','erp'],['wo_supplier_payments','erp'],
+    ['fm_pay_batches','erp'],['fm_ret_releases','erp'],['fm_periods','erp'],['fm_acct_exports','erp'],
+    ['fm_people334','hr'],['fm_workforce233','hr'],['fm_leave_requests','hr'],['fm_att','hr'],['fm_vehicles','hr'],['fm_vehicle_logs','hr'],
+    ['fm_overtime','hr'],['fm_ideas','hr'],['fm_wf_bonuses','hr'],
+    ['fm_assets','assets'],['fm_asset_stages','assets'],
+    ['fm_meters','energy'],['fm_meter_reads','energy'],
+    ['fm_ai_usage','ai'],
+    ['fm_report_archive','reports'],['fm_signoffs','reports'],['fm_owner_links','reports'],
+    ['fm_sources','integ']] loop
+    if to_regclass('public.' || x[1]) is not null then
+      execute format('drop trigger if exists fm_mod_guard437 on public.%I', x[1]);
+      execute format('create trigger fm_mod_guard437 before insert on public.%I for each row execute function public.fm_mod_guard(%L)', x[1], x[2]);
+    end if;
+  end loop;
+  if to_regclass('public.fm_report_schedules') is not null then
+    drop trigger if exists fm_mod_guard437 on public.fm_report_schedules;
+    create trigger fm_mod_guard437 before insert on public.fm_report_schedules for each row execute function public.fm_mod_guard_rep();
+  end if;
+end $$;
+revoke all on function public.fm_mod_guard_rep() from public, anon, authenticated;
+revoke all on function public.fm_mods_new() from public, anon;
+grant execute on function public.fm_mods_new() to authenticated;
+revoke all on function public.fm_mod(text), public.fm_mods_on() from public, anon;
+grant execute on function public.fm_mod(text), public.fm_mods_on() to authenticated;
+notify pgrst, 'reload schema';

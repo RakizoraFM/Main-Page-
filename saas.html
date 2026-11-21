@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="fm-version" content="SA10">
+<meta name="fm-version" content="SA11">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0f172a">
@@ -122,19 +122,28 @@ const plans=()=>Array.isArray(SET.plans)?SET.plans:[];
 const planOf=k=>plans().find(p=>p.k===k)||{k,name:k,max:0,price:0};
 /* SA2 (V181): the parts of the platform. A plan (باقة) lists its parts; other parts are add-ons priced per month
    (base + per school × the school limit). The company's parts {key: until-date | null} travel in the activation code (m). */
-const MODS=[['tickets','🎫 البلاغات والـ SLA'],['wo','🛠️ أوامر العمل'],['wh','📦 المستودعات وقطع الغيار'],['eng','💬 التواصل مع المدارس والرضا'],['portal','🏫 بوابة مدير المدرسة'],['costs','💰 تكاليف المباني'],['bill','🧾 مستخلصات المقاولين'],['cc','💹 مركز التكلفة'],['solvix_assets','🏷️ حصر الأصول — Solvix']];
+const MODS=[['tickets','🎫 البلاغات والـ SLA'],['wo','🛠️ أوامر العمل'],['wh','📦 المستودعات وقطع الغيار'],['eng','💬 التواصل مع المدارس والرضا'],['portal','🏫 بوابة مدير المدرسة'],['costs','💰 تكاليف المباني'],['bill','🧾 مستخلصات المقاولين'],['cc','💹 مركز التكلفة'],['solvix_assets','🏷️ حصر الأصول — Solvix'],
+ /* SA11 (V437): parts added after V181 */
+ ['erp','💼 المالية والمحاسبة'],['hr','👷 القوى العاملة'],['assets','🏷️ الأصول وQR'],['energy','⚡ الطاقة والعدادات'],['ai','🤖 الذكاء الاصطناعي'],['reports','📄 التقارير المتقدمة وبوابة المالك'],['cpen','⚖️ غرامات العميل'],['integ','🔗 التكامل ومصادر البيانات']];
+/* SA11: a parts list saved before V437 has no marker «_v» — the parts added in V437 stay open for it (the same rule as fm_mod in
+   section 151 of supabase_setup.sql). Every list signed from now on carries _v, so a part left out of it is really closed.
+   A plan saved before V437 (no «mv») gets the new parts only when it already held every older part (the comprehensive plan). */
+const MV=437,NEWM=['erp','hr','assets','energy','ai','reports','cpen','integ'],OLD8=['tickets','wo','wh','eng','portal','costs','bill','cc'];
+const upMods=m=>{if(!m||m._v)return m;const o=Object.assign({},m);NEWM.forEach(k=>{if(!(k in o))o[k]=null});o._v=MV;return o};
+const mkeys=m=>Object.keys(m||{}).filter(k=>k!=='_v');
 const MODN=k=>(MODS.find(m=>m[0]===k)||[k,k])[1];
-const planMods=k=>{const p=planOf(k);return Array.isArray(p.modules)?p.modules:MODS.map(m=>m[0])};
+const planMods=k=>{const p=planOf(k);if(!Array.isArray(p.modules))return MODS.map(m=>m[0]);if(p.mv||!OLD8.every(x=>p.modules.includes(x)))return p.modules;return [...new Set(p.modules.concat(NEWM))]};
 const addons=()=>Array.isArray(SET.addons)?SET.addons:[];
 const addonOf=k=>addons().find(a=>a.k===k)||{k,base:0,per_school:0};
 const addonPrice=(k,limit)=>(+addonOf(k).base||0)+(+addonOf(k).per_school||0)*(+limit||0);
-const tMods=t=>t&&t.modules&&typeof t.modules==='object'&&!Array.isArray(t.modules)?t.modules:null;
-const modsTxt=m=>m?Object.keys(m).map(k=>MODN(k).replace(/^\S+\s/,'')+(m[k]?` (حتى ${m[k]})`:'')).join('، ')||'—':'كل الأجزاء';
+const tMods=t=>t&&t.modules&&typeof t.modules==='object'&&!Array.isArray(t.modules)?upMods(t.modules):null;
+const modsTxt=m=>m?mkeys(m).map(k=>MODN(k).replace(/^\S+\s/,'')+(m[k]?` (حتى ${m[k]})`:'')).join('، ')||'—':'كل الأجزاء';
 /* the parts picker: parts of the plan are included; others are add-ons (with an optional end date for a trial) */
 function modPicker(planKey,cur,limit,trial){const inc=planMods(planKey);return `<table><thead><tr><th>الجزء</th><th>الحالة</th>${trial?'<th>حتى (تجربة)</th>':'<th>سعر الإضافة / شهر</th>'}</tr></thead><tbody>${MODS.map(([k,n])=>{const i=inc.includes(k),on=trial&&cur?(k in cur):(i||(cur&&k in cur));
   return `<tr><td><label><input type="checkbox" data-mod="${k}" ${on?'checked':''} ${i&&!trial?'disabled':''}> ${esc(n)}</label></td><td>${i?(trial&&!on?'<span class="tag" style="background:#fee2e2;color:#b91c1c">ضمن الباقة — مُغلق</span>':'<span class="tag active">ضمن الباقة</span>'):'إضافة'}</td>${trial?`<td><input type="date" data-mu="${k}" value="${esc(cur&&cur[k]||'')}"></td>`:`<td>${i?'—':money(addonPrice(k,limit))}</td>`}</tr>`}).join('')}</tbody></table>`}
 function readPicker(d,planKey){const m={};d.querySelectorAll('[data-mod]').forEach(c=>{if(c.disabled){m[c.dataset.mod]=null;return}if(c.checked){const u=d.querySelector(`[data-mu="${c.dataset.mod}"]`);m[c.dataset.mod]=u&&u.value?u.value:null}});
- d.querySelectorAll('[data-mod]:disabled').forEach(c=>{const u=d.querySelector(`[data-mu="${c.dataset.mod}"]`);if(u&&u.value)m[c.dataset.mod]=u.value});return m}
+ d.querySelectorAll('[data-mod]:disabled').forEach(c=>{const u=d.querySelector(`[data-mu="${c.dataset.mod}"]`);if(u&&u.value)m[c.dataset.mod]=u.value});m._v=MV;return m}
+window.fmSaasMods={MODS,NEWM,upMods,planMods,readPicker,modPicker,modsTxt,tMods,mkeys,setSET:v=>{SET=v}};
 const seller=()=>Object.assign({name:'RakizoraFM',vat_no:'',address:'',iban:'',vat_pct:15},SET.seller||{});
 
 /* ---------- sign in ---------- */
@@ -155,7 +164,7 @@ function render(){app.innerHTML=`<div class="top"><h1>🏢 لوحة مالك ا�
  app.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{TAB=b.dataset.t;render()});
  ({dash,co:companies,lead:leadsTab,inv:invoices,set:settingsTab})[TAB]($('#pane'))}
 function dash(p){const act=T.filter(t=>t.status==='active'),tr=T.filter(t=>t.status==='trial'),exp=T.filter(t=>t.status!=='suspended'&&daysLeft(t.active_until)!=null&&daysLeft(t.active_until)<=30).sort((a,b)=>daysLeft(a.active_until)-daysLeft(b.active_until));
- const mrr=act.reduce((s,t)=>{const m=tMods(t),inc=planMods(t.plan);return s+(+planOf(t.plan).price||0)+(m?Object.keys(m).filter(k=>!inc.includes(k)&&!m[k]).reduce((a,k)=>a+addonPrice(k,t.schools_limit),0):0)},0),unpaid=INV.filter(i=>i.status==='unpaid'),y=new Date().getFullYear(),paidY=INV.filter(i=>i.status==='paid'&&String(i.paid_at||'').startsWith(String(y)));
+ const mrr=act.reduce((s,t)=>{const m=tMods(t),inc=planMods(t.plan);return s+(+planOf(t.plan).price||0)+(m?mkeys(m).filter(k=>!inc.includes(k)&&!m[k]).reduce((a,k)=>a+addonPrice(k,t.schools_limit),0):0)},0),unpaid=INV.filter(i=>i.status==='unpaid'),y=new Date().getFullYear(),paidY=INV.filter(i=>i.status==='paid'&&String(i.paid_at||'').startsWith(String(y)));
  p.innerHTML=`<div class="kpis"><div class="kpi"><span>شركات نشطة</span><b>${act.length}</b><small>${tr.length} تجريبية · ${T.filter(t=>t.status==='suspended').length} موقوفة</small></div>
   <div class="kpi"><span>الإيراد الشهري المتكرر</span><b>${money(mrr)}</b><small>حسب باقات الشركات النشطة</small></div>
   <div class="kpi"><span>فواتير غير مدفوعة</span><b style="color:${unpaid.length?'var(--bad)':'var(--ok)'}">${money(unpaid.reduce((s,i)=>s+ +i.total,0))}</b><small>${unpaid.length} فاتورة</small></div>
@@ -231,7 +240,7 @@ function tenantDlg(t,pre){const isNew=!t;const lead=pre&&pre.lead;t=t||Object.as
   o.url=o.url.replace(/\/+$/,'');o.schools_limit=+o.schools_limit||0;o.active_until=o.active_until||null;o.logo=logo||null;o.updated_at=new Date().toISOString();
   let lic=null;
   if(!isNew&&q('[data-mp]')){const mods=readPicker(d,o.plan),same=o.plan===t.plan&&(+o.schools_limit||0)===(+t.schools_limit||0)&&(o.active_until||'')===(t.active_until||'')&&JSON.stringify(mods)===mods0;
-   if(!same){if(!Object.keys(mods).length&&!confirm('لم يبقَ أي جزء مفتوح لهذه الشركة — ستعمل بالأساسيات فقط. متابعة؟'))return;if(!o.active_until){showSaveError('اختر تاريخ «الاشتراك حتى» — كود التفعيل يحتاجه');return}o.modules=mods;try{lic=await signCode(t,o.plan,o.schools_limit,o.active_until,'e-'+crypto.getRandomValues(new Uint32Array(2)).join(''),mods)}catch(e){showSaveError('تعذر توليد كود التفعيل: '+e.message);return}}}
+   if(!same){if(!mkeys(mods).length&&!confirm('لم يبقَ أي جزء مفتوح لهذه الشركة — ستعمل بالأساسيات فقط. متابعة؟'))return;if(!o.active_until){showSaveError('اختر تاريخ «الاشتراك حتى» — كود التفعيل يحتاجه');return}o.modules=mods;try{lic=await signCode(t,o.plan,o.schools_limit,o.active_until,'e-'+crypto.getRandomValues(new Uint32Array(2)).join(''),mods)}catch(e){showSaveError('تعذر توليد كود التفعيل: '+e.message);return}}}
   save.disabled=true;
   let saved,auto=false;
   try{
@@ -361,12 +370,12 @@ function settingsTab(p){const s=seller();p.innerHTML=`<div class="card"><h3>📦
  <div class="card"><h3>🏷️ بيانات البائع في الفواتير</h3><div class="two"><label class="f">الاسم<input data-s="name" value="${esc(s.name)}"></label><label class="f">الرقم الضريبي<input data-s="vat_no" dir="ltr" value="${esc(s.vat_no)}"></label></div>
  <div class="two"><label class="f">العنوان<input data-s="address" value="${esc(s.address)}"></label><label class="f">الآيبان<input data-s="iban" dir="ltr" value="${esc(s.iban)}"></label></div><label class="f" style="max-width:220px">نسبة الضريبة %<input data-s="vat_pct" value="${esc(s.vat_pct)}"></label>
  <div class="row" style="margin-top:8px"><button class="b p" id="ss">💾 حفظ</button></div></div>`;
- const L=plans().map(x=>Object.assign({},x,{modules:planMods(x.k)}));
+ const L=plans().map(x=>Object.assign({},x,{modules:planMods(x.k),mv:MV}));
  p.querySelectorAll('[data-pm]').forEach(c=>c.onchange=()=>{const x=L[+c.dataset.i];x.modules=MODS.map(m=>m[0]).filter(k=>p.querySelector(`[data-pm="${k}"][data-i="${c.dataset.i}"]`).checked)});
  $('#as').onclick=async()=>{const A=MODS.map(([k])=>({k,base:+p.querySelector(`[data-ad=base][data-k2="${k}"]`).value||0,per_school:+p.querySelector(`[data-ad=per_school][data-k2="${k}"]`).value||0}));try{await API.saveSetting('addons',A);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}};
  p.querySelectorAll('[data-p]').forEach(i=>i.oninput=()=>{const v=i.dataset.p==='max'||i.dataset.p==='price'?+i.value||0:S(i.value);L[+i.dataset.i][i.dataset.p]=v});
  p.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{L.splice(+b.dataset.rm,1);SET.plans=L;settingsTab(p)});
- $('#pa').onclick=()=>{L.push({k:'plan'+(L.length+1),name:'باقة جديدة',max:100,price:0,modules:['tickets']});SET.plans=L;settingsTab(p)};
+ $('#pa').onclick=()=>{L.push({k:'plan'+(L.length+1),name:'باقة جديدة',max:100,price:0,modules:['tickets'],mv:MV});SET.plans=L;settingsTab(p)};
  $('#ps').onclick=async()=>{if(L.some(x=>!/^[a-z0-9_-]+$/.test(x.k))||new Set(L.map(x=>x.k)).size!==L.length){toast('رموز الباقات: إنجليزية صغيرة وغير مكررة',1);return}try{await API.saveSetting('plans',L);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}};
  $('#sts').onclick=async()=>{const o={};p.querySelectorAll('[data-st]').forEach(i=>o[i.dataset.st]=i.type==='checkbox'?i.checked:S(i.value));o.demo_code=o.demo_code.toLowerCase();try{await API.saveSetting('site',o);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}};
  $('#ss').onclick=async()=>{const o={};p.querySelectorAll('[data-s]').forEach(i=>o[i.dataset.s]=i.dataset.s==='vat_pct'?+i.value||0:S(i.value));try{await API.saveSetting('seller',o);await reload();toast('تم الحفظ')}catch(e){toast(ERR(e.message),1)}}}
