@@ -22351,3 +22351,42 @@ revoke all on function public.fm_cert_cfg(), public.fm_cert_person(uuid), public
 revoke all on function public.fm_wo_cert_check(uuid, text) from public, anon;
 grant execute on function public.fm_wo_cert_check(uuid, text) to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 148) V431 — conditional template fields: a field / photo slot shows only for a given answer ----------
+-- A head field, item field or photo slot may carry sf (the id of another field of the same place, or «__res» = the item's result)
+-- and sv (the value(s) that show it, «|» between several). fm_form_show(def, vals, res) decides; fm_wo_form_check skips hidden ones.
+create or replace function public.fm_form_show(d jsonb, vals jsonb, res text) returns boolean language sql immutable as $$
+  select coalesce(nullif(btrim(d->>'sf'),''), '') = ''
+      or btrim(case when d->>'sf' = '__res' then coalesce(res,'') else coalesce(vals->>(d->>'sf'),'') end)
+         = any(array(select btrim(x) from unnest(string_to_array(coalesce(d->>'sv',''), '|')) x)) $$;
+create or replace function public.fm_wo_form_check() returns trigger language plpgsql security definer set search_path = public as $$
+declare f jsonb; it jsonb; i int := -1; r text; h jsonb; s jsonb; rb text; ra text;
+begin
+  if new.status <> 'done' or old.status = 'done' or jsonb_typeof(new.form) is distinct from 'object' then return new; end if;
+  f := new.form; rb := public.fm_wo_rule(f, 'before'); ra := public.fm_wo_rule(f, 'after');
+  for h in select value from jsonb_array_elements(case when jsonb_typeof(f->'head') = 'array' then f->'head' else '[]'::jsonb end) loop
+    if coalesce((h->>'req')::boolean, false) and public.fm_form_show(h, coalesce(new.form_vals,'{}'::jsonb), null)
+       and coalesce(trim(new.form_vals->>(h->>'id')),'') = '' then
+      raise exception 'form head required: %', coalesce(h->>'l', h->>'id'); end if;
+  end loop;
+  for it in select value from jsonb_array_elements(coalesce(new.checklist,'[]'::jsonb)) loop
+    i := i + 1;
+    if coalesce(it->>'k','') <> '' then continue; end if;
+    r := coalesce(it->>'res','');
+    if r = 'na' then continue; end if;
+    for h in select value from jsonb_array_elements(case when jsonb_typeof(f->'fields') = 'array' then f->'fields' else '[]'::jsonb end) loop
+      if coalesce((h->>'req')::boolean, false) and public.fm_form_show(h, coalesce(it->'fv','{}'::jsonb), r)
+         and coalesce(trim(it->'fv'->>(h->>'id')),'') = '' then
+        raise exception 'form field required: % %', i + 1, coalesce(h->>'l', h->>'id'); end if;
+    end loop;
+    for s in select value from jsonb_array_elements(case when jsonb_typeof(f->'photos') = 'array' then f->'photos' else '[]'::jsonb end) loop
+      if (case when coalesce(s->>'k','before') = 'after' then ra else rb end) is not null then continue; end if;
+      if not public.fm_form_show(s, coalesce(it->'fv','{}'::jsonb), r) then continue; end if;
+      if (s->>'req' = 'always' or (s->>'req' = 'issue' and r in ('fix','fixed')))
+         and not exists (select 1 from public.wo_photos p where p.wo_id = new.id and p.item = i and p.tag = s->>'id') then
+        raise exception 'form photo required: % %', i + 1, coalesce(s->>'l', s->>'id'); end if;
+    end loop;
+  end loop;
+  return new;
+end $$;
+notify pgrst, 'reload schema';
