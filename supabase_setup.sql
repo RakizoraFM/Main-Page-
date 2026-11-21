@@ -22448,3 +22448,78 @@ revoke all on function public.fm_tpl_ver_trg(), public.fm_tpl_can_appr() from pu
 revoke all on function public.fm_tpl_approve(uuid, boolean, text), public.fm_tpl_info(), public.fm_tpl_cfg() from public, anon;
 grant execute on function public.fm_tpl_approve(uuid, boolean, text), public.fm_tpl_info(), public.fm_tpl_cfg(), public.fm_tpl_can_appr() to authenticated;
 notify pgrst, 'reload schema';
+
+-- ---------- 150) V436 — tickets deleted by a reset stay deleted (tombstones checked on the server) ----------
+-- The owner wiped the tickets many times and they came back: a device (another tab, the installed app, an old cached version, a Google
+-- Sheets source) still held the old rows and pushed them again — the V200 guard ran only in the newest page and took any file choice as
+-- «fresh». Now the database itself remembers every ticket the reset deleted (fm_tk_tombs, written by an after-delete trigger while
+-- fm.wipe = '1') and a before-insert trigger on tickets / ticket_work silently skips a tombstoned ticket, whatever client sends it. A ticket
+-- comes back only when the uploader confirms it: fm_tickets_import436(rows, revive) with revive = true (session flag fm.tk_revive) removes the
+-- tombstones of the rows sent. fm_tickets_import436 = fm_tickets_import232 + skipped_wiped (how many rows were refused).
+create table if not exists public.fm_tk_tombs (region text not null, ticket_id text not null, wiped_at timestamptz not null default now(), primary key (region, ticket_id));
+alter table public.fm_tk_tombs enable row level security;
+revoke all on public.fm_tk_tombs from anon, authenticated;
+
+create or replace function public.fm_tk_tomb_on_del() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if coalesce(current_setting('fm.wipe', true), '') = '1' then
+    insert into public.fm_tk_tombs(region, ticket_id, wiped_at) values (old.region, old.ticket_id, now())
+      on conflict (region, ticket_id) do update set wiped_at = now();
+  end if;
+  return old;
+end $$;
+drop trigger if exists fm_tk_tomb_on_del on public.tickets;
+create trigger fm_tk_tomb_on_del after delete on public.tickets for each row execute function public.fm_tk_tomb_on_del();
+
+create or replace function public.fm_tk_tomb_guard() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.fm_tk_tombs t where t.region = new.region and t.ticket_id = new.ticket_id) then return new; end if;
+  if tg_table_name = 'tickets' and coalesce(current_setting('fm.tk_revive', true), '') = '1' then
+    delete from public.fm_tk_tombs t where t.region = new.region and t.ticket_id = new.ticket_id;
+    return new;
+  end if;
+  if tg_table_name = 'tickets' then
+    perform set_config('fm.tk_skip', (coalesce(nullif(current_setting('fm.tk_skip', true), ''), '0')::int + 1)::text, true);
+  end if;
+  return null;
+end $$;
+drop trigger if exists fm_tk_tomb_guard on public.tickets;
+create trigger fm_tk_tomb_guard before insert on public.tickets for each row execute function public.fm_tk_tomb_guard();
+do $do$ begin
+  if to_regclass('public.ticket_work') is not null then
+    execute 'drop trigger if exists fm_tk_tomb_guard on public.ticket_work';
+    execute 'create trigger fm_tk_tomb_guard before insert on public.ticket_work for each row execute function public.fm_tk_tomb_guard()';
+  end if;
+end $do$;
+
+create or replace function public.fm_tickets_import436(p_rows jsonb, p_revive boolean default false) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare res jsonb; k int;
+begin
+  perform set_config('fm.tk_skip', '0', true);
+  perform set_config('fm.tk_revive', case when coalesce(p_revive, false) then '1' else '' end, true);
+  res := public.fm_tickets_import232(p_rows);
+  perform set_config('fm.tk_revive', '', true);
+  k := coalesce(nullif(current_setting('fm.tk_skip', true), ''), '0')::int;
+  return res || jsonb_build_object('skipped_wiped', k, 'added', greatest(0, coalesce((res->>'added')::int, 0) - k), 'revived', coalesce(p_revive, false));
+end $$;
+-- deleted ticket ids of a region (uploaders / admin): the platform drops a device copy that still holds them
+create or replace function public.fm_tk_tomb_ids(p_region text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not (public.fm_role() = 'admin' or coalesce(public.fm_can_upload(p_region), false)) then raise exception 'not allowed'; end if;
+  return jsonb_build_object('n', (select count(*) from public.fm_tk_tombs where region = p_region), 'last', (select max(wiped_at) from public.fm_tk_tombs where region = p_region),
+    'ids', coalesce((select jsonb_agg(ticket_id) from (select ticket_id from public.fm_tk_tombs where region = p_region order by wiped_at desc limit 50000) s), '[]'::jsonb));
+end $$;
+-- forget the tombstones of a region (system admin): after this the old tickets may be uploaded again without the question
+create or replace function public.fm_tk_tomb_clear(p_region text) returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  if auth.uid() is null or not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  delete from public.fm_tk_tombs where region = p_region; get diagnostics n = row_count;
+  begin insert into public.fm_audit_log(actor, actor_name, action, target, details) values (auth.uid(), public.fm_me_name(), 'tk_tomb_clear', p_region, jsonb_build_object('n', n)); exception when others then null; end;
+  return n;
+end $$;
+revoke all on function public.fm_tk_tomb_on_del(), public.fm_tk_tomb_guard() from public, anon, authenticated;
+revoke all on function public.fm_tickets_import436(jsonb, boolean), public.fm_tk_tomb_ids(text), public.fm_tk_tomb_clear(text) from public, anon;
+grant execute on function public.fm_tickets_import436(jsonb, boolean), public.fm_tk_tomb_ids(text), public.fm_tk_tomb_clear(text) to authenticated;
+notify pgrst, 'reload schema';
