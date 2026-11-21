@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V434">
+<meta name="fm-version" content="V435">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -25809,10 +25809,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V434',date:'2026-11-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V435',date:'2026-11-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:"V435",d:"2026-11-21",t:"الرئيسية تبقى كما هي عند الفتح والعودة إليها",i:["قسم «📊 متابعة المشروع» وشريط الأهداف وبطاقة توقع الالتزام لا تختفي ثم تعود عند فتح الرئيسية أو الرجوع إليها من صفحة أخرى","آخر أرقام محفوظة تظهر بنفس شكل الرئيسية وتنسيقها حتى تكتمل الأرقام الحية"]},
 {v:"V434",d:"2026-11-21",t:"الرئيسية تفتح دون أن تتبدّل أمامك",i:["لوحة البلاغات القديمة لم تعد تظهر لثوانٍ أثناء تحميل المنصة قبل الرئيسية التشغيلية","النسخة المحفوظة من الرئيسية تبقى حتى يكتمل قسم «📊 متابعة المشروع» وتوقع الالتزام، فلا تنزاح الصفحة فجأة","قسم «📊 متابعة المشروع» يوضع في مكانه أسرع بعد الدخول"]},
 {"v": "V433", "d": "2026-11-21", "t": "فلاتر بيانات المبنى في لوحة القيادة", "i": ["زر «🏢 بيانات المبنى» بجانب نوع المبنى وحجمه: يفلتر البلاغات بالمرحلة، الزون، الملكية، حالة المبنى، مقاول النظافة ومقاول التكييف من قاعدة المدارس", "بطاقة المدرسة في تطبيق الميدان تعرض هذه البيانات والاستشاري بزر اتصال منذ F130"]},
 {"v": "V432", "d": "2026-11-21", "t": "إصدارات القوالب واعتمادها", "i": ["كل تعديل على قالب محفوظ يرفع رقم إصداره (v1، v2…) ويُحفظ الإصدار السابق، مع «🕘 الإصدارات» و«↩️ استرجاع»", "اعتماد القوالب (يفعّله مدير النظام): القالب المشترك الجديد أو المعدّل ينتظر اعتماد مدير المشروع / الجودة قبل أن يظهر للآخرين عند إنشاء الأوامر", "أمر العمل المنشأ من قالب مصمم يحمل اسم القالب ورقم إصداره، ويظهر في تفاصيل الأمر"]},
@@ -49549,15 +49550,21 @@ const loading=h=>!h||!h.children.length||/جارٍ قراءة المصدر/.test
 let saveT=0,shown=false,t0=Date.now(),done=false,want={};
 function save(){const h=host();if(!h||h.hidden||!ready(h)||!signed())return;const k=key();if(!k)return;
  if(!document.body.classList.contains('fm233-home-mode'))return;
- let html=h.innerHTML.replace(/\sid="[^"]*"/g,'').replace(/<canvas[\s\S]*?<\/canvas>/g,'').replace(/<script[\s\S]*?<\/script>/g,'');
+ let html=h.innerHTML.replace(/<canvas[\s\S]*?<\/canvas>/g,'').replace(/<script[\s\S]*?<\/script>/g,'');
  if(html.length>600000)return;const parts={c:!!h.querySelector('#fm345-cats .fm345-body *'),f:!!h.querySelector('#fm407-fc')};/* V434 */
  try{localStorage.setItem(k,JSON.stringify({at:Date.now(),html,parts}))}catch(e){}}
 function drop(){const s=document.getElementById('fm405-snap');if(s)s.remove();const h=host();if(h)h.classList.remove('fm405-hide');shown=false}
 function show(){if(done||shown)return;const h=host();if(!h||h.hidden||!document.body.classList.contains('fm233-home-mode')||!loading(h))return;
  const k=key();if(!k)return;let v=null;try{v=JSON.parse(localStorage.getItem(k)||'null')}catch(e){}if(!v||!v.html)return;
  const s=document.createElement('div');s.id='fm405-snap';const t=new Date(v.at).toLocaleString('ar-SA-u-ca-gregory',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
- s.innerHTML=`<div class="fm405-bar"><i></i><span>آخر أرقام محفوظة (${t}) — يتم تحديثها الآن…</span></div><div class="fm405-in" inert aria-hidden="true">${v.html}</div>`;
- h.parentNode.insertBefore(s,h);h.classList.add('fm405-hide');shown=true;want=v.parts||{}}
+ s.innerHTML=`<div class="fm405-bar"><i></i><span>آخر أرقام محفوظة (${t}) — يتم تحديثها الآن…</span></div><div class="fm405-in" inert aria-hidden="true"></div>`;
+ /* V435: the copy is drawn inside a shadow root with the home's own styles, so it looks like the live home and its ids stay out of the page */
+ const inn=s.querySelector('.fm405-in');let root=null;try{root=inn.attachShadow({mode:'open'})}catch(e){}
+ if(root){const css=[...document.querySelectorAll('style')].filter(x=>{const t=x.textContent||'';return t.length<400000&&/fm233|fm261|fm345|fm407|fm340|fm342|fm334|wfh|fm363|fm366|fm369/.test(t)}).map(x=>x.textContent).join('\n');
+  const links=[...document.querySelectorAll('link[rel=stylesheet]')].map(l=>'<link rel="stylesheet" href="'+String(l.href).replace(/"/g,'&quot;')+'">').join('');
+  root.innerHTML=links+'<style>'+css+'</style><main id="fm233-home" class="fm233-home" style="padding:0;max-width:none">'+v.html+'</main>'}
+ else inn.innerHTML=v.html.replace(/\sid="[^"]*"/g,'');
+ h.parentNode.insertBefore(s,h);h.classList.add('fm405-hide');shown=true;want=v.parts||{c:/fm345-hd/.test(v.html),f:/fm407-fc/.test(v.html)}}
 /* ready = read, and the cards hold numbers (or a source says it is unavailable) — not the «—» drawn right after sign-in */
 const ready=h=>{if(loading(h))return false;const st=[...h.querySelectorAll('.fm233-kpi strong')];return !st.length||st.some(x=>S(x.textContent)!=='—')||!!h.querySelector('.fm233-unavailable')};
 function check(){const h=host();if(!h)return;
@@ -49588,6 +49595,27 @@ window.fmV405={clear(){try{Object.keys(localStorage).filter(k=>k.startsWith('fm4
 
 
 
+<script id="fm-v435-home-keep">
+/* V435 — V233 redraws #fm233-home with innerHTML when it opens, on every return to the home and on each refresh. That wiped the
+   blocks other layers insert («📊 متابعة المشروع» #fm345-cats, the targets strip #fm261-strip, the forecast card #fm407-fc); their
+   own timers put them back 0.25–4 s later, recomputed, so the page looked like another page and then changed. A MutationObserver on
+   the home's children (a microtask: it runs before the browser paints) puts the same nodes back at once, in their places, with their
+   content as it was; the layers then find them connected and do nothing. window.fmV435 {keep}. */
+(function(){'use strict';if(window.__fm435)return;window.__fm435=1;
+const K={};let mo=null,host=null;
+function remember(h){['fm261-strip','fm407-fc','fm345-cats'].forEach(id=>{const n=h.querySelector(':scope > #'+id);if(n)K[id]=n})}
+function keep(){const h=document.getElementById('fm233-home');if(!h)return;
+ const s=K['fm261-strip'],f=K['fm407-fc'],c=K['fm345-cats'];
+ if(s&&s.parentNode!==h)h.insertBefore(s,h.firstChild);
+ if(f&&f.parentNode!==h){const a=h.querySelector(':scope > #fm261-strip');if(a)a.after(f);else h.insertBefore(f,h.firstChild)}
+ if(c&&c.parentNode!==h){let ref=h.querySelector(':scope > .fm233-toolbar');while(ref&&ref.nextElementSibling&&/fm233-unavailable/.test(ref.nextElementSibling.className))ref=ref.nextElementSibling;if(ref)ref.after(c)}
+ remember(h)}
+function watch(){const h=document.getElementById('fm233-home');if(!h)return;if(host===h)return;host=h;if(mo)mo.disconnect();
+ mo=new MutationObserver(()=>keep());mo.observe(h,{childList:true});remember(h)}
+setInterval(()=>{watch();const h=host;if(h)remember(h)},500);watch();
+window.fmV435={keep};
+})();
+</script>
 <style id="fm-v406-css">
 #fm406-page .k{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:0 0 12px}
 #fm406-page .k button{border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:10px;text-align:right;cursor:pointer;font:inherit}
