@@ -22278,3 +22278,76 @@ do $do$ begin
   end if;
 exception when others then raise notice 'pg_cron fm-v423-cleanup: %', sqlerrm; end $do$;
 notify pgrst, 'reload schema';
+
+-- ---------- 147) V430 — work that needs a valid certificate: warn or refuse assigning it to someone whose certificate expired ----------
+-- fm_settings.cert_rules {enabled (false), mode warn | block, rules [{label, match (regex on the order's title / description / checklist items),
+-- cert (regex on the person's qualification title)}]} — system admin writes it directly (defaults below when no rules are saved).
+-- The account is matched to the workforce register (fm_people334, V334) by emp_no = employee_code, else by the normalised full name / person_names
+-- (only when exactly one active person fits). fm_wo_cert_eval(user, text) → {known, need [labels], missing [{label, title?, expires_on?}]}:
+-- a rule applies when the order text matches; it is met by a qualification whose title matches and expires_on is null or ≥ today.
+-- Trigger fm_wo_cert_guard (before insert / update of assignee on work_orders): mode block + known person + something missing → «certificate
+-- required: <labels>». An unknown person (not in the register) is never blocked. fm_wo_cert_check(user, text) answers the dialogs before saving.
+create or replace function public.fm_cert_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', coalesce((public.fm_setting('cert_rules')->>'enabled')::boolean, false),
+    'mode', case when public.fm_setting('cert_rules')->>'mode' = 'block' then 'block' else 'warn' end,
+    'rules', coalesce(case when jsonb_typeof(public.fm_setting('cert_rules')->'rules') = 'array' and jsonb_array_length(public.fm_setting('cert_rules')->'rules') > 0 then public.fm_setting('cert_rules')->'rules' end,
+      '[{"label":"أعمال الكهرباء","match":"كهرب|لوح(ة|ات) (ال)?كهرباء|قواطع|محول","cert":"كهرب"},{"label":"المصاعد","match":"مصعد|مصاعد","cert":"مصعد|مصاعد"},{"label":"أنظمة الحريق","match":"حريق|طفاي|رشاش|إنذار","cert":"حريق|دفاع مدني|سلامة"},{"label":"العمل على المرتفعات","match":"سطح|أسطح|مرتفع|سقالة","cert":"مرتفع|سقال|سلامة"}]'::jsonb)) $$;
+
+create or replace function public.fm_cert_person(p_user uuid) returns uuid language sql stable security definer set search_path = public as $$
+  with a as (select pr.id, nullif(btrim(coalesce(pr.emp_no,'')),'') emp, public.fm_sdb_n(pr.full_name) fn,
+                    coalesce((select array_agg(public.fm_sdb_n(x)) from unnest(coalesce(pr.person_names,'{}')) x), '{}') pn
+               from public.profiles pr where pr.id = p_user),
+  c as (select p.id from public.fm_people334 p, a where p.active and a.emp is not null and lower(btrim(p.employee_code)) = lower(a.emp)),
+  n as (select p.id from public.fm_people334 p, a where p.active and (public.fm_sdb_n(p.full_name) = a.fn or public.fm_sdb_n(p.full_name) = any(a.pn)))
+  select coalesce((select id from c limit 1), case when (select count(*) from n) = 1 then (select id from n) end) $$;
+
+create or replace function public.fm_wo_cert_eval(p_user uuid, p_text text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare cfg jsonb := public.fm_cert_cfg(); r jsonb; pid uuid; need text[] := '{}'; miss jsonb := '[]'; q record; t text := coalesce(p_text,'');
+begin
+  if p_user is null or btrim(t) = '' then return jsonb_build_object('known', false, 'need', '[]'::jsonb, 'missing', '[]'::jsonb); end if;
+  for r in select * from jsonb_array_elements(cfg->'rules') loop
+    begin if t ~* (r->>'match') then need := need || (r->>'label'); end if; exception when others then null; end;
+  end loop;
+  if cardinality(need) = 0 then return jsonb_build_object('known', true, 'need', '[]'::jsonb, 'missing', '[]'::jsonb); end if;
+  begin pid := public.fm_cert_person(p_user); exception when others then pid := null; end;
+  if pid is null then return jsonb_build_object('known', false, 'need', to_jsonb(need), 'missing', '[]'::jsonb); end if;
+  for r in select * from jsonb_array_elements(cfg->'rules') loop
+    if not ((r->>'label') = any(need)) then continue; end if;
+    select qq.title, qq.expires_on into q from public.fm_workforce337_qualifications qq where qq.person_id = pid and qq.title ~* (r->>'cert')
+      order by (qq.expires_on is null) desc, qq.expires_on desc limit 1;
+    if not found then miss := miss || jsonb_build_object('label', r->>'label');
+    elsif q.expires_on is not null and q.expires_on < (now() at time zone 'Asia/Riyadh')::date then miss := miss || jsonb_build_object('label', r->>'label', 'title', q.title, 'expires_on', q.expires_on); end if;
+  end loop;
+  return jsonb_build_object('known', true, 'need', to_jsonb(need), 'missing', miss);
+end $$;
+
+create or replace function public.fm_wo_cert_text(w public.work_orders) returns text language sql stable as $$
+  select coalesce(w.title,'') || ' ' || coalesce(w.description,'') || ' ' || coalesce((select string_agg(coalesce(x->>'t','') || ' ' || coalesce(x->>'g',''), ' ')
+    from jsonb_array_elements(case when jsonb_typeof(w.checklist) = 'array' then w.checklist else '[]'::jsonb end) x), '') $$;
+
+create or replace function public.fm_wo_cert_guard() returns trigger language plpgsql security definer set search_path = public as $$
+declare cfg jsonb; e jsonb;
+begin
+  if new.assignee is null or (tg_op = 'UPDATE' and new.assignee is not distinct from old.assignee) then return new; end if;
+  cfg := public.fm_cert_cfg();
+  if not (cfg->>'enabled')::boolean or cfg->>'mode' <> 'block' then return new; end if;
+  e := public.fm_wo_cert_eval(new.assignee, public.fm_wo_cert_text(new));
+  if (e->>'known')::boolean and jsonb_array_length(e->'missing') > 0 then
+    raise exception 'certificate required: %', (select string_agg(x->>'label', '، ') from jsonb_array_elements(e->'missing') x);
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_wo_cert_guard on public.work_orders;
+create trigger fm_wo_cert_guard before insert or update of assignee on public.work_orders for each row execute function public.fm_wo_cert_guard();
+
+create or replace function public.fm_wo_cert_check(p_user uuid, p_text text) returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare cfg jsonb := public.fm_cert_cfg();
+begin
+  if auth.uid() is null or public.fm_role() in ('pending','viewer') then raise exception 'not allowed'; end if;
+  if not (cfg->>'enabled')::boolean then return jsonb_build_object('enabled', false); end if;
+  return public.fm_wo_cert_eval(p_user, p_text) || jsonb_build_object('enabled', true, 'mode', cfg->>'mode');
+end $$;
+revoke all on function public.fm_cert_cfg(), public.fm_cert_person(uuid), public.fm_wo_cert_eval(uuid, text), public.fm_wo_cert_text(public.work_orders), public.fm_wo_cert_guard() from public, anon, authenticated;
+revoke all on function public.fm_wo_cert_check(uuid, text) from public, anon;
+grant execute on function public.fm_wo_cert_check(uuid, text) to authenticated;
+notify pgrst, 'reload schema';
