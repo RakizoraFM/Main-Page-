@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl" data-theme="light">
 <head>
-<meta name="fm-version" content="V433">
+<meta name="fm-version" content="V434">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="RakizoraFM">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
+<style id="fm-v434-early-css">body.fm233-home-mode #fm233-ticket-analysis{display:none}html:not(.fm434-ok) body.fm233-home-mode::after{content:"⏳ جارٍ تحميل لوحة القيادة…";position:fixed;top:45%;left:0;right:300px;text-align:center;font:700 16px Cairo,Tahoma,sans-serif;color:#64748b;pointer-events:none}@media(max-width:900px){html:not(.fm434-ok) body.fm233-home-mode::after{right:0}}</style>
 <script id="fm-v116-health-capture">
 /* V116 — must stay the FIRST script: records every error raised while the platform loads */
 (function(){
@@ -23,6 +24,13 @@
   window.addEventListener('unhandledrejection',function(e){var r=e.reason;add('promise',r&&r.message||r,'')});
   var ce=console.error;console.error=function(){try{add('console',[].map.call(arguments,function(a){return a&&a.message||String(a)}).join(' '),'')}catch(x){}return ce.apply(console,arguments)};
 })();
+</script>
+<script id="fm-v434-early">
+/* V434: the 1.8 MB page is painted while it is still being read. The body starts in home mode, but the rule that hides the old
+   ticket dashboard (#fm233-ticket-analysis) is in the V233 style near the end of the file, so that dashboard showed for a few seconds
+   before the operational home. The early style above applies the same rule from the start and shows «⏳ جارٍ تحميل لوحة القيادة…»
+   until the home is drawn (DOMContentLoaded, when V233 builds #fm233-home), at the latest after 12 s. */
+(function(){var ok=function(){document.documentElement.classList.add('fm434-ok')};document.addEventListener('DOMContentLoaded',function(){setTimeout(ok,0)});setTimeout(ok,12000)})();
 </script>
 <script id="fm-v165-device-owner">
 /* V165: the data cached on this device belongs to one account. When another account signs in here, the previous
@@ -25801,10 +25809,11 @@ window.fmV91ExportContractorsExcel.__v115=true;window.fmV91ExportContractorsPDF.
 <script id="fm-v116-version-log">
 (function(){
 'use strict';
-const APP={version:'V433',date:'2026-11-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
+const APP={version:'V434',date:'2026-11-21',name:'RakizoraFM — منصة تحليل بلاغات الصيانة'};
 window.FM_APP_VERSION=APP.version;
 Object.defineProperty(window,'FM_CHANGELOG',{configurable:true,get:()=>CHANGELOG});
 const CHANGELOG=[
+{v:"V434",d:"2026-11-21",t:"الرئيسية تفتح دون أن تتبدّل أمامك",i:["لوحة البلاغات القديمة لم تعد تظهر لثوانٍ أثناء تحميل المنصة قبل الرئيسية التشغيلية","النسخة المحفوظة من الرئيسية تبقى حتى يكتمل قسم «📊 متابعة المشروع» وتوقع الالتزام، فلا تنزاح الصفحة فجأة","قسم «📊 متابعة المشروع» يوضع في مكانه أسرع بعد الدخول"]},
 {"v": "V433", "d": "2026-11-21", "t": "فلاتر بيانات المبنى في لوحة القيادة", "i": ["زر «🏢 بيانات المبنى» بجانب نوع المبنى وحجمه: يفلتر البلاغات بالمرحلة، الزون، الملكية، حالة المبنى، مقاول النظافة ومقاول التكييف من قاعدة المدارس", "بطاقة المدرسة في تطبيق الميدان تعرض هذه البيانات والاستشاري بزر اتصال منذ F130"]},
 {"v": "V432", "d": "2026-11-21", "t": "إصدارات القوالب واعتمادها", "i": ["كل تعديل على قالب محفوظ يرفع رقم إصداره (v1، v2…) ويُحفظ الإصدار السابق، مع «🕘 الإصدارات» و«↩️ استرجاع»", "اعتماد القوالب (يفعّله مدير النظام): القالب المشترك الجديد أو المعدّل ينتظر اعتماد مدير المشروع / الجودة قبل أن يظهر للآخرين عند إنشاء الأوامر", "أمر العمل المنشأ من قالب مصمم يحمل اسم القالب ورقم إصداره، ويظهر في تفاصيل الأمر"]},
 {"v": "V431", "d": "2026-11-21", "t": "حقول مشروطة في القوالب", "i": ["في مصمم القوالب لكل حقل أو صورة «يظهر عندما»: حقل آخر بقيمة معيّنة (مثل «يوجد تسريب؟ = نعم») أو نتيجة البند (مثل «يحتاج إصلاح»)", "في تطبيق الميدان يظهر الحقل أو خانة الصورة فقط عند تلك الإجابة، ويختفي فوراً عند تغييرها", "الحقل الإلزامي المخفي لا يمنع «تم الإجراء» — يصبح إلزامياً فقط عندما يظهر"]},
@@ -44889,7 +44898,8 @@ function place(){const home=document.getElementById('fm233-home');if(!home||home
  const fresh=!box.isConnected;if(ref){if(ref.nextElementSibling!==box)ref.after(box)}else if(box.parentNode!==home)home.prepend(box);
  if(fresh||(!busy&&region()!==lastReg))paint()}
 window.fmV345Home={paint:()=>paint(true),place,retab:()=>{if(box)box.querySelector('.fm345-tabs').innerHTML=tabs()},cur:()=>cur,box:()=>box,setCat:k=>{if(!CATS.some(c=>c.k===k&&!c.soon))return false;cur=k;if(box){box.querySelector('.fm345-tabs').innerHTML=tabs();paint()}return true}};   /* V366: cur / box / setCat */
-setInterval(place,1200);document.addEventListener('DOMContentLoaded',()=>setTimeout(place,800));
+setInterval(place,1200);document.addEventListener('DOMContentLoaded',()=>setTimeout(place,0));
+{const t0=Date.now(),q=setInterval(()=>{place();if(Date.now()-t0>30000)clearInterval(q)},250)}   /* V434: sooner while the page opens */
 })();
 </script>
 <script id="fm-v346-license">(function(){
@@ -49536,22 +49546,26 @@ const host=()=>document.getElementById('fm233-home');
 const signed=()=>{const c=C();return !!(c&&c.state&&c.state.on&&c.state.profile&&c.state.profile.role!=='pending')};
 /* still loading: empty, a source being read, or the cloud configured but the sign-in not finished yet */
 const loading=h=>!h||!h.children.length||/جارٍ قراءة المصدر/.test(h.textContent||'')||(!!(C()&&C().configured&&C().configured())&&!signed());
-let saveT=0,shown=false,t0=Date.now(),done=false;
+let saveT=0,shown=false,t0=Date.now(),done=false,want={};
 function save(){const h=host();if(!h||h.hidden||!ready(h)||!signed())return;const k=key();if(!k)return;
  if(!document.body.classList.contains('fm233-home-mode'))return;
  let html=h.innerHTML.replace(/\sid="[^"]*"/g,'').replace(/<canvas[\s\S]*?<\/canvas>/g,'').replace(/<script[\s\S]*?<\/script>/g,'');
- if(html.length>600000)return;try{localStorage.setItem(k,JSON.stringify({at:Date.now(),html}))}catch(e){}}
+ if(html.length>600000)return;const parts={c:!!h.querySelector('#fm345-cats .fm345-body *'),f:!!h.querySelector('#fm407-fc')};/* V434 */
+ try{localStorage.setItem(k,JSON.stringify({at:Date.now(),html,parts}))}catch(e){}}
 function drop(){const s=document.getElementById('fm405-snap');if(s)s.remove();const h=host();if(h)h.classList.remove('fm405-hide');shown=false}
 function show(){if(done||shown)return;const h=host();if(!h||h.hidden||!document.body.classList.contains('fm233-home-mode')||!loading(h))return;
  const k=key();if(!k)return;let v=null;try{v=JSON.parse(localStorage.getItem(k)||'null')}catch(e){}if(!v||!v.html)return;
  const s=document.createElement('div');s.id='fm405-snap';const t=new Date(v.at).toLocaleString('ar-SA-u-ca-gregory',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
  s.innerHTML=`<div class="fm405-bar"><i></i><span>آخر أرقام محفوظة (${t}) — يتم تحديثها الآن…</span></div><div class="fm405-in" inert aria-hidden="true">${v.html}</div>`;
- h.parentNode.insertBefore(s,h);h.classList.add('fm405-hide');shown=true}
+ h.parentNode.insertBefore(s,h);h.classList.add('fm405-hide');shown=true;want=v.parts||{}}
 /* ready = read, and the cards hold numbers (or a source says it is unavailable) — not the «—» drawn right after sign-in */
 const ready=h=>{if(loading(h))return false;const st=[...h.querySelectorAll('.fm233-kpi strong')];return !st.length||st.some(x=>S(x.textContent)!=='—')||!!h.querySelector('.fm233-unavailable')};
 function check(){const h=host();if(!h)return;
- if(shown){const k=key();if(ready(h)||Date.now()-t0>40000||!h.isConnected||(signed()&&!(k&&localStorage.getItem(k)))){drop();done=true;}}
+ if(shown){const k=key();if(ready(h)&&full(h)||Date.now()-t0>40000||!h.isConnected||(signed()&&!(k&&localStorage.getItem(k)))){drop();done=true;}}
  else if(!done&&Date.now()-t0<40000)show()}
+/* V434: the snapshot also waits for the blocks that are added a few seconds later («📊 متابعة المشروع» once its first tab has
+   read its data, the month-end forecast card) when the saved copy had them, so the page does not jump when it is swapped */
+const full=h=>{if(want.c){const b=h.querySelector('#fm345-cats .fm345-body');if(!b||!b.children.length||/جار.?\s*قراءة|جارٍ التحميل/.test(b.textContent||''))return false}if(want.f&&!h.querySelector('#fm407-fc'))return false;return true};
 /* a change of the live home: check, and save 0.9 s after the last change (the timer is reset only by real changes) */
 function changed(){check();clearTimeout(saveT);saveT=setTimeout(save,900)}
 let mo=null;const watch=()=>{const h=host();if(!h||mo)return;mo=new MutationObserver(changed);mo.observe(h,{childList:true,subtree:true,characterData:true});changed()};
