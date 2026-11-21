@@ -21282,3 +21282,61 @@ begin
   return new;
 end $$;
 notify pgrst, 'reload schema';
+
+-- ---------- 146) V422 — template versions and approval ----------
+-- wo_templates: ver (1, +1 on every change of name / data), status approved / pending / rejected, appr_name / appr_at / appr_note,
+-- hist [{ver, at, by, name, data}] (the previous 30 versions). fm_settings.tpl_appr {enabled false, titles [project_manager, qa_manager]}:
+-- while enabled a new or changed shared template waits for approval (the V150 picker hides it from others). Existing rows count as approved.
+alter table public.wo_templates add column if not exists ver int not null default 1;
+alter table public.wo_templates add column if not exists status text not null default 'approved';
+alter table public.wo_templates add column if not exists appr_name text;
+alter table public.wo_templates add column if not exists appr_at timestamptz;
+alter table public.wo_templates add column if not exists appr_note text;
+alter table public.wo_templates add column if not exists hist jsonb not null default '[]'::jsonb;
+create or replace function public.fm_tpl_cfg() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', false, 'titles', '["project_manager","qa_manager"]'::jsonb) || coalesce(public.fm_setting('tpl_appr'), '{}'::jsonb) $$;
+create or replace function public.fm_tpl_can_appr() returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin'
+    or coalesce(public.fm_tpl_cfg()->'titles', '[]'::jsonb) ? coalesce(public.fm_my_pos(), '')) $$;
+create or replace function public.fm_tpl_ver_trg() returns trigger language plpgsql security definer set search_path = public as $$
+declare on_ boolean := coalesce((public.fm_tpl_cfg()->>'enabled')::boolean, false); nm text;
+begin
+  if current_setting('fm.tpl_appr', true) = '1' then return new; end if;
+  select coalesce(full_name, email) into nm from public.profiles where id = auth.uid();
+  if tg_op = 'INSERT' then
+    new.ver := 1; new.hist := '[]'; new.status := case when on_ and new.shared then 'pending' else 'approved' end; new.appr_name := null; new.appr_at := null;
+    return new;
+  end if;
+  if new.data is distinct from old.data or new.name is distinct from old.name then
+    new.ver := old.ver + 1;
+    new.hist := (jsonb_build_array(jsonb_build_object('ver', old.ver, 'at', old.updated_at, 'by', coalesce(old.appr_name, old.created_by_name), 'name', old.name, 'data', old.data)) || coalesce(old.hist,'[]'::jsonb));
+    if jsonb_array_length(new.hist) > 30 then new.hist := (select jsonb_agg(x) from (select x from jsonb_array_elements(new.hist) with ordinality t(x, o) where o <= 30 order by o) z); end if;
+    new.status := case when on_ and new.shared then 'pending' else 'approved' end; new.appr_name := null; new.appr_at := null; new.appr_note := null;
+  else
+    new.ver := old.ver; new.hist := old.hist; new.status := old.status; new.appr_name := old.appr_name; new.appr_at := old.appr_at; new.appr_note := old.appr_note;
+  end if;
+  return new;
+end $$;
+drop trigger if exists fm_tpl_ver on public.wo_templates;
+create trigger fm_tpl_ver before insert or update on public.wo_templates for each row execute function public.fm_tpl_ver_trg();
+create or replace function public.fm_tpl_approve(p_id uuid, p_ok boolean, p_note text default null) returns jsonb language plpgsql security definer set search_path = public as $$
+declare t public.wo_templates; nm text;
+begin
+  if not public.fm_tpl_can_appr() then raise exception 'not allowed'; end if;
+  select * into t from public.wo_templates where id = p_id for update;
+  if not found then raise exception 'not found'; end if;
+  if t.created_by = auth.uid() and public.fm_role() <> 'admin' then raise exception 'self approval'; end if;
+  if not p_ok and length(btrim(coalesce(p_note,''))) < 3 then raise exception 'note required'; end if;
+  select coalesce(full_name, email) into nm from public.profiles where id = auth.uid();
+  perform set_config('fm.tpl_appr', '1', true);
+  update public.wo_templates set status = case when p_ok then 'approved' else 'rejected' end, appr_name = nm, appr_at = now(),
+    appr_note = left(nullif(btrim(coalesce(p_note,'')),''), 500) where id = p_id;
+  perform set_config('fm.tpl_appr', '', true);
+  return jsonb_build_object('ok', true, 'ver', t.ver);
+end $$;
+create or replace function public.fm_tpl_info() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('cfg', public.fm_tpl_cfg(), 'can_appr', public.fm_tpl_can_appr(), 'can_set', public.fm_role() = 'admin') $$;
+revoke all on function public.fm_tpl_ver_trg(), public.fm_tpl_can_appr() from public, anon;
+revoke all on function public.fm_tpl_approve(uuid, boolean, text), public.fm_tpl_info(), public.fm_tpl_cfg() from public, anon;
+grant execute on function public.fm_tpl_approve(uuid, boolean, text), public.fm_tpl_info(), public.fm_tpl_cfg(), public.fm_tpl_can_appr() to authenticated;
+notify pgrst, 'reload schema';
