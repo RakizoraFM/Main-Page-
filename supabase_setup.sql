@@ -21243,3 +21243,951 @@ begin
   return id_;
 end $$;
 notify pgrst, 'reload schema';
+
+-- ---------- 145) V422 — health of the scheduled jobs (pg_cron), the outgoing calls (pg_net) and the send queues; alert the system admins ----------
+-- fm_jobs_health() (system admin): every cron job with its schedule, last run / status / message, runs and failures in 24 h, «late» when the last
+-- start is older than 2 × the expected interval + 5 min; the expected platform jobs that are not scheduled («missing»); pg_net answers of 24 h by
+-- status; stuck items of the push / WhatsApp / report queues. Each source in its own exception block (a project without pg_cron still answers).
+-- fm_v422_watch() (pg_cron fm-v422-watch every 30 min): when something is failing / late / missing, one alert (kind sys, hash jobs) per day to
+-- each active system admin, and again the same day only when the list of problems changes.
+create table if not exists public.fm_jobs_alerts (day date not null, sig text not null, at timestamptz not null default now(), primary key (day, sig));
+alter table public.fm_jobs_alerts enable row level security;
+revoke all on public.fm_jobs_alerts from anon, authenticated;
+
+create or replace function public.fm_cron_every(p_s text) returns int language plpgsql immutable as $$
+declare f text[] := regexp_split_to_array(btrim(coalesce(p_s,'')), '\s+');
+begin
+  if array_length(f,1) is distinct from 5 then return null; end if;
+  if f[1] ~ '^\*$' and f[2] = '*' then return 1; end if;
+  if f[1] ~ '^\*/\d+$' and f[2] = '*' then return substr(f[1],3)::int; end if;
+  if f[1] ~ '^\d+$' and f[2] = '*' then return 60; end if;
+  if f[1] ~ '^\d+$' and f[2] ~ '^\*/\d+$' then return 60 * substr(f[2],3)::int; end if;
+  if f[1] ~ '^\d+$' and f[2] ~ '^\d+$' and f[3] = '*' and f[5] = '*' then return 1440; end if;
+  if f[1] ~ '^\d+$' and f[2] ~ '^\d+$' and f[3] = '*' then return 10080; end if;
+  if f[1] ~ '^\d+$' and f[2] ~ '^\d+$' and f[3] ~ '^\d+$' then return 44640; end if;
+  return null;
+end $$;
+
+create or replace function public.fm_jobs_known() returns text[] language sql immutable as $$
+  select array['fm-wo-schedules','fm-push-flush','fm-push-daily','fm-wa-flush','fm-sla-warn','fm-sla-escalation231','fm-reports','fm-backup-srv',
+               'fm-weekly','fm-badges','fm-wo-return','fm-wh-low','fm-wh-auto-po','fm-v371-tick','fm-v389-digest','fm-v415-oncall','fm-v382-sr','fm-v395-daily']
+$$;
+
+create or replace function public.fm_jobs_scan() returns jsonb language plpgsql security definer set search_path = public as $$
+declare jobs jsonb := '[]'; nets jsonb := null; q jsonb := '{}'; has_cron boolean; miss text[] := '{}'; n int;
+begin
+  has_cron := to_regclass('cron.job') is not null;
+  if has_cron then
+    begin
+      execute $q$
+        select coalesce(jsonb_agg(x order by x->>'name'), '[]') from (
+          select jsonb_build_object('id', j.jobid, 'name', j.jobname, 'schedule', j.schedule, 'active', j.active, 'cmd', left(j.command, 160),
+            'every', public.fm_cron_every(j.schedule),
+            'last_at', l.start_time, 'last_end', l.end_time, 'last_status', l.status, 'last_msg', left(l.return_message, 300),
+            'runs24', coalesce(c.runs,0), 'fail24', coalesce(c.fails,0), 'last_fail_msg', left(c.fmsg, 300),
+            'late', j.active and public.fm_cron_every(j.schedule) is not null
+                    and coalesce(l.start_time, '-infinity'::timestamptz) < now() - make_interval(mins => 2 * public.fm_cron_every(j.schedule) + 5)
+                    and j.jobid in (select jobid from cron.job)) x
+          from cron.job j
+          left join lateral (select d.start_time, d.end_time, d.status, d.return_message from cron.job_run_details d where d.jobid = j.jobid order by d.start_time desc limit 1) l on true
+          left join lateral (select count(*) runs, count(*) filter (where d.status = 'failed') fails,
+                                    (array_agg(d.return_message order by d.start_time desc) filter (where d.status = 'failed'))[1] fmsg
+                               from cron.job_run_details d where d.jobid = j.jobid and d.start_time > now() - interval '24 hours') c on true) s $q$ into jobs;
+    exception when others then jobs := jsonb_build_array(jsonb_build_object('name','—','err', sqlerrm)); end;
+    begin
+      execute 'select coalesce(array_agg(k), ''{}'') from unnest(public.fm_jobs_known()) k where not exists (select 1 from cron.job j where j.jobname = k)' into miss;
+    exception when others then miss := '{}'; end;
+  end if;
+  if to_regclass('net._http_response') is not null then
+    begin
+      execute $q$ select jsonb_build_object('total', count(*), 'ok', count(*) filter (where status_code between 200 and 299),
+                   'bad', count(*) filter (where status_code is not null and status_code not between 200 and 299),
+                   'err', count(*) filter (where status_code is null and error_msg is not null),
+                   'last_bad', (select jsonb_build_object('at', r.created, 'code', r.status_code, 'msg', left(coalesce(r.error_msg, r.content::text),200))
+                                  from net._http_response r where (r.status_code is null and r.error_msg is not null) or r.status_code not between 200 and 299 order by r.created desc limit 1))
+                 from net._http_response where created > now() - interval '24 hours' $q$ into nets;
+    exception when others then nets := jsonb_build_object('err', sqlerrm); end;
+  end if;
+  begin select count(*) into n from public.fm_push_queue where sent_at is null and created_at < now() - interval '15 minutes' and coalesce(tries,0) < 5; q := q || jsonb_build_object('push', n); exception when others then null; end;
+  begin select count(*) into n from public.fm_wa_queue where status = 'queued' and created_at < now() - interval '15 minutes'; q := q || jsonb_build_object('wa', n); exception when others then null; end;
+  begin select count(*) into n from public.fm_report_runs where status in ('queued','sending') and created_at < now() - interval '1 hour'; q := q || jsonb_build_object('reports', n); exception when others then null; end;
+  return jsonb_build_object('at', now(), 'cron', has_cron, 'net', to_regclass('net._http_response') is not null, 'jobs', jobs, 'missing', to_jsonb(miss), 'http', nets, 'queues', q);
+end $$;
+
+create or replace function public.fm_jobs_problems(j jsonb) returns text[] language sql immutable as $$
+  select coalesce(array_agg(p order by p), '{}') from (
+    select 'fail:' || (x->>'name') p from jsonb_array_elements(coalesce(j->'jobs','[]')) x where coalesce((x->>'fail24')::int,0) > 0 and x->>'last_status' = 'failed'
+    union select 'late:' || (x->>'name') from jsonb_array_elements(coalesce(j->'jobs','[]')) x where coalesce((x->>'late')::boolean,false)
+    union select 'off:' || (x->>'name') from jsonb_array_elements(coalesce(j->'jobs','[]')) x where (x->>'active')::boolean is false and x->>'name' like 'fm-%'
+    union select 'missing:' || m from jsonb_array_elements_text(coalesce(j->'missing','[]')) m
+    union select 'queue:' || k from jsonb_each_text(coalesce(j->'queues','{}')) e(k, v) where v::int > 0
+  ) s
+$$;
+
+create or replace function public.fm_jobs_health() returns jsonb language plpgsql security definer set search_path = public as $$
+declare j jsonb;
+begin
+  if auth.uid() is null or not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  j := public.fm_jobs_scan();
+  return j || jsonb_build_object('problems', to_jsonb(public.fm_jobs_problems(j)),
+    'alerts', coalesce((select jsonb_agg(jsonb_build_object('day', a.day, 'at', a.at, 'sig', a.sig) order by a.at desc) from (select * from public.fm_jobs_alerts order by at desc limit 20) a), '[]'));
+end $$;
+
+create or replace function public.fm_v422_watch() returns int language plpgsql security definer set search_path = public as $$
+declare j jsonb; p text[]; v_sig text; d date := (now() at time zone 'Asia/Riyadh')::date; u record; n int := 0; txt text;
+begin
+  j := public.fm_jobs_scan(); p := public.fm_jobs_problems(j);
+  if coalesce(array_length(p,1),0) = 0 then return 0; end if;
+  v_sig := md5(array_to_string(p, ','));
+  if exists(select 1 from public.fm_jobs_alerts where day = d and sig = v_sig) then return 0; end if;
+  insert into public.fm_jobs_alerts(day, sig) values (d, v_sig) on conflict do nothing;
+  txt := left(array_to_string(array(select replace(replace(replace(replace(replace(x,'fail:','❌ '),'late:','⏰ '),'off:','⏸️ '),'missing:','❓ '),'queue:','📥 ') from unnest(p) x), '، '), 280);
+  for u in select id from public.profiles where active and job_title = 'sysadmin' loop
+    begin
+      perform public.fm_alert_send(u.id, 'sys', '⚙️ مهام الخادم تحتاج متابعة (' || array_length(p,1) || ')', txt, 'jobs', 'jobs-' || d, true);
+      n := n + 1;
+    exception when others then null; end;
+  end loop;
+  return n;
+end $$;
+
+revoke all on function public.fm_cron_every(text), public.fm_jobs_known(), public.fm_jobs_scan(), public.fm_jobs_problems(jsonb), public.fm_v422_watch() from public, anon, authenticated;
+revoke all on function public.fm_jobs_health() from public, anon;
+grant execute on function public.fm_jobs_health() to authenticated;
+do $do$ begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    begin perform cron.unschedule('fm-v422-watch'); exception when others then null; end;
+    execute 'select cron.schedule(''fm-v422-watch'', ''*/30 * * * *'', ''select public.fm_v422_watch()'')';
+  end if;
+exception when others then raise notice 'pg_cron fm-v422-watch: %', sqlerrm; end $do$;
+
+-- every SQL permission function (boolean, fm_*) answers false instead of NULL: a NULL made «if not fm_x() then raise» skip the raise
+-- (found 2026-11-21: a «pending» account could read the accounting journal, cash flow, payroll). Copies of the current bodies wrapped in coalesce(…, false);
+-- a function redefined later must keep returning false, never NULL.
+CREATE OR REPLACE FUNCTION public.fm_acct_can()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant','dept_manager','project_manager'))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_acct_can_set()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant'))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_adj_approver(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,''))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_adj_needs(p_book numeric, p_diff numeric, p_price numeric)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select case when coalesce(p_diff,0) = 0 then false
+    when coalesce(p_price,0) > 0 then abs(p_diff) * p_price > coalesce((public.fm_setting('stock_rules')->>'adj_value')::numeric, 200)
+    when coalesce(p_book,0) <= 0 then true
+    else abs(p_diff) / p_book * 100 > coalesce((public.fm_setting('stock_rules')->>'variance_pct')::numeric, 5) end) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_ap_can_exc()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager'))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_ap_can_pay()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('accountant','sysadmin'))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_asset_can_edit()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (public.fm_role() = 'admin' or exists(select 1 from public.profiles where id = auth.uid() and active
+    and job_title in ('sysadmin','dept_manager','project_manager','ops_manager')))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_asset_can_read(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and public.fm_role() <> 'pending' and (public.fm_role() = 'admin' or public.fm_scope_all()
+    or exists(select 1 from public.profiles where id = auth.uid() and job_title in ('owner_rep','accountant'))
+    or coalesce(p_region, '') = '' or public.fm_region_ok(p_region))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_backup_ok_table(p_table text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select exists(select 1 from pg_class c join pg_namespace s on s.oid = c.relnamespace
+                where s.nspname = 'public' and c.relname = p_table and c.relkind in ('r','p') and not c.relispartition)
+     and not p_table = any(public.fm_backup_skip())) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_backup_srv_can()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_wipe_ok()) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_badge_can_award(p_user uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and p_user is not null and p_user <> auth.uid() and public.fm_role() <> 'pending'
+    and exists (select 1 from public.profiles t where t.id = p_user and t.active
+                and public.fm_posx(t.role, t.job_title) = any(public.fm_badge_titles()))
+    and (public.fm_role() = 'admin'
+         or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','hse_manager','qa_manager')
+         or (public.fm_my_pos() = 'area_manager' and (public.fm_is_under(p_user, auth.uid())
+              or exists (select 1 from public.profiles t, unnest(case when cardinality(t.regions) = 0 then array['']::text[] else t.regions end) r(x)
+                         where t.id = p_user and (r.x = '' or public.fm_region_ok(r.x)))))
+         or (public.fm_my_pos() in ('area_engineer','supervisor') and public.fm_is_under(p_user, auth.uid())))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_bfollow_can(k uuid, w boolean DEFAULT false)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role()<>'pending' and public.fm_mod('bill') and exists(select 1 from public.fm_bills b join public.fm_contracts c on c.id=b.contract_id where b.id=k and case when w then public.fm_bill_can('prep',c.region) or public.fm_bill_can('pay',c.region) or public.fm_bill_can('review',c.region) else public.fm_bill_can('read',c.region) or c.contractor_id=auth.uid() end),false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_bill_can(p_kind text, p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(case p_kind
+    when 'prep'    then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager','accountant')
+                        or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,'')))
+    when 'review'  then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','ops_manager')
+                        or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(coalesce(p_region,'')))
+    when 'approve' then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    when 'pay'     then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant')
+    when 'read'    then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','accountant','qa_manager')
+                        or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(coalesce(p_region,'')))
+    when 'contract' then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','accountant')
+  end, false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_breach_can(r text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(auth.uid() is not null and public.fm_role() not in ('pending','viewer') and
+  (public.fm_role()='admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','qa_manager')
+   or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(r))),false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_can_assign_as(p_me uuid, p_user uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_can_assign_base(p_me, p_user) or exists (select 1 from public.fm_deputies d
+    where d.deputy = p_me and d.active and now() between d.from_at and d.to_at and d.principal <> p_user
+      and public.fm_can_assign_base(d.principal, p_user))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_can_assign_base(p_me uuid, p_user uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select exists (select 1 from public.profiles t, public.profiles me
+    where t.id = p_user and me.id = p_me and me.active and t.active and t.id <> me.id
+      -- V157: by job title. Orders go to people from the contractor up to the operations manager.
+      and public.fm_prank(public.fm_posx(t.role, t.job_title)) between 2 and 6
+      and (me.role = 'admin'
+        or (public.fm_posx(me.role, me.job_title) in ('project_manager','ops_manager')
+            and public.fm_prank(public.fm_posx(t.role, t.job_title)) < public.fm_prank(public.fm_posx(me.role, me.job_title)))
+        or (public.fm_posx(me.role, me.job_title) = 'area_manager' and public.fm_prank(public.fm_posx(t.role, t.job_title)) < 5
+            and (public.fm_is_under(t.id, me.id) or (cardinality(me.regions) = 0 or t.regions && me.regions)))
+        or (public.fm_posx(me.role, me.job_title) in ('hse_manager','qa_manager') and public.fm_prank(public.fm_posx(t.role, t.job_title)) < 6)
+        or (public.fm_posx(me.role, me.job_title) in ('area_engineer','supervisor')
+            and public.fm_prank(public.fm_posx(t.role, t.job_title)) < public.fm_prank(public.fm_posx(me.role, me.job_title))
+            and public.fm_is_under(t.id, me.id))))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_can_assign_to(p_user uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_can_assign_as(auth.uid(), p_user)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_can_edit(r text, t text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_role() in ('admin','manager','engineer','supervisor','contractor') and public.fm_can_see(r,t)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_can_see(r text, t text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select case public.fm_role()
+    when 'admin'  then true
+    when 'viewer' then public.fm_region_ok(r)
+    when 'manager' then public.fm_region_ok(r)
+    when 'staff'   then public.fm_region_ok(r)
+    when 'engineer'   then exists(select 1 from public.tickets k where k.region=r and k.ticket_id=t and public.fm_region_ok(r) and (k.engineer   = any(public.fm_names()) or k.supervisor = any(public.fm_names())))
+    when 'supervisor' then exists(select 1 from public.tickets k where k.region=r and k.ticket_id=t and public.fm_region_ok(r) and  k.supervisor = any(public.fm_names()))
+    when 'contractor' then exists(select 1 from public.tickets k where k.region=r and k.ticket_id=t and public.fm_region_ok(r) and  k.contractor = any(public.fm_names()))
+    else false end) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_can_upload(r text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_role() = 'admin' or coalesce(
+    case public.fm_perm_x('upload') when false then false when true then public.fm_region_ok(coalesce(r,'')) end,
+    coalesce(public.fm_my_pos() in ('project_manager','ops_manager'), false)
+      or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(r,''))))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_cc_can(k text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin'
+    or (public.fm_cc_eff(k) and public.fm_cc_eff('view')), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_cc_eff(k text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select case when k = 'view' then coalesce(public.fm_perm_x('cc_view'), case when public.fm_perm_any('cc_') then true end, public.fm_cc_title('view'))
+              else coalesce(public.fm_perm_x('cc_' || k), public.fm_cc_title(k)) end) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_cc_sees(c fm_cc_centers)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_cc_can('view') and (public.fm_my_pos() not in ('area_manager','area_engineer') or (c.region is not null and public.fm_region_ok(c.region)))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_cc_title(k text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_my_pos() = any(array(select jsonb_array_elements_text(coalesce(public.fm_setting('cc_perms')->k, '[]')))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_close_can(r text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(auth.uid() is not null and public.fm_role()<>'pending' and public.fm_mod('tickets') and (public.fm_role()='admin' or public.fm_my_pos() in ('sysadmin','qa_manager','project_manager','ops_manager') or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(r))),false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_cost_can(p_what text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin'
+    or coalesce(public.fm_perm_x('cost_' || p_what),
+         case when p_what = 'view' and public.fm_perm_any('cost_') then true end,
+         public.fm_my_pos() in (select jsonb_array_elements_text(case when p_what = 'view'
+           then coalesce(s.value->'view','[]') || coalesce(s.value->'entry','[]') || coalesce(s.value->'budget','[]')
+           else coalesce(s.value->p_what,'[]') end)
+         from public.fm_settings s where s.key = 'cost_perms')), false)
+    and (p_what = 'view' or public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin' or public.fm_perm_x('cost_view') is distinct from false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_deputy_may(p_principal uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select exists(select 1 from public.profiles me, public.profiles pr where me.id = auth.uid() and me.active and pr.id = p_principal and pr.active
+    and (public.fm_prank(public.fm_posx(pr.role, pr.job_title)) >= 3 or public.fm_posx(pr.role, pr.job_title) in ('hse_manager','qa_manager'))
+    and (pr.id = me.id or me.role = 'admin' or public.fm_is_under_base(pr.id, me.id)
+         or public.fm_posx(me.role, me.job_title) in ('project_manager','ops_manager')
+         or (public.fm_posx(me.role, me.job_title) = 'area_manager' and (cardinality(coalesce(me.regions,'{}')) = 0 or coalesce(pr.regions,'{}') && me.regions
+             or cardinality(coalesce(pr.regions,'{}')) = 0))))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_eng_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select exists(select 1 from public.profiles where id=auth.uid() and role='admin' and coalesce(active,true))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_eng_lead(p_user uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select p_user is not null and exists(select 1 from public.profiles where id=auth.uid() and active and role in ('manager','engineer','supervisor'))
+         and public.fm_is_under(p_user, auth.uid())) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_eng_lead_folder(p_folder text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_scope_all() or exists(select 1 from public.profiles t where t.id::text=p_folder
+    and (public.fm_eng_lead(t.id) or (public.fm_my_pos() = 'area_manager' and (cardinality(public.fm_regions()) = 0 or t.regions && public.fm_regions()))))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_eng_manages(p_user uuid, p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_eng_admin() or public.fm_eng_lead(p_user) or coalesce(public.fm_my_pos() in ('project_manager','ops_manager'), false)
+      or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,'')))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_eng_rate_sees(p_sup uuid, p_eng uuid, p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_eng_admin() or auth.uid() in (p_sup, p_eng) or (p_sup is not null and public.fm_eng_sees(p_sup, p_region))
+      or (p_eng is not null and public.fm_eng_sees(p_eng, p_region))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_eng_sees(p_user uuid, p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_eng_admin() or public.fm_scope_region(p_region) or public.fm_eng_lead(p_user)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_erp_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and public.fm_role()='admin' and exists(select 1 from public.profiles
+ where id=auth.uid() and active and deleted_at is null and role='admin')) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_erp_alloc_can_edit()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','accountant'))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_erp_cost_all()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_my_pos() = 'accountant') fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_erp_cost_can()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and public.fm_role() <> 'pending'
+     and (public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_my_pos() in ('accountant','area_manager'))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_erp_project_can_read(p_project uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and exists(select 1 from public.profiles
+ where id=auth.uid() and active and deleted_at is null and role<>'pending')
+ and public.fm_role()<>'pending'
+ and (public.fm_erp_admin() or exists(select 1 from public.fm_erp_project_members
+ where project_id=p_project and user_id=auth.uid()))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_erp_rev_can(k text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and public.fm_role() <> 'pending' and case k
+    when 'edit'    then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager','accountant')
+    when 'certify' then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    when 'collect' then public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant')
+    else false end) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_erp_rev_sees(p_project uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_erp_cost_can() and (public.fm_erp_cost_all() or exists(select 1 from public.fm_erp_projects p where p.id = p_project and public.fm_region_ok(p.region)))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_fa_can_edit()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_wh_admin() or public.fm_my_pos() in ('dept_manager','accountant'), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_flag_can()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','qa_manager','owner_rep','accountant'), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_idea_decider(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin'
+    or public.fm_my_pos() in (select jsonb_array_elements_text(public.fm_idea_cfg()->'top'))
+    or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,''))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_idea_line(i fm_ideas)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select i.by_id is not null and auth.uid() is not null and (i.mgr_id = auth.uid() or public.fm_is_under(i.by_id, auth.uid()))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_idea_sees(i fm_ideas)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() <> 'pending', false) and (coalesce((public.fm_idea_cfg()->>'public')::boolean, true)
+    or i.by_id = auth.uid() or public.fm_idea_line(i) or public.fm_idea_decider(i.region))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_is_under(p_user uuid, p_boss uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_is_under_base(p_user, p_boss) or exists (select 1 from public.fm_deputies d
+    where d.deputy = p_boss and d.active and now() between d.from_at and d.to_at
+      and (d.principal = p_user or public.fm_is_under_base(p_user, d.principal)))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_issue_approver(p_region text, p_holder uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,'')))
+    or (public.fm_my_pos() = 'area_engineer' and (public.fm_is_under(p_holder, auth.uid()) or public.fm_region_ok(coalesce(p_region,'')))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_job_rate_sees(r fm_job_ratings)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and public.fm_role() <> 'pending' and (
+    public.fm_role() = 'admin' or public.fm_scope_all()
+    or (public.fm_my_pos() in ('area_manager','area_engineer','accountant','owner_rep') and r.region <> '' and public.fm_region_ok(r.region))
+    or r.sup_id = auth.uid() or (r.sup_id is not null and public.fm_is_under(r.sup_id, auth.uid())))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_leave_can(p_user uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(p_user <> auth.uid() and exists(select 1 from public.profiles me, public.profiles pr where me.id = auth.uid() and me.active and pr.id = p_user and (
+    pr.reports_to = me.id or public.fm_is_under_base(pr.id, me.id) or me.role = 'admin' or me.job_title in ('sysadmin','project_manager','ops_manager')
+    or (me.job_title = 'area_manager' and coalesce(pr.regions,'{}') && coalesce(me.regions,'{}')))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_mod(k text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select k = 'core' or coalesce((select p.modules is null or jsonb_typeof(p.modules) <> 'object'
+      or (p.modules ? k and (jsonb_typeof(p.modules->k) = 'null' or current_date <= (p.modules->>k)::date))
+    from public.fm_plan p where p.id = 1), true)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_news_for_me(n fm_news)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select n.active and now() >= n.start_at and (n.end_at is null or now() < n.end_at) and public.fm_role() <> 'pending'
+     and (n.author = auth.uid() or (
+          (cardinality(n.titles) = 0 or coalesce(public.fm_my_pos() = any(n.titles), false))
+      and (cardinality(n.regions) = 0 or cardinality(public.fm_regions()) = 0 or public.fm_regions() && n.regions)
+      and (n.scope <> 'team' or public.fm_is_under(auth.uid(), n.author))))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_oncall_can(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager','dept_manager')
+    or (public.fm_my_pos() in ('area_manager','area_engineer') and coalesce(p_region,'') <> '' and public.fm_region_ok(p_region)))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_ot_dec_can(u uuid, reg text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and u is distinct from auth.uid() and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or public.fm_is_under(u, auth.uid()) or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(reg,''))))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_ot_sees(u uuid, reg text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (u = auth.uid() or public.fm_ot_dec_can(u, reg) or public.fm_scope_all() or public.fm_my_pos() = 'accountant')) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_owner_can()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (public.fm_role() = 'admin' or exists (select 1 from public.profiles where id = auth.uid() and active
+    and job_title in ('sysadmin','dept_manager','project_manager','ops_manager')))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_parts_can(k uuid, write_access boolean DEFAULT false)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(auth.uid() is not null and public.fm_role()<>'pending' and public.fm_mod('wh') and exists(select 1 from public.wo_issue_requests r where r.id=k and (
+ public.fm_role()='admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+ or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_parts_region(k)<>'' and public.fm_region_ok(public.fm_parts_region(k)))
+ or (public.fm_my_pos()='storekeeper' and public.fm_wh_keeper(r.store_id))
+ or (not write_access and (r.requested_by=auth.uid() or r.holder=auth.uid() or public.fm_my_pos() in ('dept_manager','qa_manager','owner_rep')))
+ )),false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_parts_person(k uuid, p_user uuid, escalation boolean DEFAULT false)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select exists(select 1 from public.profiles p where p.id=p_user and p.active and public.fm_posx(p.role,p.job_title)=any(case when escalation then array['sysadmin','project_manager','ops_manager','area_manager'] else array['sysadmin','project_manager','ops_manager','area_manager','area_engineer','storekeeper'] end)
+ and (public.fm_posx(p.role,p.job_title) in ('sysadmin','project_manager','ops_manager') or cardinality(p.regions)=0 or public.fm_parts_region(k)=any(p.regions)))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_pay_can()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','accountant')), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_period_closed(p_month text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce((select status = 'closed' from public.fm_periods where month = p_month), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_perm_any(pfx text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_my_pos() is not null and exists (select 1 from public.profiles p, jsonb_array_elements_text(coalesce(p.perms->'add','[]')) k
+    where p.id = auth.uid() and k like pfx || '%'), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_perms_ok(p jsonb)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ AS $function$ select coalesce((select fm_q.v from (select jsonb_typeof(coalesce(p,'{}'::jsonb)) = 'object'
+    and (p->'add' is null or (jsonb_typeof(p->'add') = 'array'
+         and not exists (select 1 from jsonb_array_elements_text(p->'add') k where k <> all(public.fm_perm_keys()))))
+    and (p->'deny' is null or (jsonb_typeof(p->'deny') = 'array'
+         and not exists (select 1 from jsonb_array_elements_text(p->'deny') k where k <> all(public.fm_perm_keys()))))
+    and coalesce(p->>'route','') in ('','index','field','choose')) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_photo_q_can()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (public.fm_flag_can() or public.fm_scope_all() or public.fm_role() in ('admin','manager','engineer'))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_plan_ok()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce((select p.active_until is null or current_date <= p.active_until + p.grace_days from public.fm_plan p where p.id = 1), true)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_po_owner_ok()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_my_pos() = 'owner_rep', false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_qa_ok()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_my_pos() in ('qa_manager','sysadmin'), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_rate_snap_locked(r text, m text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select exists(select 1 from public.fm_bills b join public.fm_contracts c on c.id = b.contract_id
+                where c.region = r and b.month = m and b.status in ('approved','paid'))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_ready_read(r text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role()<>'pending' and (public.fm_role()='admin' or public.fm_my_pos() in ('dept_manager','project_manager','ops_manager','qa_manager','hse_manager','owner_rep') or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(r))),false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_ready_write(r text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role()<>'pending' and (public.fm_role()='admin' or public.fm_my_pos() in ('project_manager','ops_manager') or (public.fm_my_pos()='area_manager' and public.fm_region_ok(r))),false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_recon_can_sign(h uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and h is distinct from auth.uid() and (public.fm_role() = 'admin' or public.fm_wh_admin()
+    or (public.fm_my_pos() in ('area_engineer','area_manager','ops_manager','project_manager','sysadmin') and public.fm_wh_sees_holder(h)))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_region_ok(r text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ AS $function$ select coalesce((select fm_q.v from (select cardinality(public.fm_regions()) = 0 or r = any(public.fm_regions())) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_rep_arch_can_save(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (public.fm_role() = 'admin' or public.fm_scope_all()
+    or (public.fm_my_pos() = 'area_manager' and coalesce(p_region,'') <> '' and public.fm_region_ok(p_region)))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_rep_arch_sees(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and public.fm_role() <> 'pending' and (public.fm_role() = 'admin' or public.fm_scope_all()
+    or public.fm_my_pos() in ('owner_rep','accountant') or coalesce(p_region,'') = '' or public.fm_region_ok(p_region))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_report_can()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce((select p.active is not false and p.role <> 'pending' from public.profiles p where p.id = auth.uid()), false)
+     and (public.fm_role() = 'admin' or coalesce(public.fm_scope_all(), false))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_scope_all()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','hse_manager','qa_manager'), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_scope_match330(b jsonb, s jsonb)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ AS $function$ select coalesce((select fm_q.v from (select b is not null and not exists(select 1 from jsonb_each(coalesce(s->'criteria','{}')) e where jsonb_array_length(e.value)>0 and not(e.value ? coalesce(nullif(b->>(case when e.key='building_keys' then 'key' else e.key end),''),'—')))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_scope_region(r text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_scope_all() or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(r,'')))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_sdb_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() = 'sysadmin', false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_signoff_is_rep()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce((select active and job_title = 'owner_rep' from public.profiles where id = auth.uid()), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_slap_can_dec(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,''))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_slap_can_req(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() not in ('pending','viewer') and (public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_region_ok(coalesce(p_region,''))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_stock_can(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() in ('area_manager','area_engineer','storekeeper') and public.fm_region_ok(coalesce(p_region,''))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_sup_staff()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_wh_edit() or public.fm_my_pos() in ('accountant','dept_manager'), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_tk_archive_can(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and (public.fm_role() = 'admin' or exists (select 1 from public.profiles where id = auth.uid() and active and job_title = 'sysadmin')
+     or public.fm_can_upload(p_region))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_tk_can(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() in ('area_manager','area_engineer','supervisor') and public.fm_region_ok(coalesce(p_region,''))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_tk_target_ok(p_region text, p_user uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select exists (select 1 from public.profiles t where t.id = p_user and t.active and t.role <> 'pending' and t.id <> auth.uid()
+    and public.fm_posx(t.role, t.job_title) in ('supervisor','contractor','area_engineer')
+    and (cardinality(coalesce(t.regions,'{}')) = 0 or coalesce(p_region,'') = any(t.regions))
+    and (public.fm_my_pos() <> 'supervisor' or public.fm_is_under(t.id, auth.uid())))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_tka_can(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','qa_manager'), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_tka_sees(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_tka_can(p_region) or public.fm_scope_all()
+    or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(coalesce(p_region,''))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_tkrev_can(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager')
+    or (public.fm_my_pos() in ('area_manager','area_engineer') and public.fm_region_ok(coalesce(p_region,''))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_tool_can(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_mod('wh') and public.fm_stock_can(coalesce(p_region,'')), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_v374_ok()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ AS $function$ select coalesce((select fm_q.v from (select true) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_vh_can(p_region text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_role() = 'admin' or coalesce(public.fm_my_pos() in ('sysadmin','project_manager','ops_manager','accountant'), false)
+      or (public.fm_my_pos() = 'area_manager' and public.fm_region_ok(coalesce(p_region,'')))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_vh_sees(v fm_vehicles)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_vh_can(v.region) or v.driver = auth.uid() or coalesce(public.fm_my_pos() in ('dept_manager','hse_manager','qa_manager'), false)
+      or (v.driver is not null and public.fm_is_under(v.driver, auth.uid()))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_weekly_all()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_my_pos() = 'owner_rep', false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_weekly_can()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_scope_all() or public.fm_my_pos() in ('area_manager','area_engineer','owner_rep','accountant'), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wf_bonus_prop(r text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm233_manage(r) or coalesce(auth.uid() is not null and public.fm_role() <> 'pending'
+    and public.fm_my_pos() in ('area_engineer','supervisor') and public.fm_region_ok(r), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wh_abn_can()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_flag_can() or public.fm_wh_edit() or public.fm_scope_all(), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wh_admin()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','project_manager','ops_manager'), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wh_edit()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_wh_admin() or public.fm_my_pos() in ('area_manager','area_engineer','storekeeper'), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wh_has_owner()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select exists(select 1 from public.profiles where job_title = 'owner_rep' and active)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wh_keeper(p_store uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_my_pos() = 'storekeeper' and exists(select 1 from public.wo_stores s where s.id = p_store and s.active
+    and (s.keeper = auth.uid() or (s.keeper is null and public.fm_region_ok(coalesce(s.region,''))))), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wh_may_direct(h uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select exists(select 1 from public.profiles p where p.id = h and p.active and public.fm_posx(p.role, p.job_title) in ('supervisor','contractor','area_engineer'))
+    and ((coalesce(public.fm_my_pos() in ('sysadmin','project_manager','ops_manager','area_manager','area_engineer') or public.fm_role() = 'admin', false)
+      and (public.fm_is_under(h, auth.uid()) or public.fm_wh_admin()
+        or (public.fm_my_pos() = 'area_manager' and exists(select 1 from public.profiles p where p.id = h
+              and (cardinality(public.fm_regions()) = 0 or p.regions && public.fm_regions())))))
+     or (public.fm_my_pos() = 'storekeeper' and exists(select 1 from public.profiles p where p.id = h
+              and (cardinality(public.fm_regions()) = 0 or cardinality(p.regions) = 0 or p.regions && public.fm_regions()))))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wh_nominator()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager'), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wh_sees_holder(h uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and public.fm_role() <> 'pending' and (h = auth.uid() or public.fm_role() = 'admin'
+    or public.fm_my_pos() in ('sysadmin','dept_manager','project_manager','ops_manager','storekeeper','owner_rep','accountant','qa_manager')
+    or public.fm_is_under(h, auth.uid())
+    or (public.fm_my_pos() = 'area_manager' and exists(select 1 from public.profiles p where p.id = h
+          and (cardinality(public.fm_regions()) = 0 or p.regions && public.fm_regions()))))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wipe_kv_match(p_part text, k text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ AS $function$ select coalesce((select fm_q.v from (select case p_part when 'tickets' then k like 'fm_ref_date_%' or k like 'fm_rank_%' or k like 'fm265_ok_%'
+                     when 'schooldb' then k = 'fm_school_master_db_v1' else false end) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wipe_ok()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and public.fm_role() = 'admin' and public.fm_my_pos() = 'sysadmin') fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wo_can_see(p_wo uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_role() <> 'pending' and exists (select 1 from public.work_orders w where w.id = p_wo
+    and (w.created_by = auth.uid() or w.assignee = auth.uid() or w.approver = auth.uid() or public.fm_role() = 'admin' or public.fm_scope_region(w.region)
+         or public.fm_is_under(w.assignee, auth.uid()) or public.fm_is_under(w.created_by, auth.uid())
+         -- V285: a recipient of the approved report reads the order once it is closed
+         or (w.status = 'closed' and auth.uid() = any(w.notify_to))))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wo_cost_can(p_wo uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select auth.uid() is not null and public.fm_role() <> 'pending' and exists (select 1 from public.work_orders w where w.id = p_wo and (
+    public.fm_role() = 'admin' or public.fm_wo_mgr(w.id) or w.approver = auth.uid() or public.fm_bill_can('prep', w.region)))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wo_party(p_wo uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select public.fm_role() <> 'pending' and exists (select 1 from public.work_orders w where w.id = p_wo
+    and (w.created_by = auth.uid() or w.assignee = auth.uid() or w.approver = auth.uid()) and w.status not in ('closed','cancelled'))) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wo_rule_ph(r text, kind text, res text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ AS $function$ select coalesce((select fm_q.v from (select case when kind = 'before' then (r = 'all' and res in ('ok','fix','fixed')) or (r = 'issues' and res in ('fix','fixed'))
+              else (r = 'all' and res in ('ok','fixed')) or (r = 'fixed' and res = 'fixed') end) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wo_see_all()
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select coalesce(public.fm_role() = 'admin' or public.fm_scope_all(), false)) fm_q(v) limit 1), false) $function$;
+CREATE OR REPLACE FUNCTION public.fm_wo_svc_in_bill(p_wo uuid, p_contract uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ AS $function$ select coalesce((select fm_q.v from (select p_contract is not null and exists (select 1 from public.fm_bill_wos bw join public.fm_bills b on b.id = bw.bill_id
+    where bw.wo_id = p_wo and b.contract_id = p_contract and b.status <> 'cancelled')) fm_q(v) limit 1), false) $function$;
+
+-- the root of it: fm_my_pos() returned NULL for an account without a job title / not active / plan expired, and fm_role() NULL for a signed-in
+-- account without a profile row. A check like «not (fm_role() = 'admin' or fm_my_pos() in (…))» is then NULL and the raise is skipped. Now
+-- fm_my_pos() returns 'none' and fm_role() 'pending' in those cases; the two functions that read NULL as «not active» follow.
+create or replace function public.fm_my_pos() returns text
+language sql stable security definer set search_path=public as $$
+ select coalesce((select case when p.active and public.fm_plan_ok() then public.fm_posx(p.role,p.job_title) end
+                    from public.profiles p where p.id=auth.uid()), 'none')
+$$;
+create or replace function public.fm_role() returns text language sql stable security definer set search_path = public as $$
+  select coalesce((select case when p.active and public.fm_plan_ok() then p.role else 'pending' end from public.profiles p where p.id = auth.uid()), 'pending') $$;
+create or replace function public.fm_perm_x(k text) returns boolean language sql stable security definer set search_path = public as $$
+  select case when public.fm_my_pos() = 'none' then null
+              when p.perms->'deny' ? k then false when p.perms->'add' ? k then true end
+    from public.profiles p where p.id = auth.uid() $$;
+create or replace function public.fm_perm_any(pfx text) returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(public.fm_my_pos() <> 'none' and exists (select 1 from public.profiles p, jsonb_array_elements_text(coalesce(p.perms->'add','[]')) k
+    where p.id = auth.uid() and k like pfx || '%'), false) $$;
+notify pgrst, 'reload schema';
