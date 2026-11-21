@@ -22191,3 +22191,90 @@ create or replace function public.fm_perm_any(pfx text) returns boolean language
   select coalesce(public.fm_my_pos() <> 'none' and exists (select 1 from public.profiles p, jsonb_array_elements_text(coalesce(p.perms->'add','[]')) k
     where p.id = auth.uid() and k like pfx || '%'), false) $$;
 notify pgrst, 'reload schema';
+
+-- ---------- 146) V423 — automatic cleanup of old technical logs (queues, run logs, usage counters); the audit log and business records are never touched ----------
+-- fm_settings.retention {enabled (true), days {key: days}} — system admin writes it directly. Keys (default days): push 30 (sent / given-up
+-- notifications), wa 90 (sent / failed WhatsApp), reports 180 (finished report runs), ai 400 (assistant usage rows), mail 365 (mail log),
+-- activity 730 (fm_activity, the usage report), daily 90 (fm_daily_runs / fm_jobs_alerts / fm_sla_morning), inbox 180 (read SLA inbox
+-- messages), cron 14 (cron.job_run_details). Minimum 7 days each. fm_v423_cleanup() (pg_cron fm-v423-cleanup daily 23:40 UTC) deletes at
+-- most 50 000 rows per table per run and logs {at, rows {key: n}, ms} in fm_retention_log (120 days; no audit noise); fm_retention_run() = the same now
+-- (system admin); fm_retention_info() = settings + table sizes + the last run (system admin).
+create table if not exists public.fm_retention_log (id bigserial primary key, at timestamptz not null default now(), res jsonb);
+alter table public.fm_retention_log enable row level security;
+revoke all on public.fm_retention_log from anon, authenticated;
+
+create or replace function public.fm_retention_days() returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('enabled', coalesce((public.fm_setting('retention')->>'enabled')::boolean, true),
+    'days', '{"push":30,"wa":90,"reports":180,"ai":400,"mail":365,"activity":730,"daily":90,"inbox":180,"cron":14}'::jsonb
+            || coalesce((select jsonb_object_agg(k, greatest(7, least(3650, v::int))) from jsonb_each_text(coalesce(public.fm_setting('retention')->'days','{}')) e(k, v) where v ~ '^\d+$'), '{}')) $$;
+
+create or replace function public.fm_v423_cleanup() returns jsonb language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fm_retention_days(); d jsonb := c->'days'; r jsonb := '{}'; n int; t0 timestamptz := clock_timestamp(); lim constant int := 50000;
+  n2 int;
+begin
+  if not coalesce((c->>'enabled')::boolean, true) then return jsonb_build_object('skipped', true); end if;
+  begin delete from public.fm_push_queue where id in (select id from public.fm_push_queue where created_at < now() - make_interval(days => (d->>'push')::int) and (sent_at is not null or coalesce(tries,0) >= 5) limit lim);
+    get diagnostics n = row_count; r := r || jsonb_build_object('push', n); exception when others then r := r || jsonb_build_object('push', sqlerrm); end;
+  begin delete from public.fm_wa_queue where id in (select id from public.fm_wa_queue where created_at < now() - make_interval(days => (d->>'wa')::int) and status in ('sent','failed') limit lim);
+    get diagnostics n = row_count; r := r || jsonb_build_object('wa', n); exception when others then r := r || jsonb_build_object('wa', sqlerrm); end;
+  begin delete from public.fm_report_runs where id in (select id from public.fm_report_runs where created_at < now() - make_interval(days => (d->>'reports')::int) and status in ('sent','failed','expired') limit lim);
+    get diagnostics n = row_count; r := r || jsonb_build_object('reports', n); exception when others then r := r || jsonb_build_object('reports', sqlerrm); end;
+  begin delete from public.fm_ai_usage where id in (select id from public.fm_ai_usage where at < now() - make_interval(days => (d->>'ai')::int) limit lim);
+    get diagnostics n = row_count; r := r || jsonb_build_object('ai', n); exception when others then r := r || jsonb_build_object('ai', sqlerrm); end;
+  begin delete from public.fm_mail_log where id in (select id from public.fm_mail_log where at < now() - make_interval(days => (d->>'mail')::int) and status <> 'sending' limit lim);
+    get diagnostics n = row_count; r := r || jsonb_build_object('mail', n); exception when others then r := r || jsonb_build_object('mail', sqlerrm); end;
+  begin delete from public.fm_activity where ctid in (select ctid from public.fm_activity where day < current_date - (d->>'activity')::int limit lim);
+    get diagnostics n = row_count; r := r || jsonb_build_object('activity', n); exception when others then r := r || jsonb_build_object('activity', sqlerrm); end;
+  begin
+    delete from public.fm_daily_runs where day < current_date - (d->>'daily')::int; get diagnostics n = row_count;
+    delete from public.fm_jobs_alerts where day < current_date - (d->>'daily')::int; get diagnostics n2 = row_count; n := n + n2;
+    begin delete from public.fm_sla_morning where day < current_date - (d->>'daily')::int; get diagnostics n2 = row_count; n := n + n2; exception when others then null; end;
+    r := r || jsonb_build_object('daily', n);
+  exception when others then r := r || jsonb_build_object('daily', sqlerrm); end;
+  begin delete from public.fm_sla_inbox231 where id in (select id from public.fm_sla_inbox231 where created_at < now() - make_interval(days => (d->>'inbox')::int) and read_at is not null limit lim);
+    get diagnostics n = row_count; r := r || jsonb_build_object('inbox', n); exception when others then r := r || jsonb_build_object('inbox', sqlerrm); end;
+  if to_regclass('cron.job_run_details') is not null then
+    begin execute format('delete from cron.job_run_details where runid in (select runid from cron.job_run_details where end_time < now() - interval ''%s days'' limit %s)', (d->>'cron')::int, lim);
+      get diagnostics n = row_count; r := r || jsonb_build_object('cron', n); exception when others then r := r || jsonb_build_object('cron', sqlerrm); end;
+  end if;
+  r := jsonb_build_object('at', now(), 'rows', r, 'ms', round(extract(epoch from clock_timestamp() - t0) * 1000));
+  insert into public.fm_retention_log(at, res) values (now(), r);
+  delete from public.fm_retention_log where at < now() - interval '120 days';
+  return r;
+end $$;
+
+create or replace function public.fm_retention_run() returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  return public.fm_v423_cleanup();
+end $$;
+
+create or replace function public.fm_retention_info() returns jsonb language plpgsql security definer set search_path = public as $$
+declare sz jsonb := '{}'; t text; k text; m jsonb := '{"push":"fm_push_queue","wa":"fm_wa_queue","reports":"fm_report_runs","ai":"fm_ai_usage","mail":"fm_mail_log","activity":"fm_activity","daily":"fm_daily_runs","inbox":"fm_sla_inbox231"}';
+begin
+  if auth.uid() is null or not public.fm_wipe_ok() then raise exception 'not allowed'; end if;
+  for k, t in select * from jsonb_each_text(m) loop
+    begin sz := sz || jsonb_build_object(k, jsonb_build_object('rows', (select reltuples::bigint from pg_class where oid = ('public.' || t)::regclass), 'bytes', pg_total_relation_size(('public.' || t)::regclass)));
+    exception when others then null; end;
+  end loop;
+  if to_regclass('cron.job_run_details') is not null then
+    begin sz := sz || jsonb_build_object('cron', jsonb_build_object('rows', (select reltuples::bigint from pg_class where oid = 'cron.job_run_details'::regclass), 'bytes', pg_total_relation_size('cron.job_run_details'))); exception when others then null; end;
+  end if;
+  return jsonb_build_object('cfg', public.fm_retention_days(), 'sizes', sz, 'last', (select res from public.fm_retention_log order by at desc limit 1), 'db_bytes', pg_database_size(current_database()));
+end $$;
+
+revoke all on function public.fm_retention_days(), public.fm_v423_cleanup() from public, anon, authenticated;
+revoke all on function public.fm_retention_run(), public.fm_retention_info() from public, anon;
+grant execute on function public.fm_retention_run(), public.fm_retention_info() to authenticated;
+create or replace function public.fm_jobs_known() returns text[] language sql immutable as $$
+  select array['fm-wo-schedules','fm-push-flush','fm-push-daily','fm-wa-flush','fm-sla-warn','fm-sla-escalation231','fm-reports','fm-backup-srv',
+               'fm-weekly','fm-badges','fm-wo-return','fm-wh-low','fm-wh-auto-po','fm-v371-tick','fm-v389-digest','fm-v415-oncall','fm-v382-sr','fm-v395-daily',
+               'fm-v422-watch','fm-v423-cleanup']
+$$;
+do $do$ begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    begin perform cron.unschedule('fm-v423-cleanup'); exception when others then null; end;
+    execute 'select cron.schedule(''fm-v423-cleanup'', ''40 23 * * *'', ''select public.fm_v423_cleanup()'')';
+  end if;
+exception when others then raise notice 'pg_cron fm-v423-cleanup: %', sqlerrm; end $do$;
+notify pgrst, 'reload schema';
