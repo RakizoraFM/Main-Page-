@@ -1,0 +1,42 @@
+-- V436 — section 150: tickets deleted by a reset do not come back, LOCAL database only.
+\set ON_ERROR_STOP 1
+create temp table t436 (n serial, name text, pass boolean, detail text);
+grant all on t436 to authenticated; grant usage on sequence t436_n_seq to authenticated;
+insert into auth.users (id, email, raw_user_meta_data) values ('43600000-0000-4000-8000-000000000001','w.adm@rakizora.test','{"full_name":"أدمن"}') on conflict (id) do nothing;
+insert into public.profiles (id, email, full_name, role) select id, email, raw_user_meta_data->>'full_name', 'pending' from auth.users where id::text like '43600000-%' on conflict (id) do nothing;
+update public.profiles set job_title = 'sysadmin', active = true where id = '43600000-0000-4000-8000-000000000001';
+do $$ declare rows jsonb := '[{"region":"riyadh","ticket_id":"CASE-1","status":"جديد","raw":{"a":1}},{"region":"riyadh","ticket_id":"CASE-2","status":"جديد","raw":{"a":2}}]'; j jsonb; n int; e text; begin
+  perform set_config('request.jwt.claim.sub', '43600000-0000-4000-8000-000000000001', true); set local role authenticated;
+  j := public.fm_tickets_import232(rows);
+  select count(*) into n from public.tickets where region = 'riyadh' and ticket_id like 'CASE-%';
+  insert into t436 (name, pass, detail) values ('رفع بلاغين', n = 2, j::text);
+  j := public.fm_wipe(array['tickets'], 'تصفير');
+  select count(*) into n from public.tickets where region = 'riyadh' and ticket_id like 'CASE-%';
+  insert into t436 (name, pass, detail) values ('التصفير حذفهما', n = 0, '');
+  j := public.fm_tickets_import232(rows);
+  select count(*) into n from public.tickets where region = 'riyadh' and ticket_id like 'CASE-%';
+  insert into t436 (name, pass, detail) values ('إعادة رفعهما من نسخة قديمة (import232) لا تُرجعهما', n = 0, j::text);
+  reset role;
+  insert into public.tickets (region, ticket_id, raw) values ('riyadh', 'CASE-1', '{}'::jsonb) on conflict do nothing;
+  select count(*) into n from public.tickets where region = 'riyadh' and ticket_id = 'CASE-1';
+  insert into t436 (name, pass, detail) values ('إدراج مباشر من عميل قديم لا يُرجعه', n = 0, '');
+  begin insert into public.ticket_work (region, ticket_id, stage) values ('riyadh', 'CASE-1', 'received'); e := 'ok'; exception when others then e := sqlerrm; end;
+  select count(*) into n from public.ticket_work where region = 'riyadh' and ticket_id = 'CASE-1';
+  insert into t436 (name, pass, detail) values ('سجل العمل لبلاغ محذوف لا يُرجَع', n = 0, e);
+  perform set_config('request.jwt.claim.sub', '43600000-0000-4000-8000-000000000001', true); set local role authenticated;
+  j := public.fm_tickets_import436(rows, false);
+  insert into t436 (name, pass, detail) values ('الاستيراد الجديد يذكر عدد المرفوض', (j->>'skipped_wiped')::int = 2 and (j->>'added')::int = 0, j::text);
+  j := public.fm_tk_tomb_ids('riyadh');
+  insert into t436 (name, pass, detail) values ('قائمة المحذوف', (j->>'n')::int = 2, j::text);
+  j := public.fm_tickets_import436(rows, true);
+  select count(*) into n from public.tickets where region = 'riyadh' and ticket_id like 'CASE-%';
+  insert into t436 (name, pass, detail) values ('رفع متعمّد بموافقة يُرجعهما', n = 2 and (j->>'skipped_wiped')::int = 0, j::text);
+  j := public.fm_tk_tomb_ids('riyadh');
+  insert into t436 (name, pass, detail) values ('أُزيلا من قائمة المحذوف', (j->>'n')::int = 0, '');
+  reset role;
+  insert into public.tickets (region, ticket_id, raw) values ('riyadh', 'CASE-3', '{}'::jsonb);
+  select count(*) into n from public.tickets where ticket_id = 'CASE-3';
+  insert into t436 (name, pass, detail) values ('بلاغ جديد لم يُحذف يدخل عادياً', n = 1, '');
+end $$;
+select n, name, case when pass then 'PASS' else 'FAIL' end res, detail from t436 order by n;
+select count(*) filter (where pass) passed, count(*) filter (where not pass) failed from t436;
